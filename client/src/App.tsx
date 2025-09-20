@@ -12,6 +12,7 @@ import Tasks from "@/pages/Tasks";
 import Calendar from "@/pages/Calendar";
 import Notes from "@/pages/Notes";
 import Templates from "@/pages/Templates";
+import Settings from "@/pages/Settings";
 import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import NotFound from "@/pages/not-found";
@@ -53,7 +54,7 @@ function Router() {
 
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
-      <Route path="/settings" component={() => <ComingSoonPage section="settings" />} />
+      <Route path="/settings" component={Settings} />
       <Route path="/checklists" component={() => <ComingSoonPage section="checklists" />} />
       <Route path="/emails" component={() => <ComingSoonPage section="emails" />} />
       <Route path="/crm" component={() => <ComingSoonPage section="crm" />} />
