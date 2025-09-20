@@ -20,7 +20,8 @@ import {
   LayoutTemplate,
   Settings,
   Mail,
-  UserPlus
+  UserPlus,
+  Calendar
 } from "lucide-react";
 
 interface ComingSoonPageProps {
@@ -177,6 +178,30 @@ const sectionConfig = {
     description: "Manage company-wide team members, departments, and organizational structure.",
     icon: <Users className="h-12 w-12" />,
     estimatedDate: "Q3 2024"
+  },
+  "business-expenses": {
+    title: "Business Expenses",
+    description: "Submit and track all business expenses including receipts, mileage, and reimbursements.",
+    icon: <CreditCard className="h-12 w-12" />,
+    estimatedDate: "Q2 2024"
+  },
+  "business-timesheets": {
+    title: "Business Timesheets",
+    description: "Log work hours, overtime, and track productivity across all business operations.",
+    icon: <Timer className="h-12 w-12" />,
+    estimatedDate: "Q2 2024"
+  },
+  "business-messages": {
+    title: "Business Messages",
+    description: "Company-wide messaging system for announcements, team communication, and updates.",
+    icon: <MessageSquare className="h-12 w-12" />,
+    estimatedDate: "Q2 2024"
+  },
+  "business-leave": {
+    title: "Sick Days & Leave",
+    description: "Request and manage sick days, vacation time, and other leave requests with approval workflows.",
+    icon: <Calendar className="h-12 w-12" />,
+    estimatedDate: "Q2 2024"
   }
 };
 

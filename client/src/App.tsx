@@ -10,6 +10,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import Dashboard from "@/pages/Dashboard";
 import Tasks from "@/pages/Tasks";
 import Calendar from "@/pages/Calendar";
+import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import NotFound from "@/pages/not-found";
 
@@ -19,6 +20,13 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
+      
+      {/* Business Project */}
+      <Route path="/business" component={BusinessOverviewPage} />
+      <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
+      <Route path="/business/timesheets" component={() => <ComingSoonPage section="business-timesheets" />} />
+      <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
+      <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
       
       {/* Project sections - Coming Soon */}
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />

@@ -1,4 +1,6 @@
 import { ChevronDown, Calendar, Search, User, Settings, LogOut } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,6 +16,7 @@ import ThemeToggle from "./ThemeToggle";
 
 // todo: remove mock functionality
 const mockProjects = [
+  { id: "business", name: "Business Project", status: "Active", isBusiness: true },
   { id: "1", name: "Sunshine Coast Villa", status: "In Progress" },
   { id: "2", name: "Brisbane Townhouse", status: "Planning" },
   { id: "3", name: "Gold Coast Mansion", status: "On Hold" },
@@ -26,6 +29,17 @@ const mockAllItems = [
 ];
 
 export default function Header() {
+  const [location, navigate] = useLocation();
+  
+  const handleProjectSelect = (projectId: string) => {
+    if (projectId === 'business') {
+      navigate('/business');
+    } else {
+      navigate('/');
+    }
+    console.log(`Selected project: ${projectId}`);
+  };
+  
   return (
     <header className="flex items-center justify-between p-4 border-b bg-background">
       <div className="flex items-center gap-4">
@@ -43,9 +57,20 @@ export default function Header() {
               <DropdownMenuLabel>Current Projects</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {mockProjects.map((project) => (
-                <DropdownMenuItem key={project.id} data-testid={`project-${project.id}`}>
+                <DropdownMenuItem 
+                  key={project.id} 
+                  data-testid={`project-${project.id}`}
+                  onClick={() => handleProjectSelect(project.id)}
+                >
                   <div className="flex flex-col">
-                    <span className="font-medium">{project.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{project.name}</span>
+                      {project.isBusiness && (
+                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                          Business
+                        </Badge>
+                      )}
+                    </div>
                     <span className="text-sm text-muted-foreground">{project.status}</span>
                   </div>
                 </DropdownMenuItem>

@@ -37,6 +37,8 @@ import {
   SidebarMenuItem,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import { Link, useLocation } from "wouter";
+import { Badge } from "@/components/ui/badge";
 
 // Project sections
 const projectItems = [
@@ -75,6 +77,9 @@ const businessItems = [
 ];
 
 export function AppSidebar() {
+  const [location] = useLocation();
+  const isBusinessContext = location.startsWith('/business');
+  
   return (
     <Sidebar>
       <SidebarHeader className="p-4 border-b">
@@ -82,7 +87,18 @@ export function AppSidebar() {
           <Building2 className="h-6 w-6 text-primary" />
           <div>
             <h2 className="font-semibold text-lg">BuildPro</h2>
-            <p className="text-sm text-muted-foreground">Sunshine Coast Villa</p>
+            <div className="flex items-center gap-2">
+              {isBusinessContext ? (
+                <>
+                  <p className="text-sm text-muted-foreground">Business Project</p>
+                  <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                    Business
+                  </Badge>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sunshine Coast Villa</p>
+              )}
+            </div>
           </div>
         </div>
       </SidebarHeader>
@@ -97,11 +113,12 @@ export function AppSidebar() {
                   <SidebarMenuButton 
                     asChild 
                     data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    data-active={location === item.url}
                   >
-                    <a href={item.url}>
+                    <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -110,19 +127,80 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>Business</SidebarGroupLabel>
+          <SidebarGroupLabel>Business Project</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  data-testid="nav-business-overview"
+                  data-active={location === '/business'}
+                >
+                  <Link href="/business">
+                    <Home className="h-4 w-4" />
+                    <span>Business Overview</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  data-testid="nav-business-expenses"
+                  data-active={location === '/business/expenses'}
+                >
+                  <Link href="/business/expenses">
+                    <CreditCard className="h-4 w-4" />
+                    <span>Expenses</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  data-testid="nav-business-timesheets"
+                  data-active={location === '/business/timesheets'}
+                >
+                  <Link href="/business/timesheets">
+                    <Timer className="h-4 w-4" />
+                    <span>Timesheets</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  data-testid="nav-business-messages"
+                  data-active={location === '/business/messages'}
+                >
+                  <Link href="/business/messages">
+                    <MessageSquare className="h-4 w-4" />
+                    <span>Messages</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  data-testid="nav-business-leave"
+                  data-active={location === '/business/leave'}
+                >
+                  <Link href="/business/leave">
+                    <Calendar className="h-4 w-4" />
+                    <span>Sick Days & Leave</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {businessItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild
                     data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    data-active={location === item.url}
                   >
-                    <a href={item.url}>
+                    <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
