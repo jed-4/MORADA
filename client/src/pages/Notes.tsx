@@ -51,7 +51,7 @@ import {
   List,
   Calendar,
   User,
-  FileTemplate,
+  FileText as FileTemplate,
   Settings,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -79,6 +79,7 @@ export default function Notes() {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -94,18 +95,21 @@ export default function Notes() {
   });
 
   // Fetch custom field options for select fields
-  const { data: customFieldOptions = [] } = useQuery<CustomFieldOption[][]>({
+  const { data: customFieldOptions = {} } = useQuery<Record<string, CustomFieldOption[]>>({
     queryKey: ["/api/custom-field-options", customFieldDefs.map(f => f.id)],
     queryFn: async () => {
       const selectFields = customFieldDefs.filter(field => field.type === "select");
-      if (selectFields.length === 0) return [];
+      if (selectFields.length === 0) return {};
       
-      const optionsPromises = selectFields.map(async (field) => {
+      const optionsMap: Record<string, CustomFieldOption[]> = {};
+      
+      for (const field of selectFields) {
         const response = await fetch(`/api/custom-field-defs/${field.id}/options`);
-        return response.json();
-      });
+        const options = await response.json();
+        optionsMap[field.id] = options;
+      }
       
-      return Promise.all(optionsPromises);
+      return optionsMap;
     },
     enabled: customFieldDefs.length > 0,
   });
@@ -125,7 +129,7 @@ export default function Notes() {
       contentHtml: "",
       contentText: "",
       author: "Current User", // todo: get from auth context
-      ownerId: null,
+      ownerId: undefined,
       ownerName: "Current User",
       customFields: customFieldDefs.reduce((acc, field) => {
         acc[field.key] = "";
@@ -214,6 +218,9 @@ export default function Notes() {
     
     const matchesSearch = searchableContent.includes(searchTerm.toLowerCase());
     
+    // Filter by category
+    const matchesCategory = selectedCategory === "All" || note.category === selectedCategory;
+    
     // Filter by custom fields if a specific field value is selected
     const matchesField = selectedField === "All" || 
       Object.values(note.customFields || {}).some(value => 
@@ -223,7 +230,7 @@ export default function Notes() {
       note.category === selectedField ||
       note.priority === selectedField;
       
-    return matchesSearch && matchesField;
+    return matchesSearch && matchesCategory && matchesField;
   });
 
   const onSubmit = (data: NoteFormData) => {
@@ -374,10 +381,8 @@ export default function Notes() {
             {/* Dynamic Custom Fields */}
             {customFieldDefs.length > 0 && (
               <div className="grid grid-cols-2 gap-4">
-                {customFieldDefs.map((fieldDef, index) => {
-                  const fieldOptions = customFieldOptions.find((_, idx) => 
-                    customFieldDefs[idx]?.id === fieldDef.id
-                  ) || [];
+                {customFieldDefs.map((fieldDef) => {
+                  const fieldOptions = customFieldOptions[fieldDef.id] || [];
                   
                   return (
                     <FormField
@@ -505,7 +510,8 @@ export default function Notes() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {categories.map((category) => (
+              <SelectItem value="All">All Categories</SelectItem>
+              {Array.from(new Set(notes.map(note => note.category))).map((category) => (
                 <SelectItem key={category} value={category}>
                   {category}
                 </SelectItem>
