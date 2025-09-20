@@ -40,6 +40,18 @@ export const notes = pgTable("notes", {
   completedAt: timestamp("completed_at"),
   tags: json("tags").default([]), // string[] for task tags
   
+  // Subtask support
+  parentTaskId: varchar("parent_task_id").references(() => notes.id),
+  subtaskOrder: integer("subtask_order").default(0),
+  
+  // Recurring task settings
+  isRecurring: boolean("is_recurring").default(false),
+  recurringType: text("recurring_type"), // "daily" | "weekly" | "monthly" | "yearly" | "custom"
+  recurringInterval: integer("recurring_interval").default(1), // Every N days/weeks/months
+  recurringDays: json("recurring_days").default([]), // For weekly: [1,2,3] (Mon,Tue,Wed)
+  recurringEndDate: timestamp("recurring_end_date"),
+  lastRecurringDate: timestamp("last_recurring_date"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -64,6 +76,16 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
+  // Subtask fields
+  parentTaskId: z.string().optional(),
+  subtaskOrder: z.number().optional(),
+  // Recurring task fields
+  isRecurring: z.boolean().optional(),
+  recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
+  recurringInterval: z.number().optional(),
+  recurringDays: z.array(z.number()).optional(),
+  recurringEndDate: z.coerce.date().optional(),
+  lastRecurringDate: z.coerce.date().optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;
@@ -73,6 +95,7 @@ export type Note = typeof notes.$inferSelect;
 export const insertTaskSchema = insertNoteSchema.extend({
   type: z.literal("task"),
   status: z.enum(["todo", "in-progress", "done"]).default("todo"),
+  projectId: z.string().min(1, "Project is required for tasks"), // Required for tasks
 });
 
 export type InsertTask = z.infer<typeof insertTaskSchema>;
@@ -144,3 +167,47 @@ export const insertNoteTemplateSchema = createInsertSchema(noteTemplates).omit({
 
 export type InsertNoteTemplate = z.infer<typeof insertNoteTemplateSchema>;
 export type NoteTemplate = typeof noteTemplates.$inferSelect;
+
+// Projects (for task organization)
+export const projects = pgTable("projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").default("#3b82f6"), // Default blue
+  isActive: boolean("is_active").notNull().default(true),
+  isBusiness: boolean("is_business").notNull().default(false), // Business project flag
+  ownerId: varchar("owner_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
+
+// Task Views (saved filters and view settings)
+export const taskViews = pgTable("task_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  viewType: text("view_type").notNull().default("kanban"), // "kanban" | "list"
+  filters: json("filters").default({}), // Filter settings
+  columnConfig: json("column_config").default({}), // Column visibility and order for list view
+  isDefault: boolean("is_default").notNull().default(false),
+  ownerId: varchar("owner_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTaskViewSchema = createInsertSchema(taskViews).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTaskView = z.infer<typeof insertTaskViewSchema>;
+export type TaskView = typeof taskViews.$inferSelect;

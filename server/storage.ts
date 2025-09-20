@@ -4,7 +4,9 @@ import {
   type Task, type InsertTask,
   type CustomFieldDef, type InsertCustomFieldDef,
   type CustomFieldOption, type InsertCustomFieldOption,
-  type NoteTemplate, type InsertNoteTemplate
+  type NoteTemplate, type InsertNoteTemplate,
+  type Project, type InsertProject,
+  type TaskView, type InsertTaskView
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -51,6 +53,24 @@ export interface IStorage {
   createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate>;
   updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined>;
   deleteNoteTemplate(id: string): Promise<boolean>;
+
+  // Projects CRUD
+  getProjects(ownerId?: string): Promise<Project[]>;
+  getProject(id: string): Promise<Project | undefined>;
+  createProject(project: InsertProject): Promise<Project>;
+  updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
+  deleteProject(id: string): Promise<boolean>;
+
+  // Task Views CRUD
+  getTaskViews(ownerId?: string): Promise<TaskView[]>;
+  getTaskView(id: string): Promise<TaskView | undefined>;
+  createTaskView(view: InsertTaskView): Promise<TaskView>;
+  updateTaskView(id: string, view: Partial<InsertTaskView>): Promise<TaskView | undefined>;
+  deleteTaskView(id: string): Promise<boolean>;
+
+  // Subtasks operations
+  getSubtasks(parentTaskId: string): Promise<Task[]>;
+  createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task>;
 }
 
 export class MemStorage implements IStorage {
@@ -59,6 +79,8 @@ export class MemStorage implements IStorage {
   private customFieldDefs: Map<string, CustomFieldDef>;
   private customFieldOptions: Map<string, CustomFieldOption>;
   private noteTemplates: Map<string, NoteTemplate>;
+  private projects: Map<string, Project>;
+  private taskViews: Map<string, TaskView>;
 
   constructor() {
     this.users = new Map();
@@ -66,7 +88,10 @@ export class MemStorage implements IStorage {
     this.customFieldDefs = new Map();
     this.customFieldOptions = new Map();
     this.noteTemplates = new Map();
+    this.projects = new Map();
+    this.taskViews = new Map();
     this.initializeDefaultCustomFields();
+    this.initializeDefaultProjects();
   }
 
   // Initialize default custom fields to replace category and priority
@@ -141,6 +166,51 @@ export class MemStorage implements IStorage {
         createdAt: new Date(),
       };
       this.customFieldOptions.set(option.id, option);
+    });
+  }
+
+  // Initialize default projects including business project
+  private initializeDefaultProjects() {
+    const businessProject: Project = {
+      id: "business",
+      name: "Business Operations",
+      description: "General business administration and office tasks",
+      color: "#6366F1",
+      isActive: true,
+      isBusiness: true,
+      ownerId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.projects.set(businessProject.id, businessProject);
+
+    // Add some example projects
+    const sampleProjects = [
+      {
+        id: "project-1",
+        name: "Website Redesign",
+        description: "Complete overhaul of company website",
+        color: "#3B82F6",
+        isBusiness: false,
+      },
+      {
+        id: "project-2", 
+        name: "Client Portal",
+        description: "Development of new client management portal",
+        color: "#10B981",
+        isBusiness: false,
+      }
+    ];
+
+    sampleProjects.forEach(proj => {
+      const project: Project = {
+        ...proj,
+        isActive: true,
+        ownerId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.projects.set(project.id, project);
     });
   }
 
@@ -455,6 +525,144 @@ export class MemStorage implements IStorage {
 
   async updateTaskStatus(id: string, status: "todo" | "in-progress" | "done"): Promise<Task | undefined> {
     return this.updateTask(id, { status });
+  }
+
+  // Projects CRUD operations
+  async getProjects(ownerId?: string): Promise<Project[]> {
+    const allProjects = Array.from(this.projects.values())
+      .filter(project => project.isActive);
+    
+    if (ownerId) {
+      return allProjects.filter(project => 
+        project.ownerId === ownerId || project.isBusiness
+      ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+    return allProjects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getProject(id: string): Promise<Project | undefined> {
+    return this.projects.get(id);
+  }
+
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const id = randomUUID();
+    const now = new Date();
+    const project: Project = {
+      ...insertProject,
+      id,
+      isActive: insertProject.isActive ?? true,
+      isBusiness: insertProject.isBusiness ?? false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.projects.set(id, project);
+    return project;
+  }
+
+  async updateProject(id: string, updateData: Partial<InsertProject>): Promise<Project | undefined> {
+    const existingProject = this.projects.get(id);
+    if (!existingProject) return undefined;
+
+    const updatedProject: Project = {
+      ...existingProject,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.projects.set(id, updatedProject);
+    return updatedProject;
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    return this.projects.delete(id);
+  }
+
+  // Task Views CRUD operations
+  async getTaskViews(ownerId?: string): Promise<TaskView[]> {
+    const allViews = Array.from(this.taskViews.values());
+    
+    if (ownerId) {
+      return allViews.filter(view => view.ownerId === ownerId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+    return allViews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getTaskView(id: string): Promise<TaskView | undefined> {
+    return this.taskViews.get(id);
+  }
+
+  async createTaskView(insertTaskView: InsertTaskView): Promise<TaskView> {
+    const id = randomUUID();
+    const now = new Date();
+    const taskView: TaskView = {
+      ...insertTaskView,
+      id,
+      viewType: insertTaskView.viewType || "kanban",
+      filters: insertTaskView.filters || {},
+      columnConfig: insertTaskView.columnConfig || {},
+      isDefault: insertTaskView.isDefault ?? false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.taskViews.set(id, taskView);
+    return taskView;
+  }
+
+  async updateTaskView(id: string, updateData: Partial<InsertTaskView>): Promise<TaskView | undefined> {
+    const existingView = this.taskViews.get(id);
+    if (!existingView) return undefined;
+
+    const updatedView: TaskView = {
+      ...existingView,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.taskViews.set(id, updatedView);
+    return updatedView;
+  }
+
+  async deleteTaskView(id: string): Promise<boolean> {
+    return this.taskViews.delete(id);
+  }
+
+  // Subtasks operations
+  async getSubtasks(parentTaskId: string): Promise<Task[]> {
+    const allTasks = Array.from(this.notes.values())
+      .filter(note => note.type === "task" && note.parentTaskId === parentTaskId) as Task[];
+    
+    return allTasks.sort((a, b) => (a.subtaskOrder || 0) - (b.subtaskOrder || 0));
+  }
+
+  async createSubtask(parentTaskId: string, insertTask: InsertTask): Promise<Task> {
+    // Check if parent task exists
+    const parentTask = await this.getTask(parentTaskId);
+    if (!parentTask) {
+      throw new Error("Parent task not found");
+    }
+
+    // Get next subtask order
+    const existingSubtasks = await this.getSubtasks(parentTaskId);
+    const nextOrder = existingSubtasks.length;
+
+    const id = randomUUID();
+    const now = new Date();
+    const subtask: Task = {
+      ...insertTask,
+      id,
+      type: "task",
+      parentTaskId,
+      subtaskOrder: nextOrder,
+      category: insertTask.category || "General",
+      priority: insertTask.priority || "medium",
+      status: insertTask.status || "todo",
+      projectId: insertTask.projectId || parentTask.projectId, // Inherit parent's project
+      tags: insertTask.tags || [],
+      customFields: insertTask.customFields || {},
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.notes.set(id, subtask);
+    return subtask;
   }
 }
 

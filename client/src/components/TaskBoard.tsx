@@ -146,7 +146,7 @@ function DroppableColumn({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
           {tasks.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No tasks yet
