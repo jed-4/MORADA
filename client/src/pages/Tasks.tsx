@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import TaskBoard from "@/components/TaskBoard";
-// import TaskList from "@/components/TaskList"; // Will create this component next
+import TaskList from "@/components/TaskList";
 import { type TaskView } from "@shared/schema";
 
 export default function Tasks() {
@@ -120,30 +120,16 @@ export default function Tasks() {
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <div className="flex-1 p-4">
-              <div className="text-center py-12">
-                <h3 className="text-lg font-medium mb-2">List View Coming Soon</h3>
-                <p className="text-muted-foreground">
-                  List view with sortable columns and filtering will be implemented next.
-                </p>
-              </div>
-            </div>
+            <TaskList />
           </TabsContent>
           
           {/* Custom Views */}
           {taskViews.map((view) => (
             <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
               {view.viewType === "kanban" ? (
-                <TaskBoard filters={view.filters} />
+                <TaskBoard filters={view.filters as Record<string, any>} />
               ) : (
-                <div className="flex-1 p-4">
-                  <div className="text-center py-12">
-                    <h3 className="text-lg font-medium mb-2">Custom List View: {view.name}</h3>
-                    <p className="text-muted-foreground">
-                      Custom list views will be available once the TaskList component is implemented.
-                    </p>
-                  </div>
-                </div>
+                <TaskList filters={view.filters as Record<string, any>} columnConfig={view.columnConfig as Record<string, any>} />
               )}
             </TabsContent>
           ))}
