@@ -1,10 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MoreVertical, X, Settings } from "lucide-react";
+import { MoreVertical, X, Settings, ChevronUp, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Widget, WidgetProps } from "@/types/widgets";
@@ -15,7 +16,11 @@ interface WidgetContainerProps {
   onUpdate?: (widget: Widget) => void;
   onRemove?: (widgetId: string) => void;
   onConfigure?: (widgetId: string) => void;
+  onMoveUp?: (widgetId: string) => void;
+  onMoveDown?: (widgetId: string) => void;
   isConfiguring?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 export default function WidgetContainer({
@@ -24,7 +29,11 @@ export default function WidgetContainer({
   onUpdate,
   onRemove,
   onConfigure,
+  onMoveUp,
+  onMoveDown,
   isConfiguring = false,
+  canMoveUp = false,
+  canMoveDown = false,
 }: WidgetContainerProps) {
   const sizeClasses = {
     sm: "col-span-1",
@@ -47,6 +56,19 @@ export default function WidgetContainer({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {onMoveUp && canMoveUp && (
+              <DropdownMenuItem onClick={() => onMoveUp(widget.id)}>
+                <ChevronUp className="h-4 w-4 mr-2" />
+                Move Up
+              </DropdownMenuItem>
+            )}
+            {onMoveDown && canMoveDown && (
+              <DropdownMenuItem onClick={() => onMoveDown(widget.id)}>
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Move Down
+              </DropdownMenuItem>
+            )}
+            {(onMoveUp || onMoveDown) && (onConfigure || onRemove) && <DropdownMenuSeparator />}
             {onConfigure && (
               <DropdownMenuItem onClick={() => onConfigure(widget.id)}>
                 <Settings className="h-4 w-4 mr-2" />

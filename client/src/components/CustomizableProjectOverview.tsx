@@ -78,11 +78,41 @@ export default function CustomizableProjectOverview() {
     console.log(`Updated widget: ${updatedWidget.id}`);
   };
 
-  const renderWidget = (widget: Widget) => {
+  const moveWidgetUp = (widgetId: string) => {
+    setWidgets(prev => {
+      const currentIndex = prev.findIndex(w => w.id === widgetId);
+      if (currentIndex <= 0) return prev;
+      
+      const newWidgets = [...prev];
+      [newWidgets[currentIndex - 1], newWidgets[currentIndex]] = 
+        [newWidgets[currentIndex], newWidgets[currentIndex - 1]];
+      
+      return newWidgets;
+    });
+    console.log(`Moved widget up: ${widgetId}`);
+  };
+
+  const moveWidgetDown = (widgetId: string) => {
+    setWidgets(prev => {
+      const currentIndex = prev.findIndex(w => w.id === widgetId);
+      if (currentIndex < 0 || currentIndex >= prev.length - 1) return prev;
+      
+      const newWidgets = [...prev];
+      [newWidgets[currentIndex], newWidgets[currentIndex + 1]] = 
+        [newWidgets[currentIndex + 1], newWidgets[currentIndex]];
+      
+      return newWidgets;
+    });
+    console.log(`Moved widget down: ${widgetId}`);
+  };
+
+  const renderWidget = (widget: Widget, index: number) => {
     const definition = getWidgetDefinition(widget.type);
     if (!definition) return null;
 
     const WidgetComponent = definition.component;
+    const canMoveUp = index > 0;
+    const canMoveDown = index < widgets.length - 1;
     
     return (
       <WidgetContainer
@@ -91,7 +121,11 @@ export default function CustomizableProjectOverview() {
         onUpdate={updateWidget}
         onRemove={removeWidget}
         onConfigure={definition.configurable ? setConfiguringWidget : undefined}
+        onMoveUp={moveWidgetUp}
+        onMoveDown={moveWidgetDown}
         isConfiguring={configuringWidget === widget.id}
+        canMoveUp={canMoveUp}
+        canMoveDown={canMoveDown}
       >
         <WidgetComponent
           widget={widget}
@@ -163,7 +197,7 @@ export default function CustomizableProjectOverview() {
 
       {/* Widgets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {widgets.map(renderWidget)}
+        {widgets.map((widget, index) => renderWidget(widget, index))}
         
         {widgets.length === 0 && (
           <div className="col-span-full">
