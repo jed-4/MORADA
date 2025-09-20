@@ -66,31 +66,6 @@ function DraggableTaskCard({ task }: { task: Task }) {
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const formatDueDate = (dueDate: Date | string | null) => {
-    if (!dueDate) return undefined;
-    const date = new Date(dueDate);
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    if (date.toDateString() === today.toDateString()) {
-      return "Today";
-    } else if (date.toDateString() === tomorrow.toDateString()) {
-      return "Tomorrow";
-    } else {
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    }
-  };
-
-  const getAssigneeInitials = (name: string | null) => {
-    if (!name) return "UN";
-    return name
-      .split(" ")
-      .map(word => word[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
   return (
     <div
@@ -100,19 +75,7 @@ function DraggableTaskCard({ task }: { task: Task }) {
       {...listeners}
       className="touch-none"
     >
-      <TaskCard 
-        title={task.title}
-        description={task.content}
-        assignee={task.assigneeName ? {
-          name: task.assigneeName,
-          initials: getAssigneeInitials(task.assigneeName)
-        } : undefined}
-        dueDate={formatDueDate(task.dueDate)}
-        priority={task.priority as "low" | "medium" | "high"}
-        status={task.status as "todo" | "in-progress" | "done"}
-        comments={0} // TODO: Add comments system later
-        tags={(task.tags as string[]) || []}
-      />
+      <TaskCard task={task} showSubtasks={true} />
     </div>
   );
 }

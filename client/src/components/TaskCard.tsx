@@ -2,32 +2,41 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, MessageSquare } from "lucide-react";
+import SubtaskList from "@/components/SubtaskList";
+import { Task } from "@shared/schema";
 
 interface TaskCardProps {
-  title: string;
-  description?: string;
-  assignee?: {
-    name: string;
-    avatar?: string;
-    initials: string;
-  };
-  dueDate?: string;
-  priority: "low" | "medium" | "high";
-  status: "todo" | "in-progress" | "done";
-  comments?: number;
-  tags?: string[];
+  task: Task;
+  showSubtasks?: boolean; // Option to hide subtasks in certain contexts
+  onClick?: () => void; // Optional click handler
 }
 
 export default function TaskCard({
-  title,
-  description,
-  assignee,
-  dueDate,
-  priority,
-  status,
-  comments = 0,
-  tags = [],
+  task,
+  showSubtasks = true,
+  onClick,
 }: TaskCardProps) {
+  const {
+    title,
+    content: description,
+    assigneeName,
+    dueDate,
+    priority = "medium",
+    status = "todo",
+    tags = [],
+  } = task;
+  
+  // Type-safe tag handling
+  const taskTags = Array.isArray(tags) ? tags as string[] : [];
+  
+  // Create assignee object if assigneeName exists
+  const assignee = assigneeName ? {
+    name: assigneeName,
+    avatar: undefined,
+    initials: assigneeName.split(' ').map(n => n[0]).join('').toUpperCase(),
+  } : undefined;
+  
+  const comments = 0; // TODO: Implement comments system
   const priorityColors = {
     low: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
     medium: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
@@ -41,12 +50,16 @@ export default function TaskCard({
   };
 
   return (
-    <Card className="hover-elevate cursor-pointer" data-testid={`task-${title.toLowerCase().replace(/\s+/g, '-')}`}>
+    <Card 
+      className="hover-elevate cursor-pointer" 
+      onClick={onClick}
+      data-testid={`task-${task.id}`}
+    >
       <CardContent className="p-4">
         <div className="space-y-3">
           <div className="flex items-start justify-between">
             <h3 className="font-medium text-sm">{title}</h3>
-            <Badge className={`text-xs ${priorityColors[priority]}`}>
+            <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
               {priority}
             </Badge>
           </div>
@@ -55,9 +68,9 @@ export default function TaskCard({
             <p className="text-xs text-muted-foreground line-clamp-2">{description}</p>
           )}
 
-          {tags.length > 0 && (
+          {taskTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {tags.map((tag, index) => (
+              {taskTags.map((tag: string, index: number) => (
                 <Badge key={index} variant="secondary" className="text-xs">
                   {tag}
                 </Badge>
@@ -77,7 +90,7 @@ export default function TaskCard({
               {dueDate && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Calendar className="h-3 w-3" />
-                  {dueDate}
+                  {new Date(dueDate).toLocaleDateString()}
                 </div>
               )}
             </div>
@@ -90,11 +103,16 @@ export default function TaskCard({
                 </div>
               )}
               
-              <Badge className={`text-xs ${statusColors[status]}`}>
-                {status.replace('-', ' ')}
+              <Badge className={`text-xs ${statusColors[status as keyof typeof statusColors] || statusColors.todo}`}>
+                {(status || 'todo').replace('-', ' ')}
               </Badge>
             </div>
           </div>
+          
+          {/* Subtasks Section */}
+          {showSubtasks && !task.parentTaskId && (
+            <SubtaskList parentTask={task} compact={true} />
+          )}
         </div>
       </CardContent>
     </Card>

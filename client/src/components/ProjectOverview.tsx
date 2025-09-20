@@ -4,38 +4,102 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, DollarSign, Users, Clock } from "lucide-react";
 import KPICard from "./KPICard";
 import TaskCard from "./TaskCard";
+import { Task } from "@shared/schema";
 
 // todo: remove mock functionality
-const mockTasks = [
+const mockTasks: Task[] = [
   {
+    id: "mock-task-1",
     title: "Foundation Inspection",
-    description: "Council inspection scheduled for foundation concrete",
-    assignee: { name: "Mike Johnson", initials: "MJ" },
-    dueDate: "Today",
-    priority: "high" as const,
-    status: "todo" as const,
-    comments: 3,
+    content: "Council inspection scheduled for foundation concrete",
+    assigneeName: "Mike Johnson",
+    dueDate: new Date(),
+    priority: "high",
+    status: "todo",
     tags: ["Inspection", "Critical"],
+    type: "task",
+    projectId: "mock-project-1",
+    category: "General",
+    author: "Mock Author",
+    ownerId: "mock-owner-1",
+    ownerName: "Mock Owner",
+    customFields: {},
+    parentTaskId: null,
+    subtaskOrder: 0,
+    isRecurring: false,
+    recurringType: null,
+    recurringInterval: 1,
+    recurringDays: [],
+    recurringEndDate: null,
+    lastRecurringDate: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    contentHtml: null,
+    contentText: "Council inspection scheduled for foundation concrete",
+    assigneeId: null,
+    completedAt: null,
   },
   {
+    id: "mock-task-2",
     title: "Electrical Rough-in",
-    description: "Complete electrical rough-in for ground floor",
-    assignee: { name: "Sarah Williams", initials: "SW" },
-    dueDate: "Mar 15",
-    priority: "medium" as const,
-    status: "in-progress" as const,
-    comments: 1,
+    content: "Complete electrical rough-in for ground floor",
+    assigneeName: "Sarah Williams",
+    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+    priority: "medium",
+    status: "in-progress",
     tags: ["Electrical"],
+    type: "task",
+    projectId: "mock-project-1",
+    category: "General",
+    author: "Mock Author",
+    ownerId: "mock-owner-1",
+    ownerName: "Mock Owner",
+    customFields: {},
+    parentTaskId: null,
+    subtaskOrder: 0,
+    isRecurring: false,
+    recurringType: null,
+    recurringInterval: 1,
+    recurringDays: [],
+    recurringEndDate: null,
+    lastRecurringDate: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    contentHtml: null,
+    contentText: "Complete electrical rough-in for ground floor",
+    assigneeId: null,
+    completedAt: null,
   },
   {
+    id: "mock-task-3",
     title: "Frame Inspection",
-    description: "Structural frame inspection by building surveyor",
-    assignee: { name: "Tom Brown", initials: "TB" },
-    dueDate: "Mar 20",
-    priority: "medium" as const,
-    status: "todo" as const,
-    comments: 0,
+    content: "Structural frame inspection by building surveyor",
+    assigneeName: "Tom Brown",
+    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+    priority: "medium",
+    status: "todo",
     tags: ["Inspection", "Structural"],
+    type: "task",
+    projectId: "mock-project-1",
+    category: "General",
+    author: "Mock Author",
+    ownerId: "mock-owner-1",
+    ownerName: "Mock Owner",
+    customFields: {},
+    parentTaskId: null,
+    subtaskOrder: 0,
+    isRecurring: false,
+    recurringType: null,
+    recurringInterval: 1,
+    recurringDays: [],
+    recurringEndDate: null,
+    lastRecurringDate: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    contentHtml: null,
+    contentText: "Structural frame inspection by building surveyor",
+    assigneeId: null,
+    completedAt: null,
   },
 ];
 
@@ -111,8 +175,8 @@ export default function ProjectOverview() {
             <Badge variant="outline">{mockTasks.length} active</Badge>
           </CardHeader>
           <CardContent className="space-y-4">
-            {mockTasks.map((task, index) => (
-              <TaskCard key={index} {...task} />
+            {mockTasks.map((task) => (
+              <TaskCard key={task.id} task={task} showSubtasks={false} />
             ))}
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ import {
   MoreHorizontal,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   GripVertical,
   Calendar,
   User,
@@ -49,6 +50,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { format } from "date-fns";
+import SubtaskList from "@/components/SubtaskList";
 
 interface TaskListProps {
   tasks?: Task[];
@@ -126,6 +128,7 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'asc' });
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   // Set up drag sensors
@@ -296,6 +299,16 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
     );
   };
 
+  const toggleTaskExpansion = (taskId: string) => {
+    const newExpanded = new Set(expandedTasks);
+    if (newExpanded.has(taskId)) {
+      newExpanded.delete(taskId);
+    } else {
+      newExpanded.add(taskId);
+    }
+    setExpandedTasks(newExpanded);
+  };
+
   const getPriorityIcon = (priority: string) => {
     switch (priority) {
       case "high":
@@ -455,19 +468,40 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                         </TableRow>
                       ) : (
                         sortedTasks.map((task) => (
-                          <DraggableTableRow key={task.id} task={task} canDrag={sortConfig.key === null}>
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedTasks.includes(task.id)}
-                                onCheckedChange={() => toggleTaskSelection(task.id)}
-                                data-testid={`select-task-${task.id}`}
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium">
-                              <div className="flex items-center gap-2">
-                                <span className="truncate" data-testid={`task-title-${task.id}`}>
-                                  {task.title}
-                                </span>
+                          <React.Fragment key={task.id}>
+                            <DraggableTableRow task={task} canDrag={sortConfig.key === null}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedTasks.includes(task.id)}
+                                  onCheckedChange={() => toggleTaskSelection(task.id)}
+                                  data-testid={`select-task-${task.id}`}
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {/* Expand/Collapse Button for Parent Tasks */}
+                                  {!task.parentTaskId && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 p-0"
+                                      onClick={() => toggleTaskExpansion(task.id)}
+                                      data-testid={`button-toggle-task-${task.id}`}
+                                    >
+                                      {expandedTasks.has(task.id) ? (
+                                        <ChevronDown className="h-3 w-3" />
+                                      ) : (
+                                        <ChevronRight className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                  <span 
+                                    className="truncate cursor-pointer hover:text-primary" 
+                                    onClick={() => !task.parentTaskId && toggleTaskExpansion(task.id)}
+                                    data-testid={`task-title-${task.id}`}
+                                  >
+                                    {task.title}
+                                  </span>
                                 {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
                                   <div className="flex gap-1">
                                     {task.tags.slice(0, 2).map((tag, index) => (
@@ -535,7 +569,19 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
-                          </DraggableTableRow>
+                            </DraggableTableRow>
+                            
+                            {/* Expandable Subtasks Row */}
+                            {!task.parentTaskId && expandedTasks.has(task.id) && (
+                              <TableRow>
+                                <TableCell colSpan={8} className="p-0 border-b-0">
+                                  <div className="px-4 py-2 bg-muted/30">
+                                    <SubtaskList parentTask={task} compact={false} />
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
                         ))
                       )}
                     </SortableContext>

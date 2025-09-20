@@ -88,6 +88,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         type: "task",
         priority: data.priority,
         status: data.status,
+        projectId: "default", // Use default project for now - TODO: Get from project context
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: data.tags,
