@@ -1,6 +1,7 @@
 import { 
   type User, type InsertUser, 
   type Note, type InsertNote,
+  type Task, type InsertTask,
   type CustomFieldDef, type InsertCustomFieldDef,
   type CustomFieldOption, type InsertCustomFieldOption,
   type NoteTemplate, type InsertNoteTemplate
@@ -21,6 +22,14 @@ export interface IStorage {
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined>;
   deleteNote(id: string): Promise<boolean>;
+
+  // Tasks CRUD operations (specific to type="task")
+  getTasks(projectId?: string, status?: string): Promise<Task[]>;
+  getTask(id: string): Promise<Task | undefined>;
+  createTask(task: InsertTask): Promise<Task>;
+  updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined>;
+  deleteTask(id: string): Promise<boolean>;
+  updateTaskStatus(id: string, status: "todo" | "in-progress" | "done"): Promise<Task | undefined>;
 
   // Custom Field Definitions CRUD (max 4 active)
   getCustomFieldDefs(): Promise<CustomFieldDef[]>;
@@ -174,6 +183,14 @@ export class MemStorage implements IStorage {
       category: insertNote.category || "General",
       priority: insertNote.priority || "medium",
       projectId: insertNote.projectId || null,
+      type: insertNote.type || "note",
+      status: insertNote.status || null,
+      assigneeId: insertNote.assigneeId || null,
+      assigneeName: insertNote.assigneeName || null,
+      dueDate: insertNote.dueDate || null,
+      completedAt: insertNote.completedAt || null,
+      tags: insertNote.tags || [],
+      customFields: insertNote.customFields || {},
       createdAt: now, 
       updatedAt: now 
     };
@@ -362,6 +379,82 @@ export class MemStorage implements IStorage {
 
   async deleteNoteTemplate(id: string): Promise<boolean> {
     return this.noteTemplates.delete(id);
+  }
+
+  // Tasks CRUD operations
+  async getTasks(projectId?: string, status?: string): Promise<Task[]> {
+    const allTasks = Array.from(this.notes.values())
+      .filter(note => note.type === "task") as Task[];
+    
+    let filteredTasks = allTasks;
+    
+    if (projectId) {
+      filteredTasks = filteredTasks.filter(task => task.projectId === projectId);
+    }
+    
+    if (status) {
+      filteredTasks = filteredTasks.filter(task => task.status === status);
+    }
+    
+    return filteredTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getTask(id: string): Promise<Task | undefined> {
+    const note = this.notes.get(id);
+    if (note && note.type === "task") {
+      return note as Task;
+    }
+    return undefined;
+  }
+
+  async createTask(insertTask: InsertTask): Promise<Task> {
+    const id = randomUUID();
+    const now = new Date();
+    const task: Task = { 
+      ...insertTask,
+      id,
+      type: "task",
+      category: insertTask.category || "General",
+      priority: insertTask.priority || "medium",
+      status: insertTask.status || "todo",
+      projectId: insertTask.projectId || null,
+      tags: insertTask.tags || [],
+      customFields: insertTask.customFields || {},
+      createdAt: now, 
+      updatedAt: now 
+    };
+    this.notes.set(id, task);
+    return task;
+  }
+
+  async updateTask(id: string, updateData: Partial<InsertTask>): Promise<Task | undefined> {
+    const existingTask = await this.getTask(id);
+    if (!existingTask) return undefined;
+
+    const now = new Date();
+    const updatedTask: Task = {
+      ...existingTask,
+      ...updateData,
+      updatedAt: now,
+      // Handle completion timestamp
+      completedAt: updateData.status === "done" && existingTask.status !== "done" 
+        ? now 
+        : updateData.status !== "done" 
+          ? null 
+          : existingTask.completedAt
+    };
+    this.notes.set(id, updatedTask);
+    return updatedTask;
+  }
+
+  async deleteTask(id: string): Promise<boolean> {
+    const task = await this.getTask(id);
+    if (!task) return false;
+    return this.notes.delete(id);
+  }
+
+  async updateTaskStatus(id: string, status: "todo" | "in-progress" | "done"): Promise<Task | undefined> {
+    return this.updateTask(id, { status });
   }
 }
 

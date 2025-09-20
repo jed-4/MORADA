@@ -30,6 +30,16 @@ export const notes = pgTable("notes", {
   ownerName: text("owner_name"), // Cached for performance
   customFields: json("custom_fields").default({}), // Record<string, any> for custom field values
   projectId: text("project_id"),
+  
+  // Task-specific fields
+  type: text("type").notNull().default("note"), // "note" | "task"
+  status: text("status").default("todo"), // "todo" | "in-progress" | "done" for tasks
+  assigneeId: varchar("assignee_id").references(() => users.id),
+  assigneeName: text("assignee_name"), // Cached for performance
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  tags: json("tags").default([]), // string[] for task tags
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -46,10 +56,27 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   contentHtml: z.string().optional(),
   contentText: z.string().optional(),
   customFields: z.record(z.any()).optional(),
+  // Task-specific fields
+  type: z.enum(["note", "task"]).optional(),
+  status: z.enum(["todo", "in-progress", "done"]).optional(),
+  assigneeId: z.string().optional(),
+  assigneeName: z.string().optional(),
+  dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  tags: z.array(z.string()).optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;
 export type Note = typeof notes.$inferSelect;
+
+// Task-specific types
+export const insertTaskSchema = insertNoteSchema.extend({
+  type: z.literal("task"),
+  status: z.enum(["todo", "in-progress", "done"]).default("todo"),
+});
+
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type Task = Note & { type: "task" };
 
 // Custom Field Definitions (max 4 per system)
 export const customFieldDefs = pgTable("custom_field_defs", {
