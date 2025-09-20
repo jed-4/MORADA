@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Settings, Filter, MoreHorizontal } from "lucide-react";
+import { Plus, Settings, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,15 +12,22 @@ import {
 } from "@/components/ui/dropdown-menu";
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
-import { type TaskView } from "@shared/schema";
+import FilterPanel, { type FilterState } from "@/components/FilterPanel";
+import { type TaskView, type Task } from "@shared/schema";
+import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 
 export default function Tasks() {
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({});
 
-  // Fetch saved task views
+  // Fetch saved task views and tasks
   const { data: taskViews = [] } = useQuery<TaskView[]>({
     queryKey: ["/api/task-views"],
+  });
+
+  const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
+    queryKey: ["/api/tasks"],
   });
 
   // Default views
@@ -30,6 +37,29 @@ export default function Tasks() {
   ];
 
   const allViews = [...defaultViews, ...taskViews];
+
+  // Extract filter options from all tasks
+  const filterOptions = extractFilterOptions(allTasks);
+
+  // Apply filters to tasks
+  const filteredTasks = applyTaskFilters(allTasks, filters);
+
+  // Get current view filters for custom views
+  const getCurrentViewFilters = () => {
+    const currentView = taskViews.find(view => view.id === activeTab);
+    if (currentView && currentView.filters) {
+      return deserializeFilters(currentView.filters as Record<string, any>);
+    }
+    return {};
+  };
+
+  // Merge view filters with user filters
+  const effectiveFilters = {
+    ...getCurrentViewFilters(),
+    ...filters,
+  };
+
+  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
 
   return (
     <div className="flex h-full flex-col">
@@ -54,19 +84,22 @@ export default function Tasks() {
               <Settings className="h-4 w-4 mr-2" />
               View Settings
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              data-testid="button-filter"
-            >
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
             <Button size="sm" data-testid="button-add-task">
               <Plus className="h-4 w-4 mr-2" />
               Add Task
             </Button>
           </div>
+        </div>
+        
+        {/* Filter Panel */}
+        <div className="mt-4">
+          <FilterPanel
+            filters={filters}
+            onFiltersChange={setFilters}
+            availableAssignees={filterOptions.availableAssignees}
+            availableProjects={filterOptions.availableProjects}
+            availableTags={filterOptions.availableTags}
+          />
         </div>
       </div>
 
@@ -116,23 +149,30 @@ export default function Tasks() {
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden">
           <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
-            <TaskBoard />
+            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} />
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <TaskList />
+            <TaskList tasks={effectivelyFilteredTasks} isLoading={tasksLoading} />
           </TabsContent>
           
           {/* Custom Views */}
-          {taskViews.map((view) => (
-            <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
-              {view.viewType === "kanban" ? (
-                <TaskBoard filters={view.filters as Record<string, any>} />
-              ) : (
-                <TaskList filters={view.filters as Record<string, any>} columnConfig={view.columnConfig as Record<string, any>} />
-              )}
-            </TabsContent>
-          ))}
+          {taskViews.map((view) => {
+            // For custom views, merge view filters with user filters and apply to tasks
+            const viewFilters = deserializeFilters(view.filters as Record<string, any> || {});
+            const combinedFilters = { ...viewFilters, ...filters };
+            const viewFilteredTasks = applyTaskFilters(allTasks, combinedFilters);
+            
+            return (
+              <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
+                {view.viewType === "kanban" ? (
+                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} />
+                ) : (
+                  <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} />
+                )}
+              </TabsContent>
+            );
+          })}
         </div>
       </Tabs>
     </div>

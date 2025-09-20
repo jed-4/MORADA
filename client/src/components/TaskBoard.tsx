@@ -37,6 +37,12 @@ const columns = [
   { id: "done", title: "Done", status: "done" as const },
 ];
 
+interface TaskBoardProps {
+  tasks?: Task[];
+  isLoading?: boolean;
+  filters?: Record<string, any>;
+}
+
 // Draggable Task Card wrapper
 function DraggableTaskCard({ task }: { task: Task }) {
   const {
@@ -171,7 +177,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard() {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<"todo" | "in-progress" | "done">("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -186,10 +192,14 @@ export default function TaskBoard() {
     })
   );
 
-  // Fetch all tasks
-  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+  // Use props tasks if provided, otherwise fetch all tasks
+  const { data: fetchedTasks = [], isLoading: fetchIsLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
+    enabled: !propTasks, // Only fetch if no tasks provided as props
   });
+  
+  const tasks = propTasks || fetchedTasks;
+  const isLoading = propIsLoading !== undefined ? propIsLoading : fetchIsLoading;
 
   // Move task to different column
   const moveTaskMutation = useMutation({

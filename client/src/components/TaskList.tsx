@@ -51,6 +51,8 @@ import {
 import { format } from "date-fns";
 
 interface TaskListProps {
+  tasks?: Task[];
+  isLoading?: boolean;
   filters?: Record<string, any>;
   columnConfig?: Record<string, any>;
 }
@@ -119,7 +121,7 @@ function DraggableTableRow({
   );
 }
 
-export default function TaskList({ filters, columnConfig }: TaskListProps) {
+export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, filters, columnConfig }: TaskListProps) {
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'asc' });
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -135,10 +137,14 @@ export default function TaskList({ filters, columnConfig }: TaskListProps) {
     })
   );
 
-  // Fetch all tasks
-  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+  // Use props tasks if provided, otherwise fetch all tasks
+  const { data: fetchedTasks = [], isLoading: fetchIsLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
+    enabled: !propTasks, // Only fetch if no tasks provided as props
   });
+  
+  const tasks = propTasks || fetchedTasks;
+  const isLoading = propIsLoading !== undefined ? propIsLoading : fetchIsLoading;
 
   // Update task status mutation
   const updateTaskMutation = useMutation({
@@ -159,18 +165,18 @@ export default function TaskList({ filters, columnConfig }: TaskListProps) {
     },
   });
 
-  // Apply filters
-  const filteredTasks = tasks.filter(task => {
-    if (!filters) return true;
-    
-    // Apply any filters passed from parent
-    for (const [key, value] of Object.entries(filters)) {
-      if (value && task[key as keyof Task] !== value) {
-        return false;
-      }
-    }
-    return true;
-  });
+  // Tasks are already filtered when passed as props, but apply additional filters if any
+  const filteredTasks = filters && Object.keys(filters).length > 0 
+    ? tasks.filter(task => {
+        // Apply any additional filters passed from parent
+        for (const [key, value] of Object.entries(filters)) {
+          if (value && task[key as keyof Task] !== value) {
+            return false;
+          }
+        }
+        return true;
+      })
+    : tasks;
 
   // Update ordered IDs when tasks change - reconcile with existing order
   useEffect(() => {
