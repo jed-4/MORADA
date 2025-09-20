@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
@@ -10,7 +9,15 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { insertNoteSchema, type Note, type InsertNote } from "@shared/schema";
+import { 
+  insertNoteSchema, 
+  type Note, 
+  type InsertNote,
+  type CustomFieldDef,
+  type CustomFieldOption,
+  type NoteTemplate
+} from "@shared/schema";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
   DialogContent,
@@ -44,35 +51,86 @@ import {
   List,
   Calendar,
   User,
+  FileTemplate,
+  Settings,
 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
 
-const noteFormSchema = insertNoteSchema.extend({
-  priority: z.enum(["low", "medium", "high"]),
-});
+// Create dynamic form schema based on custom fields
+const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
+  const customFieldsSchema: Record<string, any> = {};
+  
+  customFields.forEach(field => {
+    if (field.type === "select") {
+      customFieldsSchema[field.key] = field.required ? z.string().min(1, "This field is required") : z.string().optional();
+    } else {
+      customFieldsSchema[field.key] = field.required ? z.string().min(1, "This field is required") : z.string().optional();
+    }
+  });
 
-type NoteFormData = z.infer<typeof noteFormSchema>;
-
-const categories = ["All", "Client Communication", "Site Updates", "Inspections", "Logistics", "Safety", "General"];
+  return insertNoteSchema.extend({
+    customFields: z.object(customFieldsSchema).optional(),
+    templateId: z.string().optional(),
+  });
+};
 
 export default function Notes() {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedField, setSelectedField] = useState("All");
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const { toast } = useToast();
 
-  // Form handling - declare form first so it can be used in mutations
+  // Fetch custom field definitions and templates
+  const { data: customFieldDefs = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
+    queryKey: ["/api/custom-field-defs"],
+  });
+
+  const { data: noteTemplates = [], isLoading: isLoadingTemplates } = useQuery<NoteTemplate[]>({
+    queryKey: ["/api/note-templates"],
+  });
+
+  // Fetch custom field options for select fields
+  const { data: customFieldOptions = [] } = useQuery<CustomFieldOption[][]>({
+    queryKey: ["/api/custom-field-options", customFieldDefs.map(f => f.id)],
+    queryFn: async () => {
+      const selectFields = customFieldDefs.filter(field => field.type === "select");
+      if (selectFields.length === 0) return [];
+      
+      const optionsPromises = selectFields.map(async (field) => {
+        const response = await fetch(`/api/custom-field-defs/${field.id}/options`);
+        return response.json();
+      });
+      
+      return Promise.all(optionsPromises);
+    },
+    enabled: customFieldDefs.length > 0,
+  });
+
+  // Create dynamic form schema based on custom fields
+  const noteFormSchema = createNoteFormSchema(customFieldDefs);
+  
+  // Use proper z.infer type
+  type NoteFormData = z.infer<typeof noteFormSchema>;
+
+  // Form handling - declare form after schema is available
   const form = useForm<NoteFormData>({
     resolver: zodResolver(noteFormSchema),
     defaultValues: {
       title: "",
       content: "",
-      category: "General",
-      priority: "medium",
+      contentHtml: "",
+      contentText: "",
       author: "Current User", // todo: get from auth context
+      ownerId: null,
+      ownerName: "Current User",
+      customFields: customFieldDefs.reduce((acc, field) => {
+        acc[field.key] = "";
+        return acc;
+      }, {} as Record<string, any>),
     },
   });
 
@@ -145,18 +203,50 @@ export default function Notes() {
 
 
   const filteredNotes = notes.filter(note => {
-    const matchesSearch = note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         note.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         note.author.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === "All" || note.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const searchableContent = [
+      note.title,
+      note.content,
+      note.contentText || "",
+      note.author,
+      note.ownerName || "",
+      ...Object.values(note.customFields || {}),
+    ].join(" ").toLowerCase();
+    
+    const matchesSearch = searchableContent.includes(searchTerm.toLowerCase());
+    
+    // Filter by custom fields if a specific field value is selected
+    const matchesField = selectedField === "All" || 
+      Object.values(note.customFields || {}).some(value => 
+        String(value).toLowerCase().includes(selectedField.toLowerCase())
+      ) ||
+      // Legacy support for category field
+      note.category === selectedField ||
+      note.priority === selectedField;
+      
+    return matchesSearch && matchesField;
   });
 
   const onSubmit = (data: NoteFormData) => {
+    // Transform form data to include rich text fields and custom fields
+    const noteData: InsertNote = {
+      title: data.title,
+      content: data.contentText || data.content, // Fallback to plain content
+      contentHtml: data.contentHtml,
+      contentText: data.contentText,
+      author: data.author,
+      ownerId: data.ownerId,
+      ownerName: data.ownerName,
+      projectId: data.projectId,
+      customFields: data.customFields || {},
+      // Legacy fields for backward compatibility
+      category: data.customFields?.category || "General",
+      priority: data.customFields?.priority || "medium",
+    };
+    
     if (editingNote) {
-      updateNoteMutation.mutate({ id: editingNote.id, data });
+      updateNoteMutation.mutate({ id: editingNote.id, data: noteData });
     } else {
-      createNoteMutation.mutate(data);
+      createNoteMutation.mutate(noteData);
     }
   };
 
@@ -165,11 +255,31 @@ export default function Notes() {
     form.reset({
       title: note.title,
       content: note.content,
-      category: note.category,
-      priority: note.priority as "low" | "medium" | "high",
+      contentHtml: note.contentHtml || "",
+      contentText: note.contentText || "",
       author: note.author,
+      ownerId: note.ownerId,
+      ownerName: note.ownerName,
       projectId: note.projectId || undefined,
+      customFields: note.customFields || {},
     });
+  };
+
+  // Helper function to apply template data to form
+  const applyTemplate = (template: NoteTemplate) => {
+    const currentFormData = form.getValues();
+    form.reset({
+      ...currentFormData,
+      title: template.defaultTitle || currentFormData.title,
+      content: template.contentText || "",
+      contentHtml: template.contentHtml || "",
+      contentText: template.contentText || "",
+      customFields: {
+        ...currentFormData.customFields,
+        ...template.defaultCustomFields,
+      },
+    });
+    setSelectedTemplate(template.id);
   };
 
 
@@ -230,68 +340,103 @@ export default function Notes() {
               )}
             />
             
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category</FormLabel>
-                    <FormControl>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger data-testid="note-category-select">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.slice(1).map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <FormControl>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger data-testid="note-priority-select">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            {/* Template Selector */}
+            {!isEditing && noteTemplates.length > 0 && (
+              <div>
+                <label className="text-sm font-medium">Apply Template</label>
+                <Select 
+                  value={selectedTemplate || ""} 
+                  onValueChange={(value) => {
+                    if (value) {
+                      const template = noteTemplates.find(t => t.id === value);
+                      if (template) applyTemplate(template);
+                    } else {
+                      setSelectedTemplate(null);
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="note-template-select">
+                    <FileTemplate className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Choose a template..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No template</SelectItem>
+                    {noteTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Dynamic Custom Fields */}
+            {customFieldDefs.length > 0 && (
+              <div className="grid grid-cols-2 gap-4">
+                {customFieldDefs.map((fieldDef, index) => {
+                  const fieldOptions = customFieldOptions.find((_, idx) => 
+                    customFieldDefs[idx]?.id === fieldDef.id
+                  ) || [];
+                  
+                  return (
+                    <FormField
+                      key={fieldDef.id}
+                      control={form.control}
+                      name={`customFields.${fieldDef.key}` as any}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {fieldDef.label}
+                            {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
+                          </FormLabel>
+                          <FormControl>
+                            {fieldDef.type === "select" ? (
+                              <Select value={field.value || ""} onValueChange={field.onChange}>
+                                <SelectTrigger data-testid={`note-${fieldDef.key}-select`}>
+                                  <SelectValue placeholder={`Select ${fieldDef.label.toLowerCase()}...`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {fieldOptions.map((option: CustomFieldOption) => (
+                                    <SelectItem key={option.id} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                placeholder={`Enter ${fieldDef.label.toLowerCase()}...`}
+                                {...field}
+                                data-testid={`note-${fieldDef.key}-input`}
+                              />
+                            )}
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  );
+                })}
+              </div>
+            )}
             
             <FormField
               control={form.control}
-              name="content"
+              name="contentHtml"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Content</FormLabel>
                   <FormControl>
-                    <Textarea
+                    <RichTextEditor
+                      content={field.value || ""}
+                      onChange={(html, text) => {
+                        field.onChange(html);
+                        form.setValue("contentText", text);
+                        form.setValue("content", text); // For backward compatibility
+                      }}
                       placeholder="Enter note content..."
-                      rows={6}
-                      {...field}
-                      data-testid="note-content-input"
+                      data-testid="note-content-editor"
                     />
                   </FormControl>
                   <FormMessage />
