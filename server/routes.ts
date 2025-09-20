@@ -6,7 +6,9 @@ import {
   insertTaskSchema,
   insertCustomFieldDefSchema,
   insertCustomFieldOptionSchema,
-  insertNoteTemplateSchema
+  insertNoteTemplateSchema,
+  insertProjectSchema,
+  insertTaskViewSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -401,6 +403,179 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete note template" });
+    }
+  });
+
+  // Projects API Routes
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const { ownerId } = req.query;
+      const projects = await storage.getProjects(ownerId as string | undefined);
+      res.json(projects);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch projects" });
+    }
+  });
+
+  app.get("/api/projects/:id", async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project" });
+    }
+  });
+
+  app.post("/api/projects", async (req, res) => {
+    try {
+      const validationResult = insertProjectSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const project = await storage.createProject(validationResult.data);
+      res.status(201).json(project);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create project" });
+    }
+  });
+
+  app.patch("/api/projects/:id", async (req, res) => {
+    try {
+      const updateSchema = insertProjectSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const project = await storage.updateProject(req.params.id, validationResult.data);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update project" });
+    }
+  });
+
+  app.delete("/api/projects/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteProject(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete project" });
+    }
+  });
+
+  // Task Views API Routes
+  app.get("/api/task-views", async (req, res) => {
+    try {
+      const { ownerId } = req.query;
+      const taskViews = await storage.getTaskViews(ownerId as string | undefined);
+      res.json(taskViews);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch task views" });
+    }
+  });
+
+  app.get("/api/task-views/:id", async (req, res) => {
+    try {
+      const taskView = await storage.getTaskView(req.params.id);
+      if (!taskView) {
+        return res.status(404).json({ error: "Task view not found" });
+      }
+      res.json(taskView);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch task view" });
+    }
+  });
+
+  app.post("/api/task-views", async (req, res) => {
+    try {
+      const validationResult = insertTaskViewSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const taskView = await storage.createTaskView(validationResult.data);
+      res.status(201).json(taskView);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create task view" });
+    }
+  });
+
+  app.patch("/api/task-views/:id", async (req, res) => {
+    try {
+      const updateSchema = insertTaskViewSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const taskView = await storage.updateTaskView(req.params.id, validationResult.data);
+      if (!taskView) {
+        return res.status(404).json({ error: "Task view not found" });
+      }
+      res.json(taskView);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update task view" });
+    }
+  });
+
+  app.delete("/api/task-views/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteTaskView(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Task view not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete task view" });
+    }
+  });
+
+  // Subtasks API Routes
+  app.get("/api/tasks/:id/subtasks", async (req, res) => {
+    try {
+      const subtasks = await storage.getSubtasks(req.params.id);
+      res.json(subtasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch subtasks" });
+    }
+  });
+
+  app.post("/api/tasks/:id/subtasks", async (req, res) => {
+    try {
+      const validationResult = insertTaskSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const subtask = await storage.createSubtask(req.params.id, validationResult.data);
+      res.status(201).json(subtask);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create subtask" });
     }
   });
 
