@@ -1,5 +1,5 @@
-import ProjectOverview from "@/components/ProjectOverview";
+import CustomizableProjectOverview from "@/components/CustomizableProjectOverview";
 
 export default function Dashboard() {
-  return <ProjectOverview />;
+  return <CustomizableProjectOverview />;
 }
