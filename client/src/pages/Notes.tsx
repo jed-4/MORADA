@@ -47,8 +47,6 @@ import {
   Edit3,
   Trash2,
   Filter,
-  Grid3x3,
-  List,
   Calendar,
   User,
   FileText as FileTemplate,
@@ -59,7 +57,7 @@ import { z } from "zod";
 
 // Create dynamic form schema based on custom fields
 const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
-  const customFieldsSchema: Record<string, any> = {};
+  const customFieldsSchema: Record<string, z.ZodTypeAny> = {};
   
   customFields.forEach(field => {
     if (field.type === "select") {
@@ -69,7 +67,15 @@ const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
     }
   });
 
-  return insertNoteSchema.extend({
+  return z.object({
+    title: z.string().min(1, "Title is required"),
+    content: z.string(),
+    contentHtml: z.string().optional(),
+    contentText: z.string().optional(),
+    author: z.string(),
+    ownerId: z.string().optional(),
+    ownerName: z.string().optional(),
+    projectId: z.string().optional(),
     customFields: z.object(customFieldsSchema).optional(),
     templateId: z.string().optional(),
   });
@@ -82,7 +88,6 @@ export default function Notes() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const { toast } = useToast();
 
   // Fetch custom field definitions and templates
@@ -134,7 +139,7 @@ export default function Notes() {
       customFields: customFieldDefs.reduce((acc, field) => {
         acc[field.key] = "";
         return acc;
-      }, {} as Record<string, any>),
+      }, {} as Record<string, string>),
     },
   });
 
@@ -235,20 +240,20 @@ export default function Notes() {
 
   const onSubmit = (data: NoteFormData) => {
     // Transform form data to include rich text fields and custom fields
-    const noteData: InsertNote = {
-      title: data.title,
-      content: data.contentText || data.content, // Fallback to plain content
-      contentHtml: data.contentHtml,
-      contentText: data.contentText,
-      author: data.author,
-      ownerId: data.ownerId,
-      ownerName: data.ownerName,
-      projectId: data.projectId,
+    const noteData = {
+      title: data.title || "",
+      content: data.contentText || data.content || "",
+      contentHtml: data.contentHtml || undefined,
+      contentText: data.contentText || undefined,
+      author: data.author || "Current User",
+      ownerId: data.ownerId || undefined,
+      ownerName: data.ownerName || undefined,
+      projectId: data.projectId || undefined,
       customFields: data.customFields || {},
       // Legacy fields for backward compatibility
-      category: data.customFields?.category || "General",
-      priority: data.customFields?.priority || "medium",
-    };
+      category: (data.customFields as Record<string, string>)?.category || "General",
+      priority: (data.customFields as Record<string, string>)?.priority || "medium",
+    } as InsertNote;
     
     if (editingNote) {
       updateNoteMutation.mutate({ id: editingNote.id, data: noteData });
@@ -265,10 +270,10 @@ export default function Notes() {
       contentHtml: note.contentHtml || "",
       contentText: note.contentText || "",
       author: note.author,
-      ownerId: note.ownerId,
-      ownerName: note.ownerName,
+      ownerId: note.ownerId || undefined,
+      ownerName: note.ownerName || undefined,
       projectId: note.projectId || undefined,
-      customFields: note.customFields || {},
+      customFields: note.customFields as Record<string, string> || {},
     });
   };
 
@@ -282,8 +287,8 @@ export default function Notes() {
       contentHtml: template.contentHtml || "",
       contentText: template.contentText || "",
       customFields: {
-        ...currentFormData.customFields,
-        ...template.defaultCustomFields,
+        ...(currentFormData.customFields as Record<string, string>),
+        ...(template.defaultCustomFields as Record<string, string>),
       },
     });
     setSelectedTemplate(template.id);
@@ -519,78 +524,9 @@ export default function Notes() {
             </SelectContent>
           </Select>
           
-          <div className="flex items-center gap-1">
-            <Button
-              variant={viewMode === "grid" ? "default" : "outline"}
-              size="icon"
-              onClick={() => setViewMode("grid")}
-              data-testid="notes-grid-view"
-            >
-              <Grid3x3 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="icon"
-              onClick={() => setViewMode("list")}
-              data-testid="notes-list-view"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Notes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filteredNotes.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {notes.length !== filteredNotes.length && `of ${notes.length} total`}
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">High Priority</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {filteredNotes.filter(note => note.priority === "high").length}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Categories</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {new Set(filteredNotes.map(note => note.category)).size}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">This Week</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {filteredNotes.filter(note => {
-                const weekAgo = new Date();
-                weekAgo.setDate(weekAgo.getDate() - 7);
-                return note.createdAt >= weekAgo;
-              }).length}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Notes Display */}
       {isLoading ? (
@@ -617,11 +553,7 @@ export default function Notes() {
           )}
         </Card>
       ) : (
-        <div className={
-          viewMode === "grid" 
-            ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-            : "space-y-3"
-        }>
+        <div className="space-y-4 max-w-2xl mx-auto">
           {filteredNotes.map((note) => (
             <Card 
               key={note.id} 
