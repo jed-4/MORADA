@@ -16,6 +16,7 @@ import Settings from "@/pages/Settings";
 import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
+import EstimateDetail from "@/pages/EstimateDetail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
       <Route path="/estimates" component={Estimates} />
+      <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/rfi" component={() => <ComingSoonPage section="rfi" />} />
       <Route path="/proposal" component={() => <ComingSoonPage section="proposal" />} />

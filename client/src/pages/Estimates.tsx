@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ import { type Estimate, type EstimateSummary, type Project } from "@shared/schem
 
 export default function Estimates() {
   const [activeTab, setActiveTab] = useState("list");
+  const [, setLocation] = useLocation();
 
   const handleNewEstimate = () => {
     alert('Estimate creation feature will be implemented in the next phase. For now, you can see the comprehensive estimates system with the test data!');
@@ -71,7 +73,13 @@ export default function Estimates() {
       <Card key={estimate.id} className="hover-elevate">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="flex-1">
-            <CardTitle className="text-lg">{estimate.name}</CardTitle>
+            <CardTitle 
+              className="text-lg cursor-pointer hover:text-blue-600 transition-colors" 
+              onClick={() => setLocation(`/estimates/${estimate.id}`)}
+              data-testid={`link-estimate-title-${estimate.id}`}
+            >
+              {estimate.name}
+            </CardTitle>
             <p className="text-sm text-muted-foreground">Project: {project?.name || 'Loading...'}</p>
           </div>
           <div className="flex items-center space-x-2">
@@ -83,11 +91,17 @@ export default function Estimates() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem data-testid={`button-edit-estimate-${estimate.id}`}>
+                <DropdownMenuItem 
+                  data-testid={`button-edit-estimate-${estimate.id}`}
+                  onClick={() => setLocation(`/estimates/${estimate.id}`)}
+                >
                   <FileText className="w-4 h-4 mr-2" />
                   Edit Items
                 </DropdownMenuItem>
-                <DropdownMenuItem data-testid={`button-view-summary-${estimate.id}`}>
+                <DropdownMenuItem 
+                  data-testid={`button-view-summary-${estimate.id}`}
+                  onClick={() => setLocation(`/estimates/${estimate.id}`)}
+                >
                   <Calculator className="w-4 h-4 mr-2" />
                   View Summary
                 </DropdownMenuItem>
