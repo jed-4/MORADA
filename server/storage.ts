@@ -8,7 +8,8 @@ import {
   type Project, type InsertProject,
   type TaskView, type InsertTaskView,
   type Estimate, type InsertEstimate,
-  type EstimateItem, type InsertEstimateItem
+  type EstimateItem, type InsertEstimateItem,
+  type EstimateGroup, type InsertEstimateGroup
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -87,6 +88,27 @@ export interface IStorage {
   createEstimateItem(item: InsertEstimateItem): Promise<EstimateItem>;
   updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined>;
   deleteEstimateItem(id: string): Promise<boolean>;
+
+  // Estimate Groups CRUD
+  getEstimateGroups(estimateId: string): Promise<EstimateGroup[]>;
+  getEstimateGroup(id: string): Promise<EstimateGroup | undefined>;
+  createEstimateGroup(group: InsertEstimateGroup): Promise<EstimateGroup>;
+  updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined>;
+  deleteEstimateGroup(id: string): Promise<boolean>;
+
+  // Versioning and Locking
+  createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate>;
+  lockEstimate(estimateId: string): Promise<Estimate | undefined>;
+  unlockEstimate(estimateId: string): Promise<Estimate | undefined>;
+  
+  // Summary calculations
+  getEstimateSummary(estimateId: string): Promise<{
+    subtotal: number;
+    markup: number;
+    tax: number;
+    total: number;
+    itemCount: number;
+  }>;
 }
 
 export class MemStorage implements IStorage {
@@ -99,6 +121,7 @@ export class MemStorage implements IStorage {
   private taskViews: Map<string, TaskView>;
   private estimates: Map<string, Estimate>;
   private estimateItems: Map<string, EstimateItem>;
+  private estimateGroups: Map<string, EstimateGroup>;
 
   constructor() {
     this.users = new Map();
@@ -110,6 +133,7 @@ export class MemStorage implements IStorage {
     this.taskViews = new Map();
     this.estimates = new Map();
     this.estimateItems = new Map();
+    this.estimateGroups = new Map();
     this.initializeDefaultCustomFields();
     this.initializeDefaultProjects();
   }
@@ -717,9 +741,19 @@ export class MemStorage implements IStorage {
       return undefined;
     }
     
+    // Enforce locking - prevent updates to locked estimates
+    if (estimate.isLocked) {
+      throw new Error("Cannot update locked estimate. Unlock the estimate first.");
+    }
+    
+    // Prevent direct changes to version or isLocked through generic update
+    const sanitizedUpdate = { ...updateEstimate };
+    delete sanitizedUpdate.version;
+    delete sanitizedUpdate.isLocked;
+    
     const updatedEstimate: Estimate = {
       ...estimate,
-      ...updateEstimate,
+      ...sanitizedUpdate,
       updatedAt: new Date(),
     };
     this.estimates.set(id, updatedEstimate);
@@ -727,10 +761,28 @@ export class MemStorage implements IStorage {
   }
 
   async deleteEstimate(id: string): Promise<boolean> {
-    // Delete all associated estimate items first
+    const estimate = await this.getEstimate(id);
+    if (!estimate) {
+      return false;
+    }
+
+    // Check if estimate is locked
+    if (estimate.isLocked) {
+      throw new Error("Cannot delete locked estimate. Unlock the estimate first.");
+    }
+
+    // Delete all associated estimate groups and items first
+    const groups = await this.getEstimateGroups(id);
     const items = await this.getEstimateItems(id);
+    
+    // Delete items first (without lock checks since we're deleting the parent)
     for (const item of items) {
-      await this.deleteEstimateItem(item.id);
+      this.estimateItems.delete(item.id);
+    }
+    
+    // Delete groups
+    for (const group of groups) {
+      this.estimateGroups.delete(group.id);
     }
     
     return this.estimates.delete(id);
@@ -751,9 +803,14 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const now = new Date();
     
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(insertItem.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
+    }
+    
     // Calculate tax amount and price inc tax if not provided
     const priceExTax = insertItem.priceExTax || 0;
-    const estimate = await this.getEstimate(insertItem.estimateId);
     const taxRate = estimate?.taxRate || 10; // Default 10% GST
     const taxAmount = Math.round(priceExTax * taxRate / 100);
     const priceIncTax = priceExTax + taxAmount;
@@ -776,6 +833,12 @@ export class MemStorage implements IStorage {
       return undefined;
     }
     
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(item.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot update item in locked estimate. Unlock the estimate first.");
+    }
+    
     const updatedItem: EstimateItem = {
       ...item,
       ...updateItem,
@@ -784,7 +847,6 @@ export class MemStorage implements IStorage {
     
     // Recalculate tax if price changed
     if (updateItem.priceExTax !== undefined) {
-      const estimate = await this.getEstimate(item.estimateId);
       const taxRate = estimate?.taxRate || 10;
       updatedItem.taxAmount = Math.round(updatedItem.priceExTax * taxRate / 100);
       updatedItem.priceIncTax = updatedItem.priceExTax + updatedItem.taxAmount;
@@ -795,7 +857,219 @@ export class MemStorage implements IStorage {
   }
 
   async deleteEstimateItem(id: string): Promise<boolean> {
+    const item = this.estimateItems.get(id);
+    if (!item) {
+      return false;
+    }
+
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(item.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot delete item in locked estimate. Unlock the estimate first.");
+    }
+
     return this.estimateItems.delete(id);
+  }
+
+  // Estimate Groups CRUD operations
+  async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {
+    const groups = Array.from(this.estimateGroups.values())
+      .filter(group => group.estimateId === estimateId);
+    return groups.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+
+  async getEstimateGroup(id: string): Promise<EstimateGroup | undefined> {
+    return this.estimateGroups.get(id);
+  }
+
+  async createEstimateGroup(insertGroup: InsertEstimateGroup): Promise<EstimateGroup> {
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(insertGroup.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot create group in locked estimate. Unlock the estimate first.");
+    }
+
+    const id = randomUUID();
+    const now = new Date();
+    const group: EstimateGroup = {
+      ...insertGroup,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.estimateGroups.set(id, group);
+    return group;
+  }
+
+  async updateEstimateGroup(id: string, updateGroup: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined> {
+    const group = this.estimateGroups.get(id);
+    if (!group) {
+      return undefined;
+    }
+
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(group.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot update group in locked estimate. Unlock the estimate first.");
+    }
+
+    const updatedGroup: EstimateGroup = {
+      ...group,
+      ...updateGroup,
+      updatedAt: new Date(),
+    };
+    this.estimateGroups.set(id, updatedGroup);
+    return updatedGroup;
+  }
+
+  async deleteEstimateGroup(id: string): Promise<boolean> {
+    const group = this.estimateGroups.get(id);
+    if (!group) {
+      return false;
+    }
+
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(group.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot delete group in locked estimate. Unlock the estimate first.");
+    }
+
+    // Remove group reference from all items in this group
+    const items = Array.from(this.estimateItems.values())
+      .filter(item => item.groupId === id);
+    for (const item of items) {
+      const updatedItem = { ...item, groupId: null, updatedAt: new Date() };
+      this.estimateItems.set(item.id, updatedItem);
+    }
+
+    return this.estimateGroups.delete(id);
+  }
+
+  // Versioning and Locking
+  async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> {
+    const currentEstimate = this.estimates.get(estimateId);
+    if (!currentEstimate) {
+      throw new Error("Estimate not found");
+    }
+
+    // Lock the current version
+    const lockedCurrent = {
+      ...currentEstimate,
+      isLocked: true,
+      status: "locked" as const,
+      updatedAt: new Date(),
+    };
+    this.estimates.set(estimateId, lockedCurrent);
+
+    // Create new version
+    const newId = randomUUID();
+    const now = new Date();
+    const newVersion: Estimate = {
+      ...currentEstimate,
+      ...newVersionData,
+      id: newId,
+      version: currentEstimate.version + 1,
+      isLocked: false,
+      status: "working",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Clone all items and groups for the new version
+    const currentItems = await this.getEstimateItems(estimateId);
+    const currentGroups = await this.getEstimateGroups(estimateId);
+
+    // Create group mapping for new version
+    const groupMapping: Map<string, string> = new Map();
+    for (const group of currentGroups) {
+      const newGroupId = randomUUID();
+      groupMapping.set(group.id, newGroupId);
+      const newGroup: EstimateGroup = {
+        ...group,
+        id: newGroupId,
+        estimateId: newId,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.estimateGroups.set(newGroupId, newGroup);
+    }
+
+    // Clone items with updated group references
+    for (const item of currentItems) {
+      const newItemId = randomUUID();
+      const newItem: EstimateItem = {
+        ...item,
+        id: newItemId,
+        estimateId: newId,
+        groupId: item.groupId ? groupMapping.get(item.groupId) || null : null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.estimateItems.set(newItemId, newItem);
+    }
+
+    this.estimates.set(newId, newVersion);
+    return newVersion;
+  }
+
+  async lockEstimate(estimateId: string): Promise<Estimate | undefined> {
+    const estimate = this.estimates.get(estimateId);
+    if (!estimate) {
+      return undefined;
+    }
+
+    const lockedEstimate: Estimate = {
+      ...estimate,
+      isLocked: true,
+      status: "locked",
+      updatedAt: new Date(),
+    };
+    this.estimates.set(estimateId, lockedEstimate);
+    return lockedEstimate;
+  }
+
+  async unlockEstimate(estimateId: string): Promise<Estimate | undefined> {
+    const estimate = this.estimates.get(estimateId);
+    if (!estimate) {
+      return undefined;
+    }
+
+    const unlockedEstimate: Estimate = {
+      ...estimate,
+      isLocked: false,
+      status: "working",
+      updatedAt: new Date(),
+    };
+    this.estimates.set(estimateId, unlockedEstimate);
+    return unlockedEstimate;
+  }
+
+  // Summary calculations
+  async getEstimateSummary(estimateId: string): Promise<{
+    subtotal: number;
+    markup: number;
+    tax: number;
+    total: number;
+    itemCount: number;
+  }> {
+    const estimate = await this.getEstimate(estimateId);
+    const items = await this.getEstimateItems(estimateId);
+
+    const subtotal = items.reduce((sum, item) => sum + (item.priceExTax * item.quantity), 0);
+    const markupPercent = estimate?.projectMarkupPercent || 0;
+    const markup = Math.round(subtotal * markupPercent / 100);
+    const subtotalWithMarkup = subtotal + markup;
+    const taxRate = estimate?.taxRate || 10;
+    const tax = Math.round(subtotalWithMarkup * taxRate / 100);
+    const total = subtotalWithMarkup + tax;
+
+    return {
+      subtotal,
+      markup,
+      tax,
+      total,
+      itemCount: items.length,
+    };
   }
 }
 

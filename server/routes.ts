@@ -10,7 +10,8 @@ import {
   insertProjectSchema,
   insertTaskViewSchema,
   insertEstimateSchema,
-  insertEstimateItemSchema
+  insertEstimateItemSchema,
+  insertEstimateGroupSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -637,7 +638,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate not found" });
       }
       res.json(estimate);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to update estimate" });
     }
   });
@@ -649,7 +653,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate not found" });
       }
       res.status(204).send();
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to delete estimate" });
     }
   });
@@ -691,7 +698,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const item = await storage.createEstimateItem(validationResult.data);
       res.status(201).json(item);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to create estimate item" });
     }
   });
@@ -712,7 +722,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate item not found" });
       }
       res.json(item);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to update estimate item" });
     }
   });
@@ -724,8 +737,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate item not found" });
       }
       res.status(204).send();
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to delete estimate item" });
+    }
+  });
+
+  // Estimate Groups API Routes
+  app.get("/api/estimates/:id/groups", async (req, res) => {
+    try {
+      const groups = await storage.getEstimateGroups(req.params.id);
+      res.json(groups);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate groups" });
+    }
+  });
+
+  app.post("/api/estimates/:id/groups", async (req, res) => {
+    try {
+      const validationResult = insertEstimateGroupSchema.safeParse({
+        ...req.body,
+        estimateId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const group = await storage.createEstimateGroup(validationResult.data);
+      res.status(201).json(group);
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to create estimate group" });
+    }
+  });
+
+  app.patch("/api/estimate-groups/:id", async (req, res) => {
+    try {
+      const updateSchema = insertEstimateGroupSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const group = await storage.updateEstimateGroup(req.params.id, validationResult.data);
+      if (!group) {
+        return res.status(404).json({ error: "Estimate group not found" });
+      }
+      res.json(group);
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to update estimate group" });
+    }
+  });
+
+  app.delete("/api/estimate-groups/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteEstimateGroup(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Estimate group not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to delete estimate group" });
+    }
+  });
+
+  // Versioning and Locking API Routes
+  app.post("/api/estimates/:id/version", async (req, res) => {
+    try {
+      const newVersion = await storage.createEstimateVersion(req.params.id, req.body);
+      res.status(201).json(newVersion);
+    } catch (error: any) {
+      if (error.message === "Estimate not found") {
+        return res.status(404).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to create estimate version" });
+    }
+  });
+
+  app.post("/api/estimates/:id/lock", async (req, res) => {
+    try {
+      const lockedEstimate = await storage.lockEstimate(req.params.id);
+      if (!lockedEstimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      res.json(lockedEstimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to lock estimate" });
+    }
+  });
+
+  app.post("/api/estimates/:id/unlock", async (req, res) => {
+    try {
+      const unlockedEstimate = await storage.unlockEstimate(req.params.id);
+      if (!unlockedEstimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      res.json(unlockedEstimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to unlock estimate" });
+    }
+  });
+
+  // Summary Calculations API Route
+  app.get("/api/estimates/:id/summary", async (req, res) => {
+    try {
+      const summary = await storage.getEstimateSummary(req.params.id);
+      res.json(summary);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate estimate summary" });
     }
   });
 

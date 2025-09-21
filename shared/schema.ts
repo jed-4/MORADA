@@ -244,7 +244,7 @@ export const estimateItems = pgTable("estimate_items", {
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee"
-  group: text("group"), // Reference to groups (will be created in settings)
+  groupId: varchar("group_id").references(() => estimateGroups.id), // Reference to estimate groups
   costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
   allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
   quantity: integer("quantity").notNull().default(1),
@@ -278,3 +278,24 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
 
 export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;
 export type EstimateItem = typeof estimateItems.$inferSelect;
+
+// Estimate Groups (for organizing line items)
+export const estimateGroups = pgTable("estimate_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  order: integer("order").notNull().default(0),
+  isCollapsed: boolean("is_collapsed").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateGroupSchema = createInsertSchema(estimateGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEstimateGroup = z.infer<typeof insertEstimateGroupSchema>;
+export type EstimateGroup = typeof estimateGroups.$inferSelect;
