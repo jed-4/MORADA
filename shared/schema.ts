@@ -211,3 +211,70 @@ export const insertTaskViewSchema = createInsertSchema(taskViews).omit({
 
 export type InsertTaskView = z.infer<typeof insertTaskViewSchema>;
 export type TaskView = typeof taskViews.$inferSelect;
+
+// Estimates
+export const estimates = pgTable("estimates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  version: integer("version").notNull().default(1),
+  status: text("status").notNull().default("draft"), // "draft" | "working" | "locked" | "approved"
+  isLocked: boolean("is_locked").notNull().default(false),
+  projectMarkupPercent: integer("project_markup_percent").default(0), // Percentage as integer (10 = 10%)
+  taxRate: integer("tax_rate").default(10), // GST/Tax percentage (10 = 10%)
+  notes: text("notes"),
+  ownerId: varchar("owner_id").references(() => users.id),
+  ownerName: text("owner_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateSchema = createInsertSchema(estimates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
+export type Estimate = typeof estimates.$inferSelect;
+
+// Estimate Items (Line Items)
+export const estimateItems = pgTable("estimate_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee"
+  group: text("group"), // Reference to groups (will be created in settings)
+  costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
+  allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
+  quantity: integer("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
+  status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
+  priceExTax: integer("price_ex_tax").notNull().default(0), // Price in cents
+  taxAmount: integer("tax_amount").notNull().default(0), // Calculated tax amount in cents
+  priceIncTax: integer("price_inc_tax").notNull().default(0), // Total price in cents
+  description: text("description"),
+  notes: text("notes"),
+  attachmentUrl: text("attachment_url"), // File attachment path/URL
+  requestForQuote: boolean("request_for_quote").notNull().default(false),
+  isSelection: boolean("is_selection").notNull().default(false), // Can link to Selections section
+  visibleInProposal: boolean("visible_in_proposal").notNull().default(true),
+  showAsInProposal: text("show_as_in_proposal").notNull().default("price"), // "empty" | "price" | "included" | "excluded"
+  order: integer("order").notNull().default(0), // For sorting within groups
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  // Convert price fields to numbers for easier handling
+  priceExTax: z.number().default(0),
+  taxAmount: z.number().default(0), 
+  priceIncTax: z.number().default(0),
+});
+
+export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;
+export type EstimateItem = typeof estimateItems.$inferSelect;

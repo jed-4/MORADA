@@ -1,0 +1,40 @@
+An estimate can be its own separate thing but in a project.
+The All Items section will have all the estimates available to view in a list view or kanban board view, based on that estimates status
+
+The estimate section is the estimate for the costings for the project. The estimate will include information that will flow through to create the information and detail in the proposal document that gets created in the proposal section. 
+
+The estimate need to be able to have separate versions. 
+Each estimate will need to be locked, so that no changes can be made once it is finalised. 
+
+The estimate will be a collection of line items for the estimate. 
+
+Each estimate item will have the following details
+Name - text box
+Type - Select; Material, Labour, Subcontractor, Fee
+Group - select from groups that get created
+Cost Code - select from cost codes in settings
+Allowance - Select; None, Prime Cost, Provisional Sum
+Quantity - number of
+Unit Type - custom field of selections, ie each, m, m2 etc. 
+Status - custom field with created statuses eg incomplete, not relevant, done. 
+Price ex Tax - number, equals Price inc Tax without the Tax
+Tax amount - the amount of tax on the item
+Price inc Tax - number, equals Price ex Tax x 1.1
+Description - text box
+Notes - text box
+Attachment - possible file attached
+Request for Quote - true or false
+Selection - true or false, can be linked to an item in the Selections section
+Visible in proposal - true or false
+Show as in proposal - select options; empty, price, included, excluded
+
+The estimate will have line items able to be show in groups. 
+In Setting there can be an option to select the amount of tax on each item. Typical 10% GST in Australia. 
+It can be seen as in the attached video
+A Project Markup as a percentage will be able to be added to the overall final costings. 
+Down the bottom, show:
+Subtotal - Total price ex tax
+Markup - The subtotal including the markup price
+Tax - The Tax amount on the subtotal and markup
+Total Price - Subtotal, markup and tax price
+See the video attached for how the estimate should work

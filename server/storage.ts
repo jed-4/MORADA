@@ -6,7 +6,9 @@ import {
   type CustomFieldOption, type InsertCustomFieldOption,
   type NoteTemplate, type InsertNoteTemplate,
   type Project, type InsertProject,
-  type TaskView, type InsertTaskView
+  type TaskView, type InsertTaskView,
+  type Estimate, type InsertEstimate,
+  type EstimateItem, type InsertEstimateItem
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -71,6 +73,20 @@ export interface IStorage {
   // Subtasks operations
   getSubtasks(parentTaskId: string): Promise<Task[]>;
   createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task>;
+
+  // Estimates CRUD
+  getEstimates(projectId?: string): Promise<Estimate[]>;
+  getEstimate(id: string): Promise<Estimate | undefined>;
+  createEstimate(estimate: InsertEstimate): Promise<Estimate>;
+  updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined>;
+  deleteEstimate(id: string): Promise<boolean>;
+
+  // Estimate Items CRUD
+  getEstimateItems(estimateId: string): Promise<EstimateItem[]>;
+  getEstimateItem(id: string): Promise<EstimateItem | undefined>;
+  createEstimateItem(item: InsertEstimateItem): Promise<EstimateItem>;
+  updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined>;
+  deleteEstimateItem(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -81,6 +97,8 @@ export class MemStorage implements IStorage {
   private noteTemplates: Map<string, NoteTemplate>;
   private projects: Map<string, Project>;
   private taskViews: Map<string, TaskView>;
+  private estimates: Map<string, Estimate>;
+  private estimateItems: Map<string, EstimateItem>;
 
   constructor() {
     this.users = new Map();
@@ -90,6 +108,8 @@ export class MemStorage implements IStorage {
     this.noteTemplates = new Map();
     this.projects = new Map();
     this.taskViews = new Map();
+    this.estimates = new Map();
+    this.estimateItems = new Map();
     this.initializeDefaultCustomFields();
     this.initializeDefaultProjects();
   }
@@ -663,6 +683,119 @@ export class MemStorage implements IStorage {
     };
     this.notes.set(id, subtask);
     return subtask;
+  }
+
+  // Estimates CRUD operations
+  async getEstimates(projectId?: string): Promise<Estimate[]> {
+    let estimates = Array.from(this.estimates.values());
+    if (projectId) {
+      estimates = estimates.filter(estimate => estimate.projectId === projectId);
+    }
+    return estimates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  async getEstimate(id: string): Promise<Estimate | undefined> {
+    return this.estimates.get(id);
+  }
+
+  async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
+    const id = randomUUID();
+    const now = new Date();
+    const estimate: Estimate = {
+      ...insertEstimate,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.estimates.set(id, estimate);
+    return estimate;
+  }
+
+  async updateEstimate(id: string, updateEstimate: Partial<InsertEstimate>): Promise<Estimate | undefined> {
+    const estimate = this.estimates.get(id);
+    if (!estimate) {
+      return undefined;
+    }
+    
+    const updatedEstimate: Estimate = {
+      ...estimate,
+      ...updateEstimate,
+      updatedAt: new Date(),
+    };
+    this.estimates.set(id, updatedEstimate);
+    return updatedEstimate;
+  }
+
+  async deleteEstimate(id: string): Promise<boolean> {
+    // Delete all associated estimate items first
+    const items = await this.getEstimateItems(id);
+    for (const item of items) {
+      await this.deleteEstimateItem(item.id);
+    }
+    
+    return this.estimates.delete(id);
+  }
+
+  // Estimate Items CRUD operations
+  async getEstimateItems(estimateId: string): Promise<EstimateItem[]> {
+    const items = Array.from(this.estimateItems.values())
+      .filter(item => item.estimateId === estimateId);
+    return items.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+
+  async getEstimateItem(id: string): Promise<EstimateItem | undefined> {
+    return this.estimateItems.get(id);
+  }
+
+  async createEstimateItem(insertItem: InsertEstimateItem): Promise<EstimateItem> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    // Calculate tax amount and price inc tax if not provided
+    const priceExTax = insertItem.priceExTax || 0;
+    const estimate = await this.getEstimate(insertItem.estimateId);
+    const taxRate = estimate?.taxRate || 10; // Default 10% GST
+    const taxAmount = Math.round(priceExTax * taxRate / 100);
+    const priceIncTax = priceExTax + taxAmount;
+    
+    const estimateItem: EstimateItem = {
+      ...insertItem,
+      id,
+      taxAmount,
+      priceIncTax,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.estimateItems.set(id, estimateItem);
+    return estimateItem;
+  }
+
+  async updateEstimateItem(id: string, updateItem: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> {
+    const item = this.estimateItems.get(id);
+    if (!item) {
+      return undefined;
+    }
+    
+    const updatedItem: EstimateItem = {
+      ...item,
+      ...updateItem,
+      updatedAt: new Date(),
+    };
+    
+    // Recalculate tax if price changed
+    if (updateItem.priceExTax !== undefined) {
+      const estimate = await this.getEstimate(item.estimateId);
+      const taxRate = estimate?.taxRate || 10;
+      updatedItem.taxAmount = Math.round(updatedItem.priceExTax * taxRate / 100);
+      updatedItem.priceIncTax = updatedItem.priceExTax + updatedItem.taxAmount;
+    }
+    
+    this.estimateItems.set(id, updatedItem);
+    return updatedItem;
+  }
+
+  async deleteEstimateItem(id: string): Promise<boolean> {
+    return this.estimateItems.delete(id);
   }
 }
 
