@@ -299,3 +299,12 @@ export const insertEstimateGroupSchema = createInsertSchema(estimateGroups).omit
 
 export type InsertEstimateGroup = z.infer<typeof insertEstimateGroupSchema>;
 export type EstimateGroup = typeof estimateGroups.$inferSelect;
+
+// Summary calculation type for API responses
+export type EstimateSummary = {
+  subtotal: number;
+  markupAmount: number;
+  taxAmount: number;
+  total: number;
+  itemCount: number;
+};
