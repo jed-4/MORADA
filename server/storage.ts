@@ -878,19 +878,33 @@ export class MemStorage implements IStorage {
 
   // Estimate Items CRUD operations
   async getEstimateItems(estimateId: string): Promise<EstimateItem[]> {
-    const items = Array.from(this.estimateItems.values())
-      .filter(item => item.estimateId === estimateId);
-    return items.sort((a, b) => (a.order || 0) - (b.order || 0));
+    try {
+      const items = await db.select().from(schema.estimateItems)
+        .where(eq(schema.estimateItems.estimateId, estimateId))
+        .orderBy(schema.estimateItems.order);
+      return items;
+    } catch (error) {
+      console.error("Database error in getEstimateItems:", error);
+      // Fallback to memory
+      const items = Array.from(this.estimateItems.values())
+        .filter(item => item.estimateId === estimateId);
+      return items.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
   }
 
   async getEstimateItem(id: string): Promise<EstimateItem | undefined> {
-    return this.estimateItems.get(id);
+    try {
+      const result = await db.select().from(schema.estimateItems)
+        .where(eq(schema.estimateItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getEstimateItem:", error);
+      return this.estimateItems.get(id);
+    }
   }
 
   async createEstimateItem(insertItem: InsertEstimateItem): Promise<EstimateItem> {
-    const id = randomUUID();
-    const now = new Date();
-    
     // Check if parent estimate is locked
     const estimate = await this.getEstimate(insertItem.estimateId);
     if (estimate?.isLocked) {
@@ -903,16 +917,34 @@ export class MemStorage implements IStorage {
     const taxAmount = Math.round(priceExTax * taxRate / 100);
     const priceIncTax = priceExTax + taxAmount;
     
-    const estimateItem: EstimateItem = {
-      ...insertItem,
-      id,
-      taxAmount,
-      priceIncTax,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.estimateItems.set(id, estimateItem);
-    return estimateItem;
+    try {
+      const estimateItem = {
+        ...insertItem,
+        taxAmount,
+        priceIncTax,
+        type: insertItem.type || "Material",
+        status: insertItem.status || "pending",
+        order: insertItem.order || 0,
+      };
+      
+      const result = await db.insert(schema.estimateItems).values(estimateItem).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createEstimateItem:", error);
+      // Fallback to memory
+      const id = randomUUID();
+      const now = new Date();
+      const memItem: EstimateItem = {
+        ...insertItem,
+        id,
+        taxAmount,
+        priceIncTax,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.estimateItems.set(id, memItem);
+      return memItem;
+    }
   }
 
   async updateEstimateItem(id: string, updateItem: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> {
