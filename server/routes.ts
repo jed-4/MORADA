@@ -8,7 +8,9 @@ import {
   insertCustomFieldOptionSchema,
   insertNoteTemplateSchema,
   insertProjectSchema,
-  insertTaskViewSchema
+  insertTaskViewSchema,
+  insertEstimateSchema,
+  insertEstimateItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -576,6 +578,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(subtask);
     } catch (error) {
       res.status(500).json({ error: "Failed to create subtask" });
+    }
+  });
+
+  // Estimates API Routes
+  app.get("/api/estimates", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const estimates = await storage.getEstimates(projectId as string | undefined);
+      res.json(estimates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimates" });
+    }
+  });
+
+  app.get("/api/estimates/:id", async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate" });
+    }
+  });
+
+  app.post("/api/estimates", async (req, res) => {
+    try {
+      const validationResult = insertEstimateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const estimate = await storage.createEstimate(validationResult.data);
+      res.status(201).json(estimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create estimate" });
+    }
+  });
+
+  app.patch("/api/estimates/:id", async (req, res) => {
+    try {
+      const updateSchema = insertEstimateSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const estimate = await storage.updateEstimate(req.params.id, validationResult.data);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update estimate" });
+    }
+  });
+
+  app.delete("/api/estimates/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteEstimate(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete estimate" });
+    }
+  });
+
+  // Estimate Items API Routes
+  app.get("/api/estimates/:id/items", async (req, res) => {
+    try {
+      const items = await storage.getEstimateItems(req.params.id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate items" });
+    }
+  });
+
+  app.get("/api/estimate-items/:id", async (req, res) => {
+    try {
+      const item = await storage.getEstimateItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate item" });
+    }
+  });
+
+  app.post("/api/estimates/:id/items", async (req, res) => {
+    try {
+      const validationResult = insertEstimateItemSchema.safeParse({
+        ...req.body,
+        estimateId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createEstimateItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create estimate item" });
+    }
+  });
+
+  app.patch("/api/estimate-items/:id", async (req, res) => {
+    try {
+      const updateSchema = insertEstimateItemSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateEstimateItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update estimate item" });
+    }
+  });
+
+  app.delete("/api/estimate-items/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteEstimateItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete estimate item" });
     }
   });
 
