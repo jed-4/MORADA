@@ -576,19 +576,45 @@ export class MemStorage implements IStorage {
 
   // Projects CRUD operations
   async getProjects(ownerId?: string): Promise<Project[]> {
-    const allProjects = Array.from(this.projects.values())
-      .filter(project => project.isActive);
-    
-    if (ownerId) {
-      return allProjects.filter(project => 
-        project.ownerId === ownerId || project.isBusiness
-      ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    try {
+      let query = db.select().from(schema.projects).where(eq(schema.projects.isActive, true));
+      
+      if (ownerId) {
+        query = query.where(
+          or(
+            eq(schema.projects.ownerId, ownerId),
+            eq(schema.projects.isBusiness, true)
+          )
+        );
+      }
+      
+      const projects = await query.orderBy(schema.projects.createdAt);
+      return projects;
+    } catch (error) {
+      console.error("Database error in getProjects:", error);
+      // Fallback to memory
+      const allProjects = Array.from(this.projects.values())
+        .filter(project => project.isActive);
+      
+      if (ownerId) {
+        return allProjects.filter(project => 
+          project.ownerId === ownerId || project.isBusiness
+        ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      }
+      return allProjects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
-    return allProjects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getProject(id: string): Promise<Project | undefined> {
-    return this.projects.get(id);
+    try {
+      console.log(`getProject: Looking for project with id: ${id}`);
+      const result = await db.select().from(schema.projects).where(eq(schema.projects.id, id)).limit(1);
+      console.log(`getProject: Database returned ${result.length} results:`, result);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getProject:", error);
+      return this.projects.get(id);
+    }
   }
 
   async createProject(insertProject: InsertProject): Promise<Project> {
