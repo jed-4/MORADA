@@ -467,9 +467,8 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                           </TableCell>
                         </TableRow>
                       ) : (
-                        sortedTasks.map((task) => (
-                          <React.Fragment key={task.id}>
-                            <DraggableTableRow task={task} canDrag={sortConfig.key === null}>
+                        sortedTasks.flatMap((task) => [
+                          <DraggableTableRow key={task.id} task={task} canDrag={sortConfig.key === null}>
                               <TableCell>
                                 <Checkbox
                                   checked={selectedTasks.includes(task.id)}
@@ -569,20 +568,19 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
-                            </DraggableTableRow>
-                            
-                            {/* Expandable Subtasks Row */}
-                            {!task.parentTaskId && expandedTasks.has(task.id) && (
-                              <TableRow>
-                                <TableCell colSpan={8} className="p-0 border-b-0">
-                                  <div className="px-4 py-2 bg-muted/30">
-                                    <SubtaskList parentTask={task} compact={false} />
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        ))
+                          </DraggableTableRow>,
+                          
+                          // Expandable Subtasks Row
+                          ...(!task.parentTaskId && expandedTasks.has(task.id) ? [
+                            <TableRow key={`${task.id}-subtasks`}>
+                              <TableCell colSpan={8} className="p-0 border-b-0">
+                                <div className="px-4 py-2 bg-muted/30">
+                                  <SubtaskList parentTask={task} compact={false} />
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ] : [])
+                        ])
                       )}
                     </SortableContext>
                   </TableBody>
