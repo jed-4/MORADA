@@ -1167,8 +1167,8 @@ export class MemStorage implements IStorage {
   // Summary calculations
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
-    markup: number;
-    tax: number;
+    markupAmount: number;
+    taxAmount: number;
     total: number;
     itemCount: number;
   }> {
@@ -1185,8 +1185,8 @@ export class MemStorage implements IStorage {
 
     return {
       subtotal,
-      markup,
-      tax,
+      markupAmount: markup,
+      taxAmount: tax,
       total,
       itemCount: items.length,
     };
