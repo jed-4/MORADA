@@ -734,45 +734,92 @@ export class MemStorage implements IStorage {
   }
 
   async getEstimate(id: string): Promise<Estimate | undefined> {
-    return this.estimates.get(id);
+    try {
+      const result = await db.select().from(schema.estimates).where(eq(schema.estimates.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getEstimate:", error);
+      return this.estimates.get(id);
+    }
   }
 
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
-    const id = randomUUID();
-    const now = new Date();
-    const estimate: Estimate = {
-      ...insertEstimate,
-      id,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.estimates.set(id, estimate);
-    return estimate;
+    try {
+      const estimate = {
+        ...insertEstimate,
+        status: insertEstimate.status || "draft",
+        version: 1,
+        isLocked: false,
+      };
+      
+      const result = await db.insert(schema.estimates).values(estimate).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createEstimate:", error);
+      // Fallback to memory
+      const id = randomUUID();
+      const now = new Date();
+      const memEstimate: Estimate = {
+        ...insertEstimate,
+        id,
+        status: insertEstimate.status || "draft",
+        version: 1,
+        isLocked: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.estimates.set(id, memEstimate);
+      return memEstimate;
+    }
   }
 
   async updateEstimate(id: string, updateEstimate: Partial<InsertEstimate>): Promise<Estimate | undefined> {
-    const estimate = this.estimates.get(id);
-    if (!estimate) {
-      return undefined;
+    try {
+      // First get the existing estimate to check locking
+      const estimate = await this.getEstimate(id);
+      if (!estimate) {
+        return undefined;
+      }
+      
+      // Enforce locking - prevent updates to locked estimates
+      if (estimate.isLocked) {
+        throw new Error("Cannot update locked estimate. Unlock the estimate first.");
+      }
+      
+      // Prevent direct changes to version or isLocked through generic update
+      const sanitizedUpdate = { ...updateEstimate };
+      delete sanitizedUpdate.version;
+      delete sanitizedUpdate.isLocked;
+      
+      const result = await db.update(schema.estimates)
+        .set({ ...sanitizedUpdate, updatedAt: new Date() })
+        .where(eq(schema.estimates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateEstimate:", error);
+      // Fallback to memory
+      const estimate = this.estimates.get(id);
+      if (!estimate) {
+        return undefined;
+      }
+      
+      if (estimate.isLocked) {
+        throw new Error("Cannot update locked estimate. Unlock the estimate first.");
+      }
+      
+      const sanitizedUpdate = { ...updateEstimate };
+      delete sanitizedUpdate.version;
+      delete sanitizedUpdate.isLocked;
+      
+      const updatedEstimate: Estimate = {
+        ...estimate,
+        ...sanitizedUpdate,
+        updatedAt: new Date(),
+      };
+      this.estimates.set(id, updatedEstimate);
+      return updatedEstimate;
     }
-    
-    // Enforce locking - prevent updates to locked estimates
-    if (estimate.isLocked) {
-      throw new Error("Cannot update locked estimate. Unlock the estimate first.");
-    }
-    
-    // Prevent direct changes to version or isLocked through generic update
-    const sanitizedUpdate = { ...updateEstimate };
-    delete sanitizedUpdate.version;
-    delete sanitizedUpdate.isLocked;
-    
-    const updatedEstimate: Estimate = {
-      ...estimate,
-      ...sanitizedUpdate,
-      updatedAt: new Date(),
-    };
-    this.estimates.set(id, updatedEstimate);
-    return updatedEstimate;
   }
 
   async deleteEstimate(id: string): Promise<boolean> {
