@@ -27,6 +27,10 @@ import { type Estimate, type EstimateSummary, type Project } from "@shared/schem
 export default function Estimates() {
   const [activeTab, setActiveTab] = useState("list");
 
+  const handleNewEstimate = () => {
+    alert('Estimate creation feature will be implemented in the next phase. For now, you can see the comprehensive estimates system with the test data!');
+  };
+
   // Fetch estimates
   const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
@@ -199,7 +203,7 @@ export default function Estimates() {
             </Badge>
           </div>
           <div className="flex items-center space-x-2">
-            <Button data-testid="button-new-estimate">
+            <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
               <Plus className="w-4 h-4 mr-2" />
               New Estimate
             </Button>
@@ -231,7 +235,7 @@ export default function Estimates() {
                 <p className="text-muted-foreground mb-4">
                   Create your first estimate to get started with project cost management.
                 </p>
-                <Button data-testid="button-create-first-estimate">
+                <Button onClick={handleNewEstimate} data-testid="button-create-first-estimate">
                   <Plus className="w-4 h-4 mr-2" />
                   Create First Estimate
                 </Button>

@@ -12,6 +12,9 @@ import {
   type EstimateGroup, type InsertEstimateGroup
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
+import * as schema from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -711,11 +714,23 @@ export class MemStorage implements IStorage {
 
   // Estimates CRUD operations
   async getEstimates(projectId?: string): Promise<Estimate[]> {
-    let estimates = Array.from(this.estimates.values());
-    if (projectId) {
-      estimates = estimates.filter(estimate => estimate.projectId === projectId);
+    try {
+      // Read from database for persistent data
+      let query = db.select().from(schema.estimates);
+      if (projectId) {
+        query = query.where(eq(schema.estimates.projectId, projectId));
+      }
+      const estimates = await query.orderBy(schema.estimates.updatedAt);
+      return estimates;
+    } catch (error) {
+      console.error("Database error in getEstimates:", error);
+      // Fallback to memory storage
+      let estimates = Array.from(this.estimates.values());
+      if (projectId) {
+        estimates = estimates.filter(estimate => estimate.projectId === projectId);
+      }
+      return estimates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     }
-    return estimates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
   async getEstimate(id: string): Promise<Estimate | undefined> {
