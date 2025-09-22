@@ -40,6 +40,8 @@ import {
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
+import { TaskCalendar } from "@/components/TaskCalendar";
+import "react-big-calendar/lib/css/react-big-calendar.css";
 import { type TaskView, type Task } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useProject } from "@/contexts/ProjectContext";
@@ -55,7 +57,7 @@ export default function Tasks() {
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [newViewName, setNewViewName] = useState("");
-  const [newViewType, setNewViewType] = useState<"kanban" | "list">("kanban");
+  const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
   const [filters, setFilters] = useState<FilterState>({});
 
   // Mutation for creating new views
@@ -188,6 +190,7 @@ export default function Tasks() {
   const defaultViews = [
     { id: "kanban", name: "Kanban Board", viewType: "kanban" },
     { id: "list", name: "List View", viewType: "list" },
+    { id: "calendar", name: "Calendar View", viewType: "calendar" },
   ];
 
   const allViews = [...defaultViews, ...taskViews];
@@ -510,6 +513,14 @@ export default function Tasks() {
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
             <TaskList tasks={effectivelyFilteredTasks} isLoading={tasksLoading} />
           </TabsContent>
+
+          <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">
+            <TaskCalendar 
+              tasks={effectivelyFilteredTasks} 
+              projectId={currentProject?.id || ""} 
+              onTaskClick={() => {}} 
+            />
+          </TabsContent>
           
           {/* Custom Views */}
           {taskViews.map((view) => {
@@ -522,6 +533,12 @@ export default function Tasks() {
               <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
                 {view.viewType === "kanban" ? (
                   <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} />
+                ) : view.viewType === "calendar" ? (
+                  <TaskCalendar 
+                    tasks={viewFilteredTasks} 
+                    projectId={currentProject?.id || ""} 
+                    onTaskClick={() => {}} 
+                  />
                 ) : (
                   <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} />
                 )}
@@ -553,13 +570,14 @@ export default function Tasks() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="view-type">View Type</Label>
-              <Select value={newViewType} onValueChange={(value: "kanban" | "list") => setNewViewType(value)}>
+              <Select value={newViewType} onValueChange={(value: "kanban" | "list" | "calendar") => setNewViewType(value)}>
                 <SelectTrigger data-testid="select-view-type">
                   <SelectValue placeholder="Select view type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="kanban">Kanban Board</SelectItem>
                   <SelectItem value="list">List View</SelectItem>
+                  <SelectItem value="calendar">Calendar View</SelectItem>
                 </SelectContent>
               </Select>
             </div>
