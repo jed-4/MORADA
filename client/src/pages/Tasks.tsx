@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, Settings, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
@@ -32,7 +32,7 @@ import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { type TaskView, type Task } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useProject } from "@/contexts/ProjectContext";
-import { useMutation, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 
 export default function Tasks() {
   const { currentProject } = useProject();
