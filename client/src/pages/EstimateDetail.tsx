@@ -1,5 +1,9 @@
 import { useParams, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,10 +34,94 @@ interface EstimateDetailParams {
 export default function EstimateDetail() {
   const { id } = useParams<EstimateDetailParams>();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  
+  // Inline editing state
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingName, setEditingName] = useState("");
 
   if (!id) {
     return <div>Invalid estimate ID</div>;
   }
+
+  // Mutation for updating estimate name
+  const updateEstimateMutation = useMutation({
+    mutationFn: async (data: { name: string }) => {
+      const response = await apiRequest("PATCH", `/api/estimates/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "Estimate name updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update estimate name.",
+        variant: "destructive",
+      });
+      // Reset to original name on error
+      setEditingName(estimate?.name || "");
+    },
+  });
+
+  // Handlers for inline name editing
+  const handleNameEdit = () => {
+    if (estimate?.isLocked) {
+      toast({
+        title: "Cannot Edit",
+        description: "This estimate is locked and cannot be modified.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setEditingName(estimate?.name || "");
+    setIsEditingName(true);
+  };
+
+  const handleNameSave = () => {
+    if (!isEditingName || !estimate) return;
+    
+    const trimmedName = editingName.trim();
+    if (trimmedName === estimate.name) {
+      // No changes, just exit edit mode
+      setIsEditingName(false);
+      return;
+    }
+    
+    if (trimmedName === "") {
+      toast({
+        title: "Invalid Name",
+        description: "Estimate name cannot be empty.",
+        variant: "destructive",
+      });
+      setEditingName(estimate.name);
+      return;
+    }
+    
+    // Optimistic update
+    setIsEditingName(false);
+    updateEstimateMutation.mutate({ name: trimmedName });
+  };
+
+  const handleNameCancel = () => {
+    setEditingName(estimate?.name || "");
+    setIsEditingName(false);
+  };
+
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleNameSave();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleNameCancel();
+    }
+  };
 
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
@@ -132,9 +220,26 @@ export default function EstimateDetail() {
               Back to Estimates
             </Button>
             <div>
-              <h1 className="text-2xl font-semibold" data-testid="text-estimate-title">
-                {estimate.name}
-              </h1>
+              {isEditingName ? (
+                <Input
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  onKeyDown={handleNameKeyDown}
+                  onBlur={handleNameSave}
+                  className="text-2xl font-semibold bg-transparent border-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  data-testid="input-estimate-name"
+                  autoFocus
+                />
+              ) : (
+                <h1 
+                  className="text-2xl font-semibold cursor-pointer hover:text-blue-600 transition-colors" 
+                  data-testid="text-estimate-title"
+                  onClick={handleNameEdit}
+                  title="Click to edit estimate name"
+                >
+                  {estimate.name}
+                </h1>
+              )}
               <p className="text-sm text-muted-foreground" data-testid="text-project-name">
                 Project: {project?.name || 'Loading...'}
               </p>
