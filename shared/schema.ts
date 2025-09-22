@@ -48,7 +48,8 @@ export const notes: any = pgTable("notes", {
   isRecurring: boolean("is_recurring").default(false),
   recurringType: text("recurring_type"), // "daily" | "weekly" | "monthly" | "yearly" | "custom"
   recurringInterval: integer("recurring_interval").default(1), // Every N days/weeks/months
-  recurringDays: json("recurring_days").default([]), // For weekly: [1,2,3] (Mon,Tue,Wed)
+  recurringDays: json("recurring_days").default([]), // For weekly: [1,2,3] (Mon,Tue,Wed), for monthly: [15,30] (dates)
+  recurringStartDate: timestamp("recurring_start_date"), // When the recurring pattern starts
   recurringEndDate: timestamp("recurring_end_date"),
   lastRecurringDate: timestamp("last_recurring_date"),
   
@@ -84,6 +85,7 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
   recurringInterval: z.number().optional(),
   recurringDays: z.array(z.number()).optional(),
+  recurringStartDate: z.coerce.date().optional(),
   recurringEndDate: z.coerce.date().optional(),
   lastRecurringDate: z.coerce.date().optional(),
 });
