@@ -33,9 +33,11 @@ import { type TaskView, type Task } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useProject } from "@/contexts/ProjectContext";
 import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Tasks() {
   const { currentProject } = useProject();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
@@ -45,7 +47,7 @@ export default function Tasks() {
 
   // Mutation for creating new views
   const createViewMutation = useMutation({
-    mutationFn: async (data: { name: string; viewType: "kanban" | "list"; projectId: string }) => {
+    mutationFn: async (data: { name: string; viewType: "kanban" | "list"; projectId: string }): Promise<TaskView> => {
       const response = await fetch("/api/task-views", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -55,11 +57,23 @@ export default function Tasks() {
       if (!response.ok) throw new Error("Failed to create view");
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (newView: TaskView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/task-views", currentProject?.id] });
+      setActiveTab(newView.id); // Auto-select the newly created view
       setShowCreateViewDialog(false);
       setNewViewName("");
       setNewViewType("kanban");
+      toast({
+        title: "View created",
+        description: `"${newView.name}" has been created successfully.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create view",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -197,7 +211,7 @@ export default function Tasks() {
                   data-testid={`tab-${view.id}`}
                 >
                   {view.name}
-                  {view.viewType === "list" && (
+                  {view.viewType === "list" && view.id !== "list" && (
                     <Badge variant="outline" className="ml-2 text-xs">
                       NEW
                     </Badge>
