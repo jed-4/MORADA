@@ -8,6 +8,13 @@ BuildPro is a comprehensive project management software designed specifically fo
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+### September 22, 2025
+- **Task View Management**: Added complete view deletion functionality with hover delete buttons on custom view tabs, confirmation dialogs, and smart tab switching when active view is deleted
+- **Filter Interface Redesign**: Replaced single filter panel with horizontal bar of individual dropdown buttons below the views for improved usability and visual hierarchy
+- **Enhanced UX**: Added active filter badges, "Clear All" functionality, and visual separation between views and filters using Material Design principles
+
 ## System Architecture
 
 ### Frontend Architecture
