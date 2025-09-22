@@ -21,6 +21,7 @@ export default function Tasks() {
   const { currentProject } = useProject();
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
+  const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [filters, setFilters] = useState<FilterState>({});
 
   // Fetch saved task views and tasks filtered by current project
@@ -155,6 +156,15 @@ export default function Tasks() {
                   )}
                 </TabsTrigger>
               ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 data-[state=active]:bg-background data-[state=active]:text-foreground"
+                onClick={() => setShowCreateViewDialog(true)}
+                data-testid="button-add-view"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </TabsList>
             
             {/* View Management Dropdown */}
