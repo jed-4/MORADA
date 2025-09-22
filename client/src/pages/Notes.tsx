@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +90,7 @@ export default function Notes() {
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const { toast } = useToast();
+  const { currentProject } = useProject();
 
   // Fetch custom field definitions and templates
   const { data: customFieldDefs = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
@@ -143,14 +145,25 @@ export default function Notes() {
     },
   });
 
-  // React Query hooks
+  // React Query hooks - fetch notes filtered by current project
   const { data: notes = [], isLoading } = useQuery<Note[]>({
-    queryKey: ["/api/notes"],
+    queryKey: ["/api/notes", currentProject?.id],
+    queryFn: async () => {
+      if (!currentProject?.id) return [];
+      const response = await fetch(`/api/notes?projectId=${currentProject.id}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
     select: (data: any[]) => data.map(note => ({
       ...note,
       createdAt: new Date(note.createdAt),
       updatedAt: new Date(note.updatedAt),
     })),
+    enabled: !!currentProject?.id,
   });
 
   const createNoteMutation = useMutation({
@@ -159,7 +172,7 @@ export default function Notes() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
       form.reset();
@@ -179,7 +192,7 @@ export default function Notes() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
       form.reset();

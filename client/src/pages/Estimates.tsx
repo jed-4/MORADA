@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
+import { useProject } from "@/contexts/ProjectContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,14 +32,26 @@ export default function Estimates() {
   const [activeTab, setActiveTab] = useState("list");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { currentProject } = useProject();
 
   const handleNewEstimate = () => {
     alert('Estimate creation feature will be implemented in the next phase. For now, you can see the comprehensive estimates system with the test data!');
   };
 
-  // Fetch estimates
+  // Fetch estimates filtered by current project
   const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
-    queryKey: ["/api/estimates"],
+    queryKey: ["/api/estimates", currentProject?.id],
+    queryFn: async () => {
+      if (!currentProject?.id) return [];
+      const response = await fetch(`/api/estimates?projectId=${currentProject.id}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
+    enabled: !!currentProject?.id,
   });
 
   // Mutation for toggling estimate lock state
@@ -49,7 +62,7 @@ export default function Estimates() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", currentProject?.id] });
       toast({
         title: "Success",
         description: "Estimate lock status updated successfully.",
