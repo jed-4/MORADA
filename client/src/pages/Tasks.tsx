@@ -10,19 +10,67 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { type TaskView, type Task } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useProject } from "@/contexts/ProjectContext";
+import { useMutation, queryClient } from "@/lib/queryClient";
 
 export default function Tasks() {
   const { currentProject } = useProject();
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [newViewType, setNewViewType] = useState<"kanban" | "list">("kanban");
   const [filters, setFilters] = useState<FilterState>({});
+
+  // Mutation for creating new views
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string; viewType: "kanban" | "list"; projectId: string }) => {
+      const response = await fetch("/api/task-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to create view");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views", currentProject?.id] });
+      setShowCreateViewDialog(false);
+      setNewViewName("");
+      setNewViewType("kanban");
+    },
+  });
+
+  const handleCreateView = () => {
+    if (!currentProject || !newViewName.trim()) return;
+    createViewMutation.mutate({
+      name: newViewName.trim(),
+      viewType: newViewType,
+      projectId: currentProject.id,
+    });
+  };
 
   // Fetch saved task views and tasks filtered by current project
   const { data: taskViews = [] } = useQuery<TaskView[]>({
@@ -217,6 +265,58 @@ export default function Tasks() {
           })}
         </div>
       </Tabs>
+
+      {/* Create View Dialog */}
+      <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create New View</DialogTitle>
+            <DialogDescription>
+              Create a new view to organize and filter your tasks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="view-name">View Name</Label>
+              <Input
+                id="view-name"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                placeholder="Enter view name"
+                data-testid="input-view-name"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="view-type">View Type</Label>
+              <Select value={newViewType} onValueChange={(value: "kanban" | "list") => setNewViewType(value)}>
+                <SelectTrigger data-testid="select-view-type">
+                  <SelectValue placeholder="Select view type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kanban">Kanban Board</SelectItem>
+                  <SelectItem value="list">List View</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCreateViewDialog(false)}
+              data-testid="button-cancel-view"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateView}
+              disabled={!newViewName.trim() || createViewMutation.isPending}
+              data-testid="button-create-view"
+            >
+              {createViewMutation.isPending ? "Creating..." : "Create View"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
