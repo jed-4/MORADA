@@ -61,6 +61,7 @@ const taskFormSchema = z.object({
   recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
   recurringInterval: z.number().min(1).default(1),
   recurringDays: z.array(z.number()).default([]),
+  recurringStartDate: z.string().optional(),
   recurringEndDate: z.string().optional(),
 });
 
@@ -107,6 +108,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       recurringType: task?.recurringType as "daily" | "weekly" | "monthly" | "yearly" | "custom" | undefined,
       recurringInterval: task?.recurringInterval || 1,
       recurringDays: (task?.recurringDays as number[]) || [],
+      recurringStartDate: task?.recurringStartDate ? new Date(task.recurringStartDate).toISOString().split('T')[0] : "",
       recurringEndDate: task?.recurringEndDate ? new Date(task.recurringEndDate).toISOString().split('T')[0] : "",
     },
   });
@@ -149,6 +151,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         recurringType: data.recurringType,
         recurringInterval: data.isRecurring ? data.recurringInterval : undefined,
         recurringDays: data.isRecurring ? data.recurringDays : undefined,
+        recurringStartDate: data.isRecurring && data.recurringStartDate ? new Date(data.recurringStartDate) : undefined,
         recurringEndDate: data.isRecurring && data.recurringEndDate ? new Date(data.recurringEndDate) : undefined,
       };
       return await apiRequest("POST", `/api/tasks`, payload);
@@ -190,6 +193,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         recurringType: data.recurringType,
         recurringInterval: data.isRecurring ? data.recurringInterval : undefined,
         recurringDays: data.isRecurring ? data.recurringDays : undefined,
+        recurringStartDate: data.isRecurring && data.recurringStartDate ? new Date(data.recurringStartDate) : undefined,
         recurringEndDate: data.isRecurring && data.recurringEndDate ? new Date(data.recurringEndDate) : undefined,
       };
       return await apiRequest("PATCH", `/api/tasks/${task.id}`, payload);
@@ -543,7 +547,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
               </TabsContent>
               
               {/* Recurring Tab */}
-              <TabsContent value="recurring" className="space-y-4">
+              <TabsContent value="recurring" className="space-y-6">
                 <FormField
                   control={form.control}
                   name="isRecurring"
@@ -564,7 +568,27 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                 />
 
                 {watchedIsRecurring && (
-                  <>
+                  <div className="space-y-6">
+                    {/* Start Date */}
+                    <FormField
+                      control={form.control}
+                      name="recurringStartDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Start Date</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              {...field}
+                              data-testid="task-recurring-start-date-input"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Frequency and Interval */}
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
@@ -612,6 +636,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                       />
                     </div>
 
+                    {/* Weekly Day Selection */}
                     {watchedRecurringType === "weekly" && (
                       <FormField
                         control={form.control}
@@ -619,9 +644,12 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Repeat on days</FormLabel>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="grid grid-cols-7 gap-2">
                               {weekDays.map((day) => (
-                                <div key={day.value} className="flex items-center space-x-2">
+                                <div 
+                                  key={day.value} 
+                                  className="flex flex-col items-center space-y-2 p-2 rounded-lg border hover:bg-accent"
+                                >
                                   <Checkbox
                                     checked={field.value.includes(day.value)}
                                     onCheckedChange={(checked) => {
@@ -633,7 +661,9 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                                     }}
                                     data-testid={`task-recurring-day-${day.value}`}
                                   />
-                                  <label className="text-sm">{day.label.slice(0, 3)}</label>
+                                  <label className="text-xs font-medium cursor-pointer">
+                                    {day.label.slice(0, 3)}
+                                  </label>
                                 </div>
                               ))}
                             </div>
@@ -643,6 +673,45 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                       />
                     )}
 
+                    {/* Monthly Date Selection */}
+                    {watchedRecurringType === "monthly" && (
+                      <FormField
+                        control={form.control}
+                        name="recurringDays"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Repeat on dates</FormLabel>
+                            <div className="grid grid-cols-7 gap-2">
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => (
+                                <Button
+                                  key={date}
+                                  type="button"
+                                  variant={field.value.includes(date) ? "default" : "outline"}
+                                  size="sm"
+                                  className="h-10 w-10"
+                                  onClick={() => {
+                                    if (field.value.includes(date)) {
+                                      field.onChange(field.value.filter((d: number) => d !== date));
+                                    } else {
+                                      field.onChange([...field.value, date]);
+                                    }
+                                  }}
+                                  data-testid={`task-recurring-date-${date}`}
+                                >
+                                  {date}
+                                </Button>
+                              ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Select one or more dates. If a month doesn't have the selected date, it will be skipped.
+                            </p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* End Date */}
                     <FormField
                       control={form.control}
                       name="recurringEndDate"
@@ -660,7 +729,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                         </FormItem>
                       )}
                     />
-                  </>
+                  </div>
                 )}
               </TabsContent>
             </Tabs>
