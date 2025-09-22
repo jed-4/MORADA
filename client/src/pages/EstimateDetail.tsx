@@ -1,3 +1,4 @@
+import React from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
@@ -176,6 +177,8 @@ export default function EstimateDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "groups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       setIsAddGroupOpen(false);
       groupForm.reset();
       toast({
@@ -466,6 +469,12 @@ export default function EstimateDetail() {
     enabled: !!estimate?.projectId,
   });
 
+  // Fetch estimate groups
+  const { data: groups = [], isLoading: groupsLoading } = useQuery<EstimateGroup[]>({
+    queryKey: ["/api/estimates", id, "groups"],
+    enabled: !!id,
+  });
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
@@ -475,6 +484,39 @@ export default function EstimateDetail() {
 
   const formatQuantity = (quantity: number, unitType: string | null) => {
     return `${quantity}${unitType ? ` ${unitType}` : ''}`;
+  };
+
+  // Organize items by groups for display
+  const organizeItemsByGroups = () => {
+    const groupedItems: { [key: string]: EstimateItem[] } = {};
+    const ungroupedItems: EstimateItem[] = [];
+
+    // Sort groups by order
+    const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    // Initialize group containers
+    sortedGroups.forEach(group => {
+      groupedItems[group.id] = [];
+    });
+
+    // Organize items
+    items.forEach(item => {
+      if (item.groupId && groupedItems[item.groupId]) {
+        groupedItems[item.groupId].push(item);
+      } else {
+        ungroupedItems.push(item);
+      }
+    });
+
+    // Sort items within each group by order
+    Object.keys(groupedItems).forEach(groupId => {
+      groupedItems[groupId].sort((a, b) => (a.order || 0) - (b.order || 0));
+    });
+
+    // Sort ungrouped items by order
+    ungroupedItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    return { sortedGroups, groupedItems, ungroupedItems };
   };
 
   if (estimateLoading) {
@@ -758,76 +800,201 @@ export default function EstimateDetail() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => (
-                      <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
-                        <TableCell className="py-0.5">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="font-medium text-sm truncate cursor-help max-w-[200px] block">
-                                  {item.name}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="max-w-[300px]">
-                                  <p className="font-medium">{item.name}</p>
-                                  {item.description && (
-                                    <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                                  )}
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="py-0.5">
-                          <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
-                        </TableCell>
-                        <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>
-                        <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>
-                        <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>
-                        <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
-                        <TableCell className="py-0.5">
-                          <Badge 
-                            variant={item.status === 'confirmed' ? 'default' : 'secondary'}
-                            className="text-xs h-5"
-                          >
-                            {item.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-0.5">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0" 
-                                data-testid={`button-actions-${item.id}`}
-                                disabled={estimate?.isLocked}
-                              >
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem 
-                                data-testid={`button-edit-item-${item.id}`}
-                                disabled={estimate?.isLocked}
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                Edit Item
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                data-testid={`button-delete-item-${item.id}`} 
-                                className="text-destructive"
-                                disabled={estimate?.isLocked}
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete Item
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+{(() => {
+                      const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+                      
+                      return (
+                        <>
+                          {/* Render grouped items */}
+                          {sortedGroups.map((group) => (
+                            <React.Fragment key={`group-${group.id}`}>
+                              {/* Group header row */}
+                              <TableRow className="bg-muted/50 hover:bg-muted/50" data-testid={`row-group-${group.id}`}>
+                                <TableCell colSpan={8} className="py-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-2">
+                                      <Badge variant="secondary" className="text-xs font-medium">
+                                        Group
+                                      </Badge>
+                                      <span className="font-medium text-sm">{group.name}</span>
+                                      {group.description && (
+                                        <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                      )}
+                                    </div>
+                                    <span className="text-xs text-muted-foreground">
+                                      {groupedItems[group.id]?.length || 0} items
+                                    </span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                              
+                              {/* Render items in this group */}
+                              {groupedItems[group.id]?.map((item) => (
+                                <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
+                                  <TableCell className="py-0.5 pl-8">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="font-medium text-sm truncate cursor-help max-w-[180px] block">
+                                            {item.name}
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <div className="max-w-[300px]">
+                                            <p className="font-medium">{item.name}</p>
+                                            {item.description && (
+                                              <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                                            )}
+                                          </div>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </TableCell>
+                                  <TableCell className="py-0.5">
+                                    <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
+                                  </TableCell>
+                                  <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>
+                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>
+                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>
+                                  <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
+                                  <TableCell className="py-0.5">
+                                    <Badge 
+                                      variant={item.status === 'confirmed' ? 'default' : 'secondary'}
+                                      className="text-xs h-5"
+                                    >
+                                      {item.status}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="py-0.5">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="sm" 
+                                          className="h-8 w-8 p-0" 
+                                          data-testid={`button-actions-${item.id}`}
+                                          disabled={estimate?.isLocked}
+                                        >
+                                          <MoreHorizontal className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem 
+                                          data-testid={`button-edit-item-${item.id}`}
+                                          disabled={estimate?.isLocked}
+                                        >
+                                          <Edit className="w-4 h-4 mr-2" />
+                                          Edit Item
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem 
+                                          data-testid={`button-delete-item-${item.id}`} 
+                                          className="text-destructive"
+                                          disabled={estimate?.isLocked}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Delete Item
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                          
+                          {/* Render ungrouped items */}
+                          {ungroupedItems.length > 0 && (
+                            <>
+                              {sortedGroups.length > 0 && (
+                                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                  <TableCell colSpan={8} className="py-2">
+                                    <div className="flex items-center space-x-2">
+                                      <Badge variant="outline" className="text-xs">
+                                        Ungrouped Items
+                                      </Badge>
+                                      <span className="text-xs text-muted-foreground">
+                                        {ungroupedItems.length} items
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                              
+                              {ungroupedItems.map((item) => (
+                                <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
+                                  <TableCell className="py-0.5">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="font-medium text-sm truncate cursor-help max-w-[200px] block">
+                                            {item.name}
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <div className="max-w-[300px]">
+                                            <p className="font-medium">{item.name}</p>
+                                            {item.description && (
+                                              <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                                            )}
+                                          </div>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </TableCell>
+                                  <TableCell className="py-0.5">
+                                    <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
+                                  </TableCell>
+                                  <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>
+                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>
+                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>
+                                  <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
+                                  <TableCell className="py-0.5">
+                                    <Badge 
+                                      variant={item.status === 'confirmed' ? 'default' : 'secondary'}
+                                      className="text-xs h-5"
+                                    >
+                                      {item.status}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="py-0.5">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="sm" 
+                                          className="h-8 w-8 p-0" 
+                                          data-testid={`button-actions-${item.id}`}
+                                          disabled={estimate?.isLocked}
+                                        >
+                                          <MoreHorizontal className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem 
+                                          data-testid={`button-edit-item-${item.id}`}
+                                          disabled={estimate?.isLocked}
+                                        >
+                                          <Edit className="w-4 h-4 mr-2" />
+                                          Edit Item
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem 
+                                          data-testid={`button-delete-item-${item.id}`} 
+                                          className="text-destructive"
+                                          disabled={estimate?.isLocked}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Delete Item
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </TableBody>
                 </Table>
               )}
