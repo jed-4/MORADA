@@ -23,6 +23,33 @@ export default function Tasks() {
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [filters, setFilters] = useState<FilterState>({});
 
+  // Fetch saved task views and tasks filtered by current project
+  const { data: taskViews = [] } = useQuery<TaskView[]>({
+    queryKey: ["/api/task-views", currentProject?.id],
+    queryFn: async () => {
+      if (!currentProject) return [];
+      const response = await fetch(`/api/task-views?projectId=${currentProject.id}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch task views');
+      return response.json();
+    },
+    enabled: !!currentProject
+  });
+
+  const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
+    queryKey: ["/api/tasks", currentProject?.id], 
+    queryFn: async () => {
+      if (!currentProject) return [];
+      const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch tasks');
+      return response.json();
+    },
+    enabled: !!currentProject
+  });
+
   // Show loading state if no project is selected
   if (!currentProject) {
     return (
@@ -34,29 +61,6 @@ export default function Tasks() {
       </div>
     );
   }
-
-  // Fetch saved task views and tasks filtered by current project
-  const { data: taskViews = [] } = useQuery<TaskView[]>({
-    queryKey: ["/api/task-views", currentProject.id],
-    queryFn: async () => {
-      const response = await fetch(`/api/task-views?projectId=${currentProject.id}`, {
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to fetch task views');
-      return response.json();
-    }
-  });
-
-  const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", currentProject.id], 
-    queryFn: async () => {
-      const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, {
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to fetch tasks');
-      return response.json();
-    }
-  });
 
   // Default views
   const defaultViews = [
