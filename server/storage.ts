@@ -713,11 +713,25 @@ export class MemStorage implements IStorage {
     const project: Project = {
       ...insertProject,
       id,
+      description: insertProject.description ?? null,
+      color: insertProject.color ?? null,
+      ownerId: insertProject.ownerId ?? null,
       isActive: insertProject.isActive ?? true,
       isBusiness: insertProject.isBusiness ?? false,
       createdAt: now,
       updatedAt: now,
     };
+
+    try {
+      // First persist to database
+      await db.insert(schema.projects).values(project);
+      console.log(`createProject: Successfully saved project ${project.name} to database`);
+    } catch (error) {
+      console.error("Database error in createProject:", error);
+      // If database fails, still store in memory as fallback
+    }
+    
+    // Always store in memory for fallback
     this.projects.set(id, project);
     return project;
   }
