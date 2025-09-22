@@ -17,6 +17,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { Project } from "@shared/schema";
 import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
+import CreateProjectDialog from "./CreateProjectDialog";
 
 export default function Header() {
   const [location, navigate] = useLocation();
@@ -185,6 +186,12 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      
+      {/* Create Project Dialog */}
+      <CreateProjectDialog 
+        open={isCreateProjectOpen} 
+        onOpenChange={setIsCreateProjectOpen} 
+      />
     </header>
   );
 }
