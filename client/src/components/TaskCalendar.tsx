@@ -230,7 +230,7 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
   );
 
   return (
-    <div className="h-full flex flex-col" data-testid="task-calendar">
+    <div className="h-full w-full flex flex-col" data-testid="task-calendar">
       <div className="flex-1 min-h-0">
         <Calendar
           localizer={localizer}
