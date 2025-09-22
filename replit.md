@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Task View Management**: Added complete view deletion functionality with hover delete buttons on custom view tabs, confirmation dialogs, and smart tab switching when active view is deleted
 - **Filter Interface Redesign**: Replaced single filter panel with horizontal bar of individual dropdown buttons below the views for improved usability and visual hierarchy
 - **Enhanced UX**: Added active filter badges, "Clear All" functionality, and visual separation between views and filters using Material Design principles
+- **Calendar View Implementation**: Added comprehensive calendar view as third default tab alongside Kanban and List views, featuring Day/Week/Month views, priority-based color coding, interactive task management with drag & drop date changes, and full integration with existing filter system
 
 ## System Architecture
 
