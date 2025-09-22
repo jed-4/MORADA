@@ -154,9 +154,13 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
   };
 
   const handleEventDrop = ({ event, start }: { event: CalendarEvent; start: Date }) => {
+    // Normalize to end of day to prevent premature overdue states
+    const endOfDay = new Date(start);
+    endOfDay.setHours(23, 59, 59, 999);
+    
     updateTaskMutation.mutate({
       taskId: event.id,
-      updates: { dueDate: start },
+      updates: { dueDate: endOfDay },
     });
   };
 

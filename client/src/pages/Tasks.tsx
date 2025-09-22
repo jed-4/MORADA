@@ -124,7 +124,7 @@ export default function Tasks() {
   });
 
   const isCustomView = (view: any): view is TaskView => {
-    return view.id !== "kanban" && view.id !== "list";
+    return view.id !== "kanban" && view.id !== "list" && view.id !== "calendar";
   };
 
   const handleDeleteView = (view: TaskView) => {

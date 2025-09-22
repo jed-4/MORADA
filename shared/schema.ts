@@ -194,7 +194,7 @@ export type Project = typeof projects.$inferSelect;
 export const taskViews = pgTable("task_views", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  viewType: text("view_type").notNull().default("kanban"), // "kanban" | "list"
+  viewType: text("view_type").notNull().default("kanban"), // "kanban" | "list" | "calendar"
   filters: json("filters").default({}), // Filter settings
   columnConfig: json("column_config").default({}), // Column visibility and order for list view
   isDefault: boolean("is_default").notNull().default(false),
