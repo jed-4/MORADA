@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type InsertTask } from "@shared/schema";
 import { z } from "zod";
+import { useProject } from "@/contexts/ProjectContext";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,8 +59,14 @@ interface TaskFormProps {
 export default function TaskForm({ task, open, onOpenChange, trigger, initialStatus = "todo" }: TaskFormProps) {
   const [tagInput, setTagInput] = useState("");
   const { toast } = useToast();
+  const { currentProject } = useProject();
   
   const isEditing = !!task;
+
+  // Don't render if no project is selected
+  if (!currentProject) {
+    return null;
+  }
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -88,7 +95,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         type: "task",
         priority: data.priority,
         status: data.status,
-        projectId: "default", // Use default project for now - TODO: Get from project context
+        projectId: currentProject.id,
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: data.tags,
@@ -97,7 +104,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject.id] });
       toast({ title: "Task created successfully" });
       onOpenChange(false);
       form.reset();
@@ -130,7 +137,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject.id] });
       toast({ title: "Task updated successfully" });
       onOpenChange(false);
     },
