@@ -39,6 +39,8 @@ export default function EstimateDetail() {
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState("");
+  const [isEditingMarkup, setIsEditingMarkup] = useState(false);
+  const [editingMarkup, setEditingMarkup] = useState("");
 
   if (!id) {
     return <div>Invalid estimate ID</div>;
@@ -66,6 +68,32 @@ export default function EstimateDetail() {
       });
       // Reset to original name on error
       setEditingName(estimate?.name || "");
+    },
+  });
+
+  // Mutation for updating markup percentage
+  const updateMarkupMutation = useMutation({
+    mutationFn: async (data: { projectMarkupPercent: number }) => {
+      const response = await apiRequest("PATCH", `/api/estimates/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "Markup percentage updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update markup percentage.",
+        variant: "destructive",
+      });
+      // Reset to original markup on error
+      setEditingMarkup(estimate?.projectMarkupPercent?.toString() || "0");
     },
   });
 
@@ -120,6 +148,73 @@ export default function EstimateDetail() {
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleNameCancel();
+    }
+  };
+
+  // Handlers for inline markup editing
+  const handleMarkupEdit = () => {
+    if (estimate?.isLocked) {
+      toast({
+        title: "Cannot Edit",
+        description: "This estimate is locked and cannot be modified.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setEditingMarkup(estimate?.projectMarkupPercent?.toString() || "0");
+    setIsEditingMarkup(true);
+  };
+
+  const handleMarkupSave = () => {
+    if (!isEditingMarkup || !estimate) return;
+    
+    const trimmedMarkup = editingMarkup.trim();
+    const markupNumber = parseFloat(trimmedMarkup);
+    
+    // Validation
+    if (trimmedMarkup === "" || isNaN(markupNumber)) {
+      toast({
+        title: "Invalid Percentage",
+        description: "Please enter a valid number for markup percentage.",
+        variant: "destructive",
+      });
+      setEditingMarkup(estimate.projectMarkupPercent?.toString() || "0");
+      return;
+    }
+    
+    if (markupNumber < 0 || markupNumber > 100) {
+      toast({
+        title: "Invalid Range",
+        description: "Markup percentage must be between 0 and 100.",
+        variant: "destructive",
+      });
+      setEditingMarkup(estimate.projectMarkupPercent?.toString() || "0");
+      return;
+    }
+    
+    if (markupNumber === estimate.projectMarkupPercent) {
+      // No changes, just exit edit mode
+      setIsEditingMarkup(false);
+      return;
+    }
+    
+    // Optimistic update
+    setIsEditingMarkup(false);
+    updateMarkupMutation.mutate({ projectMarkupPercent: markupNumber });
+  };
+
+  const handleMarkupCancel = () => {
+    setEditingMarkup(estimate?.projectMarkupPercent?.toString() || "0");
+    setIsEditingMarkup(false);
+  };
+
+  const handleMarkupKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleMarkupSave();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleMarkupCancel();
     }
   };
 
@@ -291,7 +386,34 @@ export default function EstimateDetail() {
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Markup ({estimate.projectMarkupPercent}%)</CardTitle>
+                  <CardTitle className="text-sm font-medium">
+                    Markup (
+                    {isEditingMarkup ? (
+                      <Input
+                        value={editingMarkup}
+                        onChange={(e) => setEditingMarkup(e.target.value)}
+                        onKeyDown={handleMarkupKeyDown}
+                        onBlur={handleMarkupSave}
+                        className="inline-block w-16 h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        data-testid="input-markup-percentage"
+                        autoFocus
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                    ) : (
+                      <span 
+                        className="cursor-pointer hover:text-blue-600 transition-colors underline decoration-dotted"
+                        onClick={handleMarkupEdit}
+                        title="Click to edit markup percentage"
+                        data-testid="text-markup-percentage"
+                      >
+                        {estimate.projectMarkupPercent}
+                      </span>
+                    )}
+                    %)
+                  </CardTitle>
                   <Calculator className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
