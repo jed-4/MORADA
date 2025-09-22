@@ -57,6 +57,7 @@ interface TaskListProps {
   isLoading?: boolean;
   filters?: Record<string, any>;
   columnConfig?: Record<string, any>;
+  onTaskClick?: (task: Task) => void;
 }
 
 type SortConfig = {
@@ -123,7 +124,7 @@ function DraggableTableRow({
   );
 }
 
-export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, filters, columnConfig }: TaskListProps) {
+export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, filters, columnConfig, onTaskClick }: TaskListProps) {
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'asc' });
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -496,7 +497,10 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                                   )}
                                   <span 
                                     className="truncate cursor-pointer hover:text-primary" 
-                                    onClick={() => !task.parentTaskId && toggleTaskExpansion(task.id)}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      onTaskClick?.(task);
+                                    }}
                                     data-testid={`task-title-${task.id}`}
                                   >
                                     {task.title}

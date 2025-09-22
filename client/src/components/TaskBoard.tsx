@@ -41,10 +41,11 @@ interface TaskBoardProps {
   tasks?: Task[];
   isLoading?: boolean;
   filters?: Record<string, any>;
+  onTaskClick?: (task: Task) => void;
 }
 
 // Draggable Task Card wrapper
-function DraggableTaskCard({ task }: { task: Task }) {
+function DraggableTaskCard({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Task) => void }) {
   const {
     attributes,
     listeners,
@@ -75,7 +76,7 @@ function DraggableTaskCard({ task }: { task: Task }) {
       {...listeners}
       className="touch-none"
     >
-      <TaskCard task={task} showSubtasks={true} />
+      <TaskCard task={task} showSubtasks={true} onClick={() => onTaskClick?.(task)} />
     </div>
   );
 }
@@ -84,11 +85,13 @@ function DraggableTaskCard({ task }: { task: Task }) {
 function DroppableColumn({ 
   column, 
   tasks, 
-  onAddTask 
+  onAddTask,
+  onTaskClick
 }: { 
   column: typeof columns[0]; 
   tasks: Task[]; 
-  onAddTask: () => void; 
+  onAddTask: () => void;
+  onTaskClick?: (task: Task) => void;
 }) {
   const {
     setNodeRef,
@@ -122,7 +125,7 @@ function DroppableColumn({
             </div>
           ) : (
             tasks.map((task) => (
-              <DraggableTaskCard key={task.id} task={task} />
+              <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} />
             ))
           )}
         </SortableContext>
@@ -140,7 +143,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<"todo" | "in-progress" | "done">("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -285,6 +288,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                   column={column}
                   tasks={columnTasks}
                   onAddTask={() => handleAddTaskToColumn(column.status)}
+                  onTaskClick={onTaskClick}
                 />
               );
             })}
@@ -301,7 +305,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <DragOverlay>
           {activeTask ? (
             <div className="opacity-90 transform rotate-3 shadow-lg">
-              <DraggableTaskCard task={activeTask} />
+              <DraggableTaskCard task={activeTask} onTaskClick={onTaskClick} />
             </div>
           ) : null}
         </DragOverlay>

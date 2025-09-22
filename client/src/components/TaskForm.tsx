@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import {
   Select,
@@ -28,15 +29,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Calendar,
   Check,
   Plus,
   X,
+  Settings,
+  FileText,
+  RefreshCw,
+  Clock,
 } from "lucide-react";
 
-// Simple form schema for task creation/editing
+// Enhanced form schema with all available fields
 const taskFormSchema = z.object({
+  // Basic Info Tab
   title: z.string().min(1, "Title is required"),
   content: z.string().default(""),
   priority: z.enum(["low", "medium", "high"]).default("medium"),
@@ -44,12 +52,22 @@ const taskFormSchema = z.object({
   assigneeName: z.string().optional(),
   dueDate: z.string().optional(), // HTML date input returns string
   tags: z.array(z.string()).default([]),
+  // Advanced Tab
+  category: z.string().default("General"),
+  customFields: z.record(z.any()).default({}),
+  parentTaskId: z.string().optional(),
+  // Recurring Tab
+  isRecurring: z.boolean().default(false),
+  recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
+  recurringInterval: z.number().min(1).default(1),
+  recurringDays: z.array(z.number()).default([]),
+  recurringEndDate: z.string().optional(),
 });
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
 
 interface TaskFormProps {
-  task?: Task; // If provided, we're editing; otherwise creating
+  task?: Task;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trigger?: React.ReactNode;
@@ -58,6 +76,7 @@ interface TaskFormProps {
 
 export default function TaskForm({ task, open, onOpenChange, trigger, initialStatus = "todo" }: TaskFormProps) {
   const [tagInput, setTagInput] = useState("");
+  const [activeTab, setActiveTab] = useState("basic");
   const { toast } = useToast();
   const { currentProject } = useProject();
   
@@ -71,6 +90,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: {
+      // Basic Info
       title: task?.title || "",
       content: task?.content || "",
       priority: (task?.priority as "low" | "medium" | "high") || "medium",
@@ -78,20 +98,41 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       assigneeName: task?.assigneeName || "",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
       tags: (task?.tags as string[]) || [],
+      // Advanced
+      category: task?.category || "General",
+      customFields: (task?.customFields as Record<string, any>) || {},
+      parentTaskId: task?.parentTaskId || undefined,
+      // Recurring
+      isRecurring: task?.isRecurring || false,
+      recurringType: task?.recurringType as "daily" | "weekly" | "monthly" | "yearly" | "custom" | undefined,
+      recurringInterval: task?.recurringInterval || 1,
+      recurringDays: (task?.recurringDays as number[]) || [],
+      recurringEndDate: task?.recurringEndDate ? new Date(task.recurringEndDate).toISOString().split('T')[0] : "",
     },
   });
 
-  // Watch tags to manage them
+  // Watch fields for reactive behavior
   const watchedTags = form.watch("tags");
+  const watchedIsRecurring = form.watch("isRecurring");
+  const watchedRecurringType = form.watch("recurringType");
+
+  // Fetch potential parent tasks for subtask selection
+  const { data: parentTasks = [] } = useQuery({
+    queryKey: ["/api/tasks", currentProject.id, "parents"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/tasks?projectId=${currentProject.id}`);
+      return Array.isArray(response) ? response.filter((t: Task) => t.id !== task?.id) : [];
+    },
+    enabled: open && !!currentProject.id,
+  });
 
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
-      // Convert form data to InsertTask format
       const payload: InsertTask = {
         title: data.title,
         content: data.content,
-        author: "Current User", // TODO: Get from auth context
+        author: "Current User",
         type: "task",
         priority: data.priority,
         status: data.status,
@@ -99,9 +140,18 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: data.tags,
+        // Advanced fields
+        category: data.category,
+        customFields: data.customFields,
+        parentTaskId: data.parentTaskId || undefined,
+        // Recurring fields
+        isRecurring: data.isRecurring,
+        recurringType: data.recurringType,
+        recurringInterval: data.isRecurring ? data.recurringInterval : undefined,
+        recurringDays: data.isRecurring ? data.recurringDays : undefined,
+        recurringEndDate: data.isRecurring && data.recurringEndDate ? new Date(data.recurringEndDate) : undefined,
       };
-      const response = await apiRequest("POST", "/api/tasks", payload);
-      return response.json();
+      return await apiRequest("POST", `/api/tasks`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject.id] });
@@ -123,7 +173,6 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
     mutationFn: async (data: TaskFormData) => {
       if (!task) throw new Error("No task to update");
       
-      // Convert form data to update format
       const payload: Partial<InsertTask> = {
         title: data.title,
         content: data.content,
@@ -132,9 +181,18 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: data.tags,
+        // Advanced fields
+        category: data.category,
+        customFields: data.customFields,
+        parentTaskId: data.parentTaskId || undefined,
+        // Recurring fields
+        isRecurring: data.isRecurring,
+        recurringType: data.recurringType,
+        recurringInterval: data.isRecurring ? data.recurringInterval : undefined,
+        recurringDays: data.isRecurring ? data.recurringDays : undefined,
+        recurringEndDate: data.isRecurring && data.recurringEndDate ? new Date(data.recurringEndDate) : undefined,
       };
-      const response = await apiRequest("PATCH", `/api/tasks/${task.id}`, payload);
-      return response.json();
+      return await apiRequest("PATCH", `/api/tasks/${task.id}`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject.id] });
@@ -178,10 +236,20 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
     }
   };
 
+  const weekDays = [
+    { value: 1, label: "Monday" },
+    { value: 2, label: "Tuesday" },
+    { value: 3, label: "Wednesday" },
+    { value: 4, label: "Thursday" },
+    { value: 5, label: "Friday" },
+    { value: 6, label: "Saturday" },
+    { value: 0, label: "Sunday" },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? "Edit Task" : "Create New Task"}
@@ -193,174 +261,411 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
             }
           </DialogDescription>
         </DialogHeader>
+        
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Task Title</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g., Complete foundation inspection"
-                      {...field}
-                      data-testid="task-title-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="content"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Describe the task details..."
-                      rows={3}
-                      {...field}
-                      data-testid="task-description-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="task-priority-select">
-                          <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="basic" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Basic Info
+                </TabsTrigger>
+                <TabsTrigger value="advanced" className="flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  Advanced
+                </TabsTrigger>
+                <TabsTrigger value="recurring" className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Recurring
+                </TabsTrigger>
+              </TabsList>
               
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+              {/* Basic Info Tab */}
+              <TabsContent value="basic" className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Task Title</FormLabel>
                       <FormControl>
-                        <SelectTrigger data-testid="task-status-select">
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
+                        <Input
+                          placeholder="e.g., Complete foundation inspection"
+                          {...field}
+                          data-testid="task-title-input"
+                        />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="todo">To Do</SelectItem>
-                        <SelectItem value="in-progress">In Progress</SelectItem>
-                        <SelectItem value="done">Done</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="assigneeName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Assignee</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., John Smith"
-                        {...field}
-                        data-testid="task-assignee-input"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="dueDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Due Date</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
-                        data-testid="task-due-date-input"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            
-            {/* Tags Management */}
-            <div className="space-y-2">
-              <FormLabel>Tags</FormLabel>
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Add a tag..."
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="flex-1"
-                  data-testid="task-tag-input"
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addTag}
-                  disabled={!tagInput.trim() || watchedTags?.includes(tagInput.trim())}
-                  data-testid="task-add-tag-button"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              {watchedTags && watchedTags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {watchedTags.map((tag, index) => (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {tag}
-                      <button
-                        type="button"
-                        onClick={() => removeTag(tag)}
-                        className="ml-1 hover:text-destructive"
-                        data-testid={`task-remove-tag-${index}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                
+                <FormField
+                  control={form.control}
+                  name="content"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Describe the task details..."
+                          rows={4}
+                          {...field}
+                          data-testid="task-description-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="priority"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Priority</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="task-priority-select">
+                              <SelectValue placeholder="Select priority" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="task-status-select">
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="todo">To Do</SelectItem>
+                            <SelectItem value="in-progress">In Progress</SelectItem>
+                            <SelectItem value="done">Done</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-              )}
-            </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="assigneeName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assignee</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., John Smith"
+                            {...field}
+                            data-testid="task-assignee-input"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Due Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            data-testid="task-due-date-input"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                
+                {/* Tags Management */}
+                <div className="space-y-2">
+                  <FormLabel>Tags</FormLabel>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Add a tag..."
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      className="flex-1"
+                      data-testid="task-tag-input"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addTag}
+                      disabled={!tagInput.trim() || watchedTags?.includes(tagInput.trim())}
+                      data-testid="task-add-tag-button"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {watchedTags && watchedTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {watchedTags.map((tag, index) => (
+                        <Badge key={index} variant="secondary" className="text-xs">
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => removeTag(tag)}
+                            className="ml-1 hover:text-destructive"
+                            data-testid={`task-remove-tag-${index}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+              
+              {/* Advanced Tab */}
+              <TabsContent value="advanced" className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Category</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Site Work, Inspections"
+                            {...field}
+                            data-testid="task-category-input"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="parentTaskId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Parent Task (Subtask of)</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                          value={field.value || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="task-parent-select">
+                              <SelectValue placeholder="Select parent task (optional)" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No parent task</SelectItem>
+                            {parentTasks.map((parentTask: Task) => (
+                              <SelectItem key={parentTask.id} value={parentTask.id}>
+                                {parentTask.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Custom Fields</CardTitle>
+                    <CardDescription>
+                      Project-specific data fields (coming soon)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Custom field management will be available in a future update.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* Timestamps display for editing mode */}
+                {isEditing && task && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        Timeline
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Created:</span>
+                        <span>{new Date(task.createdAt).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Updated:</span>
+                        <span>{new Date(task.updatedAt).toLocaleString()}</span>
+                      </div>
+                      {task.completedAt && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Completed:</span>
+                          <span>{new Date(task.completedAt).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+              
+              {/* Recurring Tab */}
+              <TabsContent value="recurring" className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="isRecurring"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center space-x-2">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="task-recurring-checkbox"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Make this a recurring task</FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                {watchedIsRecurring && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="recurringType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Repeat</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                              <FormControl>
+                                <SelectTrigger data-testid="task-recurring-type-select">
+                                  <SelectValue placeholder="Select frequency" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="daily">Daily</SelectItem>
+                                <SelectItem value="weekly">Weekly</SelectItem>
+                                <SelectItem value="monthly">Monthly</SelectItem>
+                                <SelectItem value="yearly">Yearly</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="recurringInterval"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Every</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="1"
+                                placeholder="1"
+                                {...field}
+                                onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                                data-testid="task-recurring-interval-input"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {watchedRecurringType === "weekly" && (
+                      <FormField
+                        control={form.control}
+                        name="recurringDays"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Repeat on days</FormLabel>
+                            <div className="flex flex-wrap gap-2">
+                              {weekDays.map((day) => (
+                                <div key={day.value} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    checked={field.value.includes(day.value)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        field.onChange([...field.value, day.value]);
+                                      } else {
+                                        field.onChange(field.value.filter((d: number) => d !== day.value));
+                                      }
+                                    }}
+                                    data-testid={`task-recurring-day-${day.value}`}
+                                  />
+                                  <label className="text-sm">{day.label.slice(0, 3)}</label>
+                                </div>
+                              ))}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    <FormField
+                      control={form.control}
+                      name="recurringEndDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>End Date (optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              {...field}
+                              data-testid="task-recurring-end-date-input"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
             
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-4 border-t">
               <Button 
                 type="button" 
                 variant="outline" 
@@ -374,10 +679,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                 disabled={createTaskMutation.isPending || updateTaskMutation.isPending}
                 data-testid="task-form-submit"
               >
-                {createTaskMutation.isPending || updateTaskMutation.isPending ? 
-                  (isEditing ? "Updating..." : "Creating...") :
-                  (isEditing ? "Update Task" : "Create Task")
-                }
+                {createTaskMutation.isPending || updateTaskMutation.isPending ? "Saving..." : (isEditing ? "Update Task" : "Create Task")}
               </Button>
             </div>
           </form>

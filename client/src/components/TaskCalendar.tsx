@@ -35,7 +35,7 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
-      return await apiRequest(`/api/tasks/${task.id}`, "PATCH", updates);
+      return await apiRequest("PATCH", `/api/tasks/${task.id}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.projectId] });
@@ -55,12 +55,13 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
 
   const handleCompleteToggle = (checked: boolean | string) => {
     const newStatus = typeof checked === "boolean" && checked ? "done" : task.status === "done" ? "todo" : "done";
-    const completedAt = newStatus === "done" ? new Date() : null;
+    const updates: Partial<Task> = { status: newStatus };
+    if (newStatus === "done") {
+      updates.completedAt = new Date();
+    }
+    // Note: When marking incomplete, we omit completedAt instead of setting to null
     
-    updateTaskMutation.mutate({
-      status: newStatus,
-      completedAt,
-    });
+    updateTaskMutation.mutate(updates);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -118,7 +119,7 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
+      return await apiRequest("PATCH", `/api/tasks/${taskId}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
@@ -158,9 +159,9 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
     const endOfDay = new Date(start);
     endOfDay.setHours(23, 59, 59, 999);
     
-    updateTaskMutation.mutate({
-      taskId: event.id,
-      updates: { dueDate: endOfDay },
+    updateTaskMutation.mutate({ 
+      taskId: event.id, 
+      updates: { dueDate: endOfDay } 
     });
   };
 
@@ -243,8 +244,8 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
           onNavigate={handleNavigate}
           onView={handleViewChange}
           onSelectEvent={handleSelectEvent}
-          onEventDrop={handleEventDrop}
-          onEventResize={handleEventDrop}
+          onEventDrop={handleEventDrop as any}
+          onEventResize={handleEventDrop as any}
           draggableAccessor={() => true}
           resizable
           popup

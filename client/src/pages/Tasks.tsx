@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
+import TaskForm from "@/components/TaskForm";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -55,6 +56,8 @@ export default function Tasks() {
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
@@ -241,7 +244,11 @@ export default function Tasks() {
               <Settings className="h-4 w-4 mr-2" />
               View Settings
             </Button>
-            <Button size="sm" data-testid="button-add-task">
+            <Button 
+              size="sm" 
+              onClick={() => setShowCreateTaskDialog(true)}
+              data-testid="button-add-task"
+            >
               <Plus className="h-4 w-4 mr-2" />
               Add Task
             </Button>
@@ -507,18 +514,18 @@ export default function Tasks() {
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden">
           <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
-            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} />
+            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} />
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <TaskList tasks={effectivelyFilteredTasks} isLoading={tasksLoading} />
+            <TaskList tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} />
           </TabsContent>
 
           <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">
             <TaskCalendar 
               tasks={effectivelyFilteredTasks} 
               projectId={currentProject?.id || ""} 
-              onTaskClick={() => {}} 
+              onTaskClick={(task: Task) => setEditingTask(task)} 
             />
           </TabsContent>
           
@@ -532,15 +539,15 @@ export default function Tasks() {
             return (
               <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
                 {view.viewType === "kanban" ? (
-                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} />
+                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} />
                 ) : view.viewType === "calendar" ? (
                   <TaskCalendar 
                     tasks={viewFilteredTasks} 
                     projectId={currentProject?.id || ""} 
-                    onTaskClick={() => {}} 
+                    onTaskClick={(task: Task) => setEditingTask(task)} 
                   />
                 ) : (
-                  <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} />
+                  <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} onTaskClick={(task: Task) => setEditingTask(task)} />
                 )}
               </TabsContent>
             );
@@ -570,7 +577,7 @@ export default function Tasks() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="view-type">View Type</Label>
-              <Select value={newViewType} onValueChange={(value: "kanban" | "list" | "calendar") => setNewViewType(value)}>
+              <Select value={newViewType} onValueChange={(value: "kanban" | "list") => setNewViewType(value)}>
                 <SelectTrigger data-testid="select-view-type">
                   <SelectValue placeholder="Select view type" />
                 </SelectTrigger>
@@ -623,6 +630,19 @@ export default function Tasks() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Task Creation Dialog */}
+      <TaskForm 
+        open={showCreateTaskDialog}
+        onOpenChange={setShowCreateTaskDialog}
+      />
+
+      {/* Task Editing Dialog */}
+      <TaskForm
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
+      />
     </div>
   );
 }
