@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,8 +17,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -41,6 +52,8 @@ export default function Tasks() {
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
+  const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+  const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list">("kanban");
   const [filters, setFilters] = useState<FilterState>({});
@@ -76,6 +89,52 @@ export default function Tasks() {
       });
     },
   });
+
+  // Mutation for deleting views
+  const deleteViewMutation = useMutation({
+    mutationFn: async (viewId: string): Promise<void> => {
+      const response = await fetch(`/api/task-views/${viewId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete view");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views", currentProject?.id] });
+      // If the deleted view was active, switch to default kanban view
+      if (viewToDelete && activeTab === viewToDelete.id) {
+        setActiveTab("kanban");
+      }
+      setShowDeleteViewDialog(false);
+      setViewToDelete(null);
+      toast({
+        title: "View deleted",
+        description: `"${viewToDelete?.name}" has been deleted.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete view",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const isCustomView = (view: any): view is TaskView => {
+    return view.id !== "kanban" && view.id !== "list";
+  };
+
+  const handleDeleteView = (view: TaskView) => {
+    setViewToDelete(view);
+    setShowDeleteViewDialog(true);
+  };
+
+  const confirmDeleteView = () => {
+    if (viewToDelete) {
+      deleteViewMutation.mutate(viewToDelete.id);
+    }
+  };
 
   const handleCreateView = () => {
     if (!currentProject || !newViewName.trim()) return;
@@ -186,16 +245,6 @@ export default function Tasks() {
           </div>
         </div>
         
-        {/* Filter Panel */}
-        <div className="mt-4">
-          <FilterPanel
-            filters={filters}
-            onFiltersChange={setFilters}
-            availableAssignees={filterOptions.availableAssignees}
-            availableProjects={filterOptions.availableProjects}
-            availableTags={filterOptions.availableTags}
-          />
-        </div>
       </div>
 
       {/* Tabs */}
@@ -203,21 +252,39 @@ export default function Tasks() {
         <div className="border-b border-border px-4">
           <div className="flex items-center justify-between">
             <TabsList className="flex w-auto" data-testid="tabs-task-views">
-              {allViews.map((view) => (
-                <TabsTrigger
-                  key={view.id}
-                  value={view.id}
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground relative"
-                  data-testid={`tab-${view.id}`}
-                >
-                  {view.name}
-                  {view.viewType === "list" && view.id !== "list" && (
-                    <Badge variant="outline" className="ml-2 text-xs">
-                      NEW
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              ))}
+              {allViews.map((view) => {
+                const canDelete = isCustomView(view);
+                return (
+                  <div key={view.id} className="relative group">
+                    <TabsTrigger
+                      value={view.id}
+                      className="data-[state=active]:bg-background data-[state=active]:text-foreground relative pr-8"
+                      data-testid={`tab-${view.id}`}
+                    >
+                      {view.name}
+                      {view.viewType === "list" && view.id !== "list" && (
+                        <Badge variant="outline" className="ml-2 text-xs">
+                          NEW
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteView(view);
+                        }}
+                        data-testid={`button-delete-${view.id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
               <Button
                 variant="ghost"
                 size="sm"
@@ -247,6 +314,190 @@ export default function Tasks() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Filter Bar */}
+        <div className="border-b border-border/50 bg-muted/30 px-4 py-2">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            {/* Search */}
+            <div className="relative min-w-64">
+              <Input
+                placeholder="Search tasks..."
+                value={filters.search || ""}
+                onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
+                className="h-8 text-sm"
+                data-testid="input-search-tasks"
+              />
+              {filters.search && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+                  onClick={() => setFilters({...filters, search: undefined})}
+                  data-testid="button-clear-search"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+
+            {/* Status Filter */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-sm">
+                  <Flag className="h-3 w-3 mr-1" />
+                  Status
+                  {filters.status && filters.status.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                      {filters.status.length}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {[
+                  { value: "todo", label: "To Do" },
+                  { value: "in-progress", label: "In Progress" },
+                  { value: "done", label: "Done" },
+                ].map(option => (
+                  <DropdownMenuItem key={option.value} className="flex items-center">
+                    <Checkbox
+                      checked={filters.status?.includes(option.value) || false}
+                      onCheckedChange={() => {
+                        const currentStatus = filters.status || [];
+                        const newStatus = currentStatus.includes(option.value)
+                          ? currentStatus.filter(s => s !== option.value)
+                          : [...currentStatus, option.value];
+                        setFilters({...filters, status: newStatus.length > 0 ? newStatus : undefined});
+                      }}
+                      className="mr-2"
+                    />
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Priority Filter */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-sm">
+                  <Flag className="h-3 w-3 mr-1" />
+                  Priority
+                  {filters.priority && filters.priority.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                      {filters.priority.length}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {[
+                  { value: "high", label: "High" },
+                  { value: "medium", label: "Medium" },
+                  { value: "low", label: "Low" },
+                ].map(option => (
+                  <DropdownMenuItem key={option.value} className="flex items-center">
+                    <Checkbox
+                      checked={filters.priority?.includes(option.value) || false}
+                      onCheckedChange={() => {
+                        const currentPriority = filters.priority || [];
+                        const newPriority = currentPriority.includes(option.value)
+                          ? currentPriority.filter(p => p !== option.value)
+                          : [...currentPriority, option.value];
+                        setFilters({...filters, priority: newPriority.length > 0 ? newPriority : undefined});
+                      }}
+                      className="mr-2"
+                    />
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Assignee Filter */}
+            {filterOptions.availableAssignees.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 text-sm">
+                    <User className="h-3 w-3 mr-1" />
+                    Assignee
+                    {filters.assignee && filters.assignee.length > 0 && (
+                      <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                        {filters.assignee.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {filterOptions.availableAssignees.map(assignee => (
+                    <DropdownMenuItem key={assignee} className="flex items-center">
+                      <Checkbox
+                        checked={filters.assignee?.includes(assignee) || false}
+                        onCheckedChange={() => {
+                          const currentAssignee = filters.assignee || [];
+                          const newAssignee = currentAssignee.includes(assignee)
+                            ? currentAssignee.filter(a => a !== assignee)
+                            : [...currentAssignee, assignee];
+                          setFilters({...filters, assignee: newAssignee.length > 0 ? newAssignee : undefined});
+                        }}
+                        className="mr-2"
+                      />
+                      {assignee}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Tags Filter */}
+            {filterOptions.availableTags.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 text-sm">
+                    <Tag className="h-3 w-3 mr-1" />
+                    Tags
+                    {filters.tags && filters.tags.length > 0 && (
+                      <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                        {filters.tags.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {filterOptions.availableTags.map(tag => (
+                    <DropdownMenuItem key={tag} className="flex items-center">
+                      <Checkbox
+                        checked={filters.tags?.includes(tag) || false}
+                        onCheckedChange={() => {
+                          const currentTags = filters.tags || [];
+                          const newTags = currentTags.includes(tag)
+                            ? currentTags.filter(t => t !== tag)
+                            : [...currentTags, tag];
+                          setFilters({...filters, tags: newTags.length > 0 ? newTags : undefined});
+                        }}
+                        className="mr-2"
+                      />
+                      {tag}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Clear All Filters */}
+            {(filters.search || filters.status?.length || filters.priority?.length || filters.assignee?.length || filters.tags?.length) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-sm text-muted-foreground"
+                onClick={() => setFilters({})}
+                data-testid="button-clear-all-filters"
+              >
+                Clear All
+              </Button>
+            )}
           </div>
         </div>
 
@@ -331,6 +582,29 @@ export default function Tasks() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete View Confirmation Dialog */}
+      <AlertDialog open={showDeleteViewDialog} onOpenChange={setShowDeleteViewDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete View</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteView}
+              disabled={deleteViewMutation.isPending}
+              data-testid="button-confirm-delete"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
