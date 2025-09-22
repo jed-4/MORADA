@@ -15,9 +15,13 @@ import {
   Calculator,
   Plus,
   Edit,
-  Trash2
+  Trash2,
+  MoreHorizontal
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema } from "@shared/schema";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Table,
   TableBody,
@@ -26,6 +30,41 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface EstimateDetailParams {
   id: string;
@@ -41,6 +80,9 @@ export default function EstimateDetail() {
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
+  
+  // Add item modal state
+  const [isAddItemOpen, setIsAddItemOpen] = useState(false);
 
   if (!id) {
     return <div>Invalid estimate ID</div>;
@@ -94,6 +136,31 @@ export default function EstimateDetail() {
       });
       // Reset to original markup on error
       setEditingMarkup(estimate?.projectMarkupPercent?.toString() || "0");
+    },
+  });
+
+  // Mutation for adding estimate items
+  const addItemMutation = useMutation({
+    mutationFn: async (data: InsertEstimateItem) => {
+      const response = await apiRequest("POST", `/api/estimates/${id}/items`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      setIsAddItemOpen(false);
+      toast({
+        title: "Success",
+        description: "Estimate item added successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add estimate item.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -216,6 +283,56 @@ export default function EstimateDetail() {
       e.preventDefault();
       handleMarkupCancel();
     }
+  };
+
+  // Form setup for adding items
+  const addItemFormSchema = insertEstimateItemSchema.omit({ 
+    estimateId: true 
+  }).extend({
+    priceExTax: z.number().min(0, "Price must be positive"),
+    quantity: z.number().min(0.01, "Quantity must be greater than 0"),
+  });
+
+  const form = useForm<z.infer<typeof addItemFormSchema>>({
+    resolver: zodResolver(addItemFormSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      type: "material",
+      quantity: 1,
+      unitType: "each",
+      priceExTax: 0,
+      status: "pending",
+    },
+  });
+
+  // Handlers for adding items
+  const handleAddItem = () => {
+    if (estimate?.isLocked) {
+      toast({
+        title: "Cannot Add Item",
+        description: "This estimate is locked and cannot be modified.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsAddItemOpen(true);
+  };
+
+  const handleSubmitItem = (data: z.infer<typeof addItemFormSchema>) => {
+    if (!estimate) return;
+    
+    const itemData: InsertEstimateItem = {
+      ...data,
+      estimateId: estimate.id,
+    };
+    
+    addItemMutation.mutate(itemData);
+  };
+
+  const handleCloseAddItem = () => {
+    setIsAddItemOpen(false);
+    form.reset();
   };
 
   // Fetch estimate details
@@ -465,7 +582,7 @@ export default function EstimateDetail() {
                 <FileText className="w-5 h-5 mr-2" />
                 Estimate Items ({items.length})
               </CardTitle>
-              <Button size="sm" data-testid="button-add-item">
+              <Button size="sm" data-testid="button-add-item" onClick={handleAddItem}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Item
               </Button>
@@ -484,7 +601,7 @@ export default function EstimateDetail() {
                   <p className="text-muted-foreground mb-4">
                     Add your first estimate item to start building this estimate.
                   </p>
-                  <Button data-testid="button-add-first-item">
+                  <Button data-testid="button-add-first-item" onClick={handleAddItem}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add First Item
                   </Button>
@@ -492,52 +609,72 @@ export default function EstimateDetail() {
               ) : (
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Price Ex-Tax</TableHead>
-                      <TableHead>Tax</TableHead>
-                      <TableHead>Total Inc-Tax</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                    <TableRow className="h-8">
+                      <TableHead className="py-1 text-xs font-medium">Item</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Type</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Quantity</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Price Ex-Tax</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Tax</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Total Inc-Tax</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Status</TableHead>
+                      <TableHead className="py-1 text-xs font-medium w-[80px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((item) => (
-                      <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{item.name}</div>
-                            {item.description && (
-                              <div className="text-sm text-muted-foreground">{item.description}</div>
-                            )}
-                          </div>
+                      <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
+                        <TableCell className="py-0.5">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="font-medium text-sm truncate cursor-help max-w-[200px] block">
+                                  {item.name}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="max-w-[300px]">
+                                  <p className="font-medium">{item.name}</p>
+                                  {item.description && (
+                                    <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{item.type}</Badge>
+                        <TableCell className="py-0.5">
+                          <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
                         </TableCell>
-                        <TableCell>{formatQuantity(item.quantity, item.unitType)}</TableCell>
-                        <TableCell>{formatCurrency(item.priceExTax)}</TableCell>
-                        <TableCell>{formatCurrency(item.taxAmount)}</TableCell>
-                        <TableCell className="font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
-                        <TableCell>
+                        <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>
+                        <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>
+                        <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>
+                        <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
+                        <TableCell className="py-0.5">
                           <Badge 
                             variant={item.status === 'confirmed' ? 'default' : 'secondary'}
-                            className={item.status === 'confirmed' ? 'bg-green-100 text-green-700' : ''}
+                            className="text-xs h-5"
                           >
                             {item.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-1">
-                            <Button variant="ghost" size="sm" data-testid={`button-edit-item-${item.id}`}>
-                              <Edit className="w-3 h-3" />
-                            </Button>
-                            <Button variant="ghost" size="sm" data-testid={`button-delete-item-${item.id}`}>
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
+                        <TableCell className="py-0.5">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" data-testid={`button-actions-${item.id}`}>
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem data-testid={`button-edit-item-${item.id}`}>
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit Item
+                              </DropdownMenuItem>
+                              <DropdownMenuItem data-testid={`button-delete-item-${item.id}`} className="text-destructive">
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Item
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -548,6 +685,176 @@ export default function EstimateDetail() {
           </Card>
         </div>
       </div>
+
+      {/* Add Item Dialog */}
+      <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Estimate Item</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmitItem)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Item Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Premium Kitchen Cabinets" {...field} data-testid="input-item-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Additional details about this item..." {...field} data-testid="input-item-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Type</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-item-type">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="material">Material</SelectItem>
+                          <SelectItem value="labour">Labour</SelectItem>
+                          <SelectItem value="equipment">Equipment</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-item-status">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="quoted">Quoted</SelectItem>
+                          <SelectItem value="confirmed">Confirmed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="quantity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quantity</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          min="0.01"
+                          placeholder="1"
+                          {...field}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          data-testid="input-item-quantity"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="unitType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Unit</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-item-unit">
+                            <SelectValue placeholder="Unit" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="each">each</SelectItem>
+                          <SelectItem value="set">set</SelectItem>
+                          <SelectItem value="m">m</SelectItem>
+                          <SelectItem value="m²">m²</SelectItem>
+                          <SelectItem value="hours">hours</SelectItem>
+                          <SelectItem value="days">days</SelectItem>
+                          <SelectItem value="kg">kg</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="priceExTax"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price (Ex-Tax)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          min="0"
+                          placeholder="0.00"
+                          {...field}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          data-testid="input-item-price"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={handleCloseAddItem} data-testid="button-cancel-add-item">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
+                  {addItemMutation.isPending ? "Adding..." : "Add Item"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
