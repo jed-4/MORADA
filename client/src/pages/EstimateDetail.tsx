@@ -16,9 +16,10 @@ import {
   Plus,
   Edit,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  FolderPlus
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -83,6 +84,9 @@ export default function EstimateDetail() {
   
   // Add item modal state
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
+  
+  // Add group modal state
+  const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
 
   if (!id) {
     return <div>Invalid estimate ID</div>;
@@ -159,6 +163,60 @@ export default function EstimateDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to add estimate item.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation for adding estimate groups
+  const addGroupMutation = useMutation({
+    mutationFn: async (data: InsertEstimateGroup) => {
+      const response = await apiRequest("POST", `/api/estimates/${id}/groups`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "groups"] });
+      setIsAddGroupOpen(false);
+      groupForm.reset();
+      toast({
+        title: "Success",
+        description: "Estimate group added successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add estimate group.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation for toggling estimate lock status
+  const toggleLockMutation = useMutation({
+    mutationFn: async () => {
+      const endpoint = estimate?.isLocked ? "unlock" : "lock";
+      console.log(`Making ${endpoint} request for estimate ${id}`);
+      const response = await apiRequest("POST", `/api/estimates/${id}/${endpoint}`);
+      const data = await response.json();
+      console.log(`${endpoint} response:`, data);
+      return data;
+    },
+    onSuccess: (updatedEstimate: Estimate) => {
+      console.log("Lock mutation success, invalidating queries...");
+      console.log("Updated estimate:", updatedEstimate);
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: updatedEstimate.isLocked ? "Estimate locked successfully." : "Estimate unlocked successfully.",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Lock mutation error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to toggle estimate lock status.",
         variant: "destructive",
       });
     },
@@ -306,6 +364,21 @@ export default function EstimateDetail() {
     },
   });
 
+  // Form setup for adding groups
+  const addGroupFormSchema = insertEstimateGroupSchema.omit({ 
+    estimateId: true 
+  });
+
+  const groupForm = useForm<z.infer<typeof addGroupFormSchema>>({
+    resolver: zodResolver(addGroupFormSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      order: 0,
+      isCollapsed: false,
+    },
+  });
+
   // Handlers for adding items
   const handleAddItem = () => {
     if (estimate?.isLocked) {
@@ -333,6 +406,41 @@ export default function EstimateDetail() {
   const handleCloseAddItem = () => {
     setIsAddItemOpen(false);
     form.reset();
+  };
+
+  // Handlers for adding groups
+  const handleAddGroup = () => {
+    if (estimate?.isLocked) {
+      toast({
+        title: "Cannot Add Group",
+        description: "This estimate is locked and cannot be modified.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsAddGroupOpen(true);
+  };
+
+  // Handler for toggling lock status
+  const handleToggleLock = () => {
+    if (!estimate) return;
+    toggleLockMutation.mutate();
+  };
+
+  const handleSubmitGroup = (data: z.infer<typeof addGroupFormSchema>) => {
+    if (!estimate) return;
+    
+    const groupData: InsertEstimateGroup = {
+      ...data,
+      estimateId: estimate.id,
+    };
+    
+    addGroupMutation.mutate(groupData);
+  };
+
+  const handleCloseAddGroup = () => {
+    setIsAddGroupOpen(false);
+    groupForm.reset();
   };
 
   // Fetch estimate details
@@ -463,16 +571,22 @@ export default function EstimateDetail() {
               <Edit className="w-4 h-4 mr-2" />
               Edit
             </Button>
-            <Button variant="outline" size="sm" data-testid="button-toggle-lock">
+            <Button 
+              variant={estimate.isLocked ? "destructive" : "outline"} 
+              size="sm" 
+              data-testid="button-toggle-lock"
+              onClick={handleToggleLock}
+              disabled={toggleLockMutation.isPending}
+            >
               {estimate.isLocked ? (
                 <>
                   <Unlock className="w-4 h-4 mr-2" />
-                  Unlock
+                  {toggleLockMutation.isPending ? "Unlocking..." : "Unlock"}
                 </>
               ) : (
                 <>
                   <Lock className="w-4 h-4 mr-2" />
-                  Lock
+                  {toggleLockMutation.isPending ? "Locking..." : "Lock"}
                 </>
               )}
             </Button>
@@ -582,10 +696,28 @@ export default function EstimateDetail() {
                 <FileText className="w-5 h-5 mr-2" />
                 Estimate Items ({items.length})
               </CardTitle>
-              <Button size="sm" data-testid="button-add-item" onClick={handleAddItem}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Item
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Button 
+                  size="sm" 
+                  data-testid="button-add-group" 
+                  onClick={handleAddGroup}
+                  disabled={estimate?.isLocked}
+                  variant={estimate?.isLocked ? "secondary" : "outline"}
+                >
+                  <FolderPlus className="w-4 h-4 mr-2" />
+                  Add Group
+                </Button>
+                <Button 
+                  size="sm" 
+                  data-testid="button-add-item" 
+                  onClick={handleAddItem}
+                  disabled={estimate?.isLocked}
+                  variant={estimate?.isLocked ? "secondary" : "default"}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Item
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {itemsLoading ? (
@@ -601,7 +733,12 @@ export default function EstimateDetail() {
                   <p className="text-muted-foreground mb-4">
                     Add your first estimate item to start building this estimate.
                   </p>
-                  <Button data-testid="button-add-first-item" onClick={handleAddItem}>
+                  <Button 
+                    data-testid="button-add-first-item" 
+                    onClick={handleAddItem}
+                    disabled={estimate?.isLocked}
+                    variant={estimate?.isLocked ? "secondary" : "default"}
+                  >
                     <Plus className="w-4 h-4 mr-2" />
                     Add First Item
                   </Button>
@@ -660,16 +797,29 @@ export default function EstimateDetail() {
                         <TableCell className="py-0.5">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" data-testid={`button-actions-${item.id}`}>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0" 
+                                data-testid={`button-actions-${item.id}`}
+                                disabled={estimate?.isLocked}
+                              >
                                 <MoreHorizontal className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem data-testid={`button-edit-item-${item.id}`}>
+                              <DropdownMenuItem 
+                                data-testid={`button-edit-item-${item.id}`}
+                                disabled={estimate?.isLocked}
+                              >
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit Item
                               </DropdownMenuItem>
-                              <DropdownMenuItem data-testid={`button-delete-item-${item.id}`} className="text-destructive">
+                              <DropdownMenuItem 
+                                data-testid={`button-delete-item-${item.id}`} 
+                                className="text-destructive"
+                                disabled={estimate?.isLocked}
+                              >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete Item
                               </DropdownMenuItem>
@@ -715,7 +865,7 @@ export default function EstimateDetail() {
                   <FormItem>
                     <FormLabel>Description (Optional)</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Additional details about this item..." {...field} data-testid="input-item-description" />
+                      <Textarea placeholder="Additional details about this item..." {...field} value={field.value || ""} data-testid="input-item-description" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -849,6 +999,76 @@ export default function EstimateDetail() {
                 </Button>
                 <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
                   {addItemMutation.isPending ? "Adding..." : "Add Item"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Group Dialog */}
+      <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Estimate Group</DialogTitle>
+          </DialogHeader>
+          <Form {...groupForm}>
+            <form onSubmit={groupForm.handleSubmit(handleSubmitGroup)} className="space-y-4">
+              <FormField
+                control={groupForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Kitchen Work" {...field} data-testid="input-group-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={groupForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Additional details about this group..." {...field} value={field.value || ""} data-testid="input-group-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={groupForm.control}
+                name="order"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Display Order</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        min="0"
+                        placeholder="0"
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                        data-testid="input-group-order"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={handleCloseAddGroup} data-testid="button-cancel-add-group">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={addGroupMutation.isPending} data-testid="button-submit-add-group">
+                  {addGroupMutation.isPending ? "Adding..." : "Add Group"}
                 </Button>
               </div>
             </form>

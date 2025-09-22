@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ import { type Estimate, type EstimateSummary, type Project } from "@shared/schem
 export default function Estimates() {
   const [activeTab, setActiveTab] = useState("list");
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const handleNewEstimate = () => {
     alert('Estimate creation feature will be implemented in the next phase. For now, you can see the comprehensive estimates system with the test data!');
@@ -36,6 +39,29 @@ export default function Estimates() {
   // Fetch estimates
   const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
+  });
+
+  // Mutation for toggling estimate lock state
+  const toggleLockMutation = useMutation({
+    mutationFn: async ({ estimateId, isLocked }: { estimateId: string; isLocked: boolean }) => {
+      const endpoint = isLocked ? `/api/estimates/${estimateId}/unlock` : `/api/estimates/${estimateId}/lock`;
+      const response = await apiRequest("POST", endpoint, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "Estimate lock status updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update estimate lock status.",
+        variant: "destructive",
+      });
+    },
   });
 
   // Get estimate counts by status
@@ -110,7 +136,11 @@ export default function Estimates() {
                   <Copy className="w-4 h-4 mr-2" />
                   Create Version
                 </DropdownMenuItem>
-                <DropdownMenuItem data-testid={`button-toggle-lock-${estimate.id}`}>
+                <DropdownMenuItem 
+                  data-testid={`button-toggle-lock-${estimate.id}`}
+                  onClick={() => toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked })}
+                  disabled={toggleLockMutation.isPending}
+                >
                   {estimate.isLocked ? (
                     <>
                       <Unlock className="w-4 h-4 mr-2" />

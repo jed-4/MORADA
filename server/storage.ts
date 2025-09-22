@@ -138,7 +138,7 @@ export class MemStorage implements IStorage {
     this.estimateItems = new Map();
     this.estimateGroups = new Map();
     this.initializeDefaultCustomFields();
-    this.initializeDefaultProjects();
+    this.initializeDefaultData();
   }
 
   // Initialize default custom fields to replace category and priority
@@ -217,6 +217,11 @@ export class MemStorage implements IStorage {
   }
 
   // Initialize default projects including business project
+  private initializeDefaultData() {
+    this.initializeDefaultProjects();
+    this.initializeDefaultEstimates();
+  }
+
   private initializeDefaultProjects() {
     const businessProject: Project = {
       id: "business",
@@ -258,6 +263,91 @@ export class MemStorage implements IStorage {
         updatedAt: new Date(),
       };
       this.projects.set(project.id, project);
+    });
+  }
+
+  private initializeDefaultEstimates() {
+    const now = new Date();
+    
+    // Add test estimate that matches the test data
+    const testEstimate: Estimate = {
+      id: "test-estimate-123",
+      name: "Kitchen Renovation Estimate",
+      projectId: "test-project-123",
+      version: 1,
+      status: "draft",
+      isLocked: false,
+      projectMarkupPercent: 15,
+      taxRate: 10,
+      notes: "Complete kitchen renovation including cabinets, countertops, and appliances",
+      ownerId: null,
+      ownerName: null,
+      createdAt: new Date("2025-09-21T09:18:12.320Z"),
+      updatedAt: new Date("2025-09-21T09:18:12.320Z"),
+    };
+    this.estimates.set(testEstimate.id, testEstimate);
+
+    // Add test project that matches the estimate
+    const testProject: Project = {
+      id: "test-project-123",
+      name: "Kitchen Renovation",
+      description: "Complete kitchen remodel project",
+      color: "#2563eb",
+      isActive: true,
+      isBusiness: false,
+      ownerId: null,
+      createdAt: new Date("2025-09-21T09:17:57.333Z"),
+      updatedAt: new Date("2025-09-21T09:17:57.333Z"),
+    };
+    this.projects.set(testProject.id, testProject);
+
+    // Add some test estimate items
+    const testItems = [
+      {
+        id: "item-1",
+        estimateId: "test-estimate-123",
+        name: "Premium Kitchen Cabinets",
+        description: "High-quality solid wood cabinets",
+        type: "material",
+        status: "confirmed",
+        quantity: 1,
+        unitType: "set",
+        priceExTax: 850000, // $8500 in cents
+        taxAmount: 85000,   // $850 in cents
+        priceIncTax: 935000, // $9350 in cents
+      },
+      {
+        id: "item-2",
+        estimateId: "test-estimate-123",
+        name: "Installation Labor",
+        description: "Professional installation services",
+        type: "labour",
+        status: "confirmed",
+        quantity: 40,
+        unitType: "hours",
+        priceExTax: 340000, // $3400 in cents (40 * $85)
+        taxAmount: 34000,   // $340 in cents
+        priceIncTax: 374000, // $3740 in cents
+      }
+    ];
+
+    testItems.forEach(itemData => {
+      const item: EstimateItem = {
+        ...itemData,
+        groupId: null,
+        costCode: null,
+        allowance: "None",
+        notes: null,
+        attachmentUrl: null,
+        requestForQuote: false,
+        isSelection: false,
+        visibleInProposal: true,
+        showAsInProposal: "price",
+        order: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.estimateItems.set(item.id, item);
     });
   }
 
@@ -1133,7 +1223,34 @@ export class MemStorage implements IStorage {
   }
 
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> {
+    console.log('lockEstimate: Looking for estimate with id:', estimateId);
+    
+    try {
+      // Try database first
+      const result = await db.update(schema.estimates)
+        .set({ 
+          isLocked: true, 
+          status: "locked", 
+          updatedAt: new Date() 
+        })
+        .where(eq(schema.estimates.id, estimateId))
+        .returning();
+      
+      if (result.length > 0) {
+        console.log('lockEstimate: Database update successful');
+        // Also update memory cache to keep it in sync
+        this.estimates.set(estimateId, result[0]);
+        return result[0];
+      }
+    } catch (error) {
+      console.error("Database error in lockEstimate:", error);
+    }
+    
+    // Fallback to memory storage
+    console.log('lockEstimate: Falling back to memory storage');
+    console.log('lockEstimate: Available estimate IDs:', Array.from(this.estimates.keys()));
     const estimate = this.estimates.get(estimateId);
+    console.log('lockEstimate: Found estimate:', !!estimate);
     if (!estimate) {
       return undefined;
     }
@@ -1149,6 +1266,31 @@ export class MemStorage implements IStorage {
   }
 
   async unlockEstimate(estimateId: string): Promise<Estimate | undefined> {
+    console.log('unlockEstimate: Looking for estimate with id:', estimateId);
+    
+    try {
+      // Try database first
+      const result = await db.update(schema.estimates)
+        .set({ 
+          isLocked: false, 
+          status: "working", 
+          updatedAt: new Date() 
+        })
+        .where(eq(schema.estimates.id, estimateId))
+        .returning();
+      
+      if (result.length > 0) {
+        console.log('unlockEstimate: Database update successful');
+        // Also update memory cache to keep it in sync
+        this.estimates.set(estimateId, result[0]);
+        return result[0];
+      }
+    } catch (error) {
+      console.error("Database error in unlockEstimate:", error);
+    }
+    
+    // Fallback to memory storage
+    console.log('unlockEstimate: Falling back to memory storage');
     const estimate = this.estimates.get(estimateId);
     if (!estimate) {
       return undefined;
