@@ -15,19 +15,47 @@ import TaskList from "@/components/TaskList";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { type TaskView, type Task } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
+import { useProject } from "@/contexts/ProjectContext";
 
 export default function Tasks() {
+  const { currentProject } = useProject();
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [filters, setFilters] = useState<FilterState>({});
 
-  // Fetch saved task views and tasks
+  // Show loading state if no project is selected
+  if (!currentProject) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
+          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Fetch saved task views and tasks filtered by current project
   const { data: taskViews = [] } = useQuery<TaskView[]>({
-    queryKey: ["/api/task-views"],
+    queryKey: ["/api/task-views", currentProject.id],
+    queryFn: async () => {
+      const response = await fetch(`/api/task-views?projectId=${currentProject.id}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch task views');
+      return response.json();
+    }
   });
 
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
+    queryKey: ["/api/tasks", currentProject.id], 
+    queryFn: async () => {
+      const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch tasks');
+      return response.json();
+    }
   });
 
   // Default views
@@ -71,7 +99,7 @@ export default function Tasks() {
               Tasks
             </h1>
             <Badge variant="secondary" data-testid="text-task-count">
-              All Projects
+              {currentProject.name}
             </Badge>
           </div>
           <div className="flex items-center space-x-2">
