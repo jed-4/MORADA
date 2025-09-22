@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
 import { AppSidebar } from "@/components/AppSidebar";
 import Dashboard from "@/pages/Dashboard";
@@ -80,7 +81,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ThemeProvider>
-          <SidebarProvider style={style as React.CSSProperties}>
+          <ProjectProvider>
+            <SidebarProvider style={style as React.CSSProperties}>
             <div className="flex h-screen w-full">
               <AppSidebar />
               <div className="flex flex-col flex-1">
@@ -90,8 +92,9 @@ function App() {
                 </main>
               </div>
             </div>
-          </SidebarProvider>
-          <Toaster />
+            </SidebarProvider>
+            <Toaster />
+          </ProjectProvider>
         </ThemeProvider>
       </TooltipProvider>
     </QueryClientProvider>
