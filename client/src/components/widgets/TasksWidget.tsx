@@ -6,15 +6,28 @@ import { type Task } from "@shared/schema";
 import { Plus } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
+import { useProject } from "@/contexts/ProjectContext";
 
 export default function TasksWidget({ widget }: WidgetProps) {
   const maxTasks = widget.config?.maxTasks || 3;
   const showCompleted = widget.config?.showCompleted || false;
   const [, setLocation] = useLocation();
+  const { currentProject } = useProject();
   
-  // Fetch real tasks from the API
+  // Fetch real tasks from the API filtered by current project
   const { data: allTasks = [], isLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
+    queryKey: ["/api/tasks", currentProject?.id],
+    queryFn: async () => {
+      if (!currentProject?.id) return [];
+      const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
+    enabled: !!currentProject?.id,
   });
 
   // Filter and limit tasks based on widget configuration

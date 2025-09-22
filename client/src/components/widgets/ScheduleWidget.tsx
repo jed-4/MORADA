@@ -2,52 +2,51 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, Plus, AlertTriangle } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
+import { useProject } from "@/contexts/ProjectContext";
 
-// todo: remove mock functionality
-const mockScheduleItems = [
-  {
-    id: "1",
-    title: "Foundation Inspection",
-    date: "2024-03-15",
-    time: "10:00 AM",
-    type: "inspection",
-    status: "scheduled",
-    priority: "high",
-  },
-  {
-    id: "2",
-    title: "Electrical Rough-in", 
-    date: "2024-03-18",
-    time: "8:00 AM",
-    type: "work",
-    status: "scheduled", 
-    priority: "medium",
-  },
-  {
-    id: "3",
-    title: "Plumbing Install",
-    date: "2024-03-22",
-    time: "9:00 AM", 
-    type: "work",
-    status: "scheduled",
-    priority: "medium",
-  },
-  {
-    id: "4",
-    title: "Client Meeting",
-    date: "2024-03-12",
-    time: "2:00 PM",
-    type: "meeting",
-    status: "overdue",
-    priority: "high",
-  },
-];
+// Function to generate project-specific mock schedule items
+const generateProjectScheduleItems = (projectId: string, projectName: string) => {
+  const seed = projectId ? projectId.charCodeAt(0) * 1000 : 1000;
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const nextWeek = new Date(today);
+  nextWeek.setDate(today.getDate() + 7);
+  
+  const scheduleTypes = [
+    { title: `${projectName} - Foundation Inspection`, type: "inspection", priority: "high" },
+    { title: `${projectName} - Electrical Work`, type: "work", priority: "medium" },
+    { title: `${projectName} - Plumbing Install`, type: "work", priority: "medium" },
+    { title: `${projectName} - Client Meeting`, type: "meeting", priority: "high" },
+    { title: `${projectName} - Final Walkthrough`, type: "inspection", priority: "high" },
+  ];
+
+  return scheduleTypes.slice(0, 2 + (seed % 3)).map((item, index) => ({
+    id: `${projectId}-${index}`,
+    title: item.title,
+    date: new Date(today.getTime() + (index * 86400000) + ((seed % 3) * 86400000)).toISOString().split('T')[0],
+    time: `${9 + (seed % 6)}:00 ${(seed % 2) ? 'AM' : 'PM'}`,
+    type: item.type,
+    status: (seed % 4 === 0 && index === 0) ? "overdue" : "scheduled",
+    priority: item.priority,
+  }));
+};
 
 export default function ScheduleWidget({ widget }: WidgetProps) {
+  const { currentProject } = useProject();
   const maxItems = widget.config?.maxItems || 4;
   const showOverdue = widget.config?.showOverdue !== false;
   
-  const filteredItems = mockScheduleItems
+  if (!currentProject) {
+    return (
+      <div className="text-center py-4 text-sm text-muted-foreground">
+        Select a project to view schedule
+      </div>
+    );
+  }
+
+  const projectScheduleItems = generateProjectScheduleItems(currentProject.id, currentProject.name);
+  const filteredItems = projectScheduleItems
     .filter(item => showOverdue || item.status !== 'overdue')
     .slice(0, maxItems);
 

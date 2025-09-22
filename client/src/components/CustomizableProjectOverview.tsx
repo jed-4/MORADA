@@ -13,6 +13,7 @@ import {
 import { Widget } from "@/types/widgets";
 import { widgetRegistry, getWidgetDefinition } from "./widgets/WidgetRegistry";
 import WidgetContainer from "./widgets/WidgetContainer";
+import { useProject } from "@/contexts/ProjectContext";
 
 // todo: remove mock functionality - Default template setup
 const defaultWidgets: Widget[] = [
@@ -47,9 +48,22 @@ const defaultWidgets: Widget[] = [
 ];
 
 export default function CustomizableProjectOverview() {
+  const { currentProject } = useProject();
   const [widgets, setWidgets] = useState<Widget[]>(defaultWidgets);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
+
+  // Show loading state if no project is selected
+  if (!currentProject) {
+    return (
+      <div className="p-6 space-y-6" data-testid="customizable-project-overview">
+        <div className="text-center py-12 text-muted-foreground">
+          <h2 className="text-xl font-medium mb-2">No Project Selected</h2>
+          <p>Please select a project from the dropdown to view its overview.</p>
+        </div>
+      </div>
+    );
+  }
 
   const addWidget = (type: string) => {
     const definition = getWidgetDefinition(type);
@@ -143,9 +157,9 @@ export default function CustomizableProjectOverview() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Sunshine Coast Villa</h1>
+            <h1 className="text-3xl font-bold">{currentProject.name}</h1>
             <p className="text-muted-foreground">
-              123 Ocean View Drive, Sunshine Coast QLD 4567
+              {currentProject.description || "No description provided"}
             </p>
           </div>
           <div className="flex items-center gap-2">
