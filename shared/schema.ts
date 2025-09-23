@@ -3,19 +3,154 @@ import { pgTable, text, varchar, timestamp, json, integer, boolean } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// User roles (Admin, Project Manager, Carpenter, Subcontractor, Client, etc.)
+export const userRoles = pgTable("user_roles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
+  isBuiltIn: boolean("is_built_in").notNull().default(false), // System-defined roles
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Enhanced users table with role system  
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phone: text("phone"),
+  company: text("company"),
+  userCategory: text("user_category").notNull().default("team"), // "team" | "supplier" | "client"
+  roleId: varchar("role_id").references(() => userRoles.id),
+  roleName: text("role_name"), // Cached for performance
+  isActive: boolean("is_active").notNull().default(true),
+  isInvitePending: boolean("is_invite_pending").notNull().default(false),
+  invitedBy: varchar("invited_by"),
+  invitedAt: timestamp("invited_at"),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+// Available permissions/features in the system
+export const permissions = pgTable("permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(), // e.g., "projects.view", "estimates.edit"
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // "admin", "projects", "financial", etc.
+  actions: json("actions").notNull().default(['view']), // ["view", "add", "edit", "delete"]
+  isBuiltIn: boolean("is_built_in").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Role permissions matrix (many-to-many)
+export const rolePermissions = pgTable("role_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roleId: varchar("role_id").notNull().references(() => userRoles.id, { onDelete: "cascade" }),
+  permissionId: varchar("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
+  allowedActions: json("allowed_actions").notNull().default(['view']), // Which actions are allowed: ["view", "add", "edit", "delete"]
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// User project access control
+export const userProjectAccess = pgTable("user_project_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  accessLevel: text("access_level").notNull().default("view"), // "view" | "edit" | "admin"
+  grantedBy: varchar("granted_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// User invitations for suppliers and clients
+export const userInvitations = pgTable("user_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  company: text("company"),
+  phone: text("phone"),
+  userCategory: text("user_category").notNull(), // "supplier" | "client"
+  roleId: varchar("role_id").notNull().references(() => userRoles.id),
+  projectIds: json("project_ids").default([]), // Array of project IDs they'll have access to
+  invitedBy: varchar("invited_by").notNull().references(() => users.id),
+  inviteToken: text("invite_token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdUserId: varchar("created_user_id").references(() => users.id), // Set when invitation is accepted
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "expired" | "cancelled"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Schema for user creation/updates
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  email: z.string().email().optional(),
+  userCategory: z.enum(["team", "supplier", "client"]).default("team"),
+});
+
+export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserProjectAccessSchema = createInsertSchema(userProjectAccess).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserInvitationSchema = createInsertSchema(userInvitations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  projectIds: z.array(z.string()).default([]),
+  expiresAt: z.coerce.date(),
+});
+
+// Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type UserProjectAccess = typeof userProjectAccess.$inferSelect;
+export type InsertUserProjectAccess = z.infer<typeof insertUserProjectAccessSchema>;
+export type UserInvitation = typeof userInvitations.$inferSelect;
+export type InsertUserInvitation = z.infer<typeof insertUserInvitationSchema>;
+
+// Utility types for role-based access
+export type UserWithRole = User & {
+  role?: UserRole;
+  permissions?: Permission[];
+};
+
+export type PermissionAction = "view" | "add" | "edit" | "delete";
+export type UserCategory = "team" | "supplier" | "client";
 
 export const notes: any = pgTable("notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

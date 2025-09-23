@@ -9,7 +9,13 @@ import {
   type TaskView, type InsertTaskView,
   type Estimate, type InsertEstimate,
   type EstimateItem, type InsertEstimateItem,
-  type EstimateGroup, type InsertEstimateGroup
+  type EstimateGroup, type InsertEstimateGroup,
+  type UserRole, type InsertUserRole,
+  type Permission, type InsertPermission,
+  type RolePermission, type InsertRolePermission,
+  type UserProjectAccess, type InsertUserProjectAccess,
+  type UserInvitation, type InsertUserInvitation,
+  type UserWithRole, type PermissionAction, type UserCategory
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -20,9 +26,51 @@ import * as schema from "@shared/schema";
 // you might need
 
 export interface IStorage {
+  // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserWithRole(id: string): Promise<UserWithRole | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  getUsers(category?: UserCategory): Promise<User[]>;
+
+  // User Role operations  
+  getUserRoles(category?: UserCategory): Promise<UserRole[]>;
+  getUserRole(id: string): Promise<UserRole | undefined>;
+  createUserRole(role: InsertUserRole): Promise<UserRole>;
+  updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined>;
+  deleteUserRole(id: string): Promise<boolean>;
+
+  // Permission operations
+  getPermissions(category?: string): Promise<Permission[]>;
+  getPermission(id: string): Promise<Permission | undefined>;
+  createPermission(permission: InsertPermission): Promise<Permission>;
+  updatePermission(id: string, permission: Partial<InsertPermission>): Promise<Permission | undefined>;
+  deletePermission(id: string): Promise<boolean>;
+
+  // Role Permission operations (permissions matrix)
+  getRolePermissions(roleId: string): Promise<RolePermission[]>;
+  createRolePermission(rolePermission: InsertRolePermission): Promise<RolePermission>;
+  updateRolePermission(id: string, rolePermission: Partial<InsertRolePermission>): Promise<RolePermission | undefined>;
+  deleteRolePermission(id: string): Promise<boolean>;
+  setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void>;
+
+  // User Project Access operations
+  getUserProjectAccess(userId: string): Promise<UserProjectAccess[]>;
+  createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess>;
+  updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined>;
+  deleteUserProjectAccess(id: string): Promise<boolean>;
+  grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess>;
+
+  // User Invitation operations
+  getUserInvitations(status?: string): Promise<UserInvitation[]>;
+  getUserInvitation(id: string): Promise<UserInvitation | undefined>;
+  getUserInvitationByToken(token: string): Promise<UserInvitation | undefined>;
+  createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation>;
+  updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined>;
+  deleteUserInvitation(id: string): Promise<boolean>;
+  acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
   // Notes CRUD operations
   getNotes(projectId?: string): Promise<Note[]>;
@@ -116,6 +164,11 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
+  private userRoles: Map<string, UserRole>;
+  private permissions: Map<string, Permission>;
+  private rolePermissions: Map<string, RolePermission>;
+  private userProjectAccess: Map<string, UserProjectAccess>;
+  private userInvitations: Map<string, UserInvitation>;
   private notes: Map<string, Note>;
   private customFieldDefs: Map<string, CustomFieldDef>;
   private customFieldOptions: Map<string, CustomFieldOption>;
@@ -128,6 +181,11 @@ export class MemStorage implements IStorage {
 
   constructor() {
     this.users = new Map();
+    this.userRoles = new Map();
+    this.permissions = new Map();
+    this.rolePermissions = new Map();
+    this.userProjectAccess = new Map();
+    this.userInvitations = new Map();
     this.notes = new Map();
     this.customFieldDefs = new Map();
     this.customFieldOptions = new Map();
@@ -137,8 +195,108 @@ export class MemStorage implements IStorage {
     this.estimates = new Map();
     this.estimateItems = new Map();
     this.estimateGroups = new Map();
+    this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
     this.initializeDefaultData();
+  }
+
+  // Initialize default role system with built-in roles and permissions
+  private initializeDefaultRoleSystem() {
+    // Initialize built-in permissions based on Buildern screenshots
+    const builtInPermissions: Array<Omit<Permission, 'id' | 'createdAt'>> = [
+      // Files category
+      { key: "files.view", name: "Files", description: "View files", category: "files", actions: ["view"], isBuiltIn: true },
+      
+      // Admin category
+      { key: "admin.users", name: "User (team)", description: "Manage team users", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.suppliers", name: "Sub/Vendor", description: "Manage suppliers/vendors", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.roles", name: "Role", description: "Manage user roles", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.cost_codes", name: "Cost code/category", description: "Manage cost codes", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.terms", name: "Terms and Conditions", description: "Manage terms", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      
+      // Sales category
+      { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      
+      // Project Management category
+      { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.schedule", name: "Schedule", description: "Manage project schedules", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.todos", name: "To Dos", description: "Manage project to-dos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.invoices", name: "Client Invoices", description: "Manage client invoices", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      
+      // Financial category
+      { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.budget", name: "Budget", description: "Manage budgets", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true }
+    ];
+
+    // Create permissions
+    builtInPermissions.forEach(permData => {
+      const permission: Permission = {
+        ...permData,
+        id: `perm-${permData.key.replace(/\./g, '-')}`,
+        createdAt: new Date(),
+      };
+      this.permissions.set(permission.id, permission);
+    });
+
+    // Initialize built-in user roles
+    const builtInRoles: Array<Omit<UserRole, 'id' | 'createdAt' | 'updatedAt'>> = [
+      // Team roles
+      { name: "General admin", description: "Full system administration access", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Project manager", description: "Manage projects and teams", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Field worker", description: "Site-based team member", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Office manager", description: "Office operations management", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Sales manager", description: "Sales and client management", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Bookkeeper", description: "Financial operations", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Architect", description: "Design and technical oversight", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Engineer", description: "Engineering and technical work", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Purchasing coordinator", description: "Materials and purchasing", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Apprentice", description: "Learning team member", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Carpenter", description: "Carpentry specialist", userCategory: "team", isBuiltIn: true, isActive: true },
+      { name: "Designer", description: "Design specialist", userCategory: "team", isBuiltIn: true, isActive: true },
+      
+      // Supplier roles
+      { name: "Sub/Vendor", description: "Subcontractor or vendor access", userCategory: "supplier", isBuiltIn: true, isActive: true },
+      
+      // Client roles
+      { name: "Client", description: "Project client access", userCategory: "client", isBuiltIn: true, isActive: true },
+    ];
+
+    const now = new Date();
+    builtInRoles.forEach(roleData => {
+      const role: UserRole = {
+        ...roleData,
+        id: `role-${roleData.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.userRoles.set(role.id, role);
+    });
+
+    // Set default permissions for General admin (full access to everything)
+    const adminRole = Array.from(this.userRoles.values()).find(r => r.name === "General admin");
+    if (adminRole) {
+      Array.from(this.permissions.values()).forEach(permission => {
+        const rolePermission: RolePermission = {
+          id: randomUUID(),
+          roleId: adminRole.id,
+          permissionId: permission.id,
+          allowedActions: permission.actions as PermissionAction[],
+          createdAt: now,
+        };
+        this.rolePermissions.set(rolePermission.id, rolePermission);
+      });
+    }
   }
 
   // Initialize default custom fields to replace category and priority
@@ -363,9 +521,392 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
+    const now = new Date();
+    const user: User = { 
+      ...insertUser, 
+      id,
+      email: insertUser.email || null,
+      firstName: insertUser.firstName || null,
+      lastName: insertUser.lastName || null,
+      phone: insertUser.phone || null,
+      company: insertUser.company || null,
+      roleId: insertUser.roleId || null,
+      roleName: insertUser.roleName || null,
+      isActive: insertUser.isActive ?? true,
+      isInvitePending: insertUser.isInvitePending ?? false,
+      invitedBy: insertUser.invitedBy || null,
+      invitedAt: insertUser.invitedAt || null,
+      lastLoginAt: insertUser.lastLoginAt || null,
+      createdAt: now,
+      updatedAt: now,
+    };
     this.users.set(id, user);
     return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.email === email,
+    );
+  }
+
+  async getUserWithRole(id: string): Promise<UserWithRole | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+
+    const role = user.roleId ? this.userRoles.get(user.roleId) : undefined;
+    const permissions = role ? await this.getUserPermissions(user.id) : [];
+    
+    return {
+      ...user,
+      role,
+      permissions,
+    };
+  }
+
+  async updateUser(id: string, updateData: Partial<InsertUser>): Promise<User | undefined> {
+    const existingUser = this.users.get(id);
+    if (!existingUser) return undefined;
+
+    const updatedUser: User = {
+      ...existingUser,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+
+  async getUsers(category?: UserCategory): Promise<User[]> {
+    const allUsers = Array.from(this.users.values());
+    if (category) {
+      return allUsers.filter(user => user.userCategory === category && user.isActive);
+    }
+    return allUsers.filter(user => user.isActive);
+  }
+
+  // Helper method to get user permissions
+  private async getUserPermissions(userId: string): Promise<Permission[]> {
+    const user = this.users.get(userId);
+    if (!user || !user.roleId) return [];
+
+    const rolePermissions = Array.from(this.rolePermissions.values())
+      .filter(rp => rp.roleId === user.roleId);
+
+    const permissions: Permission[] = [];
+    for (const rp of rolePermissions) {
+      const permission = this.permissions.get(rp.permissionId);
+      if (permission) {
+        permissions.push(permission);
+      }
+    }
+    return permissions;
+  }
+
+  // User Role operations
+  async getUserRoles(category?: UserCategory): Promise<UserRole[]> {
+    const allRoles = Array.from(this.userRoles.values());
+    if (category) {
+      return allRoles.filter(role => role.userCategory === category && role.isActive);
+    }
+    return allRoles.filter(role => role.isActive);
+  }
+
+  async getUserRole(id: string): Promise<UserRole | undefined> {
+    return this.userRoles.get(id);
+  }
+
+  async createUserRole(insertRole: InsertUserRole): Promise<UserRole> {
+    const id = randomUUID();
+    const now = new Date();
+    const role: UserRole = {
+      ...insertRole,
+      id,
+      description: insertRole.description || null,
+      isBuiltIn: insertRole.isBuiltIn ?? false,
+      isActive: insertRole.isActive ?? true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.userRoles.set(id, role);
+    return role;
+  }
+
+  async updateUserRole(id: string, updateData: Partial<InsertUserRole>): Promise<UserRole | undefined> {
+    const existingRole = this.userRoles.get(id);
+    if (!existingRole) return undefined;
+
+    const updatedRole: UserRole = {
+      ...existingRole,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.userRoles.set(id, updatedRole);
+    return updatedRole;
+  }
+
+  async deleteUserRole(id: string): Promise<boolean> {
+    const role = this.userRoles.get(id);
+    if (!role || role.isBuiltIn) return false; // Cannot delete built-in roles
+
+    // Soft delete by setting isActive to false
+    const updatedRole: UserRole = {
+      ...role,
+      isActive: false,
+      updatedAt: new Date(),
+    };
+    this.userRoles.set(id, updatedRole);
+    return true;
+  }
+
+  // Permission operations
+  async getPermissions(category?: string): Promise<Permission[]> {
+    const allPermissions = Array.from(this.permissions.values());
+    if (category) {
+      return allPermissions.filter(permission => permission.category === category);
+    }
+    return allPermissions;
+  }
+
+  async getPermission(id: string): Promise<Permission | undefined> {
+    return this.permissions.get(id);
+  }
+
+  async createPermission(insertPermission: InsertPermission): Promise<Permission> {
+    const id = randomUUID();
+    const permission: Permission = {
+      ...insertPermission,
+      id,
+      description: insertPermission.description || null,
+      isBuiltIn: insertPermission.isBuiltIn ?? false,
+      createdAt: new Date(),
+    };
+    this.permissions.set(id, permission);
+    return permission;
+  }
+
+  async updatePermission(id: string, updateData: Partial<InsertPermission>): Promise<Permission | undefined> {
+    const existingPermission = this.permissions.get(id);
+    if (!existingPermission) return undefined;
+
+    const updatedPermission: Permission = {
+      ...existingPermission,
+      ...updateData,
+    };
+    this.permissions.set(id, updatedPermission);
+    return updatedPermission;
+  }
+
+  async deletePermission(id: string): Promise<boolean> {
+    const permission = this.permissions.get(id);
+    if (!permission || permission.isBuiltIn) return false; // Cannot delete built-in permissions
+    return this.permissions.delete(id);
+  }
+
+  // Role Permission operations (permissions matrix)
+  async getRolePermissions(roleId: string): Promise<RolePermission[]> {
+    return Array.from(this.rolePermissions.values())
+      .filter(rp => rp.roleId === roleId);
+  }
+
+  async createRolePermission(insertRolePermission: InsertRolePermission): Promise<RolePermission> {
+    const id = randomUUID();
+    const rolePermission: RolePermission = {
+      ...insertRolePermission,
+      id,
+      createdAt: new Date(),
+    };
+    this.rolePermissions.set(id, rolePermission);
+    return rolePermission;
+  }
+
+  async updateRolePermission(id: string, updateData: Partial<InsertRolePermission>): Promise<RolePermission | undefined> {
+    const existing = this.rolePermissions.get(id);
+    if (!existing) return undefined;
+
+    const updated: RolePermission = {
+      ...existing,
+      ...updateData,
+    };
+    this.rolePermissions.set(id, updated);
+    return updated;
+  }
+
+  async deleteRolePermission(id: string): Promise<boolean> {
+    return this.rolePermissions.delete(id);
+  }
+
+  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void> {
+    // Remove existing role permissions
+    const existingRolePermissions = Array.from(this.rolePermissions.values())
+      .filter(rp => rp.roleId === roleId);
+    
+    for (const rp of existingRolePermissions) {
+      this.rolePermissions.delete(rp.id);
+    }
+
+    // Add new role permissions
+    for (const perm of permissions) {
+      const rolePermission: RolePermission = {
+        id: randomUUID(),
+        roleId,
+        permissionId: perm.permissionId,
+        allowedActions: perm.allowedActions,
+        createdAt: new Date(),
+      };
+      this.rolePermissions.set(rolePermission.id, rolePermission);
+    }
+  }
+
+  // User Project Access operations
+  async getUserProjectAccess(userId: string): Promise<UserProjectAccess[]> {
+    return Array.from(this.userProjectAccess.values())
+      .filter(upa => upa.userId === userId);
+  }
+
+  async createUserProjectAccess(insertAccess: InsertUserProjectAccess): Promise<UserProjectAccess> {
+    const id = randomUUID();
+    const access: UserProjectAccess = {
+      ...insertAccess,
+      id,
+      grantedBy: insertAccess.grantedBy || null,
+      createdAt: new Date(),
+    };
+    this.userProjectAccess.set(id, access);
+    return access;
+  }
+
+  async updateUserProjectAccess(id: string, updateData: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> {
+    const existing = this.userProjectAccess.get(id);
+    if (!existing) return undefined;
+
+    const updated: UserProjectAccess = {
+      ...existing,
+      ...updateData,
+    };
+    this.userProjectAccess.set(id, updated);
+    return updated;
+  }
+
+  async deleteUserProjectAccess(id: string): Promise<boolean> {
+    return this.userProjectAccess.delete(id);
+  }
+
+  async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> {
+    // Check if access already exists
+    const existingAccess = Array.from(this.userProjectAccess.values())
+      .find(upa => upa.userId === userId && upa.projectId === projectId);
+
+    if (existingAccess) {
+      // Update existing access
+      return await this.updateUserProjectAccess(existingAccess.id, { accessLevel, grantedBy });
+    } else {
+      // Create new access
+      return await this.createUserProjectAccess({
+        userId,
+        projectId,
+        accessLevel,
+        grantedBy,
+      });
+    }
+  }
+
+  // User Invitation operations
+  async getUserInvitations(status?: string): Promise<UserInvitation[]> {
+    const allInvitations = Array.from(this.userInvitations.values());
+    if (status) {
+      return allInvitations.filter(invitation => invitation.status === status);
+    }
+    return allInvitations;
+  }
+
+  async getUserInvitation(id: string): Promise<UserInvitation | undefined> {
+    return this.userInvitations.get(id);
+  }
+
+  async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> {
+    return Array.from(this.userInvitations.values())
+      .find(invitation => invitation.inviteToken === token);
+  }
+
+  async createUserInvitation(insertInvitation: InsertUserInvitation): Promise<UserInvitation> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const invitation: UserInvitation = {
+      ...insertInvitation,
+      id,
+      firstName: insertInvitation.firstName || null,
+      lastName: insertInvitation.lastName || null,
+      company: insertInvitation.company || null,
+      phone: insertInvitation.phone || null,
+      projectIds: insertInvitation.projectIds || [],
+      inviteToken: insertInvitation.inviteToken || randomUUID(), // Generate unique token
+      acceptedAt: insertInvitation.acceptedAt || null,
+      createdUserId: insertInvitation.createdUserId || null,
+      status: insertInvitation.status || "pending",
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.userInvitations.set(id, invitation);
+    return invitation;
+  }
+
+  async updateUserInvitation(id: string, updateData: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> {
+    const existing = this.userInvitations.get(id);
+    if (!existing) return undefined;
+
+    const updated: UserInvitation = {
+      ...existing,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.userInvitations.set(id, updated);
+    return updated;
+  }
+
+  async deleteUserInvitation(id: string): Promise<boolean> {
+    return this.userInvitations.delete(id);
+  }
+
+  async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> {
+    const invitation = await this.getUserInvitationByToken(token);
+    if (!invitation || invitation.status !== "pending" || invitation.expiresAt < new Date()) {
+      return undefined;
+    }
+
+    // Create the user account
+    const newUser = await this.createUser({
+      username: userData.username || invitation.email,
+      password: userData.password || randomUUID(), // Temporary password
+      email: invitation.email,
+      firstName: invitation.firstName,
+      lastName: invitation.lastName,
+      phone: invitation.phone,
+      company: invitation.company,
+      userCategory: invitation.userCategory as UserCategory,
+      roleId: invitation.roleId,
+      isInvitePending: false,
+      invitedBy: invitation.invitedBy,
+      invitedAt: invitation.createdAt,
+      ...userData,
+    });
+
+    // Grant project access
+    if (invitation.projectIds && Array.isArray(invitation.projectIds)) {
+      for (const projectId of invitation.projectIds as string[]) {
+        await this.grantProjectAccess(newUser.id, projectId, "view", invitation.invitedBy);
+      }
+    }
+
+    // Update invitation status
+    const updatedInvitation = await this.updateUserInvitation(invitation.id, {
+      status: "accepted",
+      acceptedAt: new Date(),
+      createdUserId: newUser.id,
+    });
+
+    return { user: newUser, invitation: updatedInvitation! };
   }
 
   // Notes CRUD operations
