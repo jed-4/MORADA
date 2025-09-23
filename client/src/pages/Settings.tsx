@@ -27,7 +27,8 @@ import {
   MapPin,
   Upload,
   Save,
-  X
+  X,
+  Sliders
 } from "lucide-react";
 import { z } from "zod";
 import type { CompanySettings } from "@shared/schema";
@@ -93,6 +94,12 @@ const SETTINGS_CATEGORIES = [
     label: "Layout Template",
     icon: Layout,
     description: "Proposal and document layout templates"
+  },
+  {
+    id: "field-settings",
+    label: "Field Settings",
+    icon: Sliders,
+    description: "Custom fields for notes, tasks, and other forms"
   }
 ];
 
