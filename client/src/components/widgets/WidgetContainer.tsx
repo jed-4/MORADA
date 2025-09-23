@@ -11,6 +11,7 @@ import {
 import { Widget, WidgetProps } from "@/types/widgets";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useState, useRef, useCallback } from "react";
 
 interface WidgetContainerProps {
   widget: Widget;
@@ -21,6 +22,76 @@ interface WidgetContainerProps {
   isConfiguring?: boolean;
 }
 
+// Resize handle component
+function ResizeHandle({ 
+  onResize, 
+  onResizeStart, 
+  onResizeEnd 
+}: { 
+  onResize: (width: number, height: number) => void;
+  onResizeStart: () => void;
+  onResizeEnd: () => void;
+}) {
+  const [isResizing, setIsResizing] = useState(false);
+  const startPosRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const elementRef = useRef<HTMLDivElement | null>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent drag from starting
+    e.preventDefault();
+    
+    const parentCard = (e.target as HTMLElement).closest('[data-testid^="widget-"]') as HTMLElement;
+    if (!parentCard) return;
+
+    const rect = parentCard.getBoundingClientRect();
+    setIsResizing(true);
+    onResizeStart();
+    
+    startPosRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+      height: rect.height,
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!startPosRef.current) return;
+      
+      const deltaX = e.clientX - startPosRef.current.x;
+      const deltaY = e.clientY - startPosRef.current.y;
+      
+      const newWidth = Math.max(200, startPosRef.current.width + deltaX);
+      const newHeight = Math.max(150, startPosRef.current.height + deltaY);
+      
+      onResize(newWidth, newHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      onResizeEnd();
+      startPosRef.current = null;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [onResize, onResizeStart, onResizeEnd]);
+
+  return (
+    <div
+      ref={elementRef}
+      className={`absolute bottom-0 right-0 w-4 h-4 cursor-se-resize group ${
+        isResizing ? 'bg-primary/20' : 'hover:bg-primary/10'
+      }`}
+      onMouseDown={handleMouseDown}
+      data-testid="resize-handle"
+    >
+      <div className="absolute bottom-1 right-1 w-2 h-2 border-r-2 border-b-2 border-muted-foreground/50 group-hover:border-primary" />
+    </div>
+  );
+}
+
 export default function WidgetContainer({
   widget,
   children,
@@ -29,6 +100,9 @@ export default function WidgetContainer({
   onConfigure,
   isConfiguring = false,
 }: WidgetContainerProps) {
+  const [isResizing, setIsResizing] = useState(false);
+  const [currentDimensions, setCurrentDimensions] = useState(widget.dimensions);
+
   const sizeClasses = {
     sm: "col-span-1",
     md: "col-span-2", 
@@ -43,20 +117,43 @@ export default function WidgetContainer({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: widget.id });
+  } = useSortable({ 
+    id: widget.id,
+    disabled: isResizing, // Disable drag while resizing
+  });
+
+  const handleResize = useCallback((width: number, height: number) => {
+    setCurrentDimensions({ width, height });
+  }, []);
+
+  const handleResizeStart = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+    if (currentDimensions && onUpdate) {
+      onUpdate({
+        ...widget,
+        dimensions: currentDimensions,
+      });
+    }
+  }, [currentDimensions, onUpdate, widget]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isResizing ? 'none' : transition,
+    width: currentDimensions?.width ? `${currentDimensions.width}px` : undefined,
+    height: currentDimensions?.height ? `${currentDimensions.height}px` : undefined,
   };
 
   return (
     <Card 
       ref={setNodeRef}
       style={style}
-      className={`${sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
+      className={`relative ${currentDimensions ? '' : sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
         isDragging ? 'opacity-50 z-50' : ''
-      }`}
+      } ${isResizing ? 'select-none' : ''}`}
       data-testid={`widget-${widget.type}-${widget.id}`}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -103,6 +200,13 @@ export default function WidgetContainer({
       <CardContent>
         {children}
       </CardContent>
+      
+      {/* Resize handle in bottom-right corner */}
+      <ResizeHandle
+        onResize={handleResize}
+        onResizeStart={handleResizeStart}
+        onResizeEnd={handleResizeEnd}
+      />
     </Card>
   );
 }
