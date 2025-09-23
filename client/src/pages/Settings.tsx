@@ -4,6 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -28,10 +32,17 @@ import {
   Upload,
   Save,
   X,
-  Sliders
+  Sliders,
+  Plus,
+  Edit,
+  Trash2,
+  StickyNote,
+  CheckSquare,
+  Type,
+  List
 } from "lucide-react";
 import { z } from "zod";
-import type { CompanySettings } from "@shared/schema";
+import type { CompanySettings, CustomFieldDef, InsertCustomFieldDef } from "@shared/schema";
 
 // Company Settings categories matching Buildern structure
 const SETTINGS_CATEGORIES = [
@@ -543,8 +554,9 @@ export default function Settings() {
 
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
+            {activeSection === "field-settings" && <FieldSettingsSection />}
             
-            {activeSection !== "branding" && (
+            {activeSection !== "branding" && activeSection !== "field-settings" && (
               <div className="text-center py-12">
                 <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
                   {activeCategory && <activeCategory.icon className="h-8 w-8 text-muted-foreground" />}
@@ -560,6 +572,179 @@ export default function Settings() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Field Settings Section Component
+function FieldSettingsSection() {
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("notes");
+  const [isAddingField, setIsAddingField] = useState(false);
+  const [editingField, setEditingField] = useState<CustomFieldDef | null>(null);
+
+  // Fetch custom field definitions
+  const { data: customFields = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
+    queryKey: ["/api/custom-fields"],
+  });
+
+  // Filter fields by section
+  const notesFields = customFields; // For now, all custom fields apply to notes and tasks
+  const tasksFields = customFields; 
+
+  const fieldSections = [
+    {
+      id: "notes",
+      label: "Notes",
+      icon: StickyNote,
+      description: "Custom fields for notes and templates",
+      fields: notesFields
+    },
+    {
+      id: "tasks", 
+      label: "Tasks",
+      icon: CheckSquare,
+      description: "Custom fields for tasks and project items",
+      fields: tasksFields
+    }
+  ];
+
+  if (isLoadingFields) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+              <p className="text-muted-foreground">Loading custom fields...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Field Settings Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          {fieldSections.map((section) => (
+            <TabsTrigger key={section.id} value={section.id} data-testid={`tab-${section.id}`}>
+              <section.icon className="h-4 w-4 mr-2" />
+              {section.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        {fieldSections.map((section) => (
+          <TabsContent key={section.id} value={section.id}>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <section.icon className="h-5 w-5" />
+                      {section.label} Custom Fields
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {section.description}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setIsAddingField(true)}
+                    size="sm"
+                    data-testid={`button-add-field-${section.id}`}
+                    disabled={section.fields.length >= 4}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Field
+                  </Button>
+                </div>
+                {section.fields.length >= 4 && (
+                  <Badge variant="outline" className="w-fit">
+                    Maximum 4 custom fields allowed
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent>
+                {section.fields.length === 0 ? (
+                  <div className="text-center py-8">
+                    <section.icon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">No custom fields</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Add custom fields to capture additional information for your {section.label.toLowerCase()}.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {section.fields.map((field, index) => (
+                      <div
+                        key={field.id}
+                        className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                        data-testid={`field-item-${field.id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            {field.type === 'text' ? (
+                              <Type className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <List className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <div>
+                              <div className="font-medium">{field.label}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {field.type === 'text' ? 'Text field' : 'Select dropdown'}
+                                {field.required && ' • Required'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditingField(field)}
+                            data-testid={`button-edit-field-${field.id}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            data-testid={`button-delete-field-${field.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+      </Tabs>
+
+      {/* Add/Edit Field Modal would go here */}
+      {isAddingField && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Add Custom Field</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Custom field creation form will be implemented in the next phase.
+              </p>
+              <Button onClick={() => setIsAddingField(false)} className="w-full">
+                Close
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
