@@ -8,6 +8,10 @@ export interface Widget {
     row: number;
     col: number;
   };
+  dimensions?: {
+    width: number;
+    height: number;
+  };
 }
 
 export interface WidgetDefinition {
