@@ -11,7 +11,7 @@ import {
 import { Widget, WidgetProps } from "@/types/widgets";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface WidgetContainerProps {
   widget: Widget;
@@ -30,7 +30,7 @@ function ResizeHandle({
 }: { 
   onResize: (width: number, height: number) => void;
   onResizeStart: () => void;
-  onResizeEnd: () => void;
+  onResizeEnd: (width: number, height: number) => void;
 }) {
   const [isResizing, setIsResizing] = useState(false);
   const startPosRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -66,9 +66,21 @@ function ResizeHandle({
       onResize(newWidth, newHeight);
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       setIsResizing(false);
-      onResizeEnd();
+      
+      // Calculate final dimensions at mouseup to avoid stale closure
+      if (startPosRef.current) {
+        const parentCard = (e.target as HTMLElement).closest('[data-testid^="widget-"]') as HTMLElement;
+        if (parentCard) {
+          const rect = parentCard.getBoundingClientRect();
+          console.log(`ResizeHandle mouseup - final dimensions: ${rect.width}x${rect.height}`);
+          onResizeEnd(rect.width, rect.height);
+        } else {
+          console.log('ResizeHandle mouseup - no parent card found');
+        }
+      }
+      
       startPosRef.current = null;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -103,6 +115,11 @@ export default function WidgetContainer({
   const [isResizing, setIsResizing] = useState(false);
   const [currentDimensions, setCurrentDimensions] = useState(widget.dimensions);
 
+  // Sync internal state when widget dimensions prop changes
+  useEffect(() => {
+    setCurrentDimensions(widget.dimensions);
+  }, [widget.dimensions]);
+
   const sizeClasses = {
     sm: "col-span-1",
     md: "col-span-2", 
@@ -130,15 +147,22 @@ export default function WidgetContainer({
     setIsResizing(true);
   }, []);
 
-  const handleResizeEnd = useCallback(() => {
+  const handleResizeEnd = useCallback((width: number, height: number) => {
     setIsResizing(false);
-    if (currentDimensions && onUpdate) {
-      onUpdate({
+    console.log(`Widget ${widget.id} resize ended. Final dimensions:`, { width, height });
+    if (width && height && onUpdate) {
+      const finalDimensions = { width, height };
+      setCurrentDimensions(finalDimensions);
+      const updatedWidget = {
         ...widget,
-        dimensions: currentDimensions,
-      });
+        dimensions: finalDimensions,
+      };
+      console.log(`Calling onUpdate for widget ${widget.id} with dimensions:`, updatedWidget.dimensions);
+      onUpdate(updatedWidget);
+    } else {
+      console.log(`No update - width: ${width}, height: ${height}, onUpdate: ${!!onUpdate}`);
     }
-  }, [currentDimensions, onUpdate, widget]);
+  }, [onUpdate, widget]);
 
   const style = {
     transform: CSS.Transform.toString(transform),

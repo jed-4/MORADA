@@ -85,6 +85,11 @@ export default function CustomizableProjectOverview() {
     try {
       localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(widgetsToSave));
       console.log(`Saved ${widgetsToSave.length} widgets for project ${currentProject.id}`);
+      // Debug: Log which widgets have dimensions
+      const withDimensions = widgetsToSave.filter(w => w.dimensions);
+      if (withDimensions.length > 0) {
+        console.log(`Widgets with custom dimensions:`, withDimensions.map(w => ({ id: w.id, type: w.type, dimensions: w.dimensions })));
+      }
     } catch (error) {
       console.error('Failed to save widgets:', error);
     }
@@ -104,6 +109,11 @@ export default function CustomizableProjectOverview() {
       try {
         const parsedWidgets = JSON.parse(savedWidgets) as Widget[];
         console.log(`Loading ${parsedWidgets.length} widgets for project ${currentProject.id}`);
+        // Debug: Log loaded widgets with dimensions
+        const withDimensions = parsedWidgets.filter(w => w.dimensions);
+        if (withDimensions.length > 0) {
+          console.log(`Loaded widgets with custom dimensions:`, withDimensions.map(w => ({ id: w.id, type: w.type, dimensions: w.dimensions })));
+        }
         setWidgets(parsedWidgets);
       } catch (error) {
         console.error('Failed to parse saved widgets:', error);
@@ -320,7 +330,11 @@ export default function CustomizableProjectOverview() {
           items={widgets.map(w => w.id)}
           strategy={rectSortingStrategy}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={
+            widgets.some(w => w.dimensions) 
+              ? "flex flex-wrap gap-4" // Freeform layout for custom dimensions
+              : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" // Grid layout for default sizes
+          }>
             {widgets.map((widget) => renderWidget(widget))}
             
             {widgets.length === 0 && (
