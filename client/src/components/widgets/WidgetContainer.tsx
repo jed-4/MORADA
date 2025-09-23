@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MoreVertical, X, Settings, ChevronUp, ChevronDown } from "lucide-react";
+import { MoreVertical, X, Settings, GripVertical } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,6 +9,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Widget, WidgetProps } from "@/types/widgets";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface WidgetContainerProps {
   widget: Widget;
@@ -16,11 +18,7 @@ interface WidgetContainerProps {
   onUpdate?: (widget: Widget) => void;
   onRemove?: (widgetId: string) => void;
   onConfigure?: (widgetId: string) => void;
-  onMoveUp?: (widgetId: string) => void;
-  onMoveDown?: (widgetId: string) => void;
   isConfiguring?: boolean;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
 }
 
 export default function WidgetContainer({
@@ -29,11 +27,7 @@ export default function WidgetContainer({
   onUpdate,
   onRemove,
   onConfigure,
-  onMoveUp,
-  onMoveDown,
   isConfiguring = false,
-  canMoveUp = false,
-  canMoveDown = false,
 }: WidgetContainerProps) {
   const sizeClasses = {
     sm: "col-span-1",
@@ -42,13 +36,44 @@ export default function WidgetContainer({
     xl: "col-span-4",
   };
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: widget.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   return (
     <Card 
-      className={`${sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''}`}
+      ref={setNodeRef}
+      style={style}
+      className={`${sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
+        isDragging ? 'opacity-50 z-50' : ''
+      }`}
       data-testid={`widget-${widget.type}-${widget.id}`}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 cursor-grab active:cursor-grabbing"
+            aria-label="Reorder widget"
+            data-testid={`button-drag-handle-${widget.id}`}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </Button>
+          <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -56,25 +81,13 @@ export default function WidgetContainer({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {onMoveUp && canMoveUp && (
-              <DropdownMenuItem onClick={() => onMoveUp(widget.id)}>
-                <ChevronUp className="h-4 w-4 mr-2" />
-                Move Up
-              </DropdownMenuItem>
-            )}
-            {onMoveDown && canMoveDown && (
-              <DropdownMenuItem onClick={() => onMoveDown(widget.id)}>
-                <ChevronDown className="h-4 w-4 mr-2" />
-                Move Down
-              </DropdownMenuItem>
-            )}
-            {(onMoveUp || onMoveDown) && (onConfigure || onRemove) && <DropdownMenuSeparator />}
             {onConfigure && (
               <DropdownMenuItem onClick={() => onConfigure(widget.id)}>
                 <Settings className="h-4 w-4 mr-2" />
                 Configure
               </DropdownMenuItem>
             )}
+            {onConfigure && onRemove && <DropdownMenuSeparator />}
             {onRemove && (
               <DropdownMenuItem 
                 onClick={() => onRemove(widget.id)}
