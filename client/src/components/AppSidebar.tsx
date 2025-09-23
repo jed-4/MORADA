@@ -43,6 +43,7 @@ import { Badge } from "@/components/ui/badge";
 // Project sections
 const projectItems = [
   { title: "Overview", url: "/", icon: Home },
+  { title: "Project Settings", url: "/project-settings", icon: Settings },
   { title: "Messages", url: "/messages", icon: MessageSquare },
   { title: "Notes", url: "/notes", icon: FileText },
   { title: "Calendar", url: "/calendar", icon: Calendar },

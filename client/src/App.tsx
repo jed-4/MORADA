@@ -14,6 +14,7 @@ import Calendar from "@/pages/Calendar";
 import Notes from "@/pages/Notes";
 import Templates from "@/pages/Templates";
 import Settings from "@/pages/Settings";
+import ProjectSettings from "@/pages/ProjectSettings";
 import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/notes" component={Notes} />
+      <Route path="/project-settings" component={ProjectSettings} />
       
       {/* Business Project */}
       <Route path="/business" component={BusinessOverviewPage} />
