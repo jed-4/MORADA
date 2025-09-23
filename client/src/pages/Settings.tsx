@@ -585,7 +585,7 @@ function FieldSettingsSection() {
 
   // Fetch custom field definitions
   const { data: customFields = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
-    queryKey: ["/api/custom-fields"],
+    queryKey: ["/api/custom-field-defs"],
   });
 
   // Filter fields by section
