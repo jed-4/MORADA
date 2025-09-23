@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import * as schema from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -444,6 +444,9 @@ export class MemStorage implements IStorage {
     const fieldDef: CustomFieldDef = {
       ...insertFieldDef,
       id,
+      type: insertFieldDef.type ?? "text",
+      required: insertFieldDef.required ?? false,
+      order: insertFieldDef.order ?? 0,
       isActive: insertFieldDef.isActive ?? true,
       createdAt: now,
       updatedAt: now,
@@ -509,6 +512,8 @@ export class MemStorage implements IStorage {
     const option: CustomFieldOption = {
       ...insertOption,
       id,
+      order: insertOption.order ?? 0,
+      color: insertOption.color ?? null,
       isActive: insertOption.isActive ?? true,
       createdAt: new Date(),
     };
@@ -562,6 +567,12 @@ export class MemStorage implements IStorage {
     const template: NoteTemplate = {
       ...insertTemplate,
       id,
+      description: insertTemplate.description ?? null,
+      defaultTitle: insertTemplate.defaultTitle ?? null,
+      contentHtml: insertTemplate.contentHtml ?? null,
+      contentText: insertTemplate.contentText ?? null,
+      ownerId: insertTemplate.ownerId ?? null,
+      ownerName: insertTemplate.ownerName ?? null,
       isPublic: insertTemplate.isPublic ?? false,
       defaultCustomFields: insertTemplate.defaultCustomFields ?? {},
       createdAt: now,
@@ -661,7 +672,7 @@ export class MemStorage implements IStorage {
   }
 
   async updateTaskStatus(id: string, status: "todo" | "in-progress" | "done"): Promise<Task | undefined> {
-    return this.updateTask(id, { status });
+    return this.updateTask(id, { status } as Partial<InsertTask>);
   }
 
   // Projects CRUD operations
