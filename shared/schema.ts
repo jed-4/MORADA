@@ -305,11 +305,27 @@ export const insertNoteTemplateSchema = createInsertSchema(noteTemplates).omit({
 export type InsertNoteTemplate = z.infer<typeof insertNoteTemplateSchema>;
 export type NoteTemplate = typeof noteTemplates.$inferSelect;
 
+// Project Types Constants
+export const PROJECT_TYPES = [
+  'New Build',
+  'Major Renovation', 
+  'Extension',
+  'Minor Renovation',
+  'Repair & Maintenance',
+  'Commercial Fit-out',
+  'Landscaping',
+  'Custom Build'
+] as const;
+
+export type ProjectType = typeof PROJECT_TYPES[number];
+
 // Projects (for task organization)
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
+  jobNumber: text("job_number"), // Optional job/project reference number
+  projectType: text("project_type"), // References PROJECT_TYPES
   color: text("color").default("#3b82f6"), // Default blue
   isActive: boolean("is_active").notNull().default(true),
   isBusiness: boolean("is_business").notNull().default(false), // Business project flag
