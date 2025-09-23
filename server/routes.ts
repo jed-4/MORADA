@@ -11,14 +11,41 @@ import {
   insertTaskViewSchema,
   insertEstimateSchema,
   insertEstimateItemSchema,
-  insertEstimateGroupSchema
+  insertEstimateGroupSchema,
+  insertUserSchema,
+  insertUserRoleSchema,
+  insertPermissionSchema,
+  insertRolePermissionSchema,
+  insertUserProjectAccessSchema,
+  insertUserInvitationSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { PasswordUtils } from "./utils/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // put application routes here
   // prefix all routes with /api
+
+  // GLOBAL AUTHENTICATION: All API routes require authentication by default
+  // Only authentication routes are exempt from this requirement
+  app.use('/api', (req, res, next) => {
+    const path = req.path; // After mounting at /api, path is relative (e.g., '/auth/login')
+    
+    // Skip authentication for auth endpoints
+    if (path.startsWith('/auth/')) {
+      return next();
+    }
+    
+    // Skip authentication for public invitation endpoints
+    if (/^\/invitations\/by-token\/[^/]+$/.test(path) || /^\/invitations\/[^/]+\/accept$/.test(path)) {
+      return next();
+    }
+    
+    // All other API routes require authentication
+    return requireAuth(req, res, next);
+  });
 
   // use storage to perform CRUD operations on the storage interface
   // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
@@ -861,6 +888,493 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(summary);
     } catch (error) {
       res.status(500).json({ error: "Failed to calculate estimate summary" });
+    }
+  });
+
+  // ============================================================
+  // USER ROLE SYSTEM API ROUTES
+  // ============================================================
+
+  // Authentication Routes
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password are required" });
+      }
+
+      const user = await storage.validateUserCredentials(username, password);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid username or password" });
+      }
+
+      // Regenerate session to prevent fixation attacks
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('Session regeneration error:', err);
+          return res.status(500).json({ error: "Login failed" });
+        }
+        
+        // Create secure session with new session ID
+        req.session.userId = user.id;
+        
+        // Save session explicitly
+        req.session.save(async (err) => {
+          if (err) {
+            console.error('Session save error:', err);
+            return res.status(500).json({ error: "Login failed" });
+          }
+          
+          try {
+            // Update last login time
+            await storage.updateUser(user.id, { lastLoginAt: new Date() });
+            res.json({ user: toSafeUser(user), message: "Login successful" });
+          } catch (error) {
+            console.error('Login update error:', error);
+            res.status(500).json({ error: "Login failed" });
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // Logout route
+  app.post("/api/auth/logout", (req, res) => {
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) {
+          console.error('Logout error:', err);
+          return res.status(500).json({ error: "Logout failed" });
+        }
+        res.clearCookie('buildpro.session', { 
+          httpOnly: true, 
+          sameSite: 'lax', 
+          secure: process.env.NODE_ENV === 'production' 
+        }); // Clear correct session cookie
+        res.json({ message: "Logout successful" });
+      });
+    } else {
+      res.json({ message: "Already logged out" });
+    }
+  });
+
+  // Current user route
+  app.get("/api/auth/me", (req, res) => {
+    res.json({ user: toSafeUser(req.user!) });
+  });
+
+  // User Management Routes
+  app.get("/api/users", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
+    try {
+      const { category } = req.query;
+      const users = await storage.getUsers(category as any);
+      // Use safe user helper to remove passwords
+      const safeUsers = users.map(user => toSafeUser(user));
+      res.json(safeUsers);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.get("/api/users/:id", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
+    try {
+      const user = await storage.getUserWithRole(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      // Use safe user helper consistently
+      res.json(toSafeUser(user));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+
+  app.post("/api/users", requireTeamMember, requirePermission("admin.users", "add"), async (req, res) => {
+    try {
+      // Validate password strength first
+      if (req.body.password) {
+        const passwordValidation = PasswordUtils.validatePasswordStrength(req.body.password);
+        if (!passwordValidation.isValid) {
+          return res.status(400).json({ 
+            error: "Password validation failed", 
+            details: passwordValidation.errors 
+          });
+        }
+      }
+
+      const validationResult = insertUserSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const user = await storage.createUser(validationResult.data);
+      // Use safe user helper to remove password
+      res.status(201).json(toSafeUser(user));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.patch("/api/users/:id", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      // Validate password strength if password is being updated
+      if (req.body.password) {
+        const passwordValidation = PasswordUtils.validatePasswordStrength(req.body.password);
+        if (!passwordValidation.isValid) {
+          return res.status(400).json({ 
+            error: "Password validation failed", 
+            details: passwordValidation.errors 
+          });
+        }
+      }
+
+      const updateSchema = insertUserSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const user = await storage.updateUser(req.params.id, validationResult.data);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      // Use safe user helper to remove password
+      res.json(toSafeUser(user));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  // Change password endpoint with strong validation
+  app.post("/api/users/:id/change-password", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const { newPassword } = req.body;
+      if (!newPassword) {
+        return res.status(400).json({ error: "New password is required" });
+      }
+
+      const user = await storage.changeUserPassword(req.params.id, newPassword);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ message: "Password updated successfully" });
+    } catch (error: any) {
+      if (error.message?.includes("Password validation failed")) {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to change password" });
+    }
+  });
+
+  // User Role Management Routes
+  app.get("/api/user-roles", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+    try {
+      const { category } = req.query;
+      const roles = await storage.getUserRoles(category as any);
+      res.json(roles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user roles" });
+    }
+  });
+
+  app.get("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+    try {
+      const role = await storage.getUserRole(req.params.id);
+      if (!role) {
+        return res.status(404).json({ error: "User role not found" });
+      }
+      res.json(role);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user role" });
+    }
+  });
+
+  app.post("/api/user-roles", requireTeamMember, requirePermission("admin.roles", "add"), async (req, res) => {
+    try {
+      const validationResult = insertUserRoleSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const role = await storage.createUserRole(validationResult.data);
+      res.status(201).json(role);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create user role" });
+    }
+  });
+
+  app.patch("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+    try {
+      const updateSchema = insertUserRoleSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const role = await storage.updateUserRole(req.params.id, validationResult.data);
+      if (!role) {
+        return res.status(404).json({ error: "User role not found" });
+      }
+      res.json(role);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update user role" });
+    }
+  });
+
+  app.delete("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "delete"), async (req, res) => {
+    try {
+      const success = await storage.deleteUserRole(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "User role not found or cannot be deleted" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete user role" });
+    }
+  });
+
+  // Permission Management Routes
+  app.get("/api/permissions", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+    try {
+      const { category } = req.query;
+      const permissions = await storage.getPermissions(category as string);
+      res.json(permissions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch permissions" });
+    }
+  });
+
+  app.get("/api/permissions/:id", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+    try {
+      const permission = await storage.getPermission(req.params.id);
+      if (!permission) {
+        return res.status(404).json({ error: "Permission not found" });
+      }
+      res.json(permission);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch permission" });
+    }
+  });
+
+  app.post("/api/permissions", requireTeamMember, requirePermission("admin.roles", "add"), async (req, res) => {
+    try {
+      const validationResult = insertPermissionSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const permission = await storage.createPermission(validationResult.data);
+      res.status(201).json(permission);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create permission" });
+    }
+  });
+
+  // Role-Permission Matrix Routes
+  app.get("/api/user-roles/:roleId/permissions", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+    try {
+      const rolePermissions = await storage.getRolePermissions(req.params.roleId);
+      res.json(rolePermissions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch role permissions" });
+    }
+  });
+
+  app.post("/api/user-roles/:roleId/permissions", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+    try {
+      const { permissions } = req.body;
+      if (!Array.isArray(permissions)) {
+        return res.status(400).json({ error: "Permissions must be an array" });
+      }
+
+      // Validate each permission object
+      const permissionSchema = z.object({
+        permissionId: z.string(),
+        allowedActions: z.array(z.enum(["view", "add", "edit", "delete"]))
+      });
+      
+      const validationResult = z.array(permissionSchema).safeParse(permissions);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      await storage.setRolePermissions(req.params.roleId, validationResult.data);
+      res.json({ message: "Role permissions updated successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update role permissions" });
+    }
+  });
+
+  // User Project Access Routes
+  app.get("/api/users/:userId/project-access", requireTeamMember, async (req, res) => {
+    try {
+      const projectAccess = await storage.getUserProjectAccess(req.params.userId);
+      res.json(projectAccess);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user project access" });
+    }
+  });
+
+  app.post("/api/users/:userId/project-access", requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertUserProjectAccessSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const access = await storage.createUserProjectAccess({
+        ...validationResult.data,
+        userId: req.params.userId
+      });
+      res.status(201).json(access);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to grant project access" });
+    }
+  });
+
+  app.post("/api/project-access/grant", requireTeamMember, async (req, res) => {
+    try {
+      const { userId, projectId, accessLevel, grantedBy } = req.body;
+      if (!userId || !projectId || !accessLevel || !grantedBy) {
+        return res.status(400).json({ 
+          error: "userId, projectId, accessLevel, and grantedBy are required" 
+        });
+      }
+
+      const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
+      res.status(201).json(access);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to grant project access" });
+    }
+  });
+
+  // User Invitation Routes
+  app.get("/api/invitations", requireTeamMember, requirePermission("admin.suppliers", "view"), async (req, res) => {
+    try {
+      const { status } = req.query;
+      const invitations = await storage.getUserInvitations(status as string);
+      res.json(invitations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invitations" });
+    }
+  });
+
+  app.get("/api/invitations/:id", requireTeamMember, requirePermission("admin.suppliers", "view"), async (req, res) => {
+    try {
+      const invitation = await storage.getUserInvitation(req.params.id);
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+      res.json(invitation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invitation" });
+    }
+  });
+
+  app.post("/api/invitations", requireTeamMember, requirePermission("admin.suppliers", "add"), async (req, res) => {
+    try {
+      const validationResult = insertUserInvitationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const invitation = await storage.createUserInvitation(validationResult.data);
+      // TODO: Send email invitation here
+      
+      res.status(201).json({
+        ...invitation,
+        inviteUrl: `${req.get('host')}/accept-invite/${invitation.inviteToken}`
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invitation" });
+    }
+  });
+
+  app.get("/api/invitations/by-token/:token", async (req, res) => {
+    try {
+      const invitation = await storage.getUserInvitationByToken(req.params.token);
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found or expired" });
+      }
+      
+      // Check if invitation is still valid
+      if (invitation.status !== "pending" || invitation.expiresAt < new Date()) {
+        return res.status(400).json({ error: "Invitation has expired or already been used" });
+      }
+
+      res.json(invitation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invitation" });
+    }
+  });
+
+  app.post("/api/invitations/:token/accept", async (req, res) => {
+    try {
+      const { username, password, firstName, lastName } = req.body;
+      
+      if (!password) {
+        return res.status(400).json({ error: "Password is required" });
+      }
+
+      // Validate password strength
+      const passwordValidation = PasswordUtils.validatePasswordStrength(password);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({ 
+          error: "Password validation failed", 
+          details: passwordValidation.errors 
+        });
+      }
+
+      const result = await storage.acceptInvitation(req.params.token, {
+        username,
+        password,
+        firstName,
+        lastName
+      });
+
+      if (!result) {
+        return res.status(400).json({ error: "Invalid or expired invitation" });
+      }
+
+      // Never return password in API response
+      const { password: _, ...safeUser } = result.user;
+      res.status(201).json({
+        user: safeUser,
+        invitation: result.invitation,
+        message: "Account created successfully"
+      });
+    } catch (error: any) {
+      if (error.message?.includes("Password validation failed")) {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to accept invitation" });
     }
   });
 
