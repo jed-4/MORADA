@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 import type { CompanySettings, CustomFieldDef, InsertCustomFieldDef } from "@shared/schema";
+import { insertCustomFieldDefSchema } from "@shared/schema";
 
 // Company Settings categories matching Buildern structure
 const SETTINGS_CATEGORIES = [
@@ -576,17 +577,131 @@ export default function Settings() {
   );
 }
 
-// Field Settings Section Component
+// Field Settings Section Component  
 function FieldSettingsSection() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("notes");
   const [isAddingField, setIsAddingField] = useState(false);
   const [editingField, setEditingField] = useState<CustomFieldDef | null>(null);
+  const [deletingField, setDeletingField] = useState<CustomFieldDef | null>(null);
 
   // Fetch custom field definitions
   const { data: customFields = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
     queryKey: ["/api/custom-field-defs"],
   });
+
+  // Form for adding/editing fields
+  const fieldForm = useForm<InsertCustomFieldDef>({
+    resolver: zodResolver(insertCustomFieldDefSchema),
+    defaultValues: {
+      key: "",
+      label: "",
+      type: "text",
+      required: false,
+      order: 0,
+      isActive: true
+    }
+  });
+
+  // Create custom field mutation
+  const createFieldMutation = useMutation({
+    mutationFn: async (data: InsertCustomFieldDef) => {
+      const response = await apiRequest("POST", "/api/custom-field-defs", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
+      toast({ title: "Custom field created successfully" });
+      setIsAddingField(false);
+      fieldForm.reset();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error creating field", 
+        description: error.message || "Failed to create custom field",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Update custom field mutation
+  const updateFieldMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertCustomFieldDef> }) => {
+      const response = await apiRequest("PATCH", `/api/custom-field-defs/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
+      toast({ title: "Custom field updated successfully" });
+      setEditingField(null);
+      fieldForm.reset();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error updating field", 
+        description: error.message || "Failed to update custom field",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Delete custom field mutation
+  const deleteFieldMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/custom-field-defs/${id}`);
+      return response.ok;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
+      toast({ title: "Custom field deleted successfully" });
+      setDeletingField(null);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error deleting field", 
+        description: error.message || "Failed to delete custom field",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Form submission handlers
+  const handleAddField = (data: InsertCustomFieldDef) => {
+    createFieldMutation.mutate(data);
+  };
+
+  const handleEditField = (data: InsertCustomFieldDef) => {
+    if (editingField) {
+      updateFieldMutation.mutate({ id: editingField.id, data });
+    }
+  };
+
+  const handleDeleteField = () => {
+    if (deletingField) {
+      deleteFieldMutation.mutate(deletingField.id);
+    }
+  };
+
+  // Reset form when editing changes
+  useEffect(() => {
+    if (editingField) {
+      fieldForm.reset({
+        key: editingField.key,
+        label: editingField.label,
+        type: editingField.type as "text" | "select",
+        required: editingField.required,
+        order: editingField.order
+      });
+    } else {
+      fieldForm.reset({
+        key: "",
+        label: "",
+        type: "text",
+        required: false,
+        order: 0
+      });
+    }
+  }, [editingField, fieldForm]);
 
   // Filter fields by section
   const notesFields = customFields; // For now, all custom fields apply to notes and tasks
@@ -597,15 +712,15 @@ function FieldSettingsSection() {
       id: "notes",
       label: "Notes",
       icon: StickyNote,
-      description: "Custom fields for notes and templates",
-      fields: notesFields
+      description: "View how custom fields appear in notes and templates",
+      fields: customFields
     },
     {
       id: "tasks", 
       label: "Tasks",
       icon: CheckSquare,
-      description: "Custom fields for tasks and project items",
-      fields: tasksFields
+      description: "View how custom fields appear in tasks and project items", 
+      fields: customFields
     }
   ];
 
@@ -645,10 +760,13 @@ function FieldSettingsSection() {
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <section.icon className="h-5 w-5" />
-                      {section.label} Custom Fields
+                      {section.label} - Custom Fields
                     </CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
                       {section.description}
+                    </p>
+                    <p className="text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 mt-2">
+                      Note: Custom fields are shared across all notes and tasks
                     </p>
                   </div>
                   <Button
@@ -712,6 +830,7 @@ function FieldSettingsSection() {
                           <Button
                             size="sm"
                             variant="ghost"
+                            onClick={() => setDeletingField(field)}
                             data-testid={`button-delete-field-${field.id}`}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -727,20 +846,292 @@ function FieldSettingsSection() {
         ))}
       </Tabs>
 
-      {/* Add/Edit Field Modal would go here */}
+      {/* Add Field Modal */}
       {isAddingField && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-testid="modal-add-field">
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle>Add Custom Field</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Custom field creation form will be implemented in the next phase.
+                Create a new custom field for notes and tasks
               </p>
-              <Button onClick={() => setIsAddingField(false)} className="w-full">
-                Close
-              </Button>
+            </CardHeader>
+            <CardContent>
+              <Form {...fieldForm}>
+                <form onSubmit={fieldForm.handleSubmit(handleAddField)} className="space-y-4">
+                  <FormField
+                    control={fieldForm.control}
+                    name="key"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Field Key</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="field_name"
+                            data-testid="input-field-key"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                        <p className="text-xs text-muted-foreground">
+                          Used internally (lowercase, underscores only)
+                        </p>
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={fieldForm.control}
+                    name="label"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Display Label</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="Field Name"
+                            data-testid="input-field-label"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={fieldForm.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Field Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-field-type">
+                              <SelectValue placeholder="Select field type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="text">Text Input</SelectItem>
+                            <SelectItem value="select">Dropdown Select</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={fieldForm.control}
+                    name="required"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="checkbox-field-required"
+                          />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel>Required field</FormLabel>
+                          <p className="text-xs text-muted-foreground">
+                            Users must fill this field
+                          </p>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsAddingField(false)}
+                      data-testid="button-cancel-add-field"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={createFieldMutation.isPending}
+                      data-testid="button-save-add-field"
+                    >
+                      {createFieldMutation.isPending ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      ) : null}
+                      Add Field
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Field Modal */}
+      {editingField && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-testid="modal-edit-field">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Edit Custom Field</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Update the custom field details
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Form {...fieldForm}>
+                <form onSubmit={fieldForm.handleSubmit(handleEditField)} className="space-y-4">
+                  <FormField
+                    control={fieldForm.control}
+                    name="key"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Field Key</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            disabled
+                            data-testid="input-edit-field-key"
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          Field key cannot be changed after creation
+                        </p>
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={fieldForm.control}
+                    name="label"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Display Label</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="Field Name"
+                            data-testid="input-edit-field-label"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={fieldForm.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Field Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-field-type">
+                              <SelectValue placeholder="Select field type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="text">Text Input</SelectItem>
+                            <SelectItem value="select">Dropdown Select</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={fieldForm.control}
+                    name="required"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="checkbox-edit-field-required"
+                          />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel>Required field</FormLabel>
+                          <p className="text-xs text-muted-foreground">
+                            Users must fill this field
+                          </p>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditingField(null)}
+                      data-testid="button-cancel-edit-field"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={updateFieldMutation.isPending}
+                      data-testid="button-save-edit-field"
+                    >
+                      {updateFieldMutation.isPending ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      ) : null}
+                      Update Field
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingField && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-testid="modal-delete-field">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="h-5 w-5" />
+                Delete Custom Field
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                This action cannot be undone. This will permanently delete the custom field.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-muted p-3 rounded-lg mb-4">
+                <div className="font-medium">{deletingField.label}</div>
+                <div className="text-sm text-muted-foreground">
+                  {deletingField.type === 'text' ? 'Text field' : 'Select dropdown'}
+                  {deletingField.required && ' • Required'}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeletingField(null)}
+                  data-testid="button-cancel-delete-field"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteField}
+                  disabled={deleteFieldMutation.isPending}
+                  data-testid="button-confirm-delete-field"
+                >
+                  {deleteFieldMutation.isPending ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  ) : null}
+                  Delete Field
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
