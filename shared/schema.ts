@@ -461,3 +461,36 @@ export type EstimateSummary = {
   total: number;
   itemCount: number;
 };
+
+// Company Settings
+export const companySettings = pgTable("company_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyName: text("company_name"),
+  email: text("email"),
+  phone: text("phone"), 
+  website: text("website"),
+  address: text("address"),
+  logoUrl: text("logo_url"), // Path to uploaded logo file
+  
+  // Social Media Links
+  facebook: text("facebook"),
+  linkedin: text("linkedin"),
+  twitter: text("twitter"),
+  instagram: text("instagram"),
+  googleMyBusiness: text("google_my_business"),
+  yelp: text("yelp"),
+  
+  // System settings
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCompanySettingsSchema = createInsertSchema(companySettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
+export type CompanySettings = typeof companySettings.$inferSelect;

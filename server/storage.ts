@@ -15,7 +15,8 @@ import {
   type RolePermission, type InsertRolePermission,
   type UserProjectAccess, type InsertUserProjectAccess,
   type UserInvitation, type InsertUserInvitation,
-  type UserWithRole, type PermissionAction, type UserCategory
+  type UserWithRole, type PermissionAction, type UserCategory,
+  type CompanySettings, type InsertCompanySettings
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -163,6 +164,10 @@ export interface IStorage {
     total: number;
     itemCount: number;
   }>;
+
+  // Company Settings
+  getCompanySettings(): Promise<CompanySettings | undefined>;
+  updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -181,6 +186,7 @@ export class MemStorage implements IStorage {
   private estimates: Map<string, Estimate>;
   private estimateItems: Map<string, EstimateItem>;
   private estimateGroups: Map<string, EstimateGroup>;
+  private companySettings: CompanySettings | undefined;
 
   constructor() {
     this.users = new Map();
@@ -1958,11 +1964,49 @@ export class MemStorage implements IStorage {
 
     return {
       subtotal,
-      markupAmount: markup,
-      taxAmount: tax,
+      markup: markup,
+      tax: tax,
       total,
       itemCount: items.length,
     };
+  }
+
+  // Company Settings
+  async getCompanySettings(): Promise<CompanySettings | undefined> {
+    return this.companySettings;
+  }
+
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
+    if (!this.companySettings) {
+      // Create new company settings if none exist
+      this.companySettings = {
+        id: randomUUID(),
+        companyName: null,
+        email: null,
+        phone: null,
+        website: null,
+        address: null,
+        logoUrl: null,
+        facebook: null,
+        linkedin: null,
+        twitter: null,
+        instagram: null,
+        googleMyBusiness: null,
+        yelp: null,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...settings,
+      };
+    } else {
+      // Update existing settings
+      this.companySettings = {
+        ...this.companySettings,
+        ...settings,
+        updatedAt: new Date(),
+      };
+    }
+    return this.companySettings;
   }
 }
 
