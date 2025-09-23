@@ -9,640 +9,530 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { 
-  insertCustomFieldDefSchema, 
-  insertCustomFieldOptionSchema,
-  type CustomFieldDef, 
-  type InsertCustomFieldDef,
-  type CustomFieldOption,
-  type InsertCustomFieldOption
-} from "@shared/schema";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
+  Building2,
   Settings as SettingsIcon,
-  Plus,
-  MoreVertical,
-  Edit3,
-  Trash2,
-  Type,
-  List,
-  Palette,
+  Users,
+  Briefcase,
+  Plug,
+  Globe,
+  FileText,
+  Shield,
+  Calendar,
+  Database,
+  Mail,
+  Layout,
+  User,
+  Phone,
+  MapPin,
+  Upload,
+  Save,
+  X
 } from "lucide-react";
 import { z } from "zod";
 
+// Company Settings categories matching Buildern structure
+const SETTINGS_CATEGORIES = [
+  {
+    id: "branding",
+    label: "Branding",
+    icon: Building2,
+    description: "Company information, logo, and branding"
+  },
+  {
+    id: "system-configuration", 
+    label: "System configuration",
+    icon: SettingsIcon,
+    description: "Date formats, language, and system preferences"
+  },
+  {
+    id: "roles-permissions",
+    label: "Roles & Permissions", 
+    icon: Shield,
+    description: "User roles and permission management"
+  },
+  {
+    id: "license-insurance",
+    label: "License and Insurance",
+    icon: FileText,
+    description: "Upload and manage business documents"
+  },
+  {
+    id: "terms-conditions",
+    label: "Terms and Conditions",
+    icon: FileText,
+    description: "Contract templates and legal documents"
+  },
+  {
+    id: "accounting-integration",
+    label: "Accounting integration",
+    icon: Plug,
+    description: "Connect with Xero and other accounting software"
+  },
+  {
+    id: "schedule-settings",
+    label: "Schedule settings",
+    icon: Calendar,
+    description: "Working hours, holidays, and calendar configuration"
+  },
+  {
+    id: "default-values",
+    label: "Default values",
+    icon: Database,
+    description: "Units, project types, statuses, and system defaults"
+  },
+  {
+    id: "email-messages",
+    label: "Email messages",
+    icon: Mail,
+    description: "Customize email templates and messaging"
+  },
+  {
+    id: "layout-templates",
+    label: "Layout Template",
+    icon: Layout,
+    description: "Proposal and document layout templates"
+  }
+];
+
+// Company info form schema
+const companyInfoSchema = z.object({
+  companyName: z.string().min(1, "Company name is required"),
+  companyEmail: z.string().email("Invalid email address").optional().or(z.literal("")),
+  companyPhone: z.string().optional(),
+  companyWebsite: z.string().url("Invalid website URL").optional().or(z.literal("")),
+  companyAddress: z.string().optional(),
+  facebook: z.string().optional(),
+  linkedin: z.string().optional(), 
+  twitter: z.string().optional(),
+  instagram: z.string().optional(),
+  googleMyBusiness: z.string().optional(),
+  yelp: z.string().optional()
+});
+
 export default function Settings() {
-  const [isAddingField, setIsAddingField] = useState(false);
-  const [editingField, setEditingField] = useState<CustomFieldDef | null>(null);
-  const [managingOptions, setManagingOptions] = useState<CustomFieldDef | null>(null);
-  const [isAddingOption, setIsAddingOption] = useState(false);
+  const [activeSection, setActiveSection] = useState("branding");
+  const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
 
-  // Form for custom field definitions
-  const fieldForm = useForm<z.infer<typeof insertCustomFieldDefSchema>>({
-    resolver: zodResolver(insertCustomFieldDefSchema),
+  // Company info form
+  const companyForm = useForm<z.infer<typeof companyInfoSchema>>({
+    resolver: zodResolver(companyInfoSchema),
     defaultValues: {
-      key: "",
-      label: "",
-      type: "text",
-      required: false,
+      companyName: "",
+      companyEmail: "",
+      companyPhone: "",
+      companyWebsite: "",
+      companyAddress: "",
+      facebook: "",
+      linkedin: "",
+      twitter: "",
+      instagram: "",
+      googleMyBusiness: "",
+      yelp: ""
     },
   });
 
-  // Form for custom field options
-  const optionForm = useForm<z.infer<typeof insertCustomFieldOptionSchema>>({
-    resolver: zodResolver(insertCustomFieldOptionSchema),
-    defaultValues: {
-      fieldDefId: "",
-      value: "",
-      label: "",
-      color: "#000000",
-    },
-  });
+  // TODO: Fetch company settings data
+  // const { data: companySettings, isLoading } = useQuery({
+  //   queryKey: ["/api/company-settings"],
+  // });
 
-  // Fetch custom field definitions
-  const { data: customFieldDefs = [], isLoading } = useQuery<CustomFieldDef[]>({
-    queryKey: ["/api/custom-field-defs"],
-  });
-
-  // Fetch options for a specific field
-  const { data: fieldOptions = {} } = useQuery<Record<string, CustomFieldOption[]>>({
-    queryKey: ["/api/custom-field-options", customFieldDefs.map(f => f.id)],
-    queryFn: async () => {
-      const selectFields = customFieldDefs.filter(field => field.type === "select");
-      if (selectFields.length === 0) return {};
-      
-      const optionsMap: Record<string, CustomFieldOption[]> = {};
-      
-      for (const field of selectFields) {
-        const response = await fetch(`/api/custom-field-defs/${field.id}/options`);
-        const options = await response.json();
-        optionsMap[field.id] = options;
-      }
-      
-      return optionsMap;
-    },
-    enabled: customFieldDefs.length > 0,
-  });
-
-  // Mutations for custom field definitions
-  const createFieldMutation = useMutation({
-    mutationFn: async (data: InsertCustomFieldDef) => {
-      const response = await apiRequest("POST", "/api/custom-field-defs", data);
+  // Company info mutation 
+  const updateCompanyMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof companyInfoSchema>) => {
+      const response = await apiRequest("PATCH", "/api/company-settings", data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
-      toast({ title: "Custom field created successfully" });
-      setIsAddingField(false);
-      fieldForm.reset();
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Company settings updated successfully" });
+      setIsEditing(false);
     },
     onError: (error) => {
       toast({ 
-        title: "Failed to create custom field", 
+        title: "Failed to update company settings", 
         description: error.message,
         variant: "destructive" 
       });
     },
   });
 
-  const updateFieldMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertCustomFieldDef> }) => {
-      const response = await apiRequest("PATCH", `/api/custom-field-defs/${id}`, data);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
-      toast({ title: "Custom field updated successfully" });
-      setEditingField(null);
-      fieldForm.reset();
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Failed to update custom field", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
-  const deleteFieldMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/custom-field-defs/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
-      toast({ title: "Custom field deleted successfully" });
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Failed to delete custom field", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
-  // Mutations for custom field options
-  const createOptionMutation = useMutation({
-    mutationFn: async (data: InsertCustomFieldOption) => {
-      const response = await apiRequest("POST", "/api/custom-field-options", data);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-options"] });
-      toast({ title: "Option created successfully" });
-      setIsAddingOption(false);
-      optionForm.reset();
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Failed to create option", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
-  const deleteOptionMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/custom-field-options/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/custom-field-options"] });
-      toast({ title: "Option deleted successfully" });
-    },
-    onError: (error) => {
-      toast({ 
-        title: "Failed to delete option", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
-  const onSubmitField = (data: z.infer<typeof insertCustomFieldDefSchema>) => {
-    if (editingField) {
-      updateFieldMutation.mutate({ id: editingField.id, data });
-    } else {
-      createFieldMutation.mutate(data);
-    }
+  const onSubmitCompanyInfo = (data: z.infer<typeof companyInfoSchema>) => {
+    updateCompanyMutation.mutate(data);
   };
 
-  const onSubmitOption = (data: z.infer<typeof insertCustomFieldOptionSchema>) => {
-    if (managingOptions) {
-      createOptionMutation.mutate({
-        ...data,
-        fieldDefId: managingOptions.id,
-      });
-    }
+  const handleEditCompanyInfo = () => {
+    setIsEditing(true);
   };
 
-  const handleEditField = (field: CustomFieldDef) => {
-    setEditingField(field);
-    fieldForm.reset({
-      key: field.key,
-      label: field.label,
-      type: field.type,
-      required: field.required,
-    });
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    companyForm.reset();
   };
 
-  const handleDeleteField = (fieldId: string) => {
-    deleteFieldMutation.mutate(fieldId);
-  };
+  const activeCategory = SETTINGS_CATEGORIES.find(cat => cat.id === activeSection);
 
-  const handleManageOptions = (field: CustomFieldDef) => {
-    setManagingOptions(field);
-    optionForm.reset({
-      fieldDefId: field.id,
-      value: "",
-      label: "",
-      color: "#3b82f6",
-    });
-  };
-
-  const handleDeleteOption = (optionId: string) => {
-    deleteOptionMutation.mutate(optionId);
-  };
-
-  const FieldDialog = ({ isEditing }: { isEditing: boolean }) => (
-    <Dialog open={isAddingField || !!editingField} onOpenChange={(open) => {
-      if (!open) {
-        setIsAddingField(false);
-        setEditingField(null);
-        fieldForm.reset();
-      }
-    }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Edit Custom Field" : "Add Custom Field"}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing 
-              ? "Make changes to your custom field here."
-              : `Create a new custom field for notes. You can have up to 4 custom fields.`
-            }
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...fieldForm}>
-          <form onSubmit={fieldForm.handleSubmit(onSubmitField)} className="space-y-4">
-            <FormField
-              control={fieldForm.control}
-              name="key"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Field Key</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g., status, priority, department"
-                      {...field}
-                      data-testid="field-key-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={fieldForm.control}
-              name="label"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Field Label</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g., Status, Priority, Department"
-                      {...field}
-                      data-testid="field-label-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={fieldForm.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Field Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="field-type-select">
-                        <SelectValue placeholder="Select field type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="select">Select (Dropdown)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={fieldForm.control}
-              name="required"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      data-testid="field-required-checkbox"
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Required Field</FormLabel>
-                    <p className="text-sm text-muted-foreground">
-                      This field must be filled when creating notes
-                    </p>
-                  </div>
-                </FormItem>
-              )}
-            />
-            
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => {
-                setIsAddingField(false);
-                setEditingField(null);
-                fieldForm.reset();
-              }}>
-                Cancel
-              </Button>
-              <Button 
-                type="submit"
-                disabled={createFieldMutation.isPending || updateFieldMutation.isPending}
-                data-testid="field-save-button"
-              >
-                {createFieldMutation.isPending || updateFieldMutation.isPending ? 
-                  (isEditing ? "Updating..." : "Creating...") :
-                  (isEditing ? "Update Field" : "Create Field")
-                }
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
-  );
-
-  const OptionsDialog = () => (
-    <Dialog open={!!managingOptions} onOpenChange={(open) => {
-      if (!open) {
-        setManagingOptions(null);
-        setIsAddingOption(false);
-        optionForm.reset();
-      }
-    }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>
-            Manage Options: {managingOptions?.label}
-          </DialogTitle>
-          <DialogDescription>
-            Add and manage dropdown options for this select field. Each option can have a custom color.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          {/* Existing Options */}
-          <div>
-            <h4 className="font-medium mb-3">Current Options</h4>
-            <div className="space-y-2">
-              {managingOptions && fieldOptions[managingOptions.id]?.map((option) => (
-                <div key={option.id} className="flex items-center justify-between p-2 border rounded">
-                  <div className="flex items-center gap-2">
-                    <div 
-                      className="w-4 h-4 rounded"
-                      style={{ backgroundColor: option.color || "#000000" }}
-                    />
-                    <span className="font-medium">{option.label}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {option.value}
-                    </Badge>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteOption(option.id)}
-                    data-testid={`delete-option-${option.id}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-              {managingOptions && (!fieldOptions[managingOptions.id] || fieldOptions[managingOptions.id]?.length === 0) && (
-                <p className="text-muted-foreground text-sm">No options yet. Add some below.</p>
-              )}
-            </div>
+  // Company Info Section Component
+  const CompanyInfoSection = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">Company information</h2>
+          <p className="text-muted-foreground">
+            Manage your business details and branding
+          </p>
+        </div>
+        {!isEditing ? (
+          <Button onClick={handleEditCompanyInfo} data-testid="edit-company-info">
+            Edit Company Info
+          </Button>
+        ) : (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleCancelEdit}>
+              <X className="h-4 w-4 mr-2" />
+              Discard Changes
+            </Button>
+            <Button 
+              onClick={companyForm.handleSubmit(onSubmitCompanyInfo)}
+              disabled={updateCompanyMutation.isPending}
+              data-testid="save-company-info"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {updateCompanyMutation.isPending ? "Saving..." : "Save changes"}
+            </Button>
           </div>
-          
-          {/* Add New Option */}
-          <div>
-            <h4 className="font-medium mb-3">Add New Option</h4>
-            <Form {...optionForm}>
-              <form onSubmit={optionForm.handleSubmit(onSubmitOption)} className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={optionForm.control}
-                    name="value"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Value</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., high, medium, low"
-                            {...field}
-                            data-testid="option-value-input"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={optionForm.control}
-                    name="label"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Display Label</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., High Priority"
-                            {...field}
-                            data-testid="option-label-input"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                
+        )}
+      </div>
+
+      <Form {...companyForm}>
+        <form className="space-y-6">
+          {/* Company Information */}
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
-                  control={optionForm.control}
-                  name="color"
+                  control={companyForm.control}
+                  name="companyName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Color</FormLabel>
+                      <FormLabel>Company Name *</FormLabel>
                       <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="color"
-                            {...field}
-                            value={field.value || "#3b82f6"}
-                            className="w-16 h-10"
-                            data-testid="option-color-input"
-                          />
-                          <Input
-                            placeholder="#3b82f6"
-                            {...field}
-                            value={field.value || ""}
-                            className="flex-1"
-                          />
-                        </div>
+                        <Input
+                          placeholder="Lighthouse Projects"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="company-name-input"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 
-                <Button 
-                  type="submit"
-                  disabled={createOptionMutation.isPending}
-                  data-testid="option-save-button"
-                >
-                  {createOptionMutation.isPending ? "Adding..." : "Add Option"}
-                </Button>
-              </form>
-            </Form>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+                <FormField
+                  control={companyForm.control}
+                  name="companyEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="jed@lighthouseprojects.com.au"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="company-email-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="companyPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company Phone Number</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="0439345723"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="company-phone-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="companyWebsite"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company Website</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="https://lighthouseprojects.com.au/"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="company-website-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <FormField
+                control={companyForm.control}
+                name="companyAddress"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter your company address"
+                        {...field}
+                        disabled={!isEditing}
+                        data-testid="company-address-input"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Company Logo */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Company logo</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                The logo will be shown in Web views, Client portal and Emails. Max file size: 100 MB, preferred square shape. 
+                Allowed formats: .jpg, .jpeg, .png, .gif, .webp, .svg, .avif, .bmp, .heic, .tiff
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-muted rounded border-2 border-dashed flex items-center justify-center">
+                  <Upload className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-muted-foreground">
+                    Drag and drop to upload files
+                  </p>
+                  {isEditing && (
+                    <Button variant="outline" size="sm" className="mt-2" disabled>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Logo
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Social Media */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Social media</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={companyForm.control}
+                  name="facebook"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Facebook</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Facebook profile URL"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="facebook-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="linkedin"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>LinkedIn</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="LinkedIn profile URL"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="linkedin-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="twitter"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Twitter</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Twitter profile URL"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="twitter-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="instagram"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Instagram</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Instagram profile URL"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="instagram-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="googleMyBusiness"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Google my business</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Google My Business URL"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="google-business-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="yelp"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Yelp</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Yelp business URL"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="yelp-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </form>
+      </Form>
+    </div>
   );
 
   return (
-    <div className="p-6 space-y-6" data-testid="settings-page">
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Settings</h1>
-            <p className="text-muted-foreground">
-              Manage your notes configuration and custom fields
-            </p>
-          </div>
+    <div className="flex h-screen bg-background" data-testid="settings-page">
+      {/* Left Sidebar */}
+      <div className="w-64 border-r bg-card">
+        <div className="p-6">
+          <h1 className="text-2xl font-bold mb-6">Company Settings</h1>
+          <nav className="space-y-1">
+            {SETTINGS_CATEGORIES.map((category) => {
+              const Icon = category.icon;
+              const isActive = activeSection === category.id;
+              
+              return (
+                <button
+                  key={category.id}
+                  onClick={() => setActiveSection(category.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors hover-elevate ${
+                    isActive 
+                      ? "bg-primary text-primary-foreground" 
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                  data-testid={`settings-nav-${category.id}`}
+                >
+                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="text-sm font-medium">{category.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
       </div>
 
-      {/* Notes Settings Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <SettingsIcon className="h-5 w-5" />
-            Notes Configuration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Custom Fields Management */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-medium">Custom Fields</h3>
-                <p className="text-sm text-muted-foreground">
-                  Add up to 4 custom fields to capture additional information in your notes
-                </p>
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto">
+          <div className="p-8">
+            {/* Section Header */}
+            <div className="mb-6">
+              <div className="flex items-center gap-3 mb-2">
+                {activeCategory && <activeCategory.icon className="h-6 w-6" />}
+                <h1 className="text-3xl font-bold capitalize">
+                  {activeCategory?.label || "Settings"}
+                </h1>
               </div>
-              <Button 
-                onClick={() => setIsAddingField(true)} 
-                disabled={customFieldDefs.length >= 4}
-                data-testid="add-custom-field-button"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Field {customFieldDefs.length >= 4 && "(Max 4)"}
-              </Button>
+              <p className="text-muted-foreground">
+                {activeCategory?.description || "Manage your company settings"}
+              </p>
             </div>
+
+            {/* Content based on active section */}
+            {activeSection === "branding" && <CompanyInfoSection />}
             
-            {/* Custom Fields List */}
-            {isLoading ? (
-              <div className="text-center py-4">
-                <div className="text-muted-foreground">Loading custom fields...</div>
-              </div>
-            ) : customFieldDefs.length === 0 ? (
-              <Card className="p-6 text-center">
-                <Type className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <h4 className="font-medium mb-1">No custom fields yet</h4>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Add custom fields to capture specific information in your notes
+            {activeSection !== "branding" && (
+              <div className="text-center py-12">
+                <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                  {activeCategory && <activeCategory.icon className="h-8 w-8 text-muted-foreground" />}
+                </div>
+                <h3 className="text-lg font-medium mb-2">
+                  {activeCategory?.label} - Coming Soon
+                </h3>
+                <p className="text-muted-foreground">
+                  This settings section is under development and will be available soon.
                 </p>
-                <Button onClick={() => setIsAddingField(true)} size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Your First Field
-                </Button>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {customFieldDefs.map((field) => (
-                  <Card key={field.id} data-testid={`custom-field-${field.id}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-medium">{field.label}</h4>
-                            <Badge variant="outline" className="text-xs">
-                              {field.key}
-                            </Badge>
-                            {field.required && (
-                              <Badge variant="secondary" className="text-xs">
-                                Required
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            {field.type === "text" ? (
-                              <Type className="h-4 w-4" />
-                            ) : (
-                              <List className="h-4 w-4" />
-                            )}
-                            <span className="capitalize">{field.type}</span>
-                            {field.type === "select" && fieldOptions[field.id] && (
-                              <span>({fieldOptions[field.id].length} options)</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {field.type === "select" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleManageOptions(field)}
-                              data-testid={`manage-options-${field.id}`}
-                            >
-                              <Palette className="h-4 w-4 mr-2" />
-                              Options
-                            </Button>
-                          )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" data-testid={`field-menu-${field.id}`}>
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditField(field)}>
-                                <Edit3 className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => handleDeleteField(field.id)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      <FieldDialog isEditing={!!editingField} />
-      <OptionsDialog />
+        </div>
+      </div>
     </div>
   );
 }
