@@ -18,6 +18,7 @@ import {
   type UserWithRole, type PermissionAction, type UserCategory
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
 import { eq, or } from "drizzle-orm";
 import * as schema from "@shared/schema";
@@ -30,9 +31,11 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined>;
   getUserWithRole(id: string): Promise<UserWithRole | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
   getUsers(category?: UserCategory): Promise<User[]>;
 
   // User Role operations  
@@ -519,12 +522,26 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined> {
+    const user = await this.getUserByUsername(username);
+    if (!user || !user.isActive) return undefined;
+    
+    // SECURITY: Use bcrypt to verify password
+    const isValid = await PasswordUtils.verifyPassword(plainPassword, user.password);
+    return isValid ? user : undefined;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     const now = new Date();
+    
+    // CRITICAL SECURITY FIX: Hash password before storing
+    const hashedPassword = await PasswordUtils.hashPassword(insertUser.password);
+    
     const user: User = { 
       ...insertUser, 
       id,
+      password: hashedPassword, // Store hashed password only
       email: insertUser.email || null,
       firstName: insertUser.firstName || null,
       lastName: insertUser.lastName || null,
@@ -568,13 +585,30 @@ export class MemStorage implements IStorage {
     const existingUser = this.users.get(id);
     if (!existingUser) return undefined;
 
+    // CRITICAL SECURITY FIX: Handle password updates securely
+    const processedUpdateData = { ...updateData };
+    if (updateData.password) {
+      // Hash the new password before storing
+      processedUpdateData.password = await PasswordUtils.hashPassword(updateData.password);
+    }
+
     const updatedUser: User = {
       ...existingUser,
-      ...updateData,
+      ...processedUpdateData,
       updatedAt: new Date(),
     };
     this.users.set(id, updatedUser);
     return updatedUser;
+  }
+
+  async changeUserPassword(id: string, newPassword: string): Promise<User | undefined> {
+    // Dedicated method for password changes with validation
+    const passwordValidation = PasswordUtils.validatePasswordStrength(newPassword);
+    if (!passwordValidation.isValid) {
+      throw new Error(`Password validation failed: ${passwordValidation.errors.join(', ')}`);
+    }
+    
+    return await this.updateUser(id, { password: newPassword });
   }
 
   async getUsers(category?: UserCategory): Promise<User[]> {
@@ -841,7 +875,8 @@ export class MemStorage implements IStorage {
       company: insertInvitation.company || null,
       phone: insertInvitation.phone || null,
       projectIds: insertInvitation.projectIds || [],
-      inviteToken: insertInvitation.inviteToken || randomUUID(), // Generate unique token
+      inviteToken: insertInvitation.inviteToken || PasswordUtils.generateSecureToken(), // SECURITY: Generate cryptographically secure token
+      expiresAt: insertInvitation.expiresAt || PasswordUtils.generateInviteExpiry(), // Set proper expiry
       acceptedAt: insertInvitation.acceptedAt || null,
       createdUserId: insertInvitation.createdUserId || null,
       status: insertInvitation.status || "pending",
@@ -871,14 +906,23 @@ export class MemStorage implements IStorage {
 
   async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> {
     const invitation = await this.getUserInvitationByToken(token);
-    if (!invitation || invitation.status !== "pending" || invitation.expiresAt < new Date()) {
+    
+    // SECURITY: Validate token, status, and expiry
+    if (!invitation || 
+        invitation.status !== "pending" || 
+        invitation.expiresAt < new Date()) {
       return undefined;
     }
 
-    // Create the user account
+    // SECURITY: Ensure password is provided and validate
+    if (!userData.password) {
+      throw new Error("Password is required to accept invitation");
+    }
+
+    // Create the user account with secure password handling
     const newUser = await this.createUser({
       username: userData.username || invitation.email,
-      password: userData.password || randomUUID(), // Temporary password
+      password: userData.password, // Will be hashed in createUser method
       email: invitation.email,
       firstName: invitation.firstName,
       lastName: invitation.lastName,
@@ -899,7 +943,7 @@ export class MemStorage implements IStorage {
       }
     }
 
-    // Update invitation status
+    // SECURITY: Mark invitation as used (single-use tokens)
     const updatedInvitation = await this.updateUserInvitation(invitation.id, {
       status: "accepted",
       acceptedAt: new Date(),
