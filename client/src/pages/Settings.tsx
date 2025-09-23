@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ import {
   X
 } from "lucide-react";
 import { z } from "zod";
+import type { CompanySettings } from "@shared/schema";
 
 // Company Settings categories matching Buildern structure
 const SETTINGS_CATEGORIES = [
@@ -98,10 +99,10 @@ const SETTINGS_CATEGORIES = [
 // Company info form schema
 const companyInfoSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
-  companyEmail: z.string().email("Invalid email address").optional().or(z.literal("")),
-  companyPhone: z.string().optional(),
-  companyWebsite: z.string().url("Invalid website URL").optional().or(z.literal("")),
-  companyAddress: z.string().optional(),
+  email: z.string().email("Invalid email address").optional().or(z.literal("")),
+  phone: z.string().optional(),
+  website: z.string().url("Invalid website URL").optional().or(z.literal("")),
+  address: z.string().optional(),
   facebook: z.string().optional(),
   linkedin: z.string().optional(), 
   twitter: z.string().optional(),
@@ -120,10 +121,10 @@ export default function Settings() {
     resolver: zodResolver(companyInfoSchema),
     defaultValues: {
       companyName: "",
-      companyEmail: "",
-      companyPhone: "",
-      companyWebsite: "",
-      companyAddress: "",
+      email: "",
+      phone: "",
+      website: "",
+      address: "",
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -133,10 +134,29 @@ export default function Settings() {
     },
   });
 
-  // TODO: Fetch company settings data
-  // const { data: companySettings, isLoading } = useQuery({
-  //   queryKey: ["/api/company-settings"],
-  // });
+  // Fetch company settings data
+  const { data: companySettings, isLoading } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Update form when company settings data is loaded
+  useEffect(() => {
+    if (companySettings) {
+      companyForm.reset({
+        companyName: companySettings.companyName || "",
+        email: companySettings.email || "",
+        phone: companySettings.phone || "",
+        website: companySettings.website || "",
+        address: companySettings.address || "",
+        facebook: companySettings.facebook || "",
+        linkedin: companySettings.linkedin || "",
+        twitter: companySettings.twitter || "",
+        instagram: companySettings.instagram || "",
+        googleMyBusiness: companySettings.googleMyBusiness || "",
+        yelp: companySettings.yelp || "",
+      });
+    }
+  }, [companySettings, companyForm]);
 
   // Company info mutation 
   const updateCompanyMutation = useMutation({
@@ -232,7 +252,7 @@ export default function Settings() {
                 
                 <FormField
                   control={companyForm.control}
-                  name="companyEmail"
+                  name="email"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Company Email</FormLabel>
@@ -251,7 +271,7 @@ export default function Settings() {
                 
                 <FormField
                   control={companyForm.control}
-                  name="companyPhone"
+                  name="phone"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Company Phone Number</FormLabel>
@@ -270,7 +290,7 @@ export default function Settings() {
                 
                 <FormField
                   control={companyForm.control}
-                  name="companyWebsite"
+                  name="website"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Company Website</FormLabel>
@@ -290,7 +310,7 @@ export default function Settings() {
               
               <FormField
                 control={companyForm.control}
-                name="companyAddress"
+                name="address"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>

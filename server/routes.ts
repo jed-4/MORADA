@@ -17,7 +17,8 @@ import {
   insertPermissionSchema,
   insertRolePermissionSchema,
   insertUserProjectAccessSchema,
-  insertUserInvitationSchema
+  insertUserInvitationSchema,
+  insertCompanySettingsSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -1377,6 +1378,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to accept invitation" });
+    }
+  });
+
+  // Company Settings routes (protected - admin access only)
+  app.get("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getCompanySettings();
+      res.json(settings || {});
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch company settings" });
+    }
+  });
+
+  app.patch("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const validationResult = insertCompanySettingsSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const settings = await storage.updateCompanySettings(validationResult.data);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update company settings" });
     }
   });
 
