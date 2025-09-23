@@ -28,10 +28,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // put application routes here
   // prefix all routes with /api
 
-  // TEMPORARY: Bypass authentication for core data routes until login UI is implemented
-  // Only admin routes require authentication for now
+  // TEMPORARY: Authentication completely disabled until login UI is implemented
+  // Comment out global authentication to allow all access
+  /*
   app.use('/api', (req, res, next) => {
-    const path = req.path; // After mounting at /api, path is relative (e.g., '/auth/login')
+    const path = req.path;
     
     // Always allow auth endpoints
     if (path.startsWith('/auth/')) {
@@ -43,21 +44,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
-    // TEMPORARY: Allow core business data routes (remove when login UI is ready)
-    if (path.startsWith('/projects') || 
-        path.startsWith('/tasks') || 
-        path.startsWith('/notes') || 
-        path.startsWith('/estimates') || 
-        path.startsWith('/custom-field-defs') || 
-        path.startsWith('/custom-field-options') || 
-        path.startsWith('/task-views') || 
-        path.startsWith('/note-templates')) {
-      return next();
-    }
-    
     // Require authentication for admin routes (users, roles, permissions, invitations)
     return requireAuth(req, res, next);
   });
+  */
 
   // use storage to perform CRUD operations on the storage interface
   // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
