@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,7 +65,7 @@ const defaultWidgets: Widget[] = [
 
 export default function CustomizableProjectOverview() {
   const { currentProject } = useProject();
-  const [widgets, setWidgets] = useState<Widget[]>(defaultWidgets);
+  const [widgets, setWidgets] = useState<Widget[]>([]);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
   const [, navigate] = useLocation();
@@ -77,6 +77,55 @@ export default function CustomizableProjectOverview() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  // Save widgets to localStorage
+  const saveWidgets = (widgetsToSave: Widget[]) => {
+    if (!currentProject) return;
+    
+    try {
+      localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(widgetsToSave));
+      console.log(`Saved ${widgetsToSave.length} widgets for project ${currentProject.id}`);
+    } catch (error) {
+      console.error('Failed to save widgets:', error);
+    }
+  };
+
+  // Load widgets from localStorage on component mount and project change
+  useEffect(() => {
+    if (!currentProject) {
+      setWidgets([]);
+      return;
+    }
+    
+    const savedWidgets = localStorage.getItem(`widgets-${currentProject.id}`);
+    console.log(`Looking for saved widgets for project ${currentProject.id}:`, savedWidgets ? 'found' : 'not found');
+    
+    if (savedWidgets) {
+      try {
+        const parsedWidgets = JSON.parse(savedWidgets) as Widget[];
+        console.log(`Loading ${parsedWidgets.length} widgets for project ${currentProject.id}`);
+        setWidgets(parsedWidgets);
+      } catch (error) {
+        console.error('Failed to parse saved widgets:', error);
+        // Fallback to default widgets
+        setWidgets(defaultWidgets);
+        try {
+          localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(defaultWidgets));
+        } catch (saveError) {
+          console.error('Failed to save default widgets:', saveError);
+        }
+      }
+    } else {
+      // No saved widgets, use defaults
+      console.log(`No saved widgets found, using defaults for project ${currentProject.id}`);
+      setWidgets(defaultWidgets);
+      try {
+        localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(defaultWidgets));
+      } catch (saveError) {
+        console.error('Failed to save default widgets:', saveError);
+      }
+    }
+  }, [currentProject]);
 
   // Show loading state if no project is selected
   if (!currentProject) {
@@ -102,18 +151,24 @@ export default function CustomizableProjectOverview() {
       config: {},
     };
 
-    setWidgets(prev => [...prev, newWidget]);
+    const updatedWidgets = [...widgets, newWidget];
+    setWidgets(updatedWidgets);
+    saveWidgets(updatedWidgets);
     setIsAddingWidget(false);
     console.log(`Added widget: ${type}`);
   };
 
   const removeWidget = (widgetId: string) => {
-    setWidgets(prev => prev.filter(w => w.id !== widgetId));
+    const updatedWidgets = widgets.filter(w => w.id !== widgetId);
+    setWidgets(updatedWidgets);
+    saveWidgets(updatedWidgets);
     console.log(`Removed widget: ${widgetId}`);
   };
 
   const updateWidget = (updatedWidget: Widget) => {
-    setWidgets(prev => prev.map(w => w.id === updatedWidget.id ? updatedWidget : w));
+    const updatedWidgets = widgets.map(w => w.id === updatedWidget.id ? updatedWidget : w);
+    setWidgets(updatedWidgets);
+    saveWidgets(updatedWidgets);
     console.log(`Updated widget: ${updatedWidget.id}`);
   };
 
@@ -136,7 +191,9 @@ export default function CustomizableProjectOverview() {
         return widgets;
       }
 
-      return arrayMove(widgets, oldIndex, newIndex);
+      const reorderedWidgets = arrayMove(widgets, oldIndex, newIndex);
+      saveWidgets(reorderedWidgets);
+      return reorderedWidgets;
     });
     console.log(`Moved widget from ${active.id} to ${over.id}`);
   };
