@@ -7,26 +7,45 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Save, Settings, Palette, Info, Archive, Users } from "lucide-react";
+import { Save, Settings, Palette, Info, Archive, Users, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType } from "@shared/schema";
 
 export default function ProjectSettings() {
   const { currentProject, setCurrentProject } = useProject();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
+  const [isAddingProjectType, setIsAddingProjectType] = useState(false);
+  const [newProjectType, setNewProjectType] = useState("");
+  const [customProjectTypes, setCustomProjectTypes] = useState<string[]>([]);
   
   // Form state for editing project details
   const [formData, setFormData] = useState({
     name: currentProject?.name || "",
     description: currentProject?.description || "",
+    jobNumber: currentProject?.jobNumber || "",
+    projectType: currentProject?.projectType || "",
     color: currentProject?.color || "#3b82f6",
     isActive: currentProject?.isActive ?? true,
     isBusiness: currentProject?.isBusiness ?? false,
   });
+
+  // Load custom project types from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('customProjectTypes');
+    if (saved) {
+      try {
+        setCustomProjectTypes(JSON.parse(saved));
+      } catch (error) {
+        console.error('Failed to parse custom project types:', error);
+      }
+    }
+  }, []);
 
   // Update form when current project changes
   useEffect(() => {
@@ -34,6 +53,8 @@ export default function ProjectSettings() {
       setFormData({
         name: currentProject.name,
         description: currentProject.description || "",
+        jobNumber: currentProject.jobNumber || "",
+        projectType: currentProject.projectType || "",
         color: currentProject.color || "#3b82f6",
         isActive: currentProject.isActive,
         isBusiness: currentProject.isBusiness,
@@ -52,7 +73,7 @@ export default function ProjectSettings() {
     onSuccess: (updatedProject: Project) => {
       setCurrentProject(updatedProject);
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject?.id] });
       setIsEditing(false);
       toast({
         title: "Project Updated",
@@ -77,6 +98,8 @@ export default function ProjectSettings() {
       setFormData({
         name: currentProject.name,
         description: currentProject.description || "",
+        jobNumber: currentProject.jobNumber || "",
+        projectType: currentProject.projectType || "",
         color: currentProject.color || "#3b82f6",
         isActive: currentProject.isActive,
         isBusiness: currentProject.isBusiness,
@@ -84,6 +107,24 @@ export default function ProjectSettings() {
     }
     setIsEditing(false);
   };
+
+  const handleAddProjectType = () => {
+    if (newProjectType.trim() && !allProjectTypes.includes(newProjectType.trim())) {
+      const updated = [...customProjectTypes, newProjectType.trim()];
+      setCustomProjectTypes(updated);
+      localStorage.setItem('customProjectTypes', JSON.stringify(updated));
+      setFormData({ ...formData, projectType: newProjectType.trim() });
+      setNewProjectType("");
+      setIsAddingProjectType(false);
+      toast({
+        title: "Project Type Added",
+        description: `"${newProjectType.trim()}" has been added to your project types.`,
+      });
+    }
+  };
+
+  // Combine built-in and custom project types
+  const allProjectTypes = [...PROJECT_TYPES, ...customProjectTypes];
 
   if (!currentProject) {
     return (
@@ -182,10 +223,62 @@ export default function ProjectSettings() {
             </div>
             
             <div className="space-y-2">
-              <Label>Project ID</Label>
-              <div className="p-2 bg-muted rounded-md font-mono text-sm" data-testid="text-project-id">
-                {currentProject.id}
-              </div>
+              <Label htmlFor="job-number">Job Number</Label>
+              {isEditing ? (
+                <Input
+                  id="job-number"
+                  value={formData.jobNumber}
+                  onChange={(e) => setFormData({ ...formData, jobNumber: e.target.value })}
+                  placeholder="e.g., 2024-001, SMITH-EXT"
+                  data-testid="input-job-number"
+                />
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-job-number">
+                  {currentProject.jobNumber || "No job number set"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-type">Project Type</Label>
+              {isEditing ? (
+                <Select
+                  value={formData.projectType}
+                  onValueChange={(value) => {
+                    if (value === "__add_new__") {
+                      setIsAddingProjectType(true);
+                    } else {
+                      setFormData({ ...formData, projectType: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="select-project-type">
+                    <SelectValue placeholder="Select project type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allProjectTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__add_new__" className="text-primary font-medium">
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        Add New Type...
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-project-type">
+                  {currentProject.projectType || "No project type set"}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              {/* Empty column for now - could add more fields later */}
             </div>
           </div>
 
@@ -354,6 +447,48 @@ export default function ProjectSettings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add New Project Type Dialog */}
+      <Dialog open={isAddingProjectType} onOpenChange={setIsAddingProjectType}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Project Type</DialogTitle>
+            <DialogDescription>
+              Create a custom project type that you can use for this and future projects.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-project-type">Project Type Name</Label>
+              <Input
+                id="new-project-type"
+                value={newProjectType}
+                onChange={(e) => setNewProjectType(e.target.value)}
+                placeholder="e.g., Pool Installation, Deck Construction"
+                data-testid="input-new-project-type"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddingProjectType(false);
+                setNewProjectType("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddProjectType}
+              disabled={!newProjectType.trim() || allProjectTypes.includes(newProjectType.trim())}
+              data-testid="button-add-project-type"
+            >
+              Add Type
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

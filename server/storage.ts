@@ -1333,14 +1333,35 @@ export class MemStorage implements IStorage {
   }
 
   async updateProject(id: string, updateData: Partial<InsertProject>): Promise<Project | undefined> {
-    const existingProject = this.projects.get(id);
-    if (!existingProject) return undefined;
+    // First try to get from memory, if not found try database
+    let existingProject = this.projects.get(id);
+    if (!existingProject) {
+      const dbProjects = await db.select().from(schema.projects).where(eq(schema.projects.id, id));
+      if (dbProjects.length === 0) return undefined;
+      existingProject = dbProjects[0];
+    }
 
     const updatedProject: Project = {
       ...existingProject,
       ...updateData,
       updatedAt: new Date(),
     };
+
+    try {
+      // Update in database first
+      await db.update(schema.projects)
+        .set({
+          ...updateData,
+          updatedAt: updatedProject.updatedAt,
+        })
+        .where(eq(schema.projects.id, id));
+      console.log(`updateProject: Successfully updated project ${id} in database`);
+    } catch (error) {
+      console.error("Database error in updateProject:", error);
+      // Continue with memory update as fallback
+    }
+    
+    // Always update in memory for fast access
     this.projects.set(id, updatedProject);
     return updatedProject;
   }
