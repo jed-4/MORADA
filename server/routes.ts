@@ -28,22 +28,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // put application routes here
   // prefix all routes with /api
 
-  // GLOBAL AUTHENTICATION: All API routes require authentication by default
-  // Only authentication routes are exempt from this requirement
+  // TEMPORARY: Bypass authentication for core data routes until login UI is implemented
+  // Only admin routes require authentication for now
   app.use('/api', (req, res, next) => {
     const path = req.path; // After mounting at /api, path is relative (e.g., '/auth/login')
     
-    // Skip authentication for auth endpoints
+    // Always allow auth endpoints
     if (path.startsWith('/auth/')) {
       return next();
     }
     
-    // Skip authentication for public invitation endpoints
+    // Always allow public invitation endpoints
     if (/^\/invitations\/by-token\/[^/]+$/.test(path) || /^\/invitations\/[^/]+\/accept$/.test(path)) {
       return next();
     }
     
-    // All other API routes require authentication
+    // TEMPORARY: Allow core business data routes (remove when login UI is ready)
+    if (path.startsWith('/projects') || 
+        path.startsWith('/tasks') || 
+        path.startsWith('/notes') || 
+        path.startsWith('/estimates') || 
+        path.startsWith('/custom-field-defs') || 
+        path.startsWith('/custom-field-options') || 
+        path.startsWith('/task-views') || 
+        path.startsWith('/note-templates')) {
+      return next();
+    }
+    
+    // Require authentication for admin routes (users, roles, permissions, invitations)
     return requireAuth(req, res, next);
   });
 
