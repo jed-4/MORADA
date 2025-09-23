@@ -320,6 +320,9 @@ export default function CustomizableProjectOverview() {
         </div>
       </div>
 
+      {/* Divider */}
+      <div className="border-t border-border"></div>
+
       {/* Widgets Grid with Drag & Drop */}
       <DndContext 
         sensors={sensors}
