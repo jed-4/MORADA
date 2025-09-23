@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### September 23, 2025
+- **Widget-Based Dashboard**: Implemented complete widget-based dashboard system similar to Buildern's approach with drag & drop functionality using @dnd-kit library
+- **Project Settings UX**: Moved project settings access from sidebar to small header icon for better UX following Buildern's patterns
+- **Enhanced Widgets Center**: Created sophisticated modal with grid layout, widget previews, and visual design matching industry standards
+- **Widget Persistence**: Added per-project localStorage persistence for widget layouts, maintaining order, types, and configurations across sessions
+- **Production-Ready Implementation**: Architect-validated code with robust error handling, accessibility compliance (44px touch targets), and comprehensive edge case handling
+
 ### September 22, 2025
 - **Task View Management**: Added complete view deletion functionality with hover delete buttons on custom view tabs, confirmation dialogs, and smart tab switching when active view is deleted
 - **Filter Interface Redesign**: Replaced single filter panel with horizontal bar of individual dropdown buttons below the views for improved usability and visual hierarchy
