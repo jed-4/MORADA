@@ -494,3 +494,54 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings).o
 
 export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
 export type CompanySettings = typeof companySettings.$inferSelect;
+
+// Field Categories (Buildern-style predefined categories)
+export const fieldCategories = pgTable("field_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(), // e.g., "task.status", "task.priority"
+  label: text("label").notNull(), // Display name
+  entity: text("entity").notNull(), // "task" | "note" | "project"
+  description: text("description"),
+  isBuiltIn: boolean("is_built_in").notNull().default(true), // System-defined categories
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFieldCategorySchema = createInsertSchema(fieldCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFieldCategory = z.infer<typeof insertFieldCategorySchema>;
+export type FieldCategory = typeof fieldCategories.$inferSelect;
+
+// Field Options (configurable options for each category)
+export const fieldOptions = pgTable("field_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => fieldCategories.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
+  name: text("name").notNull(), // Display name (editable by user)
+  color: text("color"), // Hex color code (e.g., "#3b82f6")
+  isActive: boolean("is_active").notNull().default(true),
+  isDefault: boolean("is_default").notNull().default(false), // Default selection for this category
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFieldOptionSchema = createInsertSchema(fieldOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFieldOption = z.infer<typeof insertFieldOptionSchema>;
+export type FieldOption = typeof fieldOptions.$inferSelect;
+
+// Combined type for category with its options
+export type FieldCategoryWithOptions = FieldCategory & {
+  options: FieldOption[];
+};

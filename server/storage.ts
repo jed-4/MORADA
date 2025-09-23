@@ -16,7 +16,10 @@ import {
   type UserProjectAccess, type InsertUserProjectAccess,
   type UserInvitation, type InsertUserInvitation,
   type UserWithRole, type PermissionAction, type UserCategory,
-  type CompanySettings, type InsertCompanySettings
+  type CompanySettings, type InsertCompanySettings,
+  type FieldCategory, type InsertFieldCategory,
+  type FieldOption, type InsertFieldOption,
+  type FieldCategoryWithOptions
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -168,6 +171,23 @@ export interface IStorage {
   // Company Settings
   getCompanySettings(): Promise<CompanySettings | undefined>;
   updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined>;
+
+  // Field Categories CRUD (Buildern-style)
+  getFieldCategories(): Promise<FieldCategory[]>;
+  getFieldCategory(id: string): Promise<FieldCategory | undefined>;
+  getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined>;
+  getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined>;
+  createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory>;
+  updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined>;
+  deleteFieldCategory(id: string): Promise<boolean>;
+
+  // Field Options CRUD
+  getFieldOptions(categoryId: string): Promise<FieldOption[]>;
+  getFieldOption(id: string): Promise<FieldOption | undefined>;
+  createFieldOption(option: InsertFieldOption): Promise<FieldOption>;
+  updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined>;
+  deleteFieldOption(id: string): Promise<boolean>;
+  setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -187,6 +207,8 @@ export class MemStorage implements IStorage {
   private estimateItems: Map<string, EstimateItem>;
   private estimateGroups: Map<string, EstimateGroup>;
   private companySettings: CompanySettings | undefined;
+  private fieldCategories: Map<string, FieldCategory>;
+  private fieldOptions: Map<string, FieldOption>;
 
   constructor() {
     this.users = new Map();
@@ -204,8 +226,11 @@ export class MemStorage implements IStorage {
     this.estimates = new Map();
     this.estimateItems = new Map();
     this.estimateGroups = new Map();
+    this.fieldCategories = new Map();
+    this.fieldOptions = new Map();
     this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
+    this.initializeDefaultFieldCategories();
     this.initializeDefaultData();
   }
 
@@ -380,6 +405,131 @@ export class MemStorage implements IStorage {
         createdAt: new Date(),
       };
       this.customFieldOptions.set(option.id, option);
+    });
+  }
+
+  // Initialize default field categories (Buildern-style)
+  private initializeDefaultFieldCategories() {
+    const now = new Date();
+
+    // Task Status Category
+    const taskStatusCategory: FieldCategory = {
+      id: "cat-task-status",
+      key: "task.status",
+      label: "Task Statuses",
+      entity: "task",
+      description: "Status options for tasks",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(taskStatusCategory.id, taskStatusCategory);
+
+    // Task Priority Category  
+    const taskPriorityCategory: FieldCategory = {
+      id: "cat-task-priority",
+      key: "task.priority",
+      label: "Task Priorities", 
+      entity: "task",
+      description: "Priority levels for tasks",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 2,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(taskPriorityCategory.id, taskPriorityCategory);
+
+    // Trade Categories
+    const tradeCategoriesCategory: FieldCategory = {
+      id: "cat-trade-types",
+      key: "task.trade",
+      label: "Trade Categories",
+      entity: "task", 
+      description: "Construction trade categories",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 3,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(tradeCategoriesCategory.id, tradeCategoriesCategory);
+
+    // Add default options for Task Status
+    const statusOptions = [
+      { key: "todo", name: "Not Started", color: "#6B7280", isDefault: true },
+      { key: "in-progress", name: "In Progress", color: "#F59E0B", isDefault: false },
+      { key: "done", name: "Complete", color: "#10B981", isDefault: false },
+      { key: "on-hold", name: "On Hold", color: "#EF4444", isDefault: false },
+    ];
+
+    statusOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-status-${opt.key}`,
+        categoryId: taskStatusCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
+
+    // Add default options for Task Priority
+    const priorityOptions = [
+      { key: "low", name: "Low", color: "#10B981", isDefault: false },
+      { key: "medium", name: "Medium", color: "#F59E0B", isDefault: true },
+      { key: "high", name: "High", color: "#EF4444", isDefault: false },
+      { key: "critical", name: "Critical", color: "#DC2626", isDefault: false },
+    ];
+
+    priorityOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-priority-${opt.key}`,
+        categoryId: taskPriorityCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
+
+    // Add default options for Trade Categories
+    const tradeOptions = [
+      { key: "plumbing", name: "Plumbing", color: "#3B82F6" },
+      { key: "electrical", name: "Electrical", color: "#F59E0B" },
+      { key: "framing", name: "Framing", color: "#8B5A2B" },
+      { key: "roofing", name: "Roofing", color: "#DC2626" },
+      { key: "flooring", name: "Flooring", color: "#7C3AED" },
+      { key: "painting", name: "Painting", color: "#10B981" },
+      { key: "hvac", name: "HVAC", color: "#06B6D4" },
+    ];
+
+    tradeOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-trade-${opt.key}`,
+        categoryId: tradeCategoriesCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: index === 0, // First one is default
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
     });
   }
 
@@ -2007,6 +2157,161 @@ export class MemStorage implements IStorage {
       };
     }
     return this.companySettings;
+  }
+
+  // Field Categories CRUD (Buildern-style)
+  async getFieldCategories(): Promise<FieldCategory[]> {
+    return Array.from(this.fieldCategories.values())
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  async getFieldCategory(id: string): Promise<FieldCategory | undefined> {
+    return this.fieldCategories.get(id);
+  }
+
+  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
+    return Array.from(this.fieldCategories.values())
+      .find(cat => cat.key === key);
+  }
+
+  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> {
+    const category = await this.getFieldCategoryByKey(key);
+    if (!category) return undefined;
+
+    const options = await this.getFieldOptions(category.id);
+    return {
+      ...category,
+      options
+    };
+  }
+
+  async createFieldCategory(insertCategory: InsertFieldCategory): Promise<FieldCategory> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const category: FieldCategory = {
+      ...insertCategory,
+      id,
+      description: insertCategory.description || null,
+      isBuiltIn: insertCategory.isBuiltIn || false,
+      isActive: insertCategory.isActive !== false, 
+      sortOrder: insertCategory.sortOrder || 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    this.fieldCategories.set(id, category);
+    return category;
+  }
+
+  async updateFieldCategory(id: string, updates: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> {
+    const existing = this.fieldCategories.get(id);
+    if (!existing) return undefined;
+    
+    const updated: FieldCategory = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
+    this.fieldCategories.set(id, updated);
+    return updated;
+  }
+
+  async deleteFieldCategory(id: string): Promise<boolean> {
+    // Also delete all options for this category
+    const options = Array.from(this.fieldOptions.values())
+      .filter(opt => opt.categoryId === id);
+    
+    options.forEach(opt => this.fieldOptions.delete(opt.id));
+    return this.fieldCategories.delete(id);
+  }
+
+  // Field Options CRUD
+  async getFieldOptions(categoryId: string): Promise<FieldOption[]> {
+    return Array.from(this.fieldOptions.values())
+      .filter(opt => opt.categoryId === categoryId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  async getFieldOption(id: string): Promise<FieldOption | undefined> {
+    return this.fieldOptions.get(id);
+  }
+
+  async createFieldOption(insertOption: InsertFieldOption): Promise<FieldOption> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const option: FieldOption = {
+      ...insertOption,
+      id,
+      color: insertOption.color || null,
+      isActive: insertOption.isActive !== false,
+      isDefault: insertOption.isDefault || false,
+      sortOrder: insertOption.sortOrder || 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    this.fieldOptions.set(id, option);
+    return option;
+  }
+
+  async updateFieldOption(id: string, updates: Partial<InsertFieldOption>): Promise<FieldOption | undefined> {
+    const existing = this.fieldOptions.get(id);
+    if (!existing) return undefined;
+    
+    const updated: FieldOption = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
+    this.fieldOptions.set(id, updated);
+    return updated;
+  }
+
+  async deleteFieldOption(id: string): Promise<boolean> {
+    return this.fieldOptions.delete(id);
+  }
+
+  async setCategoryOptions(
+    categoryId: string, 
+    options: Array<Partial<FieldOption> & { key: string; name: string }>
+  ): Promise<FieldOption[]> {
+    const now = new Date();
+    
+    // Delete existing options for this category
+    const existingOptions = Array.from(this.fieldOptions.values())
+      .filter(opt => opt.categoryId === categoryId);
+    
+    existingOptions.forEach(opt => this.fieldOptions.delete(opt.id));
+    
+    // Create new options
+    const newOptions: FieldOption[] = [];
+    
+    // Ensure exactly one default option
+    const hasDefault = options.some(opt => opt.isDefault);
+    
+    options.forEach((optData, index) => {
+      const option: FieldOption = {
+        id: optData.id || randomUUID(),
+        categoryId,
+        key: optData.key,
+        name: optData.name,
+        color: optData.color || "#6B7280",
+        isActive: optData.isActive !== false, // Default to true
+        isDefault: hasDefault ? (optData.isDefault === true) : (index === 0), // First option is default if none specified
+        sortOrder: optData.sortOrder || index,
+        createdAt: optData.createdAt || now,
+        updatedAt: now,
+      };
+      
+      this.fieldOptions.set(option.id, option);
+      newOptions.push(option);
+    });
+    
+    return newOptions;
   }
 }
 
