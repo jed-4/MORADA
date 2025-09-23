@@ -1153,7 +1153,7 @@ function FieldCategoriesSection() {
     isActive: boolean;
     isDefault: boolean;
     sortOrder: number;
-    categoryId?: string;
+    categoryId: string;
     createdAt?: Date;
     updatedAt?: Date;
   }
@@ -1184,7 +1184,8 @@ function FieldCategoriesSection() {
         color: opt.color || "#6B7280",
         isActive: opt.isActive ?? true,
         isDefault: opt.isDefault ?? false,
-        sortOrder: opt.sortOrder ?? 0
+        sortOrder: opt.sortOrder ?? 0,
+        categoryId: opt.categoryId
       })));
       setIsDirty(false);
     }
@@ -1233,7 +1234,8 @@ function FieldCategoriesSection() {
         color: opt.color || "#6B7280",
         isActive: opt.isActive ?? true,
         isDefault: opt.isDefault ?? false,
-        sortOrder: opt.sortOrder ?? 0
+        sortOrder: opt.sortOrder ?? 0,
+        categoryId: opt.categoryId
       })));
       setIsDirty(false);
     }
@@ -1247,13 +1249,16 @@ function FieldCategoriesSection() {
   };
 
   const handleAddOption = () => {
-    const newOption = {
+    if (!selectedCategoryId) return;
+    
+    const newOption: LocalOption = {
       key: `new_option_${Date.now()}`,
       name: "New Option",
       color: "#6B7280",
       isActive: true,
       isDefault: false,
-      sortOrder: options.length
+      sortOrder: options.length,
+      categoryId: selectedCategoryId
     };
     setOptions([...options, newOption]);
     setIsDirty(true);
