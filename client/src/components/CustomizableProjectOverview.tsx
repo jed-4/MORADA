@@ -238,22 +238,17 @@ export default function CustomizableProjectOverview() {
       {/* Project Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-3xl font-bold">{currentProject.name}</h1>
-              <p className="text-muted-foreground">
-                {currentProject.description || "No description provided"}
-              </p>
-            </div>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => navigate('/project-settings')}
-              className="text-muted-foreground hover:text-foreground"
-              data-testid="button-project-settings"
-            >
-              <Settings className="h-5 w-5" />
-            </Button>
+          <div>
+            <h1 className="text-3xl font-bold">{currentProject.name}</h1>
+            <p className="text-muted-foreground">
+              {currentProject.jobNumber && currentProject.projectType
+                ? `${currentProject.jobNumber} • ${currentProject.projectType}`
+                : currentProject.jobNumber
+                ? currentProject.jobNumber
+                : currentProject.projectType
+                ? currentProject.projectType
+                : "No job details provided"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
@@ -312,9 +307,14 @@ export default function CustomizableProjectOverview() {
                 </div>
               </DialogContent>
             </Dialog>
-            <Button variant="outline" size="sm" data-testid="customize-dashboard-button">
-              <Settings className="h-4 w-4 mr-2" />
-              Customize
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => navigate('/project-settings')}
+              className="text-muted-foreground hover:text-foreground"
+              data-testid="button-project-settings"
+            >
+              <Settings className="h-5 w-5" />
             </Button>
           </div>
         </div>
