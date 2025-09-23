@@ -18,7 +18,9 @@ import {
   insertRolePermissionSchema,
   insertUserProjectAccessSchema,
   insertUserInvitationSchema,
-  insertCompanySettingsSchema
+  insertCompanySettingsSchema,
+  insertFieldCategorySchema,
+  insertFieldOptionSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -29,9 +31,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // put application routes here
   // prefix all routes with /api
 
-  // TEMPORARY: Authentication completely disabled until login UI is implemented
-  // Comment out global authentication to allow all access
-  /*
+  // Global authentication middleware with exceptions for development
   app.use('/api', (req, res, next) => {
     const path = req.path;
     
@@ -44,11 +44,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (/^\/invitations\/by-token\/[^/]+$/.test(path) || /^\/invitations\/[^/]+\/accept$/.test(path)) {
       return next();
     }
+
+    // TEMPORARY: Allow GET field categories for development (remove when auth UI is ready)
+    if ((path.startsWith('/field-categories') || path.startsWith('/field-options')) && req.method === 'GET') {
+      return next();
+    }
     
     // Require authentication for admin routes (users, roles, permissions, invitations)
     return requireAuth(req, res, next);
   });
-  */
 
   // use storage to perform CRUD operations on the storage interface
   // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
@@ -363,6 +367,208 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete custom field option" });
+    }
+  });
+
+  // Field Categories API Routes (Buildern-style)
+  app.get("/api/field-categories", async (req, res) => {
+    try {
+      const categories = await storage.getFieldCategories();
+      res.json(categories);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch field categories" });
+    }
+  });
+
+  app.get("/api/field-categories/by-key/:key", async (req, res) => {
+    try {
+      const categoryWithOptions = await storage.getFieldCategoryWithOptions(req.params.key);
+      if (!categoryWithOptions) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      res.json(categoryWithOptions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch field category with options" });
+    }
+  });
+
+  app.get("/api/field-categories/:id", async (req, res) => {
+    try {
+      const category = await storage.getFieldCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      res.json(category);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch field category" });
+    }
+  });
+
+  app.post("/api/field-categories", requireAdmin, async (req, res) => {
+    try {
+      const validationResult = insertFieldCategorySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const category = await storage.createFieldCategory(validationResult.data);
+      res.status(201).json(category);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create field category" });
+    }
+  });
+
+  app.patch("/api/field-categories/:id", requireAdmin, async (req, res) => {
+    try {
+      // Create update schema that omits critical immutable fields
+      const updateSchema = insertFieldCategorySchema.omit({ key: true, isBuiltIn: true }).partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const category = await storage.updateFieldCategory(req.params.id, validationResult.data);
+      if (!category) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      res.json(category);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update field category" });
+    }
+  });
+
+  app.delete("/api/field-categories/:id", requireAdmin, async (req, res) => {
+    try {
+      const category = await storage.getFieldCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      
+      if (category.isBuiltIn) {
+        return res.status(400).json({ error: "Cannot delete built-in field categories" });
+      }
+
+      const success = await storage.deleteFieldCategory(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete field category" });
+    }
+  });
+
+  // Field Options API Routes
+  app.get("/api/field-categories/:categoryId/options", async (req, res) => {
+    try {
+      const options = await storage.getFieldOptions(req.params.categoryId);
+      res.json(options);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch field options" });
+    }
+  });
+
+  app.get("/api/field-options/:id", async (req, res) => {
+    try {
+      const option = await storage.getFieldOption(req.params.id);
+      if (!option) {
+        return res.status(404).json({ error: "Field option not found" });
+      }
+      res.json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch field option" });
+    }
+  });
+
+  app.post("/api/field-options", requireAdmin, async (req, res) => {
+    try {
+      const validationResult = insertFieldOptionSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const option = await storage.createFieldOption(validationResult.data);
+      res.status(201).json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create field option" });
+    }
+  });
+
+  app.patch("/api/field-options/:id", requireAdmin, async (req, res) => {
+    try {
+      const updateSchema = insertFieldOptionSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const option = await storage.updateFieldOption(req.params.id, validationResult.data);
+      if (!option) {
+        return res.status(404).json({ error: "Field option not found" });
+      }
+      res.json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update field option" });
+    }
+  });
+
+  app.delete("/api/field-options/:id", requireAdmin, async (req, res) => {
+    try {
+      const success = await storage.deleteFieldOption(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Field option not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete field option" });
+    }
+  });
+
+  // Batch update field options (for Buildern-style master-detail UI)
+  app.post("/api/field-categories/:id/options/batch", requireAdmin, async (req, res) => {
+    try {
+      // Validate the request body as an array of partial field options
+      const batchSchema = z.array(z.object({
+        id: z.string().optional(),
+        key: z.string(),
+        name: z.string(),
+        color: z.string().nullable().optional(),
+        isActive: z.boolean().optional(),
+        isDefault: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+        createdAt: z.date().optional(),
+      }));
+
+      const validationResult = batchSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const categoryId = req.params.id;
+      const category = await storage.getFieldCategory(categoryId);
+      if (!category) {
+        return res.status(404).json({ error: "Field category not found" });
+      }
+
+      const options = await storage.setCategoryOptions(categoryId, validationResult.data);
+      res.json(options);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to batch update field options" });
     }
   });
 
