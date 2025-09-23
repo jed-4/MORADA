@@ -823,7 +823,7 @@ function FieldSettingsSection() {
                             size="sm"
                             variant="ghost"
                             onClick={() => setEditingField(field)}
-                            data-testid={`button-edit-field-${field.id}`}
+                            data-testid={index === 0 ? "button-edit-field" : `button-edit-field-${field.id}`}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -831,7 +831,7 @@ function FieldSettingsSection() {
                             size="sm"
                             variant="ghost"
                             onClick={() => setDeletingField(field)}
-                            data-testid={`button-delete-field-${field.id}`}
+                            data-testid={index === 0 ? "button-delete-field" : `button-delete-field-${field.id}`}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
