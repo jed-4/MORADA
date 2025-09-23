@@ -42,7 +42,7 @@ import {
   List
 } from "lucide-react";
 import { z } from "zod";
-import type { CompanySettings, CustomFieldDef, InsertCustomFieldDef } from "@shared/schema";
+import type { CompanySettings, CustomFieldDef, InsertCustomFieldDef, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 import { insertCustomFieldDefSchema } from "@shared/schema";
 
 // Company Settings categories matching Buildern structure
@@ -555,7 +555,7 @@ export default function Settings() {
 
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
-            {activeSection === "field-settings" && <FieldSettingsSection />}
+            {activeSection === "field-settings" && <FieldCategoriesSection />}
             
             {activeSection !== "branding" && activeSection !== "field-settings" && (
               <div className="text-center py-12">
@@ -1136,6 +1136,366 @@ function FieldSettingsSection() {
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+// Field Categories Section Component (Buildern-style master-detail interface)
+function FieldCategoriesSection() {
+  const { toast } = useToast();
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [isDirty, setIsDirty] = useState(false);
+  interface LocalOption {
+    id?: string;
+    key: string;
+    name: string;
+    color: string | null;
+    isActive: boolean;
+    isDefault: boolean;
+    sortOrder: number;
+    categoryId?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+  }
+  
+  const [options, setOptions] = useState<LocalOption[]>([]);
+  
+  // Fetch field categories
+  const { data: categories = [], isLoading: isLoadingCategories } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+
+  // Auto-select first category if none selected
+  useEffect(() => {
+    if (categories.length > 0 && !selectedCategoryId) {
+      setSelectedCategoryId(categories[0].id);
+    }
+  }, [categories, selectedCategoryId]);
+
+  // Fetch options for selected category
+  const selectedCategory = categories.find((cat: FieldCategoryWithOptions) => cat.id === selectedCategoryId);
+
+  useEffect(() => {
+    if (selectedCategory?.options) {
+      setOptions(selectedCategory.options.map((opt: FieldOption) => ({
+        id: opt.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color || "#6B7280",
+        isActive: opt.isActive ?? true,
+        isDefault: opt.isDefault ?? false,
+        sortOrder: opt.sortOrder ?? 0
+      })));
+      setIsDirty(false);
+    }
+  }, [selectedCategory]);
+
+  // Batch update options mutation
+  const updateOptionsMutation = useMutation({
+    mutationFn: async (optionsData: any[]) => {
+      if (!selectedCategoryId) throw new Error("No category selected");
+      const response = await apiRequest("POST", `/api/field-categories/${selectedCategoryId}/options/batch`, optionsData);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/field-categories"] });
+      toast({ title: "Field options updated successfully" });
+      setIsDirty(false);
+    },
+    onError: (error: any) => {
+      // Handle 401 authentication errors specifically
+      if (error.message?.includes('401') || error.message?.includes('Authentication required')) {
+        toast({ 
+          title: "Authentication required", 
+          description: "Please log in with admin privileges to save field options",
+          variant: "destructive" 
+        });
+      } else {
+        toast({ 
+          title: "Error updating options", 
+          description: error.message || "Failed to update field options",
+          variant: "destructive" 
+        });
+      }
+    }
+  });
+
+  const handleSaveChanges = () => {
+    updateOptionsMutation.mutate(options);
+  };
+
+  const handleDiscardChanges = () => {
+    if (selectedCategory?.options) {
+      setOptions(selectedCategory.options.map((opt: FieldOption) => ({
+        id: opt.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color || "#6B7280",
+        isActive: opt.isActive ?? true,
+        isDefault: opt.isDefault ?? false,
+        sortOrder: opt.sortOrder ?? 0
+      })));
+      setIsDirty(false);
+    }
+  };
+
+  const handleOptionChange = (index: number, field: string, value: any) => {
+    const updated = [...options];
+    updated[index] = { ...updated[index], [field]: value };
+    setOptions(updated);
+    setIsDirty(true);
+  };
+
+  const handleAddOption = () => {
+    const newOption = {
+      key: `new_option_${Date.now()}`,
+      name: "New Option",
+      color: "#6B7280",
+      isActive: true,
+      isDefault: false,
+      sortOrder: options.length
+    };
+    setOptions([...options, newOption]);
+    setIsDirty(true);
+  };
+
+  const handleRemoveOption = (index: number) => {
+    const updated = options.filter((_, i) => i !== index);
+    setOptions(updated);
+    setIsDirty(true);
+  };
+
+  const colorOptions = [
+    "#EF4444", "#F97316", "#F59E0B", "#EAB308", "#84CC16", "#22C55E",
+    "#10B981", "#14B8A6", "#06B6D4", "#0EA5E9", "#3B82F6", "#6366F1",
+    "#8B5CF6", "#A855F7", "#D946EF", "#EC4899", "#F43F5E", "#6B7280"
+  ];
+
+  if (isLoadingCategories) {
+    return (
+      <div className="text-center py-12">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Loading field categories...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold" data-testid="heading-field-settings">Field Settings</h2>
+          <p className="text-muted-foreground">
+            Manage predefined field categories and their options
+          </p>
+        </div>
+        {isDirty && (
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleDiscardChanges}
+              data-testid="button-discard-changes"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Discard Changes
+            </Button>
+            <Button 
+              onClick={handleSaveChanges}
+              disabled={updateOptionsMutation.isPending}
+              data-testid="button-save-changes"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {updateOptionsMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-6 h-[600px]">
+        {/* Master Panel - Category List */}
+        <Card className="w-80 flex-shrink-0" data-testid="card-categories-master">
+          <CardHeader>
+            <CardTitle className="text-lg" data-testid="title-field-categories">Field Categories</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Select a category to manage its options
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="space-y-1">
+              {categories.map((category: FieldCategoryWithOptions) => (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategoryId(category.id)}
+                  className={`w-full text-left p-4 flex items-center gap-3 hover-elevate ${
+                    selectedCategoryId === category.id 
+                      ? "bg-primary text-primary-foreground" 
+                      : "hover:bg-muted"
+                  }`}
+                  data-testid={`category-${category.key}`}
+                >
+                  <div className="flex-1">
+                    <p className="font-medium">{category.label}</p>
+                    <p className="text-xs opacity-70">
+                      {category.options?.length || 0} options
+                    </p>
+                  </div>
+                  <List className="h-4 w-4" />
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Detail Panel - Options Table */}
+        <Card className="flex-1" data-testid="card-options-detail">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg" data-testid="title-selected-category">
+                  {selectedCategory?.label || "Select Category"}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Manage options for this field category
+                </p>
+              </div>
+              <Button 
+                onClick={handleAddOption}
+                size="sm"
+                data-testid="button-add-option"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Option
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {options.length === 0 ? (
+              <div className="text-center py-8">
+                <List className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-medium mb-2">No Options</h3>
+                <p className="text-muted-foreground mb-4">
+                  This category has no options yet.
+                </p>
+                <Button 
+                  onClick={handleAddOption}
+                  data-testid="button-add-first-option"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add First Option
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                <div className="grid grid-cols-12 gap-3 text-xs font-medium text-muted-foreground p-2 border-b">
+                  <div className="col-span-1">Color</div>
+                  <div className="col-span-4">Name</div>
+                  <div className="col-span-3">Key</div>
+                  <div className="col-span-1 text-center">Active</div>
+                  <div className="col-span-1 text-center">Default</div>
+                  <div className="col-span-1 text-center">Order</div>
+                  <div className="col-span-1 text-center">Remove</div>
+                </div>
+                {options.map((option, index) => (
+                  <div
+                    key={option.id || index}
+                    className="grid grid-cols-12 gap-3 items-center p-3 border rounded-lg hover-elevate"
+                    data-testid={`option-row-${index}`}
+                  >
+                    {/* Color Picker */}
+                    <div className="col-span-1">
+                      <select
+                        value={option.color || "#6B7280"}
+                        onChange={(e) => handleOptionChange(index, "color", e.target.value)}
+                        className="w-8 h-8 rounded border-0 bg-transparent cursor-pointer"
+                        style={{ backgroundColor: option.color || "#6B7280" }}
+                        data-testid={`color-select-${index}`}
+                      >
+                        {colorOptions.map((color) => (
+                          <option key={color} value={color} style={{ backgroundColor: color }}>
+                            
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Name Input */}
+                    <div className="col-span-4">
+                      <Input
+                        value={option.name}
+                        onChange={(e) => handleOptionChange(index, "name", e.target.value)}
+                        className="h-8 text-sm"
+                        placeholder="Option name"
+                        data-testid={`name-input-${index}`}
+                      />
+                    </div>
+
+                    {/* Key Input */}
+                    <div className="col-span-3">
+                      <Input
+                        value={option.key}
+                        onChange={(e) => handleOptionChange(index, "key", e.target.value)}
+                        className="h-8 text-sm font-mono"
+                        placeholder="option_key"
+                        data-testid={`key-input-${index}`}
+                      />
+                    </div>
+
+                    {/* Active Toggle */}
+                    <div className="col-span-1 flex justify-center">
+                      <Checkbox
+                        checked={option.isActive}
+                        onCheckedChange={(checked) => handleOptionChange(index, "isActive", checked)}
+                        data-testid={`active-checkbox-${index}`}
+                      />
+                    </div>
+
+                    {/* Default Toggle */}
+                    <div className="col-span-1 flex justify-center">
+                      <Checkbox
+                        checked={option.isDefault}
+                        onCheckedChange={(checked) => {
+                          // Only allow one default option per category
+                          const updated = options.map((opt, i) => ({
+                            ...opt,
+                            isDefault: i === index ? (checked as boolean) : false
+                          }));
+                          setOptions(updated);
+                          setIsDirty(true);
+                        }}
+                        data-testid={`default-checkbox-${index}`}
+                      />
+                    </div>
+
+                    {/* Sort Order */}
+                    <div className="col-span-1">
+                      <Input
+                        type="number"
+                        value={option.sortOrder}
+                        onChange={(e) => handleOptionChange(index, "sortOrder", parseInt(e.target.value) || 0)}
+                        className="h-8 text-sm w-16"
+                        data-testid={`sort-input-${index}`}
+                      />
+                    </div>
+
+                    {/* Remove Button */}
+                    <div className="col-span-1 flex justify-center">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleRemoveOption(index)}
+                        className="h-6 w-6 p-0"
+                        data-testid={`remove-button-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
