@@ -545,3 +545,113 @@ export type FieldOption = typeof fieldOptions.$inferSelect;
 export type FieldCategoryWithOptions = FieldCategory & {
   options: FieldOption[];
 };
+
+// Selections (categories like "Kitchen Splashback Tiles")
+export const selections = pgTable("selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // "Kitchen Splashback Tiles"
+  category: text("category"), // "Tiles"
+  room: text("room"), // "Kitchen"
+  description: text("description"),
+  status: text("status").notNull().default("draft"), // "draft" | "pending" | "approved" | "selected"
+  deadline: timestamp("deadline"),
+  allowance: integer("allowance"), // Budget allowance in cents
+  clientCanChange: boolean("client_can_change").notNull().default(true),
+  clientCanSeePrice: boolean("client_can_see_price").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionSchema = createInsertSchema(selections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSelection = z.infer<typeof insertSelectionSchema>;
+export type Selection = typeof selections.$inferSelect;
+
+// Selection Options (individual products within selections)
+export const selectionOptions = pgTable("selection_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  selectionId: varchar("selection_id").notNull().references(() => selections.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // "Zellige Lily"
+  description: text("description"),
+  sku: text("sku"), // Product code/SKU
+  brand: text("brand"), // Manufacturer/brand
+  category: text("category"), // "Concept Tile & Timber"
+  subcategory: text("subcategory"),
+  unitCost: integer("unit_cost"), // Cost in cents
+  unitTax: integer("unit_tax"), // Tax in cents
+  markupPercent: integer("markup_percent"), // Markup percentage
+  totalCost: integer("total_cost"), // Final cost in cents
+  quantity: integer("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("ea"), // "m2", "linear_m", "ea", etc.
+  url: text("url"), // Product URL
+  visibleToClient: boolean("visible_to_client").notNull().default(true),
+  isSelectedByClient: boolean("is_selected_by_client").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionOptionSchema = createInsertSchema(selectionOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSelectionOption = z.infer<typeof insertSelectionOptionSchema>;
+export type SelectionOption = typeof selectionOptions.$inferSelect;
+
+// Option Attachments (images, spec sheets, etc.)
+export const optionAttachments = pgTable("option_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  optionId: varchar("option_id").notNull().references(() => selectionOptions.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type").notNull(), // "image", "document", "specification"
+  fileSize: integer("file_size"), // File size in bytes
+  mimeType: text("mime_type"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOptionAttachmentSchema = createInsertSchema(optionAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertOptionAttachment = z.infer<typeof insertOptionAttachmentSchema>;
+export type OptionAttachment = typeof optionAttachments.$inferSelect;
+
+// Client Selections (track what clients have chosen)
+export const clientSelections = pgTable("client_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  selectionId: varchar("selection_id").notNull().references(() => selections.id, { onDelete: "cascade" }),
+  optionId: varchar("option_id").notNull().references(() => selectionOptions.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => users.id),
+  notes: text("notes"), // Client notes about their selection
+  selectedAt: timestamp("selected_at").notNull().defaultNow(),
+});
+
+export const insertClientSelectionSchema = createInsertSchema(clientSelections).omit({
+  id: true,
+  selectedAt: true,
+});
+
+export type InsertClientSelection = z.infer<typeof insertClientSelectionSchema>;
+export type ClientSelection = typeof clientSelections.$inferSelect;
+
+// Combined types for selections with their options
+export type SelectionWithOptions = Selection & {
+  options: (SelectionOption & { attachments?: OptionAttachment[] })[];
+  clientSelection?: ClientSelection;
+};
+
+export type SelectionOptionWithAttachments = SelectionOption & {
+  attachments: OptionAttachment[];
+};
