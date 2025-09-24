@@ -569,6 +569,101 @@ export class MemStorage implements IStorage {
       };
       this.fieldOptions.set(option.id, option);
     });
+
+    // Selection Categories
+    const selectionCategoriesCategory: FieldCategory = {
+      id: "cat-selection-categories",
+      key: "selection.category",
+      label: "Selection Categories",
+      entity: "selection",
+      description: "Categories for selection items",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 4,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(selectionCategoriesCategory.id, selectionCategoriesCategory);
+
+    // Location/Room Categories
+    const locationCategory: FieldCategory = {
+      id: "cat-locations",
+      key: "selection.room",
+      label: "Locations/Rooms",
+      entity: "selection",
+      description: "Room and location options for selections",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 5,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(locationCategory.id, locationCategory);
+
+    // Add default options for Selection Categories
+    const selectionCategoryOptions = [
+      { key: "tiles", name: "Tiles", color: "#8B5A2B" },
+      { key: "flooring", name: "Flooring", color: "#7C3AED" },
+      { key: "paint", name: "Paint & Colors", color: "#10B981" },
+      { key: "fixtures", name: "Fixtures", color: "#3B82F6" },
+      { key: "appliances", name: "Appliances", color: "#F59E0B" },
+      { key: "hardware", name: "Hardware", color: "#6B7280" },
+      { key: "lighting", name: "Lighting", color: "#F59E0B" },
+      { key: "cabinetry", name: "Cabinetry", color: "#8B5A2B" },
+      { key: "countertops", name: "Countertops", color: "#06B6D4" },
+      { key: "windows-doors", name: "Windows & Doors", color: "#DC2626" },
+    ];
+
+    selectionCategoryOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-selection-category-${opt.key}`,
+        categoryId: selectionCategoriesCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: index === 0, // First one is default
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
+
+    // Add default options for Locations/Rooms
+    const locationOptions = [
+      { key: "kitchen", name: "Kitchen", color: "#F59E0B" },
+      { key: "master-bathroom", name: "Master Bathroom", color: "#3B82F6" },
+      { key: "guest-bathroom", name: "Guest Bathroom", color: "#06B6D4" },
+      { key: "powder-room", name: "Powder Room", color: "#8B5A2B" },
+      { key: "living-room", name: "Living Room", color: "#10B981" },
+      { key: "dining-room", name: "Dining Room", color: "#7C3AED" },
+      { key: "master-bedroom", name: "Master Bedroom", color: "#DC2626" },
+      { key: "guest-bedroom", name: "Guest Bedroom", color: "#EF4444" },
+      { key: "laundry", name: "Laundry", color: "#6B7280" },
+      { key: "garage", name: "Garage", color: "#374151" },
+      { key: "outdoor", name: "Outdoor/Exterior", color: "#059669" },
+      { key: "basement", name: "Basement", color: "#1F2937" },
+      { key: "attic", name: "Attic", color: "#4B5563" },
+      { key: "office", name: "Home Office", color: "#7C2D12" },
+      { key: "family-room", name: "Family Room", color: "#B45309" },
+    ];
+
+    locationOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-location-${opt.key}`,
+        categoryId: locationCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: index === 0, // First one is default
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
   }
 
   // Initialize default projects including business project

@@ -19,7 +19,8 @@ import { useProject } from "@/contexts/ProjectContext";
 import { 
   insertSelectionSchema, 
   type Selection, 
-  type InsertSelection
+  type InsertSelection,
+  type FieldCategoryWithOptions
 } from "@shared/schema";
 import {
   Dialog,
@@ -63,6 +64,16 @@ export default function Selections() {
   const { data: selections = [], isLoading } = useQuery<Selection[]>({
     queryKey: ["/api/selections", currentProject?.id],
     enabled: !!currentProject?.id,
+  });
+
+  // Fetch selection categories
+  const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/selection.category"],
+  });
+
+  // Fetch room/location options
+  const { data: locationCategories } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/selection.room"],
   });
 
   // Create selection mutation
@@ -421,14 +432,20 @@ export default function Selections() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="e.g., Kitchen, Bathroom, Flooring"
-                        {...field}
-                        value={field.value || ""}
-                        data-testid="input-selection-category"
-                      />
-                    </FormControl>
+                    <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-selection-category">
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {selectionCategories?.options?.map((option) => (
+                          <SelectItem key={option.key} value={option.name}>
+                            {option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -440,14 +457,20 @@ export default function Selections() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Room/Location</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="e.g., Master Bathroom, Kitchen, Living Room"
-                        {...field}
-                        value={field.value || ""}
-                        data-testid="input-selection-room"
-                      />
-                    </FormControl>
+                    <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-selection-room">
+                          <SelectValue placeholder="Select a room" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {locationCategories?.options?.map((option) => (
+                          <SelectItem key={option.key} value={option.name}>
+                            {option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
