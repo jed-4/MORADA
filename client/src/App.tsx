@@ -20,6 +20,9 @@ import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
 import EstimateDetail from "@/pages/EstimateDetail";
 import NotFound from "@/pages/not-found";
+import Login from "@/pages/Login";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 function Router() {
   return (
@@ -72,33 +75,78 @@ function Router() {
   );
 }
 
-function App() {
-  // Custom sidebar width for project management application
+function AuthWrapper() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  // Check authentication status
+  const { data: authCheck, isLoading } = useQuery({
+    queryKey: ["/api/projects"],
+    retry: false,
+    retryOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!isLoading) {
+      setIsAuthenticated(!!authCheck);
+    }
+  }, [authCheck, isLoading]);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    // Force refetch of auth-dependent queries
+    queryClient.invalidateQueries();
+  };
+
+  // Show loading while checking auth
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="loading-enhanced text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading BuildPro...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Show main app if authenticated
   const style = {
-    "--sidebar-width": "20rem",       // 320px for better content
-    "--sidebar-width-icon": "4rem",   // default icon width
+    "--sidebar-width": "20rem",
+    "--sidebar-width-icon": "4rem",
   };
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeProvider>
-          <ProjectProvider>
-            <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex h-screen w-full">
-              <AppSidebar />
-              <div className="flex flex-col flex-1">
-                <Header />
-                <main className="flex-1 overflow-auto">
-                  <Router />
-                </main>
-              </div>
+    <TooltipProvider>
+      <ThemeProvider>
+        <ProjectProvider>
+          <SidebarProvider style={style as React.CSSProperties}>
+          <div className="flex h-screen w-full">
+            <AppSidebar />
+            <div className="flex flex-col flex-1">
+              <Header />
+              <main className="flex-1 overflow-auto">
+                <Router />
+              </main>
             </div>
-            </SidebarProvider>
-            <Toaster />
-          </ProjectProvider>
-        </ThemeProvider>
-      </TooltipProvider>
+          </div>
+          </SidebarProvider>
+        </ProjectProvider>
+      </ThemeProvider>
+    </TooltipProvider>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthWrapper />
+      <Toaster />
     </QueryClientProvider>
   );
 }

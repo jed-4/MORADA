@@ -311,7 +311,7 @@ export default function CustomizableProjectOverview() {
               variant="ghost" 
               size="icon" 
               onClick={() => navigate('/project-settings')}
-              className="text-muted-foreground hover:text-foreground btn-enhanced focus-enhanced"
+              className="text-muted-foreground hover:text-foreground btn-enhanced focus-enhanced hover:bg-primary/10 hover:text-primary"
               data-testid="button-project-settings"
             >
               <Settings className="h-5 w-5" />
@@ -342,7 +342,7 @@ export default function CustomizableProjectOverview() {
             
             {widgets.length === 0 && (
               <div className="col-span-full">
-                <Card className="border-dashed card-enhanced">
+                <Card className="border-dashed card-enhanced shadow-2xl border-4 border-primary/20">
                   <CardContent className="p-8 text-center">
                     <div className="space-y-3">
                       <div className="text-muted-foreground">
@@ -350,7 +350,7 @@ export default function CustomizableProjectOverview() {
                         <h3 className="text-lg font-semibold tracking-tight">Customize Your Dashboard</h3>
                         <p className="text-base">Add widgets to create your personalized project overview</p>
                       </div>
-                      <Button onClick={() => setIsAddingWidget(true)} className="btn-enhanced">
+                      <Button onClick={() => setIsAddingWidget(true)} className="btn-enhanced shadow-lg text-lg px-8 py-3 bg-primary hover:bg-primary/90">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Your First Widget
                       </Button>

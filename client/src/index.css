@@ -32,7 +32,7 @@
 
   --sidebar-border: 220 8% 90%;
 
-  --sidebar-primary: 210 90% 50%;
+  --sidebar-primary: 27 96% 61%; /* BOLD Safety Orange matching primary */
 
   --sidebar-primary-foreground: 0 0% 98%;
 
@@ -40,7 +40,7 @@
 
   --sidebar-accent-foreground: 220 15% 15%;
 
-  --sidebar-ring: 210 90% 50%;
+  --sidebar-ring: 27 96% 61%; /* BOLD Safety Orange matching primary */
 
   --popover: 220 8% 94%;
 
@@ -48,22 +48,22 @@
 
   --popover-border: 220 10% 87%;
 
-  /* Construction Industry Palette */
-  --primary: 210 85% 48%; /* Professional construction blue */
+  /* BOLD Construction Industry Palette */
+  --primary: 27 96% 61%; /* BOLD Safety Orange - impossible to miss! */
 
   --primary-foreground: 0 0% 98%;
 
-  --secondary: 220 12% 85%;
+  --secondary: 142 82% 32%; /* BOLD Australian eucalyptus green */
 
-  --secondary-foreground: 220 15% 15%;
+  --secondary-foreground: 0 0% 98%;
 
   --muted: 220 8% 92%;
 
   --muted-foreground: 220 12% 42%;
 
-  --accent: 220 15% 88%;
+  --accent: 210 100% 45%; /* BOLD construction blue */
 
-  --accent-foreground: 220 15% 15%;
+  --accent-foreground: 0 0% 98%;
 
   /* Construction-specific colors */
   --success: 142 76% 36%; /* Australian eucalyptus green */
@@ -91,19 +91,19 @@
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, monospace;
   --radius: .5rem; /* 8px */
-  /* Enhanced shadows for depth and professionalism */
-  --shadow-2xs: 0px 1px 2px 0px hsl(220 15% 15% / 0.03);
-  --shadow-xs: 0px 1px 3px 0px hsl(220 15% 15% / 0.05);
-  --shadow-sm: 0px 1px 2px 0px hsl(220 15% 15% / 0.06), 0px 1px 3px -1px hsl(220 15% 15% / 0.05);
-  --shadow: 0px 1px 3px 0px hsl(220 15% 15% / 0.08), 0px 1px 2px -1px hsl(220 15% 15% / 0.06);
-  --shadow-md: 0px 4px 6px -1px hsl(220 15% 15% / 0.10), 0px 2px 4px -1px hsl(220 15% 15% / 0.06);
-  --shadow-lg: 0px 10px 15px -3px hsl(220 15% 15% / 0.12), 0px 4px 6px -2px hsl(220 15% 15% / 0.05);
-  --shadow-xl: 0px 20px 25px -5px hsl(220 15% 15% / 0.14), 0px 10px 10px -5px hsl(220 15% 15% / 0.04);
-  --shadow-2xl: 0px 25px 50px -12px hsl(220 15% 15% / 0.16);
+  /* DRAMATIC Enhanced shadows for BOLD visual impact */
+  --shadow-2xs: 0px 2px 4px 0px hsl(220 15% 15% / 0.12);
+  --shadow-xs: 0px 3px 6px 0px hsl(220 15% 15% / 0.16);
+  --shadow-sm: 0px 4px 8px 0px hsl(220 15% 15% / 0.18), 0px 2px 6px -1px hsl(220 15% 15% / 0.12);
+  --shadow: 0px 6px 12px 0px hsl(220 15% 15% / 0.22), 0px 3px 8px -1px hsl(220 15% 15% / 0.16);
+  --shadow-md: 0px 8px 16px -1px hsl(220 15% 15% / 0.28), 0px 4px 12px -1px hsl(220 15% 15% / 0.18);
+  --shadow-lg: 0px 16px 32px -3px hsl(220 15% 15% / 0.32), 0px 8px 16px -2px hsl(220 15% 15% / 0.16);
+  --shadow-xl: 0px 32px 48px -5px hsl(220 15% 15% / 0.38), 0px 16px 20px -5px hsl(220 15% 15% / 0.18);
+  --shadow-2xl: 0px 48px 80px -12px hsl(220 15% 15% / 0.48);
   
-  /* Professional card shadow for construction industry */
-  --shadow-card: 0px 2px 4px -1px hsl(220 15% 15% / 0.08), 0px 1px 2px -1px hsl(220 15% 15% / 0.04);
-  --shadow-card-hover: 0px 4px 8px -1px hsl(220 15% 15% / 0.12), 0px 2px 4px -1px hsl(220 15% 15% / 0.06);
+  /* BOLD professional card shadow for construction industry */
+  --shadow-card: 0px 8px 16px -1px hsl(220 15% 15% / 0.20), 0px 4px 8px -1px hsl(220 15% 15% / 0.12);
+  --shadow-card-hover: 0px 16px 32px -1px hsl(220 15% 15% / 0.32), 0px 8px 16px -1px hsl(220 15% 15% / 0.20);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -166,7 +166,7 @@
 
   --sidebar-border: 220 15% 20%;
 
-  --sidebar-primary: 210 90% 50%;
+  --sidebar-primary: 27 96% 61%; /* BOLD Safety Orange matching primary */
 
   --sidebar-primary-foreground: 220 15% 12%;
 
@@ -174,7 +174,7 @@
 
   --sidebar-accent-foreground: 220 5% 90%;
 
-  --sidebar-ring: 210 90% 50%;
+  --sidebar-ring: 27 96% 61%; /* BOLD Safety Orange matching primary */
 
   --popover: 220 20% 18%;
 
@@ -182,22 +182,22 @@
 
   --popover-border: 220 15% 24%;
 
-  /* Construction Industry Palette - Dark Mode */
-  --primary: 210 85% 58%; /* Brighter construction blue for dark mode */
+  /* BOLD Construction Industry Palette - Dark Mode */
+  --primary: 27 96% 68%; /* BOLD Safety Orange - brighter for dark mode */
 
   --primary-foreground: 220 15% 12%;
 
-  --secondary: 220 15% 22%;
+  --secondary: 142 82% 38%; /* BOLD Australian eucalyptus green - brighter for dark mode */
 
-  --secondary-foreground: 220 5% 90%;
+  --secondary-foreground: 0 0% 98%;
 
   --muted: 220 12% 18%;
 
   --muted-foreground: 220 12% 68%;
 
-  --accent: 220 15% 20%;
+  --accent: 210 100% 50%; /* BOLD construction blue - brighter for dark mode */
 
-  --accent-foreground: 220 5% 90%;
+  --accent-foreground: 0 0% 98%;
 
   /* Construction-specific colors - Dark Mode */
   --success: 142 76% 46%; /* Brighter eucalyptus for dark mode */
@@ -271,15 +271,18 @@
     line-height: 1.4;
   }
   
-  /* Professional card styling with enhanced shadows */
+  /* BOLD professional card styling with DRAMATIC shadows */
   .card-enhanced {
     box-shadow: var(--shadow-card);
-    transition: box-shadow 0.2s ease-out, transform 0.2s ease-out;
+    transition: box-shadow 0.3s ease-out, transform 0.3s ease-out;
+    border: 2px solid hsl(var(--primary) / 0.08);
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--background) / 0.98) 100%);
   }
   
   .card-enhanced:hover {
     box-shadow: var(--shadow-card-hover);
-    transform: translateY(-1px);
+    transform: translateY(-4px) scale(1.02);
+    border-color: hsl(var(--primary) / 0.2);
   }
 }
 
@@ -323,11 +326,12 @@
   }
   
   .btn-enhanced:hover {
-    transform: translateY(-1px);
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0px 12px 24px -2px hsl(var(--primary) / 0.25);
   }
   
   .btn-enhanced:active {
-    transform: translateY(0);
+    transform: translateY(-1px) scale(1.02);
   }
   
   /* Construction-themed status indicators */
