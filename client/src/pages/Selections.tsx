@@ -63,6 +63,7 @@ export default function Selections() {
   // Fetch selections for the current project
   const { data: selections = [], isLoading } = useQuery<Selection[]>({
     queryKey: ["/api/selections", currentProject?.id],
+    queryFn: () => apiRequest("GET", `/api/selections?projectId=${currentProject?.id}`).then(res => res.json()),
     enabled: !!currentProject?.id,
   });
 
