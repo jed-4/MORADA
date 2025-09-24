@@ -9,25 +9,27 @@ interface ResizableSidebarProps {
 export function ResizableSidebar({ onWidthChange, initialWidth }: ResizableSidebarProps) {
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(() => parseInt(initialWidth));
 
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
     setIsResizing(true);
     mouseDownEvent.preventDefault();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   }, []);
 
   const stopResizing = useCallback(() => {
     setIsResizing(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   }, []);
 
   const resize = useCallback(
     (mouseMoveEvent: MouseEvent) => {
-      if (isResizing && sidebarRef.current) {
+      if (isResizing) {
         const newWidth = mouseMoveEvent.clientX;
         
         // Set minimum and maximum widths
         if (newWidth >= 200 && newWidth <= 500) {
-          setWidth(newWidth);
           onWidthChange(`${newWidth}px`);
         }
       }
@@ -36,29 +38,31 @@ export function ResizableSidebar({ onWidthChange, initialWidth }: ResizableSideb
   );
 
   useEffect(() => {
-    window.addEventListener("mousemove", resize);
-    window.addEventListener("mouseup", stopResizing);
-    return () => {
-      window.removeEventListener("mousemove", resize);
-      window.removeEventListener("mouseup", stopResizing);
-    };
-  }, [resize, stopResizing]);
+    if (isResizing) {
+      window.addEventListener("mousemove", resize);
+      window.addEventListener("mouseup", stopResizing);
+      return () => {
+        window.removeEventListener("mousemove", resize);
+        window.removeEventListener("mouseup", stopResizing);
+      };
+    }
+  }, [isResizing, resize, stopResizing]);
 
   return (
     <div className="relative">
-      <div ref={sidebarRef} style={{ width: `${width}px` }}>
-        <AppSidebar />
-      </div>
+      <AppSidebar />
       
-      {/* Resize handle */}
+      {/* Resize handle - more prominent */}
       <div
-        className={`absolute top-0 right-0 w-1 h-full cursor-col-resize bg-transparent hover:bg-border transition-colors ${
-          isResizing ? "bg-border" : ""
+        className={`absolute top-0 right-0 w-1 h-full cursor-col-resize z-50 bg-transparent hover:bg-primary/20 transition-colors ${
+          isResizing ? "bg-primary/30" : ""
         }`}
         onMouseDown={startResizing}
         data-testid="sidebar-resize-handle"
+        title="Drag to resize sidebar"
       >
-        <div className="absolute top-1/2 right-0 transform -translate-y-1/2 w-1 h-8 bg-muted-foreground/20 rounded-l hover:bg-muted-foreground/40 transition-colors" />
+        {/* More visible drag indicator */}
+        <div className="absolute top-1/2 right-0 transform -translate-y-1/2 w-1 h-12 bg-primary/30 rounded-l hover:bg-primary/50 transition-colors" />
       </div>
     </div>
   );
