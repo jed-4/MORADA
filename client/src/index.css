@@ -32,7 +32,7 @@
 
   --sidebar-border: 220 8% 90%;
 
-  --sidebar-primary: 260 60% 70%; /* Soft Lavender matching primary */
+  --sidebar-primary: 270 40% 50%; /* Muted Purple matching primary */
 
   --sidebar-primary-foreground: 0 0% 98%;
 
@@ -40,7 +40,7 @@
 
   --sidebar-accent-foreground: 220 15% 15%;
 
-  --sidebar-ring: 260 60% 70%; /* Soft Lavender matching primary */
+  --sidebar-ring: 270 40% 50%; /* Muted Purple matching primary */
 
   --popover: 220 8% 94%;
 
@@ -48,14 +48,14 @@
 
   --popover-border: 220 10% 87%;
 
-  /* SOFT PURPLE TEST #1: Lavender - Very Light, Gentle, Almost Pastel */
-  --primary: 260 60% 70%; /* Soft Lavender */
+  /* SOFT PURPLE TEST #2: Muted Purple - Medium Tone, Not Too Bright or Bold */
+  --primary: 270 40% 50%; /* Muted Purple */
 
   --primary-foreground: 0 0% 98%;
 
-  --secondary: 260 45% 80%; /* Lighter lavender to complement primary */
+  --secondary: 270 35% 65%; /* Lighter muted purple to complement primary */
 
-  --secondary-foreground: 260 60% 20%;
+  --secondary-foreground: 0 0% 98%;
 
   --muted: 220 8% 92%;
 
@@ -166,7 +166,7 @@
 
   --sidebar-border: 220 15% 20%;
 
-  --sidebar-primary: 260 60% 75%; /* Soft Lavender matching primary (brighter for dark mode) */
+  --sidebar-primary: 270 40% 60%; /* Muted Purple matching primary (brighter for dark mode) */
 
   --sidebar-primary-foreground: 220 15% 12%;
 
@@ -174,7 +174,7 @@
 
   --sidebar-accent-foreground: 220 5% 90%;
 
-  --sidebar-ring: 260 60% 75%; /* Soft Lavender matching primary */
+  --sidebar-ring: 270 40% 60%; /* Muted Purple matching primary */
 
   --popover: 220 20% 18%;
 
@@ -182,14 +182,14 @@
 
   --popover-border: 220 15% 24%;
 
-  /* SOFT PURPLE TEST #1: Lavender - Dark Mode */
-  --primary: 260 60% 75%; /* Brighter Soft Lavender for dark mode */
+  /* SOFT PURPLE TEST #2: Muted Purple - Dark Mode */
+  --primary: 270 40% 60%; /* Brighter Muted Purple for dark mode */
 
   --primary-foreground: 220 15% 12%;
 
-  --secondary: 260 45% 85%; /* Lighter lavender for dark mode */
+  --secondary: 270 35% 75%; /* Lighter muted purple for dark mode */
 
-  --secondary-foreground: 260 60% 20%;
+  --secondary-foreground: 0 0% 98%;
 
   --muted: 220 12% 18%;
 
