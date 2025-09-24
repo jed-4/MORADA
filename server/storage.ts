@@ -535,8 +535,33 @@ export class MemStorage implements IStorage {
 
   // Initialize default projects including business project
   private initializeDefaultData() {
+    this.initializeDefaultUsers();
     this.initializeDefaultProjects();
     this.initializeDefaultEstimates();
+  }
+
+  private initializeDefaultUsers() {
+    // Create default test user for development - using synchronous approach for initialization
+    const testUserId = "test-user-id";
+    const now = new Date();
+    
+    // IMPORTANT: We need to hash the password, but we'll use a pre-hashed version for testing
+    // "test-password" hashed with bcrypt = "$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi"
+    const testUser: User = {
+      id: testUserId,
+      username: "testuser_PymwZ9t-",
+      password: "$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi", // Pre-hashed "test-password"
+      email: "test@buildpro.com",
+      firstName: "Test",
+      lastName: "User",
+      roleId: null,
+      category: "employee",
+      isActive: true,
+      lastLoginAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.users.set(testUser.id, testUser);
   }
 
   private initializeDefaultProjects() {

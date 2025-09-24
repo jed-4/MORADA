@@ -32,7 +32,7 @@
 
   --sidebar-border: 220 8% 90%;
 
-  --sidebar-primary: 27 96% 61%; /* BOLD Safety Orange matching primary */
+  --sidebar-primary: 142 71% 28%; /* Deep Forest Green matching primary */
 
   --sidebar-primary-foreground: 0 0% 98%;
 
@@ -40,7 +40,7 @@
 
   --sidebar-accent-foreground: 220 15% 15%;
 
-  --sidebar-ring: 27 96% 61%; /* BOLD Safety Orange matching primary */
+  --sidebar-ring: 142 71% 28%; /* Deep Forest Green matching primary */
 
   --popover: 220 8% 94%;
 
@@ -48,12 +48,12 @@
 
   --popover-border: 220 10% 87%;
 
-  /* BOLD Construction Industry Palette */
-  --primary: 27 96% 61%; /* BOLD Safety Orange - impossible to miss! */
+  /* COLOR TEST #1: Deep Forest Green - Professional & Natural */
+  --primary: 142 71% 28%; /* Deep Forest Green */
 
   --primary-foreground: 0 0% 98%;
 
-  --secondary: 142 82% 32%; /* BOLD Australian eucalyptus green */
+  --secondary: 142 82% 42%; /* Lighter eucalyptus green to complement forest green */
 
   --secondary-foreground: 0 0% 98%;
 
@@ -166,7 +166,7 @@
 
   --sidebar-border: 220 15% 20%;
 
-  --sidebar-primary: 27 96% 61%; /* BOLD Safety Orange matching primary */
+  --sidebar-primary: 142 71% 28%; /* Deep Forest Green matching primary */
 
   --sidebar-primary-foreground: 220 15% 12%;
 
@@ -174,7 +174,7 @@
 
   --sidebar-accent-foreground: 220 5% 90%;
 
-  --sidebar-ring: 27 96% 61%; /* BOLD Safety Orange matching primary */
+  --sidebar-ring: 142 71% 28%; /* Deep Forest Green matching primary */
 
   --popover: 220 20% 18%;
 
@@ -182,12 +182,12 @@
 
   --popover-border: 220 15% 24%;
 
-  /* BOLD Construction Industry Palette - Dark Mode */
-  --primary: 27 96% 68%; /* BOLD Safety Orange - brighter for dark mode */
+  /* COLOR TEST #1: Deep Forest Green - Dark Mode */
+  --primary: 142 71% 38%; /* Brighter Deep Forest Green for dark mode */
 
   --primary-foreground: 220 15% 12%;
 
-  --secondary: 142 82% 38%; /* BOLD Australian eucalyptus green - brighter for dark mode */
+  --secondary: 142 82% 48%; /* Lighter eucalyptus green for dark mode */
 
   --secondary-foreground: 0 0% 98%;
 
