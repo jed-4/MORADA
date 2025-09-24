@@ -32,7 +32,7 @@
 
   --sidebar-border: 220 8% 90%;
 
-  --sidebar-primary: 215 25% 27%; /* Charcoal Slate matching primary */
+  --sidebar-primary: 185 84% 32%; /* Teal matching primary */
 
   --sidebar-primary-foreground: 0 0% 98%;
 
@@ -40,7 +40,7 @@
 
   --sidebar-accent-foreground: 220 15% 15%;
 
-  --sidebar-ring: 215 25% 27%; /* Charcoal Slate matching primary */
+  --sidebar-ring: 185 84% 32%; /* Teal matching primary */
 
   --popover: 220 8% 94%;
 
@@ -48,12 +48,12 @@
 
   --popover-border: 220 10% 87%;
 
-  /* COLOR TEST #3: Charcoal Slate - Modern & Sophisticated */
-  --primary: 215 25% 27%; /* Charcoal Slate */
+  /* COLOR TEST #6: Teal - Modern Balance of Professional & Approachable */
+  --primary: 185 84% 32%; /* Teal */
 
   --primary-foreground: 0 0% 98%;
 
-  --secondary: 215 30% 45%; /* Lighter slate blue to complement charcoal */
+  --secondary: 185 75% 50%; /* Lighter teal to complement primary */
 
   --secondary-foreground: 0 0% 98%;
 
@@ -166,7 +166,7 @@
 
   --sidebar-border: 220 15% 20%;
 
-  --sidebar-primary: 215 25% 37%; /* Charcoal Slate matching primary (brighter for dark mode) */
+  --sidebar-primary: 185 84% 42%; /* Teal matching primary (brighter for dark mode) */
 
   --sidebar-primary-foreground: 220 15% 12%;
 
@@ -174,7 +174,7 @@
 
   --sidebar-accent-foreground: 220 5% 90%;
 
-  --sidebar-ring: 215 25% 37%; /* Charcoal Slate matching primary */
+  --sidebar-ring: 185 84% 42%; /* Teal matching primary */
 
   --popover: 220 20% 18%;
 
@@ -182,12 +182,12 @@
 
   --popover-border: 220 15% 24%;
 
-  /* COLOR TEST #3: Charcoal Slate - Dark Mode */
-  --primary: 215 25% 37%; /* Brighter Charcoal Slate for dark mode */
+  /* COLOR TEST #6: Teal - Dark Mode */
+  --primary: 185 84% 42%; /* Brighter Teal for dark mode */
 
   --primary-foreground: 220 15% 12%;
 
-  --secondary: 215 30% 55%; /* Lighter slate blue for dark mode */
+  --secondary: 185 75% 60%; /* Lighter teal for dark mode */
 
   --secondary-foreground: 0 0% 98%;
 
