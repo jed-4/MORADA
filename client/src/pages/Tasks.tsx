@@ -205,6 +205,23 @@ export default function Tasks() {
   // Apply filters to tasks
   const filteredTasks = applyTaskFilters(allTasks, filters);
 
+  // Get current view filters for custom views
+  const getCurrentViewFilters = () => {
+    const currentView = taskViews.find(view => view.id === activeTab);
+    if (currentView && currentView.filters) {
+      return deserializeFilters(currentView.filters as Record<string, any>);
+    }
+    return {};
+  };
+
+  // Merge view filters with user filters
+  const effectiveFilters = {
+    ...getCurrentViewFilters(),
+    ...filters,
+  };
+
+  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
+
   // Group tasks based on selected grouping (only for list view)
   const groupedTasks = React.useMemo(() => {
     if (groupBy === 'none' || activeTab !== 'list') {
@@ -245,23 +262,6 @@ export default function Tasks() {
     
     return sortedGroups;
   }, [effectivelyFilteredTasks, groupBy, activeTab]);
-
-  // Get current view filters for custom views
-  const getCurrentViewFilters = () => {
-    const currentView = taskViews.find(view => view.id === activeTab);
-    if (currentView && currentView.filters) {
-      return deserializeFilters(currentView.filters as Record<string, any>);
-    }
-    return {};
-  };
-
-  // Merge view filters with user filters
-  const effectiveFilters = {
-    ...getCurrentViewFilters(),
-    ...filters,
-  };
-
-  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
 
   return (
     <div className="flex h-full flex-col">
