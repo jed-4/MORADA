@@ -325,16 +325,21 @@ export default function Selections() {
 
       {/* Selections Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-4">
           {[...Array(6)].map((_, i) => (
             <Card key={i} className="animate-pulse">
-              <CardHeader className="pb-2">
-                <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-                <div className="h-3 bg-muted rounded w-1/2"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-3 bg-muted rounded w-full mb-2"></div>
-                <div className="h-3 bg-muted rounded w-2/3"></div>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-muted rounded w-1/4"></div>
+                    <div className="h-4 bg-muted rounded w-1/2"></div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="h-6 bg-muted rounded w-16"></div>
+                    <div className="h-6 bg-muted rounded w-16"></div>
+                    <div className="h-6 bg-muted rounded w-20"></div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -366,7 +371,7 @@ export default function Selections() {
                 </div>
               )}
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-4">
                 {groupSelections.map((selection) => (
                   <Card 
                     key={selection.id} 
@@ -374,83 +379,98 @@ export default function Selections() {
                     data-testid={`card-selection-${selection.id}`}
                     onClick={() => setLocation(`/selections/${selection.id}`)}
                   >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1 flex-1">
-                          <CardTitle className="text-lg leading-tight">{selection.name}</CardTitle>
-                          {selection.category && groupBy !== 'category' && (
-                            <Badge variant="secondary" className="text-xs">
-                              {selection.category}
-                            </Badge>
+                    <CardContent className="p-6">
+                      <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                        {/* Main content - List format */}
+                        <div className="flex-1 space-y-3">
+                          {/* Title and main badges */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <CardTitle className="text-lg font-semibold">{selection.name}</CardTitle>
+                            {selection.category && groupBy !== 'category' && (
+                              <Badge variant="secondary" className="text-xs">
+                                {selection.category}
+                              </Badge>
+                            )}
+                            {selection.room && groupBy !== 'room' && (
+                              <Badge variant="outline" className="text-xs">
+                                {selection.room}
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          {/* Description */}
+                          {selection.description && (
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {selection.description}
+                            </p>
                           )}
-                          {selection.room && groupBy !== 'room' && (
-                            <Badge variant="outline" className="text-xs">
-                              {selection.room}
-                            </Badge>
-                          )}
+                          
+                          {/* Status and financial details */}
+                          <div className="flex items-center gap-4 flex-wrap">
+                            {groupBy !== 'status' && <StatusBadge status={selection.status} />}
+                            {selection.allowance && (
+                              <div className="flex items-center gap-1">
+                                <DollarSign className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm font-medium">${(selection.allowance / 100).toFixed(0)} allowance</span>
+                              </div>
+                            )}
+                            {!selection.clientCanChange && (
+                              <Badge variant="outline" className="text-xs">
+                                Fixed Selection
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          {/* Timeline information */}
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                            <div className="flex items-center gap-1">
+                              <CalendarIcon className="w-3 h-3" />
+                              <span>Created {format(new Date(selection.createdAt), "MMM d, yyyy")}</span>
+                            </div>
+                            {selection.deadline && (
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>Due {format(new Date(selection.deadline), "MMM d, yyyy")}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 shrink-0"
-                              data-testid={`button-selection-menu-${selection.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={(e) => {
-                              e.stopPropagation();
-                              handleEdit(selection);
-                            }}>
-                              <Edit3 className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={(e) => {
+                        
+                        {/* Actions */}
+                        <div className="flex lg:flex-col items-center lg:items-end gap-2">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 shrink-0"
+                                data-testid={`button-selection-menu-${selection.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => {
                                 e.stopPropagation();
-                                deleteSelectionMutation.mutate(selection.id);
-                              }}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {selection.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {selection.description}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        {groupBy !== 'status' && <StatusBadge status={selection.status} />}
-                        <div className="flex items-center gap-1">
-                          {selection.allowance && (
-                            <Badge variant="outline" className="text-xs">
-                              ${(selection.allowance / 100).toFixed(0)}
-                            </Badge>
-                          )}
-                          {!selection.clientCanChange && (
-                            <Badge variant="outline" className="text-xs">
-                              Fixed
-                            </Badge>
-                          )}
+                                handleEdit(selection);
+                              }}>
+                                <Edit3 className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteSelectionMutation.mutate(selection.id);
+                                }}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                      </div>
-                      
-                      <div className="text-xs text-muted-foreground">
-                        Created {format(new Date(selection.createdAt), "MMM d, yyyy")}
-                        {selection.deadline && (
-                          <span className="ml-2">• Due {format(new Date(selection.deadline), "MMM d")}</span>
-                        )}
                       </div>
                     </CardContent>
                   </Card>
