@@ -20,6 +20,7 @@ import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
 import EstimateDetail from "@/pages/EstimateDetail";
 import Selections from "@/pages/Selections";
+import SelectionDetail from "@/pages/SelectionDetail";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -51,6 +52,7 @@ function Router() {
       <Route path="/proposal" component={() => <ComingSoonPage section="proposal" />} />
       <Route path="/schedule" component={() => <ComingSoonPage section="schedule" />} />
       <Route path="/selections" component={Selections} />
+      <Route path="/selections/:id" component={SelectionDetail} />
       <Route path="/allowances" component={() => <ComingSoonPage section="allowances" />} />
       <Route path="/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
       <Route path="/variations" component={() => <ComingSoonPage section="variations" />} />

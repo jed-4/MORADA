@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,7 @@ export default function Selections() {
   const [isAddingSelection, setIsAddingSelection] = useState(false);
   const [editingSelection, setEditingSelection] = useState<Selection | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
 
@@ -285,7 +287,12 @@ export default function Selections() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSelections.map((selection) => (
-            <Card key={selection.id} className="hover-elevate" data-testid={`card-selection-${selection.id}`}>
+            <Card 
+              key={selection.id} 
+              className="hover-elevate cursor-pointer" 
+              data-testid={`card-selection-${selection.id}`}
+              onClick={() => setLocation(`/selections/${selection.id}`)}
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1 flex-1">
@@ -293,6 +300,11 @@ export default function Selections() {
                     {selection.category && (
                       <Badge variant="secondary" className="text-xs">
                         {selection.category}
+                      </Badge>
+                    )}
+                    {selection.room && (
+                      <Badge variant="outline" className="text-xs">
+                        {selection.room}
                       </Badge>
                     )}
                   </div>
@@ -303,17 +315,24 @@ export default function Selections() {
                         size="icon" 
                         className="h-8 w-8 shrink-0"
                         data-testid={`button-selection-menu-${selection.id}`}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(selection)}>
+                      <DropdownMenuItem onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(selection);
+                      }}>
                         <Edit3 className="w-4 h-4 mr-2" />
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem 
-                        onClick={() => deleteSelectionMutation.mutate(selection.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteSelectionMutation.mutate(selection.id);
+                        }}
                         className="text-destructive"
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
@@ -330,17 +349,27 @@ export default function Selections() {
                   </p>
                 )}
                 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <StatusBadge status={selection.status} />
-                  {!selection.clientCanChange && (
-                    <Badge variant="outline" className="text-xs">
-                      Fixed
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {selection.allowance && (
+                      <Badge variant="outline" className="text-xs">
+                        ${(selection.allowance / 100).toFixed(0)}
+                      </Badge>
+                    )}
+                    {!selection.clientCanChange && (
+                      <Badge variant="outline" className="text-xs">
+                        Fixed
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="text-xs text-muted-foreground">
                   Created {format(new Date(selection.createdAt), "MMM d, yyyy")}
+                  {selection.deadline && (
+                    <span className="ml-2">• Due {format(new Date(selection.deadline), "MMM d")}</span>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -498,7 +527,7 @@ export default function Selections() {
                         <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
-                            selected={field.value}
+                            selected={field.value || undefined}
                             onSelect={field.onChange}
                             disabled={(date) =>
                               date < new Date(new Date().setHours(0, 0, 0, 0))
