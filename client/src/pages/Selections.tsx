@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ import {
   AlertCircle,
   CalendarIcon,
   DollarSign,
+  Layers,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -56,6 +57,7 @@ export default function Selections() {
   const [isAddingSelection, setIsAddingSelection] = useState(false);
   const [editingSelection, setEditingSelection] = useState<Selection | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [groupBy, setGroupBy] = useState<'none' | 'category' | 'room' | 'status'>('none');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -205,6 +207,44 @@ export default function Selections() {
     selection.category?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Group selections based on selected grouping
+  const groupedSelections = React.useMemo(() => {
+    if (groupBy === 'none') {
+      return { 'All Selections': filteredSelections };
+    }
+
+    const groups: Record<string, Selection[]> = {};
+    
+    filteredSelections.forEach((selection) => {
+      let groupKey = 'Ungrouped';
+      
+      switch (groupBy) {
+        case 'category':
+          groupKey = selection.category || 'No Category';
+          break;
+        case 'room':
+          groupKey = selection.room || 'No Location';
+          break;
+        case 'status':
+          groupKey = selection.status?.charAt(0).toUpperCase() + selection.status?.slice(1) || 'No Status';
+          break;
+      }
+      
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(selection);
+    });
+    
+    // Sort groups by name
+    const sortedGroups: Record<string, Selection[]> = {};
+    Object.keys(groups).sort().forEach(key => {
+      sortedGroups[key] = groups[key];
+    });
+    
+    return sortedGroups;
+  }, [filteredSelections, groupBy]);
+
   // Status badge component
   const StatusBadge = ({ status }: { status: string }) => {
     const config = {
@@ -254,16 +294,33 @@ export default function Selections() {
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-        <Input
-          placeholder="Search selections..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-          data-testid="input-search-selections"
-        />
+      {/* Search and Grouping Controls */}
+      <div className="flex items-center gap-4">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <Input
+            placeholder="Search selections..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+            data-testid="input-search-selections"
+          />
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-muted-foreground" />
+          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
+            <SelectTrigger className="w-40" data-testid="select-group-by">
+              <SelectValue placeholder="Group by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No Grouping</SelectItem>
+              <SelectItem value="category">Category</SelectItem>
+              <SelectItem value="room">Location</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Selections Grid */}
@@ -297,94 +354,109 @@ export default function Selections() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredSelections.map((selection) => (
-            <Card 
-              key={selection.id} 
-              className="hover-elevate cursor-pointer" 
-              data-testid={`card-selection-${selection.id}`}
-              onClick={() => setLocation(`/selections/${selection.id}`)}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1 flex-1">
-                    <CardTitle className="text-lg leading-tight">{selection.name}</CardTitle>
-                    {selection.category && (
-                      <Badge variant="secondary" className="text-xs">
-                        {selection.category}
-                      </Badge>
-                    )}
-                    {selection.room && (
-                      <Badge variant="outline" className="text-xs">
-                        {selection.room}
-                      </Badge>
-                    )}
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 shrink-0"
-                        data-testid={`button-selection-menu-${selection.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(selection);
-                      }}>
-                        <Edit3 className="w-4 h-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteSelectionMutation.mutate(selection.id);
-                        }}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+        <div className="space-y-8">
+          {Object.entries(groupedSelections).map(([groupName, groupSelections]) => (
+            <div key={groupName} className="space-y-4">
+              {groupBy !== 'none' && (
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-foreground">{groupName}</h3>
+                  <Badge variant="secondary" className="text-xs">
+                    {groupSelections.length} {groupSelections.length === 1 ? 'selection' : 'selections'}
+                  </Badge>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {selection.description && (
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {selection.description}
-                  </p>
-                )}
-                
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <StatusBadge status={selection.status} />
-                  <div className="flex items-center gap-1">
-                    {selection.allowance && (
-                      <Badge variant="outline" className="text-xs">
-                        ${(selection.allowance / 100).toFixed(0)}
-                      </Badge>
-                    )}
-                    {!selection.clientCanChange && (
-                      <Badge variant="outline" className="text-xs">
-                        Fixed
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="text-xs text-muted-foreground">
-                  Created {format(new Date(selection.createdAt), "MMM d, yyyy")}
-                  {selection.deadline && (
-                    <span className="ml-2">• Due {format(new Date(selection.deadline), "MMM d")}</span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {groupSelections.map((selection) => (
+                  <Card 
+                    key={selection.id} 
+                    className="hover-elevate cursor-pointer" 
+                    data-testid={`card-selection-${selection.id}`}
+                    onClick={() => setLocation(`/selections/${selection.id}`)}
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1 flex-1">
+                          <CardTitle className="text-lg leading-tight">{selection.name}</CardTitle>
+                          {selection.category && groupBy !== 'category' && (
+                            <Badge variant="secondary" className="text-xs">
+                              {selection.category}
+                            </Badge>
+                          )}
+                          {selection.room && groupBy !== 'room' && (
+                            <Badge variant="outline" className="text-xs">
+                              {selection.room}
+                            </Badge>
+                          )}
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 shrink-0"
+                              data-testid={`button-selection-menu-${selection.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => {
+                              e.stopPropagation();
+                              handleEdit(selection);
+                            }}>
+                              <Edit3 className="w-4 h-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteSelectionMutation.mutate(selection.id);
+                              }}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {selection.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {selection.description}
+                        </p>
+                      )}
+                      
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        {groupBy !== 'status' && <StatusBadge status={selection.status} />}
+                        <div className="flex items-center gap-1">
+                          {selection.allowance && (
+                            <Badge variant="outline" className="text-xs">
+                              ${(selection.allowance / 100).toFixed(0)}
+                            </Badge>
+                          )}
+                          {!selection.clientCanChange && (
+                            <Badge variant="outline" className="text-xs">
+                              Fixed
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-muted-foreground">
+                        Created {format(new Date(selection.createdAt), "MMM d, yyyy")}
+                        {selection.deadline && (
+                          <span className="ml-2">• Due {format(new Date(selection.deadline), "MMM d")}</span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
