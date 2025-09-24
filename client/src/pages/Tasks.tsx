@@ -1,9 +1,9 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,6 +62,7 @@ export default function Tasks() {
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
   const [filters, setFilters] = useState<FilterState>({});
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
 
   // Mutation for creating new views
   const createViewMutation = useMutation({
@@ -203,6 +204,47 @@ export default function Tasks() {
 
   // Apply filters to tasks
   const filteredTasks = applyTaskFilters(allTasks, filters);
+
+  // Group tasks based on selected grouping (only for list view)
+  const groupedTasks = React.useMemo(() => {
+    if (groupBy === 'none' || activeTab !== 'list') {
+      return { 'All Tasks': effectivelyFilteredTasks };
+    }
+
+    const groups: Record<string, Task[]> = {};
+    
+    effectivelyFilteredTasks.forEach((task) => {
+      let groupKey = 'Ungrouped';
+      
+      switch (groupBy) {
+        case 'status':
+          groupKey = task.status?.charAt(0).toUpperCase() + task.status?.slice(1) || 'No Status';
+          break;
+        case 'priority':
+          groupKey = task.priority?.charAt(0).toUpperCase() + task.priority?.slice(1) || 'No Priority';
+          break;
+        case 'assignee':
+          groupKey = task.assignee || 'Unassigned';
+          break;
+        case 'tags':
+          groupKey = task.tags && task.tags.length > 0 ? task.tags[0] : 'No Tags';
+          break;
+      }
+      
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(task);
+    });
+    
+    // Sort groups by name
+    const sortedGroups: Record<string, Task[]> = {};
+    Object.keys(groups).sort().forEach(key => {
+      sortedGroups[key] = groups[key];
+    });
+    
+    return sortedGroups;
+  }, [effectivelyFilteredTasks, groupBy, activeTab]);
 
   // Get current view filters for custom views
   const getCurrentViewFilters = () => {
@@ -496,6 +538,32 @@ export default function Tasks() {
               </DropdownMenu>
             )}
 
+            {/* Group By - Only show for list view */}
+            {activeTab === 'list' && (
+              <>
+                <div className="border-l border-border/50 h-6" />
+                <div className="flex items-center gap-2">
+                  <Layers className="w-3 h-3 text-muted-foreground" />
+                  <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
+                    <SelectTrigger className="h-8 w-32 text-sm" data-testid="select-group-by">
+                      <SelectValue placeholder="Group by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Grouping</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                      <SelectItem value="priority">Priority</SelectItem>
+                      {filterOptions.availableAssignees.length > 0 && (
+                        <SelectItem value="assignee">Assignee</SelectItem>
+                      )}
+                      {filterOptions.availableTags.length > 0 && (
+                        <SelectItem value="tags">Tags</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
             {/* Clear All Filters */}
             {(filters.search || filters.status?.length || filters.priority?.length || filters.assignee?.length || filters.tags?.length) && (
               <Button
@@ -518,7 +586,13 @@ export default function Tasks() {
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <TaskList tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} />
+            <TaskList 
+              tasks={effectivelyFilteredTasks} 
+              groupedTasks={groupBy !== 'none' ? groupedTasks : undefined}
+              groupBy={groupBy}
+              isLoading={tasksLoading} 
+              onTaskClick={(task: Task) => setEditingTask(task)} 
+            />
           </TabsContent>
 
           <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">

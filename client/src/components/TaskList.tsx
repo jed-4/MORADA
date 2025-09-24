@@ -54,6 +54,8 @@ import SubtaskList from "@/components/SubtaskList";
 
 interface TaskListProps {
   tasks?: Task[];
+  groupedTasks?: Record<string, Task[]>;
+  groupBy?: 'none' | 'status' | 'priority' | 'assignee' | 'tags';
   isLoading?: boolean;
   filters?: Record<string, any>;
   columnConfig?: Record<string, any>;
@@ -124,7 +126,7 @@ function DraggableTableRow({
   );
 }
 
-export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, filters, columnConfig, onTaskClick }: TaskListProps) {
+export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLoading: propIsLoading, filters, columnConfig, onTaskClick }: TaskListProps) {
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'asc' });
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -460,15 +462,154 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                   </TableHeader>
                   
                   <TableBody>
-                    <SortableContext items={sortedTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
-                      {sortedTasks.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                            No tasks found
+                    {/* Render grouped tasks if grouping is enabled */}
+                    {groupedTasks && groupBy !== 'none' ? (
+                      Object.entries(groupedTasks).map(([groupName, groupTasks]) => [
+                        // Group header row
+                        <TableRow key={`group-${groupName}`} className="bg-muted/30">
+                          <TableCell colSpan={9} className="font-semibold py-3">
+                            <div className="flex items-center gap-2">
+                              <span>{groupName}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {groupTasks.length} {groupTasks.length === 1 ? 'task' : 'tasks'}
+                              </Badge>
+                            </div>
                           </TableCell>
-                        </TableRow>
-                      ) : (
-                        sortedTasks.flatMap((task) => [
+                        </TableRow>,
+                        // Group tasks
+                        ...groupTasks.flatMap((task) => [
+                          <DraggableTableRow key={task.id} task={task} canDrag={false}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedTasks.includes(task.id)}
+                                  onCheckedChange={() => toggleTaskSelection(task.id)}
+                                  data-testid={`select-task-${task.id}`}
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {/* Expand/Collapse Button for Parent Tasks */}
+                                  {!task.parentTaskId && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 p-0"
+                                      onClick={() => toggleTaskExpansion(task.id)}
+                                      data-testid={`button-toggle-task-${task.id}`}
+                                    >
+                                      {expandedTasks.has(task.id) ? (
+                                        <ChevronDown className="h-3 w-3" />
+                                      ) : (
+                                        <ChevronRight className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                  <span 
+                                    className="truncate cursor-pointer hover:text-primary" 
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      onTaskClick?.(task);
+                                    }}
+                                    data-testid={`task-title-${task.id}`}
+                                  >
+                                    {task.title}
+                                  </span>
+                                {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
+                                  <div className="flex gap-1">
+                                    {task.tags.slice(0, 2).map((tag, index) => (
+                                      <Badge key={index} variant="outline" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {task.tags.length > 2 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{task.tags.length - 2}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {groupBy !== 'status' && getStatusBadge(task.status || "todo")}
+                            </TableCell>
+                            <TableCell>
+                              {groupBy !== 'priority' && (
+                                <div className="flex items-center gap-2">
+                                  {getPriorityIcon(task.priority || "medium")}
+                                  <span className="capitalize text-sm">
+                                    {task.priority || "medium"}
+                                  </span>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {groupBy !== 'assignee' && (
+                                task.assigneeName ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                                      {task.assigneeName.split(" ").map(n => n[0]).join("").toUpperCase()}
+                                    </div>
+                                    <span className="text-sm">{task.assigneeName}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">Unassigned</span>
+                                )
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Calendar className="h-3 w-3 text-muted-foreground" />
+                                {formatDate(task.dueDate)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm text-muted-foreground">
+                                {task.projectId || "No Project"}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`task-menu-${task.id}`}>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem>Edit Task</DropdownMenuItem>
+                                  <DropdownMenuItem>Add Subtask</DropdownMenuItem>
+                                  <DropdownMenuItem>Duplicate</DropdownMenuItem>
+                                  <DropdownMenuItem className="text-red-600">
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </DraggableTableRow>,
+                          
+                          // Expandable Subtasks Row
+                          ...(!task.parentTaskId && expandedTasks.has(task.id) ? [
+                            <TableRow key={`${task.id}-subtasks`}>
+                              <TableCell colSpan={8} className="p-0 border-b-0">
+                                <div className="px-4 py-2 bg-muted/30">
+                                  <SubtaskList parentTask={task} compact={false} />
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ] : [])
+                        ])
+                      ]).flat()
+                    ) : (
+                      // Regular ungrouped tasks
+                      <SortableContext items={sortedTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
+                        {sortedTasks.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                              No tasks found
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          sortedTasks.flatMap((task) => [
                           <DraggableTableRow key={task.id} task={task} canDrag={sortConfig.key === null}>
                               <TableCell>
                                 <Checkbox
@@ -584,9 +725,10 @@ export default function TaskList({ tasks: propTasks, isLoading: propIsLoading, f
                               </TableCell>
                             </TableRow>
                           ] : [])
-                        ])
-                      )}
-                    </SortableContext>
+                          ])
+                        )}
+                      </SortableContext>
+                    )}
                   </TableBody>
                 </Table>
 
