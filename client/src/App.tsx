@@ -19,6 +19,7 @@ import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
 import EstimateDetail from "@/pages/EstimateDetail";
+import Selections from "@/pages/Selections";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -49,7 +50,7 @@ function Router() {
       <Route path="/rfi" component={() => <ComingSoonPage section="rfi" />} />
       <Route path="/proposal" component={() => <ComingSoonPage section="proposal" />} />
       <Route path="/schedule" component={() => <ComingSoonPage section="schedule" />} />
-      <Route path="/selections" component={() => <ComingSoonPage section="selections" />} />
+      <Route path="/selections" component={Selections} />
       <Route path="/allowances" component={() => <ComingSoonPage section="allowances" />} />
       <Route path="/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
       <Route path="/variations" component={() => <ComingSoonPage section="variations" />} />
