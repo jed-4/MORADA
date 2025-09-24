@@ -20,7 +20,9 @@ import {
   insertSelectionSchema, 
   type Selection, 
   type InsertSelection,
-  type FieldCategoryWithOptions
+  type FieldCategoryWithOptions,
+  type SelectionWithOptions,
+  type SelectionOption
 } from "@shared/schema";
 import {
   Dialog,
@@ -49,9 +51,115 @@ import {
   CalendarIcon,
   DollarSign,
   Layers,
+  ChevronDown,
+  Eye,
+  List,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+
+// Component for displaying selection options in dropdown
+interface SelectionOptionsDropdownProps {
+  selectionId: string;
+  onNavigate: (path: string) => void;
+}
+
+function SelectionOptionsDropdown({ selectionId, onNavigate }: SelectionOptionsDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  // Fetch selection with options when dropdown is opened
+  const { data: selectionWithOptions, isLoading } = useQuery<SelectionWithOptions>({
+    queryKey: ["/api/selections", selectionId, "with-options"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/selections/${selectionId}`);
+      return response.json();
+    },
+    enabled: isOpen, // Only fetch when dropdown is open
+  });
+
+  return (
+    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button 
+          variant="outline" 
+          size="sm"
+          className="h-8 gap-1"
+          data-testid={`button-view-options-${selectionId}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <List className="w-3 h-3" />
+          <span className="text-xs">Options</span>
+          <ChevronDown className="w-3 h-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        {isLoading ? (
+          <DropdownMenuItem disabled>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-muted border-t-primary rounded-full animate-spin" />
+              <span>Loading options...</span>
+            </div>
+          </DropdownMenuItem>
+        ) : selectionWithOptions?.options && selectionWithOptions.options.length > 0 ? (
+          <>
+            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b">
+              Available Options ({selectionWithOptions.options.length})
+            </div>
+            {selectionWithOptions.options.slice(0, 5).map((option) => (
+              <DropdownMenuItem 
+                key={option.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigate(`/selections/${selectionId}#option-${option.id}`);
+                }}
+                className="flex flex-col items-start gap-1 py-2"
+              >
+                <div className="font-medium text-sm">{option.name}</div>
+                {option.price !== null && option.price !== undefined && (
+                  <div className="text-xs text-muted-foreground">
+                    ${(option.price / 100).toFixed(2)}
+                  </div>
+                )}
+              </DropdownMenuItem>
+            ))}
+            {selectionWithOptions.options.length > 5 && (
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                onNavigate(`/selections/${selectionId}`);
+              }}>
+                <Eye className="w-4 h-4 mr-2" />
+                View all {selectionWithOptions.options.length} options
+              </DropdownMenuItem>
+            )}
+            <div className="border-t">
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                onNavigate(`/selections/${selectionId}#add-option`);
+              }}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add New Option
+              </DropdownMenuItem>
+            </div>
+          </>
+        ) : (
+          <>
+            <DropdownMenuItem disabled>
+              <Package className="w-4 h-4 mr-2 text-muted-foreground" />
+              No options available
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => {
+              e.stopPropagation();
+              onNavigate(`/selections/${selectionId}#add-option`);
+            }}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add First Option
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export default function Selections() {
   const [isAddingSelection, setIsAddingSelection] = useState(false);
@@ -438,6 +546,15 @@ export default function Selections() {
                         
                         {/* Actions */}
                         <div className="flex lg:flex-col items-center lg:items-end gap-2">
+                          {/* View Options Dropdown */}
+                          <SelectionOptionsDropdown 
+                            selectionId={selection.id} 
+                            onNavigate={(path) => {
+                              setLocation(path);
+                            }}
+                          />
+                          
+                          {/* Main Actions Dropdown */}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button 
@@ -451,6 +568,13 @@ export default function Selections() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => {
+                                e.stopPropagation();
+                                setLocation(`/selections/${selection.id}`);
+                              }}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={(e) => {
                                 e.stopPropagation();
                                 handleEdit(selection);
