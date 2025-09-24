@@ -10,6 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### September 24, 2025
+- **Authentication System Fix**: Resolved critical login bug that was preventing all user access due to incorrect password hashing - implemented proper bcrypt validation
+- **Color Theme Selection**: Conducted comprehensive color testing with 9 total theme variations including 5 pre-selected colors (Deep Forest Green, Charcoal Slate, Teal, Deep Purple, Olive Green) and 4 custom soft purple variations (Lavender, Muted Purple, Dusty Purple, Periwinkle)
+- **Final Theme**: Selected Periwinkle soft blue-purple theme (HSL: 240 50% 65%) providing calming, professional aesthetic with excellent light/dark mode support
+- **Live Theme System**: Implemented instant color switching across entire application including all UI components, buttons, links, and interactive elements
+
 ### September 23, 2025
 - **Widget-Based Dashboard**: Implemented complete widget-based dashboard system similar to Buildern's approach with drag & drop functionality using @dnd-kit library
 - **Project Settings UX**: Moved project settings access from sidebar to small header icon for better UX following Buildern's patterns
