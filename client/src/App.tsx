@@ -77,6 +77,16 @@ function Router() {
 
 function AuthWrapper() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  
+  // Sidebar width state - must be declared before any conditional returns
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('sidebar-width');
+    return saved || "20rem";
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-width', sidebarWidth);
+  }, [sidebarWidth]);
 
   // Check authentication status
   const { data: authCheck, isLoading } = useQuery({
@@ -116,15 +126,6 @@ function AuthWrapper() {
   }
 
   // Show main app if authenticated
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem('sidebar-width');
-    return saved || "20rem";
-  });
-
-  useEffect(() => {
-    localStorage.setItem('sidebar-width', sidebarWidth);
-  }, [sidebarWidth]);
-
   const style = {
     "--sidebar-width": sidebarWidth,
     "--sidebar-width-icon": "4rem",
