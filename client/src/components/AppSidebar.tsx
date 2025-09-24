@@ -91,9 +91,14 @@ const businessItems = [
   { title: "Team", url: "/business-team", icon: Users },
 ];
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  sidebarWidth?: number;
+}
+
+export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
   const [location] = useLocation();
   const isBusinessContext = location.startsWith('/business');
+  const showComingSoon = sidebarWidth >= 280; // Hide "coming soon" text when sidebar is narrow
   
   return (
     <Sidebar>
@@ -134,7 +139,7 @@ export function AppSidebar() {
                       <item.icon className="h-4 w-4" />
                       <div className="flex items-center justify-between w-full">
                         <span>{item.title}</span>
-                        {comingSoonItems.has(item.title) && (
+                        {showComingSoon && comingSoonItems.has(item.title) && (
                           <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
                         )}
                       </div>
@@ -196,7 +201,7 @@ export function AppSidebar() {
                     <MessageSquare className="h-4 w-4" />
                     <div className="flex items-center justify-between w-full">
                       <span>Messages</span>
-                      {comingSoonBusinessItems.has("Messages") && (
+                      {showComingSoon && comingSoonBusinessItems.has("Messages") && (
                         <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
                       )}
                     </div>
@@ -213,7 +218,7 @@ export function AppSidebar() {
                     <Calendar className="h-4 w-4" />
                     <div className="flex items-center justify-between w-full">
                       <span>Sick Days & Leave</span>
-                      {comingSoonBusinessItems.has("Sick Days & Leave") && (
+                      {showComingSoon && comingSoonBusinessItems.has("Sick Days & Leave") && (
                         <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
                       )}
                     </div>
@@ -231,7 +236,7 @@ export function AppSidebar() {
                       <item.icon className="h-4 w-4" />
                       <div className="flex items-center justify-between w-full">
                         <span>{item.title}</span>
-                        {comingSoonBusinessItems.has(item.title) && (
+                        {showComingSoon && comingSoonBusinessItems.has(item.title) && (
                           <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
                         )}
                       </div>

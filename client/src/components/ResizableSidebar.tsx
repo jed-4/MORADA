@@ -8,6 +8,7 @@ interface ResizableSidebarProps {
 
 export function ResizableSidebar({ onWidthChange, initialWidth }: ResizableSidebarProps) {
   const [isResizing, setIsResizing] = useState(false);
+  const [currentWidth, setCurrentWidth] = useState(() => parseInt(initialWidth));
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
@@ -30,6 +31,7 @@ export function ResizableSidebar({ onWidthChange, initialWidth }: ResizableSideb
         
         // Set minimum and maximum widths
         if (newWidth >= 200 && newWidth <= 500) {
+          setCurrentWidth(newWidth);
           onWidthChange(`${newWidth}px`);
         }
       }
@@ -50,7 +52,7 @@ export function ResizableSidebar({ onWidthChange, initialWidth }: ResizableSideb
 
   return (
     <div className="relative">
-      <AppSidebar />
+      <AppSidebar sidebarWidth={currentWidth} />
       
       {/* Resize handle - more prominent */}
       <div
