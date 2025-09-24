@@ -19,7 +19,12 @@ import {
   type CompanySettings, type InsertCompanySettings,
   type FieldCategory, type InsertFieldCategory,
   type FieldOption, type InsertFieldOption,
-  type FieldCategoryWithOptions
+  type FieldCategoryWithOptions,
+  type Selection, type InsertSelection,
+  type SelectionOption, type InsertSelectionOption,
+  type OptionAttachment, type InsertOptionAttachment,
+  type ClientSelection, type InsertClientSelection,
+  type SelectionWithOptions
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -188,6 +193,31 @@ export interface IStorage {
   updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined>;
   deleteFieldOption(id: string): Promise<boolean>;
   setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]>;
+
+  // Selections CRUD
+  getSelections(projectId: string): Promise<Selection[]>;
+  getSelection(id: string): Promise<Selection | undefined>;
+  getSelectionWithOptions(id: string): Promise<SelectionWithOptions | undefined>;
+  createSelection(selection: InsertSelection): Promise<Selection>;
+  updateSelection(id: string, selection: Partial<InsertSelection>): Promise<Selection | undefined>;
+  deleteSelection(id: string): Promise<boolean>;
+
+  // Selection Options CRUD
+  getSelectionOptions(selectionId: string): Promise<SelectionOption[]>;
+  getSelectionOption(id: string): Promise<SelectionOption | undefined>;
+  createSelectionOption(option: InsertSelectionOption): Promise<SelectionOption>;
+  updateSelectionOption(id: string, option: Partial<InsertSelectionOption>): Promise<SelectionOption | undefined>;
+  deleteSelectionOption(id: string): Promise<boolean>;
+
+  // Option Attachments CRUD
+  getOptionAttachments(optionId: string): Promise<OptionAttachment[]>;
+  createOptionAttachment(attachment: InsertOptionAttachment): Promise<OptionAttachment>;
+  deleteOptionAttachment(id: string): Promise<boolean>;
+
+  // Client Selections CRUD  
+  getClientSelections(projectId: string): Promise<ClientSelection[]>;
+  createClientSelection(selection: InsertClientSelection): Promise<ClientSelection>;
+  deleteClientSelection(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -209,6 +239,10 @@ export class MemStorage implements IStorage {
   private companySettings: CompanySettings | undefined;
   private fieldCategories: Map<string, FieldCategory>;
   private fieldOptions: Map<string, FieldOption>;
+  private selections: Map<string, Selection>;
+  private selectionOptions: Map<string, SelectionOption>;
+  private optionAttachments: Map<string, OptionAttachment>;
+  private clientSelections: Map<string, ClientSelection>;
 
   constructor() {
     this.users = new Map();
@@ -228,6 +262,10 @@ export class MemStorage implements IStorage {
     this.estimateGroups = new Map();
     this.fieldCategories = new Map();
     this.fieldOptions = new Map();
+    this.selections = new Map();
+    this.selectionOptions = new Map();
+    this.optionAttachments = new Map();
+    this.clientSelections = new Map();
     this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
     this.initializeDefaultFieldCategories();
@@ -2337,6 +2375,212 @@ export class MemStorage implements IStorage {
     });
     
     return newOptions;
+  }
+
+  // Selections CRUD
+  async getSelections(projectId: string): Promise<Selection[]> {
+    return Array.from(this.selections.values())
+      .filter(selection => selection.projectId === projectId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+
+  async getSelection(id: string): Promise<Selection | undefined> {
+    return this.selections.get(id);
+  }
+
+  async getSelectionWithOptions(id: string): Promise<SelectionWithOptions | undefined> {
+    const selection = this.selections.get(id);
+    if (!selection) return undefined;
+
+    // Get all options for this selection
+    const options = Array.from(this.selectionOptions.values())
+      .filter(option => option.selectionId === id)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    // Get attachments for each option
+    const optionsWithAttachments = options.map(option => {
+      const attachments = Array.from(this.optionAttachments.values())
+        .filter(attachment => attachment.optionId === option.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      
+      return { ...option, attachments };
+    });
+
+    // Get client selection for this selection
+    const clientSelection = Array.from(this.clientSelections.values())
+      .find(cs => cs.selectionId === id);
+
+    return {
+      ...selection,
+      options: optionsWithAttachments,
+      clientSelection
+    };
+  }
+
+  async createSelection(insertSelection: InsertSelection): Promise<Selection> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const selection: Selection = {
+      ...insertSelection,
+      id,
+      status: insertSelection.status || "draft",
+      clientCanChange: insertSelection.clientCanChange !== false,
+      clientCanSeePrice: insertSelection.clientCanSeePrice || false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    this.selections.set(id, selection);
+    return selection;
+  }
+
+  async updateSelection(id: string, updates: Partial<InsertSelection>): Promise<Selection | undefined> {
+    const existing = this.selections.get(id);
+    if (!existing) return undefined;
+    
+    const updated: Selection = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
+    this.selections.set(id, updated);
+    return updated;
+  }
+
+  async deleteSelection(id: string): Promise<boolean> {
+    // Also delete all options and their attachments for this selection
+    const options = Array.from(this.selectionOptions.values())
+      .filter(opt => opt.selectionId === id);
+    
+    options.forEach(option => {
+      // Delete attachments for this option
+      const attachments = Array.from(this.optionAttachments.values())
+        .filter(attachment => attachment.optionId === option.id);
+      attachments.forEach(attachment => this.optionAttachments.delete(attachment.id));
+      
+      // Delete the option
+      this.selectionOptions.delete(option.id);
+    });
+
+    // Delete client selections for this selection
+    const clientSelections = Array.from(this.clientSelections.values())
+      .filter(cs => cs.selectionId === id);
+    clientSelections.forEach(cs => this.clientSelections.delete(cs.id));
+    
+    return this.selections.delete(id);
+  }
+
+  // Selection Options CRUD
+  async getSelectionOptions(selectionId: string): Promise<SelectionOption[]> {
+    return Array.from(this.selectionOptions.values())
+      .filter(option => option.selectionId === selectionId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  async getSelectionOption(id: string): Promise<SelectionOption | undefined> {
+    return this.selectionOptions.get(id);
+  }
+
+  async createSelectionOption(insertOption: InsertSelectionOption): Promise<SelectionOption> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const option: SelectionOption = {
+      ...insertOption,
+      id,
+      quantity: insertOption.quantity || 1,
+      unitType: insertOption.unitType || "ea",
+      visibleToClient: insertOption.visibleToClient !== false,
+      isSelectedByClient: insertOption.isSelectedByClient || false,
+      sortOrder: insertOption.sortOrder || 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    this.selectionOptions.set(id, option);
+    return option;
+  }
+
+  async updateSelectionOption(id: string, updates: Partial<InsertSelectionOption>): Promise<SelectionOption | undefined> {
+    const existing = this.selectionOptions.get(id);
+    if (!existing) return undefined;
+    
+    const updated: SelectionOption = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
+    this.selectionOptions.set(id, updated);
+    return updated;
+  }
+
+  async deleteSelectionOption(id: string): Promise<boolean> {
+    // Also delete all attachments for this option
+    const attachments = Array.from(this.optionAttachments.values())
+      .filter(attachment => attachment.optionId === id);
+    
+    attachments.forEach(attachment => this.optionAttachments.delete(attachment.id));
+
+    // Delete client selections for this option
+    const clientSelections = Array.from(this.clientSelections.values())
+      .filter(cs => cs.optionId === id);
+    clientSelections.forEach(cs => this.clientSelections.delete(cs.id));
+    
+    return this.selectionOptions.delete(id);
+  }
+
+  // Option Attachments CRUD
+  async getOptionAttachments(optionId: string): Promise<OptionAttachment[]> {
+    return Array.from(this.optionAttachments.values())
+      .filter(attachment => attachment.optionId === optionId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  async createOptionAttachment(insertAttachment: InsertOptionAttachment): Promise<OptionAttachment> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const attachment: OptionAttachment = {
+      ...insertAttachment,
+      id,
+      sortOrder: insertAttachment.sortOrder || 0,
+      createdAt: now,
+    };
+    
+    this.optionAttachments.set(id, attachment);
+    return attachment;
+  }
+
+  async deleteOptionAttachment(id: string): Promise<boolean> {
+    return this.optionAttachments.delete(id);
+  }
+
+  // Client Selections CRUD  
+  async getClientSelections(projectId: string): Promise<ClientSelection[]> {
+    return Array.from(this.clientSelections.values())
+      .filter(cs => cs.projectId === projectId)
+      .sort((a, b) => a.selectedAt.getTime() - b.selectedAt.getTime());
+  }
+
+  async createClientSelection(insertClientSelection: InsertClientSelection): Promise<ClientSelection> {
+    const id = randomUUID();
+    const now = new Date();
+    
+    const clientSelection: ClientSelection = {
+      ...insertClientSelection,
+      id,
+      selectedAt: now,
+    };
+    
+    this.clientSelections.set(id, clientSelection);
+    return clientSelection;
+  }
+
+  async deleteClientSelection(id: string): Promise<boolean> {
+    return this.clientSelections.delete(id);
   }
 }
 

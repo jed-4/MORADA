@@ -20,7 +20,11 @@ import {
   insertUserInvitationSchema,
   insertCompanySettingsSchema,
   insertFieldCategorySchema,
-  insertFieldOptionSchema
+  insertFieldOptionSchema,
+  insertSelectionSchema,
+  insertSelectionOptionSchema,
+  insertOptionAttachmentSchema,
+  insertClientSelectionSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -1584,6 +1588,174 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to accept invitation" });
+    }
+  });
+
+  // Selections API Routes
+  app.get("/api/selections", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      const selections = await storage.getSelections(projectId as string);
+      res.json(selections);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch selections" });
+    }
+  });
+
+  app.get("/api/selections/:id", async (req, res) => {
+    try {
+      const selection = await storage.getSelectionWithOptions(req.params.id);
+      if (!selection) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      res.json(selection);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch selection" });
+    }
+  });
+
+  app.post("/api/selections", async (req, res) => {
+    try {
+      const validationResult = insertSelectionSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const selection = await storage.createSelection(validationResult.data);
+      res.status(201).json(selection);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create selection" });
+    }
+  });
+
+  app.patch("/api/selections/:id", async (req, res) => {
+    try {
+      const validationResult = insertSelectionSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const selection = await storage.updateSelection(req.params.id, validationResult.data);
+      if (!selection) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      res.json(selection);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update selection" });
+    }
+  });
+
+  app.delete("/api/selections/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteSelection(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Selection not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete selection" });
+    }
+  });
+
+  // Selection Options API Routes
+  app.get("/api/selections/:selectionId/options", async (req, res) => {
+    try {
+      const options = await storage.getSelectionOptions(req.params.selectionId);
+      res.json(options);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch selection options" });
+    }
+  });
+
+  app.post("/api/selections/:selectionId/options", async (req, res) => {
+    try {
+      const validationResult = insertSelectionOptionSchema.safeParse({
+        ...req.body,
+        selectionId: req.params.selectionId
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const option = await storage.createSelectionOption(validationResult.data);
+      res.status(201).json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create selection option" });
+    }
+  });
+
+  app.patch("/api/selection-options/:id", async (req, res) => {
+    try {
+      const validationResult = insertSelectionOptionSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const option = await storage.updateSelectionOption(req.params.id, validationResult.data);
+      if (!option) {
+        return res.status(404).json({ error: "Selection option not found" });
+      }
+      res.json(option);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update selection option" });
+    }
+  });
+
+  app.delete("/api/selection-options/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteSelectionOption(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Selection option not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete selection option" });
+    }
+  });
+
+  // Client Selections API Routes
+  app.get("/api/client-selections", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      const clientSelections = await storage.getClientSelections(projectId as string);
+      res.json(clientSelections);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch client selections" });
+    }
+  });
+
+  app.post("/api/client-selections", async (req, res) => {
+    try {
+      const validationResult = insertClientSelectionSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const clientSelection = await storage.createClientSelection(validationResult.data);
+      res.status(201).json(clientSelection);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create client selection" });
     }
   });
 
