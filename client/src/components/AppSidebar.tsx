@@ -40,6 +40,15 @@ import {
 import { Link, useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 
+// Coming soon items that should have strikeout styling
+const comingSoonItems = new Set([
+  "Messages", "Notes", "Schedule", "Take off", "Estimates", 
+  "Request For Quotes", "Request For Information", "Proposal", 
+  "Selections", "Allowances", "Purchase Orders", "Variations", 
+  "Bills", "Client Invoices", "Site Diary", "Timesheets", 
+  "Budget", "Files", "Team"
+]);
+
 // Project sections
 const projectItems = [
   { title: "Overview", url: "/", icon: Home },
@@ -65,6 +74,12 @@ const projectItems = [
   { title: "Files", url: "/files", icon: FolderOpen },
   { title: "Team", url: "/team", icon: Users },
 ];
+
+// Coming soon business items
+const comingSoonBusinessItems = new Set([
+  "Templates", "Settings", "Checklists", "Emails", "CRM", "Team",
+  "Messages", "Sick Days & Leave"
+]);
 
 // Business sections
 const businessItems = [
@@ -117,7 +132,9 @@ export function AppSidebar() {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <span className={comingSoonItems.has(item.title) ? "line-through" : ""}>
+                        {item.title}
+                      </span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -174,7 +191,9 @@ export function AppSidebar() {
                 >
                   <Link href="/business/messages">
                     <MessageSquare className="h-4 w-4" />
-                    <span>Messages</span>
+                    <span className={comingSoonBusinessItems.has("Messages") ? "line-through" : ""}>
+                      Messages
+                    </span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -186,7 +205,9 @@ export function AppSidebar() {
                 >
                   <Link href="/business/leave">
                     <Calendar className="h-4 w-4" />
-                    <span>Sick Days & Leave</span>
+                    <span className={comingSoonBusinessItems.has("Sick Days & Leave") ? "line-through" : ""}>
+                      Sick Days & Leave
+                    </span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -199,7 +220,9 @@ export function AppSidebar() {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <span className={comingSoonBusinessItems.has(item.title) ? "line-through" : ""}>
+                        {item.title}
+                      </span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
