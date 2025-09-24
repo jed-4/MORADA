@@ -234,13 +234,13 @@ export default function CustomizableProjectOverview() {
   };
 
   return (
-    <div className="p-6 space-y-6" data-testid="customizable-project-overview">
+    <div className="p-6 space-y-6 page-transition" data-testid="customizable-project-overview">
       {/* Project Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">{currentProject.name}</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">{currentProject.name}</h1>
+            <p className="text-base text-muted-foreground">
               {currentProject.jobNumber && currentProject.projectType
                 ? `${currentProject.jobNumber} • ${currentProject.projectType}`
                 : currentProject.jobNumber
@@ -311,7 +311,7 @@ export default function CustomizableProjectOverview() {
               variant="ghost" 
               size="icon" 
               onClick={() => navigate('/project-settings')}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground btn-enhanced focus-enhanced"
               data-testid="button-project-settings"
             >
               <Settings className="h-5 w-5" />
@@ -342,15 +342,15 @@ export default function CustomizableProjectOverview() {
             
             {widgets.length === 0 && (
               <div className="col-span-full">
-                <Card className="border-dashed">
+                <Card className="border-dashed card-enhanced">
                   <CardContent className="p-8 text-center">
                     <div className="space-y-3">
                       <div className="text-muted-foreground">
                         <Settings className="h-12 w-12 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium">Customize Your Dashboard</h3>
-                        <p className="text-sm">Add widgets to create your personalized project overview</p>
+                        <h3 className="text-lg font-semibold tracking-tight">Customize Your Dashboard</h3>
+                        <p className="text-base">Add widgets to create your personalized project overview</p>
                       </div>
-                      <Button onClick={() => setIsAddingWidget(true)}>
+                      <Button onClick={() => setIsAddingWidget(true)} className="btn-enhanced">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Your First Widget
                       </Button>

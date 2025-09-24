@@ -506,11 +506,11 @@ export default function Settings() {
   );
 
   return (
-    <div className="flex h-screen bg-background" data-testid="settings-page">
+    <div className="flex h-screen bg-background page-transition" data-testid="settings-page">
       {/* Left Sidebar */}
       <div className="w-64 border-r bg-card">
         <div className="p-6">
-          <h1 className="text-2xl font-bold mb-6">Company Settings</h1>
+          <h1 className="text-2xl font-bold tracking-tight mb-6">Company Settings</h1>
           <nav className="space-y-1">
             {SETTINGS_CATEGORIES.map((category) => {
               const Icon = category.icon;
@@ -520,7 +520,7 @@ export default function Settings() {
                 <button
                   key={category.id}
                   onClick={() => setActiveSection(category.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors hover-elevate ${
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left btn-enhanced focus-enhanced ${
                     isActive 
                       ? "bg-primary text-primary-foreground" 
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -1289,8 +1289,8 @@ function FieldCategoriesSection() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold" data-testid="heading-field-settings">Field Settings</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-2xl font-semibold tracking-tight" data-testid="heading-field-settings">Field Settings</h2>
+          <p className="text-base text-muted-foreground">
             Manage predefined field categories and their options
           </p>
         </div>
