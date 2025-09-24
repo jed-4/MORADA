@@ -7,7 +7,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
-import { AppSidebar } from "@/components/AppSidebar";
+import { ResizableSidebar } from "@/components/ResizableSidebar";
 import Dashboard from "@/pages/Dashboard";
 import Tasks from "@/pages/Tasks";
 import Calendar from "@/pages/Calendar";
@@ -116,8 +116,17 @@ function AuthWrapper() {
   }
 
   // Show main app if authenticated
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('sidebar-width');
+    return saved || "20rem";
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-width', sidebarWidth);
+  }, [sidebarWidth]);
+
   const style = {
-    "--sidebar-width": "20rem",
+    "--sidebar-width": sidebarWidth,
     "--sidebar-width-icon": "4rem",
   };
 
@@ -127,7 +136,10 @@ function AuthWrapper() {
         <ProjectProvider>
           <SidebarProvider style={style as React.CSSProperties}>
           <div className="flex h-screen w-full">
-            <AppSidebar />
+            <ResizableSidebar 
+              onWidthChange={setSidebarWidth}
+              initialWidth={sidebarWidth}
+            />
             <div className="flex flex-col flex-1">
               <Header />
               <main className="flex-1 overflow-auto">

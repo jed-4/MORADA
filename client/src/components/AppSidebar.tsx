@@ -132,9 +132,12 @@ export function AppSidebar() {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <span className={comingSoonItems.has(item.title) ? "line-through" : ""}>
-                        {item.title}
-                      </span>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{item.title}</span>
+                        {comingSoonItems.has(item.title) && (
+                          <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
+                        )}
+                      </div>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -191,9 +194,12 @@ export function AppSidebar() {
                 >
                   <Link href="/business/messages">
                     <MessageSquare className="h-4 w-4" />
-                    <span className={comingSoonBusinessItems.has("Messages") ? "line-through" : ""}>
-                      Messages
-                    </span>
+                    <div className="flex items-center justify-between w-full">
+                      <span>Messages</span>
+                      {comingSoonBusinessItems.has("Messages") && (
+                        <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
+                      )}
+                    </div>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -205,9 +211,12 @@ export function AppSidebar() {
                 >
                   <Link href="/business/leave">
                     <Calendar className="h-4 w-4" />
-                    <span className={comingSoonBusinessItems.has("Sick Days & Leave") ? "line-through" : ""}>
-                      Sick Days & Leave
-                    </span>
+                    <div className="flex items-center justify-between w-full">
+                      <span>Sick Days & Leave</span>
+                      {comingSoonBusinessItems.has("Sick Days & Leave") && (
+                        <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
+                      )}
+                    </div>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -220,9 +229,12 @@ export function AppSidebar() {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <span className={comingSoonBusinessItems.has(item.title) ? "line-through" : ""}>
-                        {item.title}
-                      </span>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{item.title}</span>
+                        {comingSoonBusinessItems.has(item.title) && (
+                          <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
+                        )}
+                      </div>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
