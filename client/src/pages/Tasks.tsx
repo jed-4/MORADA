@@ -61,8 +61,8 @@ export default function Tasks() {
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
-  const [filters, setFilters] = useState<FilterState>({});
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
+  const [filters, setFilters] = useState<FilterState>({});
 
   // Mutation for creating new views
   const createViewMutation = useMutation({
@@ -146,7 +146,7 @@ export default function Tasks() {
     if (!currentProject || !newViewName.trim()) return;
     createViewMutation.mutate({
       name: newViewName.trim(),
-      viewType: newViewType,
+      viewType: newViewType === "calendar" ? "kanban" : newViewType,
       projectId: currentProject.id,
     });
   };
