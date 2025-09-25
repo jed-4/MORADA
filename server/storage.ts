@@ -2691,6 +2691,403 @@ export class MemStorage implements IStorage {
 
 // Database-backed storage implementation
 export class DbStorage implements IStorage {
+  private initialized = false;
+
+  // Public initialization method that can be awaited
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+    
+    try {
+      await this.initializeDefaultData();
+      this.initialized = true;
+    } catch (error) {
+      console.error('Failed to initialize DbStorage:', error);
+      throw error;
+    }
+  }
+
+  // Initialize default data - ensure all required defaults exist
+  private async initializeDefaultData(): Promise<void> {
+    // Always ensure all required categories exist (idempotent)
+    await this.ensureRequiredCategoriesExist();
+    
+    // Always ensure all required field options exist (idempotent)
+    await this.ensureAllRequiredOptionsExist();
+
+    // Always ensure required custom fields exist (idempotent)
+    await this.ensureRequiredCustomFieldsExist();
+  }
+
+  // Ensure all required categories exist (upsert by key)
+  private async ensureRequiredCategoriesExist(): Promise<void> {
+    const now = new Date();
+    
+    const requiredCategories = [
+      {
+        id: 'cat-task-status',
+        key: 'task.status', 
+        label: 'Task Statuses',
+        entity: 'task',
+        description: 'Status options for tasks',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 1,
+      },
+      {
+        id: 'cat-task-priority',
+        key: 'task.priority',
+        label: 'Task Priorities', 
+        entity: 'task',
+        description: 'Priority levels for tasks',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 2,
+      },
+      {
+        id: 'cat-trade-types',
+        key: 'task.trade',
+        label: 'Trade Categories',
+        entity: 'task',
+        description: 'Construction trade categories',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 3,
+      },
+      {
+        id: 'cat-selection-categories',
+        key: 'selection.category',
+        label: 'Selection Categories',
+        entity: 'selection',
+        description: 'Categories for selections',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 4,
+      },
+      {
+        id: 'cat-location-rooms',
+        key: 'selection.room',
+        label: 'Locations/Rooms',
+        entity: 'selection',
+        description: 'Room/location options for selections',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 5,
+      },
+    ];
+
+    for (const categoryData of requiredCategories) {
+      // Check if category exists by key
+      const existing = await db.select().from(schema.fieldCategories)
+        .where(eq(schema.fieldCategories.key, categoryData.key))
+        .limit(1);
+        
+      if (existing.length === 0) {
+        // Category doesn't exist, insert it
+        await db.insert(schema.fieldCategories).values({
+          ...categoryData,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
+  // Ensure all required field options exist for all categories (upsert missing ones)
+  private async ensureAllRequiredOptionsExist(): Promise<void> {
+    const allCategories = await db.select().from(schema.fieldCategories);
+    const now = new Date();
+    
+    for (const category of allCategories) {
+      await this.ensureOptionsForCategory(category, now);
+    }
+  }
+
+  private async ensureOptionsForCategory(category: any, now: Date): Promise<void> {
+    const requiredOptions = this.getRequiredOptionsForCategory(category.key, category.id);
+    
+    for (const optionData of requiredOptions) {
+      // Check if this specific option exists by key within this category
+      const existing = await db.select().from(schema.fieldOptions)
+        .where(and(
+          eq(schema.fieldOptions.categoryId, category.id),
+          eq(schema.fieldOptions.key, optionData.key)
+        ))
+        .limit(1);
+        
+      if (existing.length === 0) {
+        // Option doesn't exist, insert it
+        await db.insert(schema.fieldOptions).values({
+          ...optionData,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
+  private getRequiredOptionsForCategory(categoryKey: string, categoryId: string): any[] {
+    switch (categoryKey) {
+      case 'task.status':
+        return [
+          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId, key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+        ];
+      case 'task.priority':
+        return [
+          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+          { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+        ];
+      case 'task.trade':
+        return [
+          { id: 'opt-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 1 },
+          { id: 'opt-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 2 },
+          { id: 'opt-trade-painting', categoryId, key: 'painting', name: 'Painting & Decorating', color: '#7C3AED', isDefault: false, sortOrder: 3 },
+          { id: 'opt-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 4 },
+        ];
+      case 'selection.category':
+        return [
+          { id: 'opt-sel-fixtures', categoryId, key: 'fixtures', name: 'Fixtures & Fittings', color: '#8B5CF6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-sel-finishes', categoryId, key: 'finishes', name: 'Finishes', color: '#EC4899', isDefault: false, sortOrder: 1 },
+          { id: 'opt-sel-appliances', categoryId, key: 'appliances', name: 'Appliances', color: '#F59E0B', isDefault: false, sortOrder: 2 },
+        ];
+      case 'selection.room':
+        return [
+          { id: 'opt-room-kitchen', categoryId, key: 'kitchen', name: 'Kitchen', color: '#059669', isDefault: true, sortOrder: 0 },
+          { id: 'opt-room-living', categoryId, key: 'living', name: 'Living Room', color: '#DC2626', isDefault: false, sortOrder: 1 },
+          { id: 'opt-room-master', categoryId, key: 'master-bedroom', name: 'Master Bedroom', color: '#7C3AED', isDefault: false, sortOrder: 2 },
+          { id: 'opt-room-bathroom', categoryId, key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
+          { id: 'opt-room-ensuite', categoryId, key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
+          { id: 'opt-room-laundry', categoryId, key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  // Ensure required custom fields exist
+  private async ensureRequiredCustomFieldsExist(): Promise<void> {
+    const now = new Date();
+    
+    // Check if the specific 'Task Custom Field 1' exists
+    const existing = await db.select().from(schema.customFieldDefs)
+      .where(eq(schema.customFieldDefs.key, 'task_custom_field_1'))
+      .limit(1);
+      
+    if (existing.length === 0) {
+      await db.insert(schema.customFieldDefs).values({
+        id: 'cfd-task-custom-1',
+        key: 'task_custom_field_1',
+        label: 'Task Custom Field 1',
+        type: 'text',
+        required: false,
+        order: 1,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  private async seedOptionsForCategory(category: any, now: Date): Promise<void> {
+    let optionsToInsert: any[] = [];
+
+    switch (category.key) {
+      case 'task.status':
+        optionsToInsert = [
+          { id: 'opt-status-todo', categoryId: category.id, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId: category.id, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId: category.id, key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId: category.id, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+        ];
+        break;
+      case 'task.priority':
+        optionsToInsert = [
+          { id: 'opt-priority-low', categoryId: category.id, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId: category.id, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+          { id: 'opt-priority-high', categoryId: category.id, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+        ];
+        break;
+      case 'task.trade':
+        optionsToInsert = [
+          { id: 'opt-trade-electrical', categoryId: category.id, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-trade-plumbing', categoryId: category.id, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 1 },
+          { id: 'opt-trade-carpentry', categoryId: category.id, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 2 },
+          { id: 'opt-trade-painting', categoryId: category.id, key: 'painting', name: 'Painting & Decorating', color: '#7C3AED', isDefault: false, sortOrder: 3 },
+          { id: 'opt-trade-flooring', categoryId: category.id, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 4 },
+        ];
+        break;
+      case 'selection.category':
+        optionsToInsert = [
+          { id: 'opt-sel-fixtures', categoryId: category.id, key: 'fixtures', name: 'Fixtures & Fittings', color: '#8B5CF6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-sel-finishes', categoryId: category.id, key: 'finishes', name: 'Finishes', color: '#EC4899', isDefault: false, sortOrder: 1 },
+          { id: 'opt-sel-appliances', categoryId: category.id, key: 'appliances', name: 'Appliances', color: '#F59E0B', isDefault: false, sortOrder: 2 },
+        ];
+        break;
+      case 'selection.room':
+        optionsToInsert = [
+          { id: 'opt-room-kitchen', categoryId: category.id, key: 'kitchen', name: 'Kitchen', color: '#059669', isDefault: true, sortOrder: 0 },
+          { id: 'opt-room-living', categoryId: category.id, key: 'living', name: 'Living Room', color: '#DC2626', isDefault: false, sortOrder: 1 },
+          { id: 'opt-room-master', categoryId: category.id, key: 'master-bedroom', name: 'Master Bedroom', color: '#7C3AED', isDefault: false, sortOrder: 2 },
+          { id: 'opt-room-bathroom', categoryId: category.id, key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
+          { id: 'opt-room-ensuite', categoryId: category.id, key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
+          { id: 'opt-room-laundry', categoryId: category.id, key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+        ];
+        break;
+    }
+
+    if (optionsToInsert.length > 0) {
+      const optionsWithTimestamps = optionsToInsert.map(option => ({
+        ...option,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      
+      await db.insert(schema.fieldOptions).values(optionsWithTimestamps);
+    }
+  }
+
+  private async seedDefaultFieldCategories(): Promise<void> {
+    const now = new Date();
+    
+    const defaultCategories = [
+      {
+        id: 'cat-task-status',
+        key: 'task.status', 
+        label: 'Task Statuses',
+        entity: 'task',
+        description: 'Status options for tasks',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'cat-task-priority',
+        key: 'task.priority',
+        label: 'Task Priorities', 
+        entity: 'task',
+        description: 'Priority levels for tasks',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 2,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'cat-trade-types',
+        key: 'task.trade',
+        label: 'Trade Categories',
+        entity: 'task',
+        description: 'Construction trade categories',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 3,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'cat-selection-categories',
+        key: 'selection.category',
+        label: 'Selection Categories',
+        entity: 'selection',
+        description: 'Categories for selections',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 4,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'cat-location-rooms',
+        key: 'selection.room',
+        label: 'Locations/Rooms',
+        entity: 'selection',
+        description: 'Room/location options for selections',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 5,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    await db.insert(schema.fieldCategories).values(defaultCategories);
+    
+    // Now seed the field options for each category
+    await this.seedDefaultFieldOptions(now);
+  }
+
+  private async seedDefaultFieldOptions(now: Date): Promise<void> {
+    const fieldOptions = [
+      // Task Status Options
+      { id: 'opt-status-todo', categoryId: 'cat-task-status', key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
+      { id: 'opt-status-progress', categoryId: 'cat-task-status', key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+      { id: 'opt-status-done', categoryId: 'cat-task-status', key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
+      { id: 'opt-status-hold', categoryId: 'cat-task-status', key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+      
+      // Task Priority Options
+      { id: 'opt-priority-low', categoryId: 'cat-task-priority', key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
+      { id: 'opt-priority-medium', categoryId: 'cat-task-priority', key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+      { id: 'opt-priority-high', categoryId: 'cat-task-priority', key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+      
+      // Trade Categories
+      { id: 'opt-trade-electrical', categoryId: 'cat-trade-types', key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+      { id: 'opt-trade-plumbing', categoryId: 'cat-trade-types', key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 1 },
+      { id: 'opt-trade-carpentry', categoryId: 'cat-trade-types', key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 2 },
+      { id: 'opt-trade-painting', categoryId: 'cat-trade-types', key: 'painting', name: 'Painting & Decorating', color: '#7C3AED', isDefault: false, sortOrder: 3 },
+      { id: 'opt-trade-flooring', categoryId: 'cat-trade-types', key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 4 },
+      
+      // Selection Categories
+      { id: 'opt-sel-fixtures', categoryId: 'cat-selection-categories', key: 'fixtures', name: 'Fixtures & Fittings', color: '#8B5CF6', isDefault: true, sortOrder: 0 },
+      { id: 'opt-sel-finishes', categoryId: 'cat-selection-categories', key: 'finishes', name: 'Finishes', color: '#EC4899', isDefault: false, sortOrder: 1 },
+      { id: 'opt-sel-appliances', categoryId: 'cat-selection-categories', key: 'appliances', name: 'Appliances', color: '#F59E0B', isDefault: false, sortOrder: 2 },
+      
+      // Locations/Rooms
+      { id: 'opt-room-kitchen', categoryId: 'cat-location-rooms', key: 'kitchen', name: 'Kitchen', color: '#059669', isDefault: true, sortOrder: 0 },
+      { id: 'opt-room-living', categoryId: 'cat-location-rooms', key: 'living', name: 'Living Room', color: '#DC2626', isDefault: false, sortOrder: 1 },
+      { id: 'opt-room-master', categoryId: 'cat-location-rooms', key: 'master-bedroom', name: 'Master Bedroom', color: '#7C3AED', isDefault: false, sortOrder: 2 },
+      { id: 'opt-room-bathroom', categoryId: 'cat-location-rooms', key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
+      { id: 'opt-room-ensuite', categoryId: 'cat-location-rooms', key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
+      { id: 'opt-room-laundry', categoryId: 'cat-location-rooms', key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+    ];
+
+    const fieldOptionsWithTimestamps = fieldOptions.map(option => ({
+      ...option,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    await db.insert(schema.fieldOptions).values(fieldOptionsWithTimestamps);
+  }
+
+  private async seedDefaultCustomFields(): Promise<void> {
+    const now = new Date();
+    
+    const defaultCustomFields = [
+      {
+        id: 'cfd-task-custom-1',
+        key: 'task_custom_field_1',
+        label: 'Task Custom Field 1',
+        type: 'text',
+        required: false,
+        order: 1,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    await db.insert(schema.customFieldDefs).values(defaultCustomFields);
+  }
+
   // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
@@ -2982,14 +3379,47 @@ export class DbStorage implements IStorage {
   }
   async getCompanySettings(): Promise<CompanySettings | undefined> { return undefined; }
   async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> { return undefined; }
-  async getFieldCategories(): Promise<FieldCategory[]> { return []; }
-  async getFieldCategory(id: string): Promise<FieldCategory | undefined> { return undefined; }
-  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> { return undefined; }
-  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> { return undefined; }
+  async getFieldCategories(): Promise<FieldCategory[]> {
+    return await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.isActive, true))
+      .orderBy(schema.fieldCategories.sortOrder);
+  }
+  
+  async getFieldCategory(id: string): Promise<FieldCategory | undefined> {
+    const [category] = await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.id, id))
+      .limit(1);
+    return category;
+  }
+  
+  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> {
+    const [category] = await db.select().from(schema.fieldCategories)
+      .where(eq(schema.fieldCategories.key, key))
+      .limit(1);
+    return category;
+  }
+  
+  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> {
+    const category = await this.getFieldCategoryByKey(key);
+    if (!category) return undefined;
+
+    const options = await this.getFieldOptions(category.id);
+    return {
+      ...category,
+      options
+    };
+  }
   async createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory> { throw new Error("Not implemented"); }
   async updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> { return undefined; }
   async deleteFieldCategory(id: string): Promise<boolean> { return false; }
-  async getFieldOptions(categoryId: string): Promise<FieldOption[]> { return []; }
+  async getFieldOptions(categoryId: string): Promise<FieldOption[]> {
+    return await db.select().from(schema.fieldOptions)
+      .where(and(
+        eq(schema.fieldOptions.categoryId, categoryId),
+        eq(schema.fieldOptions.isActive, true)
+      ))
+      .orderBy(schema.fieldOptions.sortOrder);
+  }
   async getFieldOption(id: string): Promise<FieldOption | undefined> { return undefined; }
   async createFieldOption(option: InsertFieldOption): Promise<FieldOption> { throw new Error("Not implemented"); }
   async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> { return undefined; }
@@ -3003,4 +3433,11 @@ export class DbStorage implements IStorage {
   async deleteClientSelection(id: string): Promise<boolean> { return false; }
 }
 
-export const storage = new DbStorage();
+// Create and initialize storage
+const dbStorage = new DbStorage();
+
+// Initialize storage and export
+export const storage = dbStorage;
+
+// Initialize storage on startup
+dbStorage.initialize().catch(console.error);
