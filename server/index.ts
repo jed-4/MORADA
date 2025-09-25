@@ -1,5 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -12,8 +14,16 @@ if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET environment variable must be set in production');
 }
 
+// Configure PostgreSQL session store for persistence across server restarts
+const PgStore = connectPgSimple(session);
+
 // Configure session middleware for authentication
 app.use(session({
+  store: new PgStore({
+    pool: pool,
+    tableName: 'session', // Use a simple table name
+    createTableIfMissing: true, // Automatically create the session table
+  }),
   secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
