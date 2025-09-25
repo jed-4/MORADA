@@ -131,7 +131,7 @@ function DroppableColumn({
         </SortableContext>
         <Button 
           variant="ghost" 
-          className="w-full h-auto p-4 border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/50"
+          className="w-full h-auto py-2 px-3 border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/50"
           onClick={onAddTask}
           data-testid={`add-task-${column.id}`}
         >
