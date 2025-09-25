@@ -553,8 +553,8 @@ export default function SelectionDetail() {
         open={isAddingOption || !!editingOption} 
         onOpenChange={handleDialogChange}
       >
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[700px] max-h-[95vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>
               {editingOption ? "Edit Option" : "Add New Option"}
             </DialogTitle>
@@ -566,8 +566,9 @@ export default function SelectionDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <div className="flex-1 overflow-y-auto">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pr-2">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -810,6 +811,7 @@ export default function SelectionDetail() {
                         type="url"
                         placeholder="https://www.bunnings.com.au..."
                         {...field}
+                        value={field.value || ""}
                         data-testid="input-option-url"
                       />
                     </FormControl>
@@ -838,28 +840,29 @@ export default function SelectionDetail() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-4">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => handleDialogChange(false)}
-                  data-testid="button-cancel-option"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit"
-                  disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
-                  data-testid="button-save-option"
-                >
-                  {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
-                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                  )}
-                  {editingOption ? "Update Option" : "Add Option"}
-                </Button>
-              </div>
-            </form>
-          </Form>
+                <div className="flex items-center justify-end space-x-3 pt-4 mt-6">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => handleDialogChange(false)}
+                    data-testid="button-cancel-option"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit"
+                    disabled={createOptionMutation.isPending || updateOptionMutation.isPending}
+                    data-testid="button-save-option"
+                  >
+                    {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                    )}
+                    {editingOption ? "Update Option" : "Add Option"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
