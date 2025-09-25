@@ -139,18 +139,21 @@ function AuthWrapper() {
       <ThemeProvider>
         <ProjectProvider>
           <SidebarProvider style={style as React.CSSProperties}>
-          <div className="flex h-screen w-full">
-            <ResizableSidebar 
-              onWidthChange={setSidebarWidth}
-              initialWidth={sidebarWidth}
-            />
-            <div className="flex flex-col flex-1">
+            <div className="flex flex-col h-screen w-full">
+              {/* Header spans full width at the top */}
               <Header />
-              <main className="flex-1 overflow-auto">
-                <Router />
-              </main>
+              
+              {/* Sidebar and main content below header */}
+              <div className="flex flex-1 overflow-hidden">
+                <ResizableSidebar 
+                  onWidthChange={setSidebarWidth}
+                  initialWidth={sidebarWidth}
+                />
+                <main className="flex-1 overflow-auto">
+                  <Router />
+                </main>
+              </div>
             </div>
-          </div>
           </SidebarProvider>
         </ProjectProvider>
       </ThemeProvider>

@@ -101,7 +101,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
   const showComingSoon = sidebarWidth >= 280; // Hide "coming soon" text when sidebar is narrow
   
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b">
         <div className="flex items-center gap-2">
           <Building2 className="h-6 w-6 text-primary" />
@@ -132,6 +132,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild 
+                    tooltip={item.title}
                     data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                     data-active={location === item.url}
                   >
@@ -158,6 +159,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
+                  tooltip="Business Overview"
                   data-testid="nav-business-overview"
                   data-active={location === '/business'}
                 >
@@ -170,6 +172,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
+                  tooltip="Expenses"
                   data-testid="nav-business-expenses"
                   data-active={location === '/business/expenses'}
                 >
@@ -182,6 +185,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
+                  tooltip="Timesheets"
                   data-testid="nav-business-timesheets"
                   data-active={location === '/business/timesheets'}
                 >
@@ -194,6 +198,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
+                  tooltip="Messages"
                   data-testid="nav-business-messages"
                   data-active={location === '/business/messages'}
                 >
@@ -211,6 +216,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
+                  tooltip="Sick Days & Leave"
                   data-testid="nav-business-leave"
                   data-active={location === '/business/leave'}
                 >
@@ -229,6 +235,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild
+                    tooltip={item.title}
                     data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                     data-active={location === item.url}
                   >
