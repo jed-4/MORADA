@@ -42,9 +42,9 @@ import { Badge } from "@/components/ui/badge";
 
 // Coming soon items that should have strikeout styling
 const comingSoonItems = new Set([
-  "Messages", "Notes", "Schedule", "Take off", "Estimates", 
+  "Messages", "Schedule", "Take off", "Estimates", 
   "Request For Quotes", "Request For Information", "Proposal", 
-  "Selections", "Allowances", "Purchase Orders", "Variations", 
+  "Allowances", "Purchase Orders", "Variations", 
   "Bills", "Client Invoices", "Site Diary", "Timesheets", 
   "Budget", "Files", "Team"
 ]);

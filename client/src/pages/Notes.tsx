@@ -499,15 +499,15 @@ export default function Notes() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Project Notes</h1>
-            <p className="text-muted-foreground">
-              Keep track of important project information, updates, and communications
-            </p>
           </div>
           <Button onClick={() => setIsAddingNote(true)} data-testid="add-note-button">
             <Plus className="h-4 w-4 mr-2" />
             Add Note
           </Button>
         </div>
+        
+        {/* Section separator */}
+        <div className="border-b border-border"></div>
 
         {/* Filters and Search */}
         <div className="flex items-center gap-4 flex-wrap">
