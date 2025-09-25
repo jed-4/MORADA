@@ -585,6 +585,7 @@ export const selectionOptions = pgTable("selection_options", {
   subcategory: text("subcategory"),
   unitCost: integer("unit_cost"), // Cost in cents
   unitTax: integer("unit_tax"), // Tax in cents
+  gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether unit cost includes GST
   markupPercent: integer("markup_percent"), // Markup percentage
   totalCost: integer("total_cost"), // Final cost in cents
   quantity: integer("quantity").notNull().default(1),

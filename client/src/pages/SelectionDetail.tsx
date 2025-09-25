@@ -18,6 +18,13 @@ import {
   type InsertSelectionOption
 } from "@shared/schema";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -129,6 +136,8 @@ export default function SelectionDetail() {
   });
 
   // Form for creating/editing options
+  const [gstInclusive, setGstInclusive] = useState<boolean>(false);
+
   const form = useForm<InsertSelectionOption>({
     resolver: zodResolver(insertSelectionOptionSchema),
     defaultValues: {
@@ -141,6 +150,7 @@ export default function SelectionDetail() {
       subcategory: "",
       unitCost: undefined,
       unitTax: undefined,
+      gstInclusive: false,
       markupPercent: undefined,
       totalCost: undefined,
       quantity: 1,
@@ -157,7 +167,27 @@ export default function SelectionDetail() {
     if (!open) {
       setIsAddingOption(false);
       setEditingOption(null);
-      form.reset();
+      setGstInclusive(false);
+      form.reset({
+        selectionId: id || "",
+        name: "",
+        description: "",
+        sku: "",
+        brand: "",
+        category: "",
+        subcategory: "",
+        unitCost: undefined,
+        unitTax: undefined,
+        gstInclusive: false,
+        markupPercent: undefined,
+        totalCost: undefined,
+        quantity: 1,
+        unitType: "ea",
+        url: "",
+        visibleToClient: true,
+        isSelectedByClient: false,
+        sortOrder: 0,
+      });
     }
   };
 
@@ -176,7 +206,11 @@ export default function SelectionDetail() {
   // Handle editing
   const handleEdit = (option: SelectionOption) => {
     setEditingOption(option);
+    // Use the stored gstInclusive field from the option
+    setGstInclusive(option.gstInclusive || false);
+    
     form.reset({
+      selectionId: option.selectionId,
       name: option.name,
       description: option.description || "",
       sku: option.sku || "",
@@ -185,6 +219,7 @@ export default function SelectionDetail() {
       subcategory: option.subcategory || "",
       unitCost: option.unitCost || undefined,
       unitTax: option.unitTax || undefined,
+      gstInclusive: option.gstInclusive || false,
       markupPercent: option.markupPercent || undefined,
       totalCost: option.totalCost || undefined,
       quantity: option.quantity,
@@ -194,6 +229,68 @@ export default function SelectionDetail() {
       isSelectedByClient: option.isSelectedByClient,
       sortOrder: option.sortOrder,
     });
+  };
+
+  // Handle adding new option
+  const handleAddOption = () => {
+    setIsAddingOption(true);
+    setEditingOption(null);
+    setGstInclusive(false);
+    form.reset({
+      selectionId: id || "",
+      name: "",
+      description: "",
+      sku: "",
+      brand: "",
+      category: "",
+      subcategory: "",
+      unitCost: undefined,
+      unitTax: undefined,
+      gstInclusive: false,
+      markupPercent: undefined,
+      totalCost: undefined,
+      quantity: 1,
+      unitType: "ea",
+      url: "",
+      visibleToClient: true,
+      isSelectedByClient: false,
+      sortOrder: 0,
+    });
+  };
+
+  // Calculate GST amount based on unit cost and inclusive/exclusive setting
+  const calculateGst = (unitCost: number | undefined, inclusive: boolean): number => {
+    if (!unitCost || unitCost <= 0) return 0;
+    const gstRate = 0.1; // 10% GST in Australia
+    
+    if (inclusive) {
+      // If price includes GST, calculate the GST portion
+      return Math.round((unitCost * gstRate) / (1 + gstRate));
+    } else {
+      // If price excludes GST, calculate GST to add
+      return Math.round(unitCost * gstRate);
+    }
+  };
+
+  // Handle GST change and recalculate tax
+  const handleGstChange = (inclusive: boolean) => {
+    setGstInclusive(inclusive);
+    form.setValue("gstInclusive", inclusive);
+    const currentUnitCost = form.getValues("unitCost");
+    if (currentUnitCost) {
+      const newTax = calculateGst(currentUnitCost, inclusive);
+      form.setValue("unitTax", newTax);
+    }
+  };
+
+  // Handle unit cost change and recalculate tax
+  const handleUnitCostChange = (value: number | undefined) => {
+    if (value && gstInclusive) {
+      const newTax = calculateGst(value, gstInclusive);
+      form.setValue("unitTax", newTax);
+    } else if (!gstInclusive) {
+      form.setValue("unitTax", value ? calculateGst(value, false) : undefined);
+    }
   };
 
   // Filter options based on search
@@ -279,7 +376,7 @@ export default function SelectionDetail() {
           </div>
         </div>
         <Button 
-          onClick={() => setIsAddingOption(true)}
+          onClick={handleAddOption}
           data-testid="button-add-option"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -369,7 +466,7 @@ export default function SelectionDetail() {
               {searchTerm ? "Try adjusting your search terms." : "Add your first option to get started."}
             </p>
             {!searchTerm && (
-              <Button onClick={() => setIsAddingOption(true)}>
+              <Button onClick={handleAddOption}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Option
               </Button>
@@ -589,66 +686,156 @@ export default function SelectionDetail() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="unitCost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Unit Cost</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                          <Input 
-                            type="number"
-                            placeholder="0.00"
-                            step="0.01"
-                            min="0"
-                            className="pl-10"
-                            {...field}
-                            value={field.value ? (field.value / 100).toFixed(2) : ""}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
-                            }}
-                            data-testid="input-option-unit-cost"
-                          />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {/* Pricing Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium">Pricing</h3>
+                  <Select
+                    value={gstInclusive ? "inc" : "ex"}
+                    onValueChange={(value) => handleGstChange(value === "inc")}
+                  >
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="GST on expenses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ex">GST exclusive</SelectItem>
+                      <SelectItem value="inc">GST inclusive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="unitCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Unit Cost</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                            <Input 
+                              type="number"
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              className="pl-10"
+                              {...field}
+                              value={field.value ? (field.value / 100).toFixed(2) : ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const centValue = value ? Math.round(parseFloat(value) * 100) : undefined;
+                                field.onChange(centValue);
+                                handleUnitCostChange(centValue);
+                              }}
+                              data-testid="input-option-unit-cost"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="totalCost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Total Cost</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                          <Input 
-                            type="number"
-                            placeholder="0.00"
-                            step="0.01"
-                            min="0"
-                            className="pl-10"
-                            {...field}
-                            value={field.value ? (field.value / 100).toFixed(2) : ""}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
-                            }}
-                            data-testid="input-option-total-cost"
-                          />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="markupPercent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Markup %</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input 
+                              type="number"
+                              placeholder="0"
+                              min="0"
+                              className="pr-8"
+                              {...field}
+                              value={field.value || ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                field.onChange(value ? parseInt(value) : undefined);
+                              }}
+                              data-testid="input-option-markup"
+                            />
+                            <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm">%</span>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="totalCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Total Cost</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                            <Input 
+                              type="number"
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              className="pl-10"
+                              {...field}
+                              value={field.value ? (field.value / 100).toFixed(2) : ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
+                              }}
+                              data-testid="input-option-total-cost"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              {/* URL Field */}
+              <FormField
+                control={form.control}
+                name="url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Product URL</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="url"
+                        placeholder="https://www.bunnings.com.au..."
+                        {...field}
+                        data-testid="input-option-url"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Attachments Section */}
+              <div className="space-y-3">
+                <FormLabel>Attachments</FormLabel>
+                <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
+                  <div className="text-muted-foreground">
+                    <p className="text-sm">Drag and drop files here, or click to browse</p>
+                    <p className="text-xs mt-1">Upload product images, spec sheets, or other documents</p>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    className="mt-3"
+                    data-testid="button-upload-attachment"
+                  >
+                    Choose Files
+                  </Button>
+                </div>
               </div>
 
               <div className="flex items-center justify-end space-x-3 pt-4">
