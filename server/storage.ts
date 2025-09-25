@@ -29,7 +29,7 @@ import {
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
-import { eq, or } from "drizzle-orm";
+import { eq, or, and } from "drizzle-orm";
 import * as schema from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -686,9 +686,15 @@ export class MemStorage implements IStorage {
       email: "test@buildpro.com",
       firstName: "Test",
       lastName: "User",
+      phone: null,
+      company: null,
       roleId: null,
+      roleName: null,
       userCategory: "team",
       isActive: true,
+      isInvitePending: false,
+      invitedBy: null,
+      invitedAt: null,
       lastLoginAt: null,
       createdAt: now,
       updatedAt: now,
@@ -702,6 +708,8 @@ export class MemStorage implements IStorage {
       id: "business",
       name: "Business Operations",
       description: "General business administration and office tasks",
+      jobNumber: null,
+      projectType: null,
       color: "#6366F1",
       isActive: true,
       isBusiness: true,
@@ -732,6 +740,8 @@ export class MemStorage implements IStorage {
     sampleProjects.forEach(proj => {
       const project: Project = {
         ...proj,
+        jobNumber: null,
+        projectType: null,
         isActive: true,
         ownerId: null,
         createdAt: new Date(),
@@ -2679,4 +2689,298 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Database-backed storage implementation
+export class DbStorage implements IStorage {
+  // User operations
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.username, username)).limit(1);
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    return user;
+  }
+
+  async validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined> {
+    const user = await this.getUserByUsername(username);
+    if (!user) return undefined;
+    
+    const isValid = await PasswordUtils.verifyPassword(plainPassword, user.password);
+    return isValid ? user : undefined;
+  }
+
+  async getUserWithRole(id: string): Promise<UserWithRole | undefined> {
+    const user = await this.getUser(id);
+    if (!user) return undefined;
+    
+    let role;
+    if (user.roleId) {
+      role = await this.getUserRole(user.roleId);
+    }
+    
+    return { ...user, role };
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db.insert(schema.users).values(insertUser).returning();
+    return user;
+  }
+
+  async updateUser(id: string, userData: Partial<InsertUser>): Promise<User | undefined> {
+    const [user] = await db.update(schema.users).set({
+      ...userData,
+      updatedAt: new Date()
+    }).where(eq(schema.users.id, id)).returning();
+    return user;
+  }
+
+  async changeUserPassword(id: string, newPassword: string): Promise<User | undefined> {
+    const hashedPassword = await PasswordUtils.hashPassword(newPassword);
+    const [user] = await db.update(schema.users).set({
+      password: hashedPassword,
+      updatedAt: new Date()
+    }).where(eq(schema.users.id, id)).returning();
+    return user;
+  }
+
+  async getUsers(category?: UserCategory): Promise<User[]> {
+    if (category) {
+      return await db.select().from(schema.users).where(eq(schema.users.userCategory, category));
+    }
+    return await db.select().from(schema.users);
+  }
+
+  // Tasks CRUD operations
+  async getTasks(projectId?: string, status?: string): Promise<Task[]> {
+    const conditions = [eq(schema.notes.type, "task")];
+    
+    if (projectId) {
+      conditions.push(eq(schema.notes.projectId, projectId));
+    }
+    if (status) {
+      conditions.push(eq(schema.notes.status, status));
+    }
+    
+    const tasks = await db.select().from(schema.notes).where(
+      conditions.length === 1 ? conditions[0] : and(...conditions)
+    );
+    return tasks as Task[];
+  }
+
+  async getTask(id: string): Promise<Task | undefined> {
+    const [task] = await db.select().from(schema.notes)
+      .where(and(eq(schema.notes.id, id), eq(schema.notes.type, "task")))
+      .limit(1);
+    return task as Task;
+  }
+
+  async createTask(insertTask: InsertTask): Promise<Task> {
+    const [task] = await db.insert(schema.notes).values({
+      ...insertTask,
+      type: "task"
+    }).returning();
+    return task as Task;
+  }
+
+  async updateTask(id: string, taskData: Partial<InsertTask>): Promise<Task | undefined> {
+    const [task] = await db.update(schema.notes).set({
+      ...taskData,
+      updatedAt: new Date()
+    }).where(eq(schema.notes.id, id)).returning();
+    return task as Task;
+  }
+
+  async deleteTask(id: string): Promise<boolean> {
+    const result = await db.delete(schema.notes).where(eq(schema.notes.id, id));
+    return result.rowCount > 0;
+  }
+
+  async updateTaskStatus(id: string, status: "todo" | "in-progress" | "done"): Promise<Task | undefined> {
+    const completedAt = status === "done" ? new Date() : null;
+    const [task] = await db.update(schema.notes).set({
+      status,
+      completedAt,
+      updatedAt: new Date()
+    }).where(eq(schema.notes.id, id)).returning();
+    return task as Task;
+  }
+
+  // Selections CRUD
+  async getSelections(projectId: string): Promise<Selection[]> {
+    return await db.select().from(schema.selections).where(eq(schema.selections.projectId, projectId));
+  }
+
+  async getSelection(id: string): Promise<Selection | undefined> {
+    const [selection] = await db.select().from(schema.selections).where(eq(schema.selections.id, id)).limit(1);
+    return selection;
+  }
+
+  async getSelectionWithOptions(id: string): Promise<SelectionWithOptions | undefined> {
+    const selection = await this.getSelection(id);
+    if (!selection) return undefined;
+
+    const options = await this.getSelectionOptions(id);
+    return {
+      ...selection,
+      options
+    };
+  }
+
+  async createSelection(insertSelection: InsertSelection): Promise<Selection> {
+    const [selection] = await db.insert(schema.selections).values(insertSelection).returning();
+    return selection;
+  }
+
+  async updateSelection(id: string, selectionData: Partial<InsertSelection>): Promise<Selection | undefined> {
+    const [selection] = await db.update(schema.selections).set({
+      ...selectionData,
+      updatedAt: new Date()
+    }).where(eq(schema.selections.id, id)).returning();
+    return selection;
+  }
+
+  async deleteSelection(id: string): Promise<boolean> {
+    const result = await db.delete(schema.selections).where(eq(schema.selections.id, id));
+    return result.rowCount > 0;
+  }
+
+  // Selection Options CRUD
+  async getSelectionOptions(selectionId: string): Promise<SelectionOption[]> {
+    return await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.selectionId, selectionId));
+  }
+
+  async getSelectionOption(id: string): Promise<SelectionOption | undefined> {
+    const [option] = await db.select().from(schema.selectionOptions).where(eq(schema.selectionOptions.id, id)).limit(1);
+    return option;
+  }
+
+  async createSelectionOption(insertOption: InsertSelectionOption): Promise<SelectionOption> {
+    const [option] = await db.insert(schema.selectionOptions).values(insertOption).returning();
+    return option;
+  }
+
+  async updateSelectionOption(id: string, optionData: Partial<InsertSelectionOption>): Promise<SelectionOption | undefined> {
+    const [option] = await db.update(schema.selectionOptions).set({
+      ...optionData,
+      updatedAt: new Date()
+    }).where(eq(schema.selectionOptions.id, id)).returning();
+    return option;
+  }
+
+  async deleteSelectionOption(id: string): Promise<boolean> {
+    const result = await db.delete(schema.selectionOptions).where(eq(schema.selectionOptions.id, id));
+    return result.rowCount > 0;
+  }
+
+  // Add placeholder implementations for other required interface methods
+  // These can be implemented as needed
+  async getUserRoles(): Promise<UserRole[]> { return []; }
+  async getUserRole(id: string): Promise<UserRole | undefined> { return undefined; }
+  async createUserRole(role: InsertUserRole): Promise<UserRole> { throw new Error("Not implemented"); }
+  async updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined> { return undefined; }
+  async deleteUserRole(id: string): Promise<boolean> { return false; }
+  async getPermissions(): Promise<Permission[]> { return []; }
+  async getPermission(id: string): Promise<Permission | undefined> { return undefined; }
+  async createPermission(permission: InsertPermission): Promise<Permission> { throw new Error("Not implemented"); }
+  async updatePermission(id: string, permission: Partial<InsertPermission>): Promise<Permission | undefined> { return undefined; }
+  async deletePermission(id: string): Promise<boolean> { return false; }
+  async getRolePermissions(roleId: string): Promise<RolePermission[]> { return []; }
+  async createRolePermission(rolePermission: InsertRolePermission): Promise<RolePermission> { throw new Error("Not implemented"); }
+  async updateRolePermission(id: string, rolePermission: Partial<InsertRolePermission>): Promise<RolePermission | undefined> { return undefined; }
+  async deleteRolePermission(id: string): Promise<boolean> { return false; }
+  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void> {}
+  async getUserProjectAccess(userId: string): Promise<UserProjectAccess[]> { return []; }
+  async createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
+  async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
+  async deleteUserProjectAccess(id: string): Promise<boolean> { return false; }
+  async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
+  async getUserInvitations(): Promise<UserInvitation[]> { return []; }
+  async getUserInvitation(id: string): Promise<UserInvitation | undefined> { return undefined; }
+  async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> { return undefined; }
+  async createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation> { throw new Error("Not implemented"); }
+  async updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> { return undefined; }
+  async deleteUserInvitation(id: string): Promise<boolean> { return false; }
+  async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> { return undefined; }
+  async getNotes(): Promise<Note[]> { return []; }
+  async getNote(id: string): Promise<Note | undefined> { return undefined; }
+  async createNote(note: InsertNote): Promise<Note> { throw new Error("Not implemented"); }
+  async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> { return undefined; }
+  async deleteNote(id: string): Promise<boolean> { return false; }
+  async getCustomFieldDefs(): Promise<CustomFieldDef[]> { return []; }
+  async getCustomFieldDef(id: string): Promise<CustomFieldDef | undefined> { return undefined; }
+  async createCustomFieldDef(fieldDef: InsertCustomFieldDef): Promise<CustomFieldDef> { throw new Error("Not implemented"); }
+  async updateCustomFieldDef(id: string, fieldDef: Partial<InsertCustomFieldDef>): Promise<CustomFieldDef | undefined> { return undefined; }
+  async deleteCustomFieldDef(id: string): Promise<boolean> { return false; }
+  async getCustomFieldOptions(fieldDefId: string): Promise<CustomFieldOption[]> { return []; }
+  async getCustomFieldOption(id: string): Promise<CustomFieldOption | undefined> { return undefined; }
+  async createCustomFieldOption(option: InsertCustomFieldOption): Promise<CustomFieldOption> { throw new Error("Not implemented"); }
+  async updateCustomFieldOption(id: string, option: Partial<InsertCustomFieldOption>): Promise<CustomFieldOption | undefined> { return undefined; }
+  async deleteCustomFieldOption(id: string): Promise<boolean> { return false; }
+  async getNoteTemplates(): Promise<NoteTemplate[]> { return []; }
+  async getNoteTemplate(id: string): Promise<NoteTemplate | undefined> { return undefined; }
+  async createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate> { throw new Error("Not implemented"); }
+  async updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined> { return undefined; }
+  async deleteNoteTemplate(id: string): Promise<boolean> { return false; }
+  async getProjects(): Promise<Project[]> { return []; }
+  async getProject(id: string): Promise<Project | undefined> { return undefined; }
+  async createProject(project: InsertProject): Promise<Project> { throw new Error("Not implemented"); }
+  async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> { return undefined; }
+  async deleteProject(id: string): Promise<boolean> { return false; }
+  async getTaskViews(): Promise<TaskView[]> { return []; }
+  async getTaskView(id: string): Promise<TaskView | undefined> { return undefined; }
+  async createTaskView(view: InsertTaskView): Promise<TaskView> { throw new Error("Not implemented"); }
+  async updateTaskView(id: string, view: Partial<InsertTaskView>): Promise<TaskView | undefined> { return undefined; }
+  async deleteTaskView(id: string): Promise<boolean> { return false; }
+  async getSubtasks(parentTaskId: string): Promise<Task[]> { return []; }
+  async createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task> { throw new Error("Not implemented"); }
+  async getEstimates(): Promise<Estimate[]> { return []; }
+  async getEstimate(id: string): Promise<Estimate | undefined> { return undefined; }
+  async createEstimate(estimate: InsertEstimate): Promise<Estimate> { throw new Error("Not implemented"); }
+  async updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined> { return undefined; }
+  async deleteEstimate(id: string): Promise<boolean> { return false; }
+  async getEstimateItems(estimateId: string): Promise<EstimateItem[]> { return []; }
+  async getEstimateItem(id: string): Promise<EstimateItem | undefined> { return undefined; }
+  async createEstimateItem(item: InsertEstimateItem): Promise<EstimateItem> { throw new Error("Not implemented"); }
+  async updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> { return undefined; }
+  async deleteEstimateItem(id: string): Promise<boolean> { return false; }
+  async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> { return []; }
+  async getEstimateGroup(id: string): Promise<EstimateGroup | undefined> { return undefined; }
+  async createEstimateGroup(group: InsertEstimateGroup): Promise<EstimateGroup> { throw new Error("Not implemented"); }
+  async updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined> { return undefined; }
+  async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
+  async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> { throw new Error("Not implemented"); }
+  async lockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }
+  async unlockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }
+  async getEstimateSummary(estimateId: string): Promise<{ subtotal: number; markup: number; tax: number; total: number; itemCount: number; }> { 
+    return { subtotal: 0, markup: 0, tax: 0, total: 0, itemCount: 0 }; 
+  }
+  async getCompanySettings(): Promise<CompanySettings | undefined> { return undefined; }
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> { return undefined; }
+  async getFieldCategories(): Promise<FieldCategory[]> { return []; }
+  async getFieldCategory(id: string): Promise<FieldCategory | undefined> { return undefined; }
+  async getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined> { return undefined; }
+  async getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined> { return undefined; }
+  async createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory> { throw new Error("Not implemented"); }
+  async updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined> { return undefined; }
+  async deleteFieldCategory(id: string): Promise<boolean> { return false; }
+  async getFieldOptions(categoryId: string): Promise<FieldOption[]> { return []; }
+  async getFieldOption(id: string): Promise<FieldOption | undefined> { return undefined; }
+  async createFieldOption(option: InsertFieldOption): Promise<FieldOption> { throw new Error("Not implemented"); }
+  async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> { return undefined; }
+  async deleteFieldOption(id: string): Promise<boolean> { return false; }
+  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]> { return []; }
+  async getOptionAttachments(optionId: string): Promise<OptionAttachment[]> { return []; }
+  async createOptionAttachment(attachment: InsertOptionAttachment): Promise<OptionAttachment> { throw new Error("Not implemented"); }
+  async deleteOptionAttachment(id: string): Promise<boolean> { return false; }
+  async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
+  async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
+  async deleteClientSelection(id: string): Promise<boolean> { return false; }
+}
+
+export const storage = new DbStorage();
