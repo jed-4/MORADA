@@ -51,6 +51,19 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Tasks() {
   const { currentProject } = useProject();
+  
+  // Show loading state if no project is selected - MUST be at the top before any other hooks
+  if (!currentProject) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
+          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
+        </div>
+      </div>
+    );
+  }
+
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
@@ -178,17 +191,6 @@ export default function Tasks() {
     enabled: !!currentProject
   });
 
-  // Show loading state if no project is selected
-  if (!currentProject) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
-          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
-        </div>
-      </div>
-    );
-  }
 
   // Default views
   const defaultViews = [
