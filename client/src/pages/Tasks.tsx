@@ -540,31 +540,60 @@ export default function Tasks() {
               </DropdownMenu>
             )}
 
-            {/* Group By - Only show for list view */}
-            {activeTab === 'list' && (
-              <>
-                <div className="border-l border-border/50 h-6" />
-                <div className="flex items-center gap-2">
-                  <Layers className="w-3 h-3 text-muted-foreground" />
-                  <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
-                    <SelectTrigger className="h-8 w-32 text-sm" data-testid="select-group-by">
-                      <SelectValue placeholder="Group by" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No Grouping</SelectItem>
-                      <SelectItem value="status">Status</SelectItem>
-                      <SelectItem value="priority">Priority</SelectItem>
-                      {filterOptions.availableAssignees.length > 0 && (
-                        <SelectItem value="assignee">Assignee</SelectItem>
-                      )}
-                      {filterOptions.availableTags.length > 0 && (
-                        <SelectItem value="tags">Tags</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
+            {/* Group By Controls - Enhanced visibility */}
+            <>
+              <div className="border-l border-border/50 h-6" />
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">Group by:</span>
+                <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
+                  <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-group-by">
+                    <SelectValue placeholder="Choose grouping..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-3 h-3" />
+                        No Grouping
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="status">
+                      <div className="flex items-center gap-2">
+                        <Flag className="w-3 h-3" />
+                        By Status
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="priority">
+                      <div className="flex items-center gap-2">
+                        <Flag className="w-3 h-3" />
+                        By Priority
+                      </div>
+                    </SelectItem>
+                    {filterOptions.availableAssignees.length > 0 && (
+                      <SelectItem value="assignee">
+                        <div className="flex items-center gap-2">
+                          <User className="w-3 h-3" />
+                          By Assignee
+                        </div>
+                      </SelectItem>
+                    )}
+                    {filterOptions.availableTags.length > 0 && (
+                      <SelectItem value="tags">
+                        <div className="flex items-center gap-2">
+                          <Tag className="w-3 h-3" />
+                          By Tags
+                        </div>
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {groupBy !== 'none' && (
+                  <Badge variant="secondary" className="text-xs">
+                    Grouped by {groupBy}
+                  </Badge>
+                )}
+              </div>
+            </>
 
             {/* Clear All Filters */}
             {(filters.search || filters.status?.length || filters.priority?.length || filters.assignee?.length || filters.tags?.length) && (
