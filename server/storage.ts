@@ -2927,7 +2927,24 @@ export class DbStorage implements IStorage {
   async createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate> { throw new Error("Not implemented"); }
   async updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined> { return undefined; }
   async deleteNoteTemplate(id: string): Promise<boolean> { return false; }
-  async getProjects(): Promise<Project[]> { return []; }
+  async getProjects(ownerId?: string): Promise<Project[]> {
+    const conditions = [eq(schema.projects.isActive, true)];
+    
+    if (ownerId) {
+      conditions.push(
+        or(
+          eq(schema.projects.ownerId, ownerId),
+          eq(schema.projects.isBusiness, true)
+        )
+      );
+    }
+    
+    const projects = await db.select().from(schema.projects)
+      .where(conditions.length === 1 ? conditions[0] : and(...conditions))
+      .orderBy(schema.projects.createdAt);
+    
+    return projects;
+  }
   async getProject(id: string): Promise<Project | undefined> { return undefined; }
   async createProject(project: InsertProject): Promise<Project> { throw new Error("Not implemented"); }
   async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> { return undefined; }
