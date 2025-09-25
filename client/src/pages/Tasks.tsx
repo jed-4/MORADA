@@ -50,20 +50,8 @@ import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Tasks() {
+  // All hooks MUST be called at the top level before any conditional logic
   const { currentProject } = useProject();
-  
-  // Show loading state if no project is selected - MUST be at the top before any other hooks
-  if (!currentProject) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
-          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
-        </div>
-      </div>
-    );
-  }
-
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
@@ -77,6 +65,7 @@ export default function Tasks() {
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
   const [filters, setFilters] = useState<FilterState>({});
 
+  // ALL HOOKS MUST BE DECLARED HERE BEFORE ANY CONDITIONAL LOGIC
   // Mutation for creating new views
   const createViewMutation = useMutation({
     mutationFn: async (data: { name: string; viewType: "kanban" | "list"; projectId: string }): Promise<TaskView> => {
@@ -140,31 +129,7 @@ export default function Tasks() {
     },
   });
 
-  const isCustomView = (view: any): view is TaskView => {
-    return view.id !== "kanban" && view.id !== "list" && view.id !== "calendar";
-  };
-
-  const handleDeleteView = (view: TaskView) => {
-    setViewToDelete(view);
-    setShowDeleteViewDialog(true);
-  };
-
-  const confirmDeleteView = () => {
-    if (viewToDelete) {
-      deleteViewMutation.mutate(viewToDelete.id);
-    }
-  };
-
-  const handleCreateView = () => {
-    if (!currentProject || !newViewName.trim()) return;
-    createViewMutation.mutate({
-      name: newViewName.trim(),
-      viewType: newViewType === "calendar" ? "kanban" : newViewType,
-      projectId: currentProject.id,
-    });
-  };
-
-  // Fetch saved task views and tasks filtered by current project
+  // Fetch saved task views and tasks filtered by current project (with enabled flags to prevent fetching when no project)
   const { data: taskViews = [] } = useQuery<TaskView[]>({
     queryKey: ["/api/task-views", currentProject?.id],
     queryFn: async () => {
@@ -191,41 +156,35 @@ export default function Tasks() {
     enabled: !!currentProject
   });
 
-
-  // Default views
-  const defaultViews = [
-    { id: "kanban", name: "Kanban Board", viewType: "kanban" },
-    { id: "list", name: "List View", viewType: "list" },
-    { id: "calendar", name: "Calendar View", viewType: "calendar" },
-  ];
-
-  const allViews = [...defaultViews, ...taskViews];
-
-  // Extract filter options from all tasks
-  const filterOptions = extractFilterOptions(allTasks);
-
-  // Apply filters to tasks
-  const filteredTasks = applyTaskFilters(allTasks, filters);
-
-  // Get current view filters for custom views
-  const getCurrentViewFilters = () => {
-    const currentView = taskViews.find(view => view.id === activeTab);
-    if (currentView && currentView.filters) {
-      return deserializeFilters(currentView.filters as Record<string, any>);
-    }
-    return {};
-  };
-
-  // Merge view filters with user filters
-  const effectiveFilters = {
-    ...getCurrentViewFilters(),
-    ...filters,
-  };
-
-  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
-
-  // Group tasks based on selected grouping (only for list view)
+  // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
   const groupedTasks = React.useMemo(() => {
+    if (!currentProject) return {};
+    
+    // Calculate dependencies inline when currentProject exists
+    const defaultViews = [
+      { id: "kanban", name: "Kanban Board", viewType: "kanban" },
+      { id: "list", name: "List View", viewType: "list" },
+      { id: "calendar", name: "Calendar View", viewType: "calendar" },
+    ];
+    const allViews = [...defaultViews, ...taskViews];
+    const filterOptions = extractFilterOptions(allTasks);
+    const filteredTasks = applyTaskFilters(allTasks, filters);
+    
+    const getCurrentViewFilters = () => {
+      const currentView = taskViews.find(view => view.id === activeTab);
+      if (currentView && currentView.filters) {
+        return deserializeFilters(currentView.filters as Record<string, any>);
+      }
+      return {};
+    };
+    
+    const effectiveFilters = {
+      ...getCurrentViewFilters(),
+      ...filters,
+    };
+    
+    const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
+    
     if (groupBy === 'none' || activeTab !== 'list') {
       return { 'All Tasks': effectivelyFilteredTasks };
     }
@@ -263,7 +222,77 @@ export default function Tasks() {
     });
     
     return sortedGroups;
-  }, [effectivelyFilteredTasks, groupBy, activeTab]);
+  }, [currentProject, taskViews, allTasks, filters, groupBy, activeTab]);
+
+  // CONDITIONAL RENDERING - MUST BE AFTER ALL HOOKS
+  if (!currentProject) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-medium text-muted-foreground">No Project Selected</h2>
+          <p className="text-muted-foreground">Please select a project from the dropdown to view its tasks.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Helper functions and logic (after hooks, after early return)
+  const isCustomView = (view: any): view is TaskView => {
+    return view.id !== "kanban" && view.id !== "list" && view.id !== "calendar";
+  };
+
+  const handleDeleteView = (view: TaskView) => {
+    setViewToDelete(view);
+    setShowDeleteViewDialog(true);
+  };
+
+  const confirmDeleteView = () => {
+    if (viewToDelete) {
+      deleteViewMutation.mutate(viewToDelete.id);
+    }
+  };
+
+  const handleCreateView = () => {
+    if (!currentProject || !newViewName.trim()) return;
+    createViewMutation.mutate({
+      name: newViewName.trim(),
+      viewType: newViewType === "calendar" ? "kanban" : newViewType,
+      projectId: currentProject.id,
+    });
+  };
+
+
+  // Default views
+  const defaultViews = [
+    { id: "kanban", name: "Kanban Board", viewType: "kanban" },
+    { id: "list", name: "List View", viewType: "list" },
+    { id: "calendar", name: "Calendar View", viewType: "calendar" },
+  ];
+
+  const allViews = [...defaultViews, ...taskViews];
+
+  // Extract filter options from all tasks
+  const filterOptions = extractFilterOptions(allTasks);
+
+  // Apply filters to tasks
+  const filteredTasks = applyTaskFilters(allTasks, filters);
+
+  // Get current view filters for custom views
+  const getCurrentViewFilters = () => {
+    const currentView = taskViews.find(view => view.id === activeTab);
+    if (currentView && currentView.filters) {
+      return deserializeFilters(currentView.filters as Record<string, any>);
+    }
+    return {};
+  };
+
+  // Merge view filters with user filters
+  const effectiveFilters = {
+    ...getCurrentViewFilters(),
+    ...filters,
+  };
+
+  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
 
   return (
     <div className="flex h-full flex-col">
