@@ -378,7 +378,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/field-categories", async (req, res) => {
     try {
       const categories = await storage.getFieldCategories();
-      res.json(categories);
+      
+      // Fetch options for each category to return FieldCategoryWithOptions[]
+      const categoriesWithOptions = await Promise.all(
+        categories.map(async (category) => {
+          const options = await storage.getFieldOptions(category.id);
+          return {
+            ...category,
+            options
+          };
+        })
+      );
+      
+      res.json(categoriesWithOptions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch field categories" });
     }
