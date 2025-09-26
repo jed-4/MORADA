@@ -77,6 +77,7 @@ const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
     ownerId: z.string().optional(),
     ownerName: z.string().optional(),
     projectId: z.string().optional(),
+    category: z.string().optional(),
     customFields: z.object(customFieldsSchema).optional(),
     templateId: z.string().optional(),
   });
@@ -85,6 +86,7 @@ const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
 export default function Notes() {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedField, setSelectedField] = useState("All");
@@ -136,6 +138,7 @@ export default function Notes() {
     author: "Current User", // todo: get from auth context
     ownerId: undefined,
     ownerName: "Current User",
+    category: "General", // Default category
     customFields: customFieldDefs.reduce((acc, field) => {
       acc[field.key] = "";
       return acc;
@@ -255,26 +258,34 @@ export default function Notes() {
   });
 
   const onSubmit = (data: NoteFormData) => {
-    // Transform form data to include rich text fields and custom fields
-    const noteData = {
-      title: data.title || "",
-      content: data.contentText || data.content || "",
-      contentHtml: data.contentHtml || undefined,
-      contentText: data.contentText || undefined,
-      author: data.author || "Current User",
-      ownerId: data.ownerId || undefined,
-      ownerName: data.ownerName || undefined,
-      projectId: data.projectId || undefined,
-      customFields: data.customFields || {},
-      // Legacy fields for backward compatibility
-      category: (data.customFields as Record<string, string>)?.category || "General",
-      priority: (data.customFields as Record<string, string>)?.priority || "medium",
-    } as InsertNote;
-    
-    if (editingNote) {
-      updateNoteMutation.mutate({ id: editingNote.id, data: noteData });
-    } else {
-      createNoteMutation.mutate(noteData);
+    try {
+      // Transform and validate form data using the schema
+      const noteData = insertNoteSchema.parse({
+        title: data.title || "",
+        content: data.contentText || data.content || "",
+        contentHtml: data.contentHtml,
+        contentText: data.contentText,
+        author: data.author || "Current User",
+        ownerId: data.ownerId,
+        ownerName: data.ownerName || "Current User",
+        projectId: currentProject?.id,
+        customFields: data.customFields || {},
+        category: data.category || "General",
+        priority: (data.customFields as Record<string, string>)?.priority || "medium",
+      });
+      
+      if (editingNote) {
+        updateNoteMutation.mutate({ id: editingNote.id, data: noteData });
+      } else {
+        createNoteMutation.mutate(noteData);
+      }
+    } catch (error) {
+      console.error("Note validation error:", error);
+      toast({ 
+        title: "Validation Error", 
+        description: "Please check your input and try again.",
+        variant: "destructive" 
+      });
     }
   };
 
@@ -287,8 +298,9 @@ export default function Notes() {
       contentText: note.contentText || "",
       author: note.author,
       ownerId: note.ownerId || undefined,
-      ownerName: note.ownerName || undefined,
+      ownerName: note.ownerName || "Current User",
       projectId: note.projectId || undefined,
+      category: note.category || "General",
       customFields: note.customFields as Record<string, string> || {},
     });
   };
@@ -328,12 +340,22 @@ export default function Notes() {
     }
   };
 
+  // Stabilize dialog state to prevent flickering
+  const isDialogOpen = isAddingNote || !!editingNote;
+  
+  // Handle dialog close with debounce to prevent rapid state changes
+  const handleDialogClose = () => {
+    setIsAddingNote(false);
+    setEditingNote(null);
+    setSelectedTemplate(null);
+    form.reset();
+  };
+
   const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
-    <Dialog open={isAddingNote || !!editingNote} onOpenChange={(open) => {
-      if (!open) {
-        setIsAddingNote(false);
-        setEditingNote(null);
-        form.reset();
+    <Dialog open={isDialogOpen} onOpenChange={(open) => {
+      // Only handle close events, ignore rapid state changes
+      if (!open && isDialogOpen) {
+        handleDialogClose();
       }
     }}>
       <DialogContent className="max-w-2xl">
@@ -359,14 +381,7 @@ export default function Notes() {
                   <FormControl>
                     <Input
                       placeholder="Enter note title..."
-                      value={field.value || ""}
-                      onChange={(e) => {
-                        console.log('Title input change:', e.target.value, 'Selection:', e.target.selectionStart, e.target.selectionEnd);
-                        field.onChange(e);
-                      }}
-                      onBlur={field.onBlur}
-                      name={field.name}
-                      ref={field.ref}
+                      {...field}
                       data-testid="note-title-input"
                       autoComplete="off"
                     />
@@ -376,6 +391,48 @@ export default function Notes() {
               )}
             />
             
+            {/* Owner Field */}
+            <FormField
+              control={form.control}
+              name="ownerName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Owner</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Note owner..."
+                      {...field}
+                      data-testid="note-owner-input"
+                      readOnly
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Category Dropdown */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Category</label>
+              <Select 
+                value={form.watch("category") || "General"} 
+                onValueChange={(value) => form.setValue("category", value)}
+              >
+                <SelectTrigger data-testid="note-category-select">
+                  <SelectValue placeholder="Select category..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
+                  <SelectItem value="Project Updates">Project Updates</SelectItem>
+                  <SelectItem value="Ideas">Ideas</SelectItem>
+                  <SelectItem value="To-Do">To-Do</SelectItem>
+                  <SelectItem value="Important">Important</SelectItem>
+                  <SelectItem value="Documentation">Documentation</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Template Selector */}
             {!isEditing && noteTemplates.length > 0 && (
               <div>
