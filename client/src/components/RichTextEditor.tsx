@@ -1,7 +1,6 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useEffect, useRef } from 'react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -24,10 +23,10 @@ interface RichTextEditorProps {
 }
 
 // Static extensions configuration to prevent recreation
+// Note: StarterKit already includes Underline extension in v3+
 const extensions = [
   StarterKit,
   TextStyle,
-  Underline,
 ];
 
 export function RichTextEditor({
