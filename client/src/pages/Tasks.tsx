@@ -583,7 +583,7 @@ export default function Tasks() {
                     <SelectItem value="none">
                       <div className="flex items-center gap-2">
                         <Layers className="w-3 h-3" />
-                        No Grouping
+                        Grouping
                       </div>
                     </SelectItem>
                     <SelectItem value="status">
