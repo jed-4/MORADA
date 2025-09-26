@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
@@ -121,28 +121,31 @@ export default function Notes() {
     enabled: customFieldDefs.length > 0,
   });
 
-  // Create dynamic form schema based on custom fields
-  const noteFormSchema = createNoteFormSchema(customFieldDefs);
+  // Create dynamic form schema based on custom fields - memoized to prevent re-renders
+  const noteFormSchema = useMemo(() => createNoteFormSchema(customFieldDefs), [customFieldDefs]);
   
   // Use proper z.infer type
   type NoteFormData = z.infer<typeof noteFormSchema>;
 
+  // Memoize default values to prevent form re-initialization
+  const defaultValues = useMemo(() => ({
+    title: "",
+    content: "",
+    contentHtml: "",
+    contentText: "",
+    author: "Current User", // todo: get from auth context
+    ownerId: undefined,
+    ownerName: "Current User",
+    customFields: customFieldDefs.reduce((acc, field) => {
+      acc[field.key] = "";
+      return acc;
+    }, {} as Record<string, string>),
+  }), [customFieldDefs]);
+
   // Form handling - declare form after schema is available
   const form = useForm<NoteFormData>({
     resolver: zodResolver(noteFormSchema),
-    defaultValues: {
-      title: "",
-      content: "",
-      contentHtml: "",
-      contentText: "",
-      author: "Current User", // todo: get from auth context
-      ownerId: undefined,
-      ownerName: "Current User",
-      customFields: customFieldDefs.reduce((acc, field) => {
-        acc[field.key] = "";
-        return acc;
-      }, {} as Record<string, string>),
-    },
+    defaultValues,
   });
 
   // React Query hooks - fetch notes filtered by current project
@@ -356,8 +359,16 @@ export default function Notes() {
                   <FormControl>
                     <Input
                       placeholder="Enter note title..."
-                      {...field}
+                      value={field.value || ""}
+                      onChange={(e) => {
+                        console.log('Title input change:', e.target.value, 'Selection:', e.target.selectionStart, e.target.selectionEnd);
+                        field.onChange(e);
+                      }}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
                       data-testid="note-title-input"
+                      autoComplete="off"
                     />
                   </FormControl>
                   <FormMessage />
@@ -455,9 +466,12 @@ export default function Notes() {
                       key={editingNote ? `edit-${editingNote.id}` : 'new'}
                       content={field.value || ""}
                       onChange={(html, text) => {
-                        field.onChange(html);
-                        form.setValue("contentText", text);
-                        form.setValue("content", text); // For backward compatibility
+                        // Use batch update to prevent multiple re-renders during typing
+                        requestAnimationFrame(() => {
+                          field.onChange(html);
+                          form.setValue("contentText", text, { shouldValidate: false });
+                          form.setValue("content", text, { shouldValidate: false }); // For backward compatibility
+                        });
                       }}
                       placeholder="Enter note content..."
                       data-testid="note-content-editor"
