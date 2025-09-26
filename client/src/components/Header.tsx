@@ -65,7 +65,7 @@ export default function Header() {
   };
   
   return (
-    <header className="flex items-center justify-between p-4 border-b bg-background">
+    <header className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-50">
       <div className="flex items-center gap-4">
         <SidebarTrigger data-testid="button-sidebar-toggle" />
         
