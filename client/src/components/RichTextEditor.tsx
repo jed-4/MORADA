@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
+import { useMemo } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -33,28 +34,31 @@ export function RichTextEditor({
   disabled = false,
   'data-testid': testId,
 }: RichTextEditorProps) {
+  // Memoize extensions to prevent duplicate registration warnings
+  const extensions = useMemo(() => [
+    StarterKit.configure({
+      // Disable default list extensions to use custom ones
+      bulletList: false,
+      orderedList: false,
+      listItem: false,
+    }),
+    TextStyle,
+    Underline,
+    BulletList.configure({
+      HTMLAttributes: {
+        class: 'prose-bullet-list',
+      },
+    }),
+    OrderedList.configure({
+      HTMLAttributes: {
+        class: 'prose-ordered-list',
+      },
+    }),
+    ListItem,
+  ], []);
+
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        // Disable default list extensions to use custom ones
-        bulletList: false,
-        orderedList: false,
-        listItem: false,
-      }),
-      TextStyle,
-      Underline,
-      BulletList.configure({
-        HTMLAttributes: {
-          class: 'prose-bullet-list',
-        },
-      }),
-      OrderedList.configure({
-        HTMLAttributes: {
-          class: 'prose-ordered-list',
-        },
-      }),
-      ListItem,
-    ],
+    extensions,
     content,
     editable: !disabled,
     onUpdate: ({ editor }) => {
@@ -161,7 +165,7 @@ export function RichTextEditor({
         className={cn(
           "prose prose-sm max-w-none p-3 min-h-[120px]",
           "focus-within:outline-none",
-          "[&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[100px]",
+          "[&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[100px] [&_.ProseMirror]:whitespace-pre-wrap",
           "[&_.prose-bullet-list]:list-disc [&_.prose-bullet-list]:ml-6",
           "[&_.prose-ordered-list]:list-decimal [&_.prose-ordered-list]:ml-6",
           "[&_.prose-bullet-list>li]:list-item",
