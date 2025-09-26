@@ -175,7 +175,7 @@ export default function WidgetContainer({
     <Card 
       ref={setNodeRef}
       style={style}
-      className={`relative ${currentDimensions ? '' : sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
+      className={`relative flex h-full flex-col ${currentDimensions ? '' : sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
         isDragging ? 'opacity-50 z-50' : ''
       } ${isResizing ? 'select-none' : ''}`}
       data-testid={`widget-${widget.type}-${widget.id}`}
@@ -221,7 +221,7 @@ export default function WidgetContainer({
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 min-h-0 overflow-auto">
         {children}
       </CardContent>
       
