@@ -799,7 +799,7 @@ export default function Selections() {
                           placeholder="0.00"
                           step="0.01"
                           min="0"
-                          className="pl-10"
+                          className="pl-10 [&::-webkit-outer-spin-button]:[-webkit-appearance:none] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-inner-spin-button]:[-webkit-appearance:none] [&::-webkit-inner-spin-button]:m-0 [-moz-appearance:textfield]"
                           {...field}
                           value={field.value ? (field.value / 100).toFixed(2) : ""}
                           onChange={(e) => {
