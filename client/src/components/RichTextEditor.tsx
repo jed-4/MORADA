@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -67,6 +67,15 @@ export function RichTextEditor({
       onChange?.(html, text);
     },
   });
+
+  // Clean up editor on unmount
+  useEffect(() => {
+    return () => {
+      if (editor) {
+        editor.destroy();
+      }
+    };
+  }, [editor]);
 
   if (!editor) return null;
 

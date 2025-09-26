@@ -452,6 +452,7 @@ export default function Notes() {
                   <FormLabel>Content</FormLabel>
                   <FormControl>
                     <RichTextEditor
+                      key={editingNote ? `edit-${editingNote.id}` : 'new'}
                       content={field.value || ""}
                       onChange={(html, text) => {
                         field.onChange(html);
