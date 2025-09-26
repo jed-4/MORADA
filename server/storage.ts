@@ -3306,7 +3306,22 @@ export class DbStorage implements IStorage {
   async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> { return undefined; }
   async getNotes(): Promise<Note[]> { return []; }
   async getNote(id: string): Promise<Note | undefined> { return undefined; }
-  async createNote(note: InsertNote): Promise<Note> { throw new Error("Not implemented"); }
+  async createNote(insertNote: InsertNote): Promise<Note> {
+    const now = new Date();
+    const noteData = {
+      ...insertNote,
+      category: insertNote.category || "General",
+      priority: insertNote.priority || "medium",
+      type: insertNote.type || "note",
+      customFields: insertNote.customFields || {},
+      tags: insertNote.tags || [],
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    const result = await db.insert(schema.notes).values(noteData).returning();
+    return result[0];
+  }
   async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> { return undefined; }
   async deleteNote(id: string): Promise<boolean> { return false; }
   async getCustomFieldDefs(): Promise<CustomFieldDef[]> { return []; }
