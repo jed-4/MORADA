@@ -52,6 +52,8 @@ import {
   User,
   FileText as FileTemplate,
   Settings,
+  ArrowUpDown,
+  Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -91,6 +93,7 @@ export default function Notes() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState("newest");
   const { toast } = useToast();
   const { currentProject } = useProject();
 
@@ -230,32 +233,50 @@ export default function Notes() {
   });
 
 
-  const filteredNotes = notes.filter(note => {
-    const searchableContent = [
-      note.title,
-      note.content,
-      note.contentText || "",
-      note.author,
-      note.ownerName || "",
-      ...Object.values(note.customFields || {}),
-    ].join(" ").toLowerCase();
-    
-    const matchesSearch = searchableContent.includes(searchTerm.toLowerCase());
-    
-    // Filter by category
-    const matchesCategory = selectedCategory === "All" || note.category === selectedCategory;
-    
-    // Filter by custom fields if a specific field value is selected
-    const matchesField = selectedField === "All" || 
-      Object.values(note.customFields || {}).some(value => 
-        String(value).toLowerCase().includes(selectedField.toLowerCase())
-      ) ||
-      // Legacy support for category field
-      note.category === selectedField ||
-      note.priority === selectedField;
+  const filteredNotes = useMemo(() => {
+    let filtered = notes.filter(note => {
+      const searchableContent = [
+        note.title,
+        note.content,
+        note.contentText || "",
+        note.author,
+        note.ownerName || "",
+        ...Object.values(note.customFields || {}),
+      ].join(" ").toLowerCase();
       
-    return matchesSearch && matchesCategory && matchesField;
-  });
+      const matchesSearch = searchableContent.includes(searchTerm.toLowerCase());
+      
+      // Filter by category
+      const matchesCategory = selectedCategory === "All" || note.category === selectedCategory;
+      
+      // Filter by custom fields if a specific field value is selected
+      const matchesField = selectedField === "All" || 
+        Object.values(note.customFields || {}).some(value => 
+          String(value).toLowerCase().includes(selectedField.toLowerCase())
+        ) ||
+        // Legacy support for category field
+        note.category === selectedField ||
+        note.priority === selectedField;
+        
+      return matchesSearch && matchesCategory && matchesField;
+    });
+
+    // Apply sorting
+    switch (sortBy) {
+      case "oldest":
+        filtered.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        break;
+      case "alphabetical":
+        filtered.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      case "newest":
+      default:
+        filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        break;
+    }
+    
+    return filtered;
+  }, [notes, searchTerm, selectedCategory, selectedField, sortBy]);
 
   const onSubmit = (data: NoteFormData) => {
     try {
@@ -609,6 +630,18 @@ export default function Notes() {
             </SelectContent>
           </Select>
           
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-48" data-testid="notes-sort-filter">
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="alphabetical">Alphabetical</SelectItem>
+            </SelectContent>
+          </Select>
+          
         </div>
       </div>
 
@@ -658,6 +691,12 @@ export default function Notes() {
                       <Badge className={`text-xs ${getPriorityColor(note.priority)}`} data-testid={`note-priority-${note.id}`}>
                         {note.priority}
                       </Badge>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span data-testid={`note-date-${note.id}`}>
+                          {format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <DropdownMenu>

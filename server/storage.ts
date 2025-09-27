@@ -29,7 +29,7 @@ import {
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
-import { eq, or, and } from "drizzle-orm";
+import { eq, or, and, desc } from "drizzle-orm";
 import * as schema from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -3304,7 +3304,19 @@ export class DbStorage implements IStorage {
   async updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> { return undefined; }
   async deleteUserInvitation(id: string): Promise<boolean> { return false; }
   async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> { return undefined; }
-  async getNotes(): Promise<Note[]> { return []; }
+  async getNotes(projectId?: string): Promise<Note[]> {
+    const conditions = [eq(schema.notes.type, "note")];
+    
+    if (projectId) {
+      conditions.push(eq(schema.notes.projectId, projectId));
+    }
+    
+    const notes = await db.select().from(schema.notes).where(
+      conditions.length === 1 ? conditions[0] : and(...conditions)
+    ).orderBy(desc(schema.notes.createdAt));
+    
+    return notes as Note[];
+  }
   async getNote(id: string): Promise<Note | undefined> { return undefined; }
   async createNote(insertNote: InsertNote): Promise<Note> {
     const now = new Date();
