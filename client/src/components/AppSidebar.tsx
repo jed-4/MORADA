@@ -172,16 +172,9 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="w-full justify-between" data-testid="button-projects-dropdown" disabled={projectsLoading}>
-              <div className="flex flex-col items-start">
-                <span className="text-sm font-medium">
-                  {currentProject ? currentProject.name : (projectsLoading ? "Loading..." : "Select Project")}
-                </span>
-                {currentProject && (
-                  <span className="text-xs text-muted-foreground">
-                    {currentProject.isBusiness ? "Business Project" : "Construction Project"}
-                  </span>
-                )}
-              </div>
+              <span className="text-sm font-medium">
+                {currentProject ? currentProject.name : (projectsLoading ? "Loading..." : "Select Project")}
+              </span>
               <ChevronDown className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
