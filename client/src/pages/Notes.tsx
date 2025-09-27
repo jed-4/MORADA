@@ -192,7 +192,7 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
-      form.reset();
+      form.reset(defaultValues);
     },
     onError: (error) => {
       toast({ 
@@ -212,7 +212,7 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
-      form.reset();
+      form.reset(defaultValues);
     },
     onError: (error) => {
       toast({ 
@@ -377,7 +377,8 @@ export default function Notes() {
     setIsAddingNote(false);
     setEditingNote(null);
     setSelectedTemplate(null);
-    form.reset();
+    // Reset form to default values instead of calling reset() which can cause typing issues
+    form.reset(defaultValues);
   };
 
   const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
