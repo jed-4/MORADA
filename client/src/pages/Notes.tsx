@@ -684,8 +684,9 @@ export default function Notes() {
           {filteredNotes.map((note) => (
             <Card 
               key={note.id} 
-              className="hover-elevate p-4"
+              className="hover-elevate p-4 cursor-pointer"
               data-testid={`note-card-${note.id}`}
+              onDoubleClick={() => handleEditNote(note)}
             >
               <div className="flex items-start gap-6">
                 {/* Title and Content */}
