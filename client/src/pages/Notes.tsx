@@ -679,86 +679,79 @@ export default function Notes() {
           )}
         </Card>
       ) : (
-        <div className="w-full">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[40%]">Title</TableHead>
-                <TableHead className="w-[12%]">Category</TableHead>
-                <TableHead className="w-[10%]">Priority</TableHead>
-                <TableHead className="w-[15%]">Created</TableHead>
-                <TableHead className="w-[13%]">Author</TableHead>
-                <TableHead className="w-[10%]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredNotes.map((note) => (
-                <TableRow 
-                  key={note.id} 
-                  className="hover-elevate cursor-pointer"
-                  data-testid={`note-row-${note.id}`}
-                >
-                  <TableCell className="py-4">
-                    <div>
-                      <div className="font-medium text-sm mb-1">
-                        {note.title}
-                      </div>
-                      <div className="text-xs text-muted-foreground line-clamp-2">
-                        {note.content}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="text-xs" data-testid={`note-category-${note.id}`}>
-                      {note.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={`text-xs ${getPriorityColor(note.priority)}`} data-testid={`note-priority-${note.id}`}>
-                      {note.priority}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      <span data-testid={`note-date-${note.id}`}>
-                        {format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <User className="h-3 w-3" />
-                      <span>{note.author}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`note-menu-trigger-${note.id}`}>
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEditNote(note)} data-testid={`note-edit-${note.id}`}>
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => handleDeleteNote(note.id)}
-                          className="text-destructive"
-                          data-testid={`note-delete-${note.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="w-full space-y-3">
+          {filteredNotes.map((note) => (
+            <Card 
+              key={note.id} 
+              className="hover-elevate p-4"
+              data-testid={`note-card-${note.id}`}
+            >
+              <div className="flex items-start gap-6">
+                {/* Title and Content */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-base mb-2 line-clamp-1">
+                    {note.title}
+                  </h3>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                    {note.content}
+                  </p>
+                </div>
+                
+                {/* Category */}
+                <div className="flex-shrink-0">
+                  <Badge variant="secondary" className="text-xs" data-testid={`note-category-${note.id}`}>
+                    {note.category}
+                  </Badge>
+                </div>
+                
+                {/* Priority */}
+                <div className="flex-shrink-0">
+                  <Badge className={`text-xs ${getPriorityColor(note.priority)}`} data-testid={`note-priority-${note.id}`}>
+                    {note.priority}
+                  </Badge>
+                </div>
+                
+                {/* Date */}
+                <div className="flex-shrink-0 flex items-center gap-1 text-xs text-muted-foreground min-w-[140px]">
+                  <Clock className="h-3 w-3" />
+                  <span data-testid={`note-date-${note.id}`}>
+                    {format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                  </span>
+                </div>
+                
+                {/* Author */}
+                <div className="flex-shrink-0 flex items-center gap-1 text-xs text-muted-foreground min-w-[100px]">
+                  <User className="h-3 w-3" />
+                  <span>{note.author}</span>
+                </div>
+                
+                {/* Actions */}
+                <div className="flex-shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`note-menu-trigger-${note.id}`}>
+                        <MoreVertical className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEditNote(note)} data-testid={`note-edit-${note.id}`}>
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => handleDeleteNote(note.id)}
+                        className="text-destructive"
+                        data-testid={`note-delete-${note.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
       )}
 
