@@ -1,6 +1,8 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette } from "lucide-react";
 import { useLocation } from "wouter";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import CreateProjectDialog from "./CreateProjectDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +17,23 @@ import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {
   const [location, navigate] = useLocation();
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+
+  const handleNewNote = () => {
+    navigate('/notes');
+  };
+
+  const handleNewTask = () => {
+    navigate('/tasks');
+  };
+
+  const handleNewProject = () => {
+    setIsCreateProjectOpen(true);
+  };
+
+  const handleNewSelection = () => {
+    navigate('/selections');
+  };
   
   return (
     <header className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-50">
@@ -48,6 +67,36 @@ export default function Header() {
           <Calendar className="h-4 w-4" />
         </Button>
 
+        {/* New Button with Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="default" size="sm" data-testid="button-new">
+              <Plus className="h-4 w-4 mr-2" />
+              New
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Create New</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleNewNote} data-testid="menu-new-note">
+              <FileText className="h-4 w-4 mr-2" />
+              Note
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleNewTask} data-testid="menu-new-task">
+              <CheckSquare className="h-4 w-4 mr-2" />
+              Task
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleNewProject} data-testid="menu-new-project">
+              <Folder className="h-4 w-4 mr-2" />
+              Project
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleNewSelection} data-testid="menu-new-selection">
+              <Palette className="h-4 w-4 mr-2" />
+              Selection
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <ThemeToggle />
         
         {/* User Menu */}
@@ -79,6 +128,12 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      
+      {/* Create Project Dialog */}
+      <CreateProjectDialog 
+        open={isCreateProjectOpen} 
+        onOpenChange={setIsCreateProjectOpen} 
+      />
     </header>
   );
 }
