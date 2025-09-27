@@ -24,6 +24,8 @@ import {
   Mail,
   UserPlus,
   Building2,
+  ChevronDown,
+  Plus,
 } from "lucide-react";
 
 import {
@@ -37,8 +39,22 @@ import {
   SidebarMenuItem,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
+import { useQuery } from "@tanstack/react-query";
+import { useProject } from "@/contexts/ProjectContext";
+import { Project } from "@shared/schema";
+import { useState, useEffect } from "react";
+import CreateProjectDialog from "./CreateProjectDialog";
 
 // Coming soon items that should have strikeout styling
 const comingSoonItems = new Set([
@@ -96,31 +112,126 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const { currentProject, setCurrentProject } = useProject();
   const isBusinessContext = location.startsWith('/business');
   const showComingSoon = sidebarWidth >= 280; // Hide "coming soon" text when sidebar is narrow
   
+  // Fetch projects from API
+  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // Set first project as current if none selected and projects are available
+  useEffect(() => {
+    if (!currentProject && projects.length > 0) {
+      const savedProjectId = localStorage.getItem("currentProjectId");
+      if (savedProjectId) {
+        const savedProject = projects.find(p => p.id === savedProjectId);
+        if (savedProject) {
+          setCurrentProject(savedProject);
+        } else {
+          // Fallback to first project if saved project not found
+          setCurrentProject(projects[0]);
+        }
+      } else {
+        // Set first project as default
+        setCurrentProject(projects[0]);
+      }
+    }
+  }, [projects, currentProject, setCurrentProject]);
+
+  const handleProjectSelect = (project: Project) => {
+    setCurrentProject(project);
+    
+    // Navigate to appropriate page based on project type
+    if (project.isBusiness) {
+      navigate('/business');
+    } else {
+      navigate('/');
+    }
+    console.log(`Selected project: ${project.name} (${project.id})`);
+  };
+
+  const handleCreateProject = () => {
+    setIsCreateProjectOpen(true);
+  };
+  
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4 border-b">
+      <SidebarHeader className="p-4 border-b space-y-3">
         <div className="flex items-center gap-2">
           <Building2 className="h-6 w-6 text-primary" />
           <div>
             <h2 className="font-semibold text-lg">BuildPro</h2>
-            <div className="flex items-center gap-2">
-              {isBusinessContext ? (
-                <>
-                  <p className="text-sm text-muted-foreground">Business Project</p>
-                  <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                    Business
-                  </Badge>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">Sunshine Coast Villa</p>
-              )}
-            </div>
           </div>
         </div>
+        
+        {/* Projects Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-full justify-between" data-testid="button-projects-dropdown" disabled={projectsLoading}>
+              <div className="flex flex-col items-start">
+                <span className="text-sm font-medium">
+                  {currentProject ? currentProject.name : (projectsLoading ? "Loading..." : "Select Project")}
+                </span>
+                {currentProject && (
+                  <span className="text-xs text-muted-foreground">
+                    {currentProject.isBusiness ? "Business Project" : "Construction Project"}
+                  </span>
+                )}
+              </div>
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>Projects</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {projectsLoading ? (
+              <DropdownMenuItem disabled>
+                <span className="text-muted-foreground">Loading projects...</span>
+              </DropdownMenuItem>
+            ) : projects.length === 0 ? (
+              <DropdownMenuItem disabled>
+                <span className="text-muted-foreground">No projects found</span>
+              </DropdownMenuItem>
+            ) : (
+              projects.map((project) => (
+                <DropdownMenuItem 
+                  key={project.id} 
+                  data-testid={`project-${project.id}`}
+                  onClick={() => handleProjectSelect(project)}
+                  className={currentProject?.id === project.id ? "bg-accent" : ""}
+                >
+                  <div className="flex flex-col w-full">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{project.name}</span>
+                      {project.isBusiness && (
+                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                          Business
+                        </Badge>
+                      )}
+                      {currentProject?.id === project.id && (
+                        <Badge variant="outline" className="text-xs ml-auto">
+                          Current
+                        </Badge>
+                      )}
+                    </div>
+                    {project.description && (
+                      <span className="text-sm text-muted-foreground truncate">{project.description}</span>
+                    )}
+                  </div>
+                </DropdownMenuItem>
+              ))
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem data-testid="button-new-project" onClick={handleCreateProject}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create New Project
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarHeader>
       
       <SidebarContent>
@@ -255,6 +366,12 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      
+      {/* Create Project Dialog */}
+      <CreateProjectDialog 
+        open={isCreateProjectOpen} 
+        onOpenChange={setIsCreateProjectOpen} 
+      />
     </Sidebar>
   );
 }
