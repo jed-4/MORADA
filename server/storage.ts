@@ -3335,7 +3335,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
   async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> { return undefined; }
-  async deleteNote(id: string): Promise<boolean> { return false; }
+  async deleteNote(id: string): Promise<boolean> {
+    const result = await db.delete(schema.notes).where(eq(schema.notes.id, id)).returning({ id: schema.notes.id });
+    return result.length > 0;
+  }
   async getCustomFieldDefs(): Promise<CustomFieldDef[]> { return []; }
   async getCustomFieldDef(id: string): Promise<CustomFieldDef | undefined> { return undefined; }
   async createCustomFieldDef(fieldDef: InsertCustomFieldDef): Promise<CustomFieldDef> { throw new Error("Not implemented"); }
