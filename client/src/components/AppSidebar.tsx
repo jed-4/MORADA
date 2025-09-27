@@ -185,7 +185,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
               <ChevronDown className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 z-[60] shadow-lg border-2 bg-background/95 backdrop-blur-sm">
+          <DropdownMenuContent align="start" className="w-64 z-[60] shadow-lg border-2 bg-background/95 backdrop-blur-sm mt-2">
             <DropdownMenuLabel>Projects</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {projectsLoading ? (
