@@ -54,6 +54,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
+    // TEMPORARY: Allow notes operations for development (remove when auth UI is ready)
+    if (path.startsWith('/notes')) {
+      return next();
+    }
+    
     // Require authentication for admin routes (users, roles, permissions, invitations)
     return requireAuth(req, res, next);
   });
