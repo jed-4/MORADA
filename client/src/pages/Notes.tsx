@@ -390,39 +390,29 @@ export default function Notes() {
     form.reset(defaultValues);
   }, [isTyping, form, defaultValues]);
 
-  // Custom form submission wrapper that prevents highlighting issues
+  // Vanilla HTML input approach - completely bypasses React synthetic events
   const handleFormSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    // Ensure ref value is synced to form before validation
+    // Sync vanilla input value to form before validation
     if (titleInputRef.current) {
       form.setValue('title', titleInputRef.current.value, { shouldValidate: true });
     }
-    // Use a small delay to ensure setValue completes before validation
+    // Submit after syncing
     setTimeout(() => {
       form.handleSubmit(onSubmit)(e);
     }, 0);
   }, [form, onSubmit]);
 
-  // Register title input with React Hook Form using ref callback
-  const titleRegistration = form.register('title', {
-    setValueAs: (value) => titleInputRef.current?.value || value,
-  });
-
-  // Custom ref callback that combines React Hook Form ref with our titleInputRef
-  const combinedTitleRef = useCallback((element: HTMLInputElement | null) => {
-    // Store reference for our use
-    (titleInputRef as React.MutableRefObject<HTMLInputElement | null>).current = element;
-    // Also pass to React Hook Form
-    titleRegistration.ref(element);
-  }, [titleRegistration.ref]);
-
-  // Sync form changes back to ref (for template application, editing, etc.)
-  const titleValue = form.watch('title');
+  // Watch form title changes to sync with vanilla input (for templates, editing, etc.)
+  const formTitleValue = form.watch('title');
   useEffect(() => {
-    if (titleInputRef.current && titleInputRef.current.value !== titleValue) {
-      titleInputRef.current.value = titleValue || '';
+    if (titleInputRef.current && titleInputRef.current.value !== (formTitleValue || '')) {
+      titleInputRef.current.value = formTitleValue || '';
     }
-  }, [titleValue]);
+  }, [formTitleValue]);
+
+  // Track title validation errors manually
+  const titleError = form.formState.errors.title?.message;
 
   const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
     <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -445,35 +435,32 @@ export default function Notes() {
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={handleFormSubmit} className="space-y-4 mt-4">
-            {/* Hybrid Title Input - fixes highlighting while maintaining form integration */}
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...titleRegistration}
-                      ref={combinedTitleRef}
-                      placeholder="Enter note title..."
-                      data-testid="note-title-input"
-                      autoComplete="off"
-                      onFocus={() => setIsTyping(true)}
-                      onBlur={(e) => {
-                        titleRegistration.onBlur(e);
-                        setTimeout(() => setIsTyping(false), 100);
-                      }}
-                      onChange={(e) => {
-                        titleRegistration.onChange(e);
-                        setIsTyping(true);
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+            {/* Vanilla HTML Input - no React event handlers to prevent highlighting interruption */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none" htmlFor="note-title-vanilla">
+                Title
+              </label>
+              <input
+                id="note-title-vanilla"
+                ref={titleInputRef}
+                type="text"
+                placeholder="Enter note title..."
+                data-testid="note-title-input"
+                autoComplete="off"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                onFocus={() => setIsTyping(true)}
+                onBlur={() => {
+                  // Sync to form on blur and validate
+                  if (titleInputRef.current) {
+                    form.setValue('title', titleInputRef.current.value, { shouldValidate: true });
+                  }
+                  setTimeout(() => setIsTyping(false), 100);
+                }}
+              />
+              {titleError && (
+                <p className="text-sm font-medium text-destructive">{titleError}</p>
               )}
-            />
+            </div>
             
             {/* Owner Field */}
             <FormField
