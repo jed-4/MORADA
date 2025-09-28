@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
@@ -102,6 +102,7 @@ export default function Notes() {
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("newest");
+  const [isTyping, setIsTyping] = useState(false);
   const { toast } = useToast();
   const { currentProject } = useProject();
 
@@ -192,6 +193,7 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
+      setIsTyping(false);
       form.reset(defaultValues);
     },
     onError: (error) => {
@@ -212,6 +214,7 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
+      setIsTyping(false);
       form.reset(defaultValues);
     },
     onError: (error) => {
@@ -373,13 +376,28 @@ export default function Notes() {
   const isDialogOpen = isAddingNote || !!editingNote;
   
   // Handle dialog close with debounce to prevent rapid state changes
-  const handleDialogClose = () => {
+  const handleDialogClose = useCallback(() => {
+    // Don't reset form if user is actively typing
+    if (isTyping) {
+      return;
+    }
     setIsAddingNote(false);
     setEditingNote(null);
     setSelectedTemplate(null);
-    // Reset form to default values instead of calling reset() which can cause typing issues
+    setIsTyping(false);
+    // Reset form to default values
     form.reset(defaultValues);
-  };
+  }, [isTyping, form, defaultValues]);
+
+  // Handle typing state to prevent form resets during typing
+  const handleTitleFocus = useCallback(() => {
+    setIsTyping(true);
+  }, []);
+
+  const handleTitleBlur = useCallback(() => {
+    // Small delay to allow for quick refocus
+    setTimeout(() => setIsTyping(false), 100);
+  }, []);
 
   const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
     <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -410,10 +428,14 @@ export default function Notes() {
                   <FormLabel>Title</FormLabel>
                   <FormControl>
                     <Input
+                      key="note-title-input" // Stable key to prevent remounting
                       placeholder="Enter note title..."
                       {...field}
                       data-testid="note-title-input"
                       autoComplete="off"
+                      onFocus={handleTitleFocus}
+                      onBlur={handleTitleBlur}
+                      onInput={() => setIsTyping(true)}
                     />
                   </FormControl>
                   <FormMessage />
