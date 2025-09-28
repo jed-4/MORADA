@@ -58,7 +58,7 @@ import CreateProjectDialog from "./CreateProjectDialog";
 
 // Coming soon items that should have strikeout styling
 const comingSoonItems = new Set([
-  "Messages", "Schedule", "Take off", "Estimates", 
+  "Messages", "Schedule", "Take off", 
   "Request For Quotes", "Request For Information", "Proposal", 
   "Allowances", "Purchase Orders", "Variations", 
   "Bills", "Client Invoices", "Site Diary", "Timesheets", 
