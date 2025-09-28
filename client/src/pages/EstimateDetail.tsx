@@ -757,7 +757,7 @@ export default function EstimateDetail() {
                   variant={estimate?.isLocked ? "secondary" : "default"}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Item
+                  New item
                 </Button>
               </div>
             </CardHeader>
@@ -782,7 +782,7 @@ export default function EstimateDetail() {
                     variant={estimate?.isLocked ? "secondary" : "default"}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Add First Item
+                    Create first estimate item
                   </Button>
                 </div>
               ) : (
@@ -1165,7 +1165,7 @@ export default function EstimateDetail() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
-                  {addItemMutation.isPending ? "Adding..." : "Add Item"}
+                  {addItemMutation.isPending ? "Adding..." : "New item"}
                 </Button>
               </div>
             </form>
