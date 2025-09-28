@@ -152,7 +152,7 @@ export default function EstimateDetail() {
                       data-testid={`button-select-project-${project.id}`}
                     >
                       <div className="font-medium">{project.name}</div>
-                      <div className="text-sm text-muted-foreground">{project.address}</div>
+                      <div className="text-sm text-muted-foreground">{project.description || 'No description'}</div>
                     </Card>
                   ))
                 )}
@@ -775,7 +775,7 @@ export default function EstimateDetail() {
                   onClick={handleNameEdit}
                   title="Click to edit estimate name"
                 >
-                  {estimate.name}
+                  {estimate?.name || 'Loading...'}
                 </h1>
               )}
               <p className="text-sm text-muted-foreground" data-testid="text-project-name">
@@ -784,19 +784,20 @@ export default function EstimateDetail() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {getStatusBadge(estimate)}
+            {estimate && getStatusBadge(estimate)}
             <Button variant="outline" size="sm" data-testid="button-edit-estimate">
               <Edit className="w-4 h-4 mr-2" />
               Edit
             </Button>
-            <Button 
-              variant={estimate.isLocked ? "destructive" : "outline"} 
-              size="sm" 
-              data-testid="button-toggle-lock"
-              onClick={handleToggleLock}
-              disabled={toggleLockMutation.isPending}
-            >
-              {estimate.isLocked ? (
+            {estimate && (
+              <Button 
+                variant={estimate.isLocked ? "destructive" : "outline"} 
+                size="sm" 
+                data-testid="button-toggle-lock"
+                onClick={handleToggleLock}
+                disabled={toggleLockMutation.isPending}
+              >
+                {estimate.isLocked ? (
                 <>
                   <Unlock className="w-4 h-4 mr-2" />
                   {toggleLockMutation.isPending ? "Unlocking..." : "Unlock"}
@@ -806,8 +807,9 @@ export default function EstimateDetail() {
                   <Lock className="w-4 h-4 mr-2" />
                   {toggleLockMutation.isPending ? "Locking..." : "Lock"}
                 </>
-              )}
-            </Button>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -858,7 +860,7 @@ export default function EstimateDetail() {
                         title="Click to edit markup percentage"
                         data-testid="text-markup-percentage"
                       >
-                        {estimate.projectMarkupPercent}
+                        {estimate?.projectMarkupPercent || 0}
                       </span>
                     )}
                     %)
@@ -870,14 +872,14 @@ export default function EstimateDetail() {
                     {formatCurrency(summary.markupAmount)}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {estimate.projectMarkupPercent}% of subtotal
+                    {estimate?.projectMarkupPercent || 0}% of subtotal
                   </p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">GST ({estimate.taxRate}%)</CardTitle>
+                  <CardTitle className="text-sm font-medium">GST ({estimate?.taxRate || 10}%)</CardTitle>
                   <Calculator className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
@@ -885,7 +887,7 @@ export default function EstimateDetail() {
                     {formatCurrency(summary.taxAmount)}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {estimate.taxRate}% on marked-up total
+                    {estimate?.taxRate || 10}% on marked-up total
                   </p>
                 </CardContent>
               </Card>
