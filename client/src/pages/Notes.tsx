@@ -397,10 +397,8 @@ export default function Notes() {
     if (titleInputRef.current) {
       form.setValue('title', titleInputRef.current.value, { shouldValidate: true });
     }
-    // Submit after syncing
-    setTimeout(() => {
-      form.handleSubmit(onSubmit)(e);
-    }, 0);
+    // Submit directly
+    form.handleSubmit(onSubmit)(e);
   }, [form, onSubmit]);
 
   // Only sync title when specifically editing a note or applying a template (not on every form change)
@@ -423,8 +421,7 @@ export default function Notes() {
 
   const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
     <Dialog open={isDialogOpen} onOpenChange={(open) => {
-      // Only handle close events, ignore rapid state changes
-      if (!open && isDialogOpen) {
+      if (!open) {
         handleDialogClose();
       }
     }}>
@@ -490,26 +487,32 @@ export default function Notes() {
             />
 
             {/* Category Dropdown */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Category</label>
-              <Select 
-                value={form.watch("category") || "General"} 
-                onValueChange={(value) => form.setValue("category", value)}
-              >
-                <SelectTrigger data-testid="note-category-select">
-                  <SelectValue placeholder="Select category..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="General">General</SelectItem>
-                  <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
-                  <SelectItem value="Project Updates">Project Updates</SelectItem>
-                  <SelectItem value="Ideas">Ideas</SelectItem>
-                  <SelectItem value="To-Do">To-Do</SelectItem>
-                  <SelectItem value="Important">Important</SelectItem>
-                  <SelectItem value="Documentation">Documentation</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category</FormLabel>
+                  <Select value={field.value || "General"} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="note-category-select">
+                        <SelectValue placeholder="Select category..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="General">General</SelectItem>
+                      <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
+                      <SelectItem value="Project Updates">Project Updates</SelectItem>
+                      <SelectItem value="Ideas">Ideas</SelectItem>
+                      <SelectItem value="To-Do">To-Do</SelectItem>
+                      <SelectItem value="Important">Important</SelectItem>
+                      <SelectItem value="Documentation">Documentation</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Template Selector */}
             {!isEditing && noteTemplates.length > 0 && (
