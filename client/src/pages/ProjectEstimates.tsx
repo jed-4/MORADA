@@ -51,7 +51,7 @@ export default function ProjectEstimates() {
   }
 
   const handleNewEstimate = () => {
-    setLocation(`/estimates/new?projectId=${projectId}`);
+    setLocation(`/projects/${projectId}/estimates/new`);
   };
 
   const handleBackToAllEstimates = () => {
@@ -165,7 +165,7 @@ export default function ProjectEstimates() {
           <div className="flex-1">
             <CardTitle 
               className="text-lg cursor-pointer hover:text-blue-600 transition-colors" 
-              onClick={() => setLocation(`/estimates/${estimate.id}`)}
+              onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
               data-testid={`link-estimate-title-${estimate.id}`}
             >
               {estimate.name}
@@ -182,14 +182,14 @@ export default function ProjectEstimates() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem 
                   data-testid={`button-edit-estimate-${estimate.id}`}
-                  onClick={() => setLocation(`/estimates/${estimate.id}`)}
+                  onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
                 >
                   <FileText className="w-4 h-4 mr-2" />
                   Edit Items
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   data-testid={`button-view-summary-${estimate.id}`}
-                  onClick={() => setLocation(`/estimates/${estimate.id}`)}
+                  onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
                 >
                   <Calculator className="w-4 h-4 mr-2" />
                   View Summary

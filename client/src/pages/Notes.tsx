@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
+import { useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -93,6 +94,10 @@ const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
   });
 };
 
+interface NotesParams {
+  projectId?: string;
+}
+
 export default function Notes() {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
@@ -104,6 +109,10 @@ export default function Notes() {
   const [sortBy, setSortBy] = useState("newest");
   const { toast } = useToast();
   const { currentProject } = useProject();
+  const params = useParams<NotesParams>();
+  
+  // Use projectId from URL params if available, otherwise fall back to currentProject
+  const effectiveProjectId = params.projectId || currentProject?.id;
 
   // Fetch custom field definitions and templates
   const { data: customFieldDefs = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
@@ -164,10 +173,10 @@ export default function Notes() {
 
   // React Query hooks - fetch notes filtered by current project
   const { data: notes = [], isLoading } = useQuery<Note[]>({
-    queryKey: ["/api/notes", currentProject?.id],
+    queryKey: ["/api/notes", effectiveProjectId],
     queryFn: async () => {
-      if (!currentProject?.id) return [];
-      const response = await fetch(`/api/notes?projectId=${currentProject.id}`, {
+      if (!effectiveProjectId) return [];
+      const response = await fetch(`/api/notes?projectId=${effectiveProjectId}`, {
         credentials: "include",
       });
       if (!response.ok) {
@@ -180,7 +189,7 @@ export default function Notes() {
       createdAt: new Date(note.createdAt),
       updatedAt: new Date(note.updatedAt),
     })),
-    enabled: !!currentProject?.id,
+    enabled: !!effectiveProjectId,
   });
 
   const createNoteMutation = useMutation({
@@ -189,7 +198,7 @@ export default function Notes() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
       form.reset(defaultValues);
@@ -209,7 +218,7 @@ export default function Notes() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
       form.reset(defaultValues);
@@ -228,7 +237,7 @@ export default function Notes() {
       await apiRequest("DELETE", `/api/notes/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
       toast({ title: "Note deleted successfully" });
     },
     onError: (error) => {
@@ -297,7 +306,7 @@ export default function Notes() {
         author: data.author || "Current User",
         ownerId: data.ownerId,
         ownerName: data.ownerName || "Current User",
-        projectId: currentProject?.id,
+        projectId: effectiveProjectId,
         customFields: data.customFields || {},
         category: data.category || "General",
         priority: (data.customFields as Record<string, string>)?.priority || "medium",

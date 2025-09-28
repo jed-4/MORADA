@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useParams } from "wouter";
 import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers } from "lucide-react";
 import {
   DropdownMenu,
@@ -49,10 +50,18 @@ import { useProject } from "@/contexts/ProjectContext";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+interface TasksParams {
+  projectId?: string;
+}
+
 export default function Tasks() {
   // All hooks MUST be called at the top level before any conditional logic
   const { currentProject } = useProject();
   const { toast } = useToast();
+  const params = useParams<TasksParams>();
+  
+  // Use projectId from URL params if available, otherwise fall back to currentProject
+  const effectiveProjectId = params.projectId || currentProject?.id;
   const [activeTab, setActiveTab] = useState("kanban");
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
@@ -79,7 +88,7 @@ export default function Tasks() {
       return response.json();
     },
     onSuccess: (newView: TaskView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-views", currentProject?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
       setActiveTab(newView.id); // Auto-select the newly created view
       setShowCreateViewDialog(false);
       setNewViewName("");
@@ -108,7 +117,7 @@ export default function Tasks() {
       if (!response.ok) throw new Error("Failed to delete view");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-views", currentProject?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
       // If the deleted view was active, switch to default kanban view
       if (viewToDelete && activeTab === viewToDelete.id) {
         setActiveTab("kanban");
@@ -131,29 +140,29 @@ export default function Tasks() {
 
   // Fetch saved task views and tasks filtered by current project (with enabled flags to prevent fetching when no project)
   const { data: taskViews = [] } = useQuery<TaskView[]>({
-    queryKey: ["/api/task-views", currentProject?.id],
+    queryKey: ["/api/task-views", effectiveProjectId],
     queryFn: async () => {
-      if (!currentProject) return [];
-      const response = await fetch(`/api/task-views?projectId=${currentProject.id}`, {
+      if (!effectiveProjectId) return [];
+      const response = await fetch(`/api/task-views?projectId=${effectiveProjectId}`, {
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to fetch task views');
       return response.json();
     },
-    enabled: !!currentProject
+    enabled: !!effectiveProjectId
   });
 
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", currentProject?.id], 
+    queryKey: ["/api/tasks", effectiveProjectId], 
     queryFn: async () => {
-      if (!currentProject) return [];
-      const response = await fetch(`/api/tasks?projectId=${currentProject.id}`, {
+      if (!effectiveProjectId) return [];
+      const response = await fetch(`/api/tasks?projectId=${effectiveProjectId}`, {
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to fetch tasks');
       return response.json();
     },
-    enabled: !!currentProject
+    enabled: !!effectiveProjectId
   });
 
   // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
@@ -253,11 +262,11 @@ export default function Tasks() {
   };
 
   const handleCreateView = () => {
-    if (!currentProject || !newViewName.trim()) return;
+    if (!effectiveProjectId || !newViewName.trim()) return;
     createViewMutation.mutate({
       name: newViewName.trim(),
       viewType: newViewType === "calendar" ? "kanban" : newViewType,
-      projectId: currentProject.id,
+      projectId: effectiveProjectId,
     });
   };
 
@@ -658,7 +667,7 @@ export default function Tasks() {
           <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">
             <TaskCalendar 
               tasks={effectivelyFilteredTasks} 
-              projectId={currentProject?.id || ""} 
+              projectId={effectiveProjectId || ""} 
               onTaskClick={(task: Task) => setEditingTask(task)} 
             />
           </TabsContent>
@@ -677,7 +686,7 @@ export default function Tasks() {
                 ) : view.viewType === "calendar" ? (
                   <TaskCalendar 
                     tasks={viewFilteredTasks} 
-                    projectId={currentProject?.id || ""} 
+                    projectId={effectiveProjectId || ""} 
                     onTaskClick={(task: Task) => setEditingTask(task)} 
                   />
                 ) : (
@@ -766,17 +775,23 @@ export default function Tasks() {
       </AlertDialog>
 
       {/* Task Creation Dialog */}
-      <TaskForm 
-        open={showCreateTaskDialog}
-        onOpenChange={setShowCreateTaskDialog}
-      />
+      {effectiveProjectId && (
+        <TaskForm 
+          open={showCreateTaskDialog}
+          onOpenChange={setShowCreateTaskDialog}
+          projectId={effectiveProjectId}
+        />
+      )}
 
       {/* Task Editing Dialog */}
-      <TaskForm
-        task={editingTask || undefined}
-        open={!!editingTask}
-        onOpenChange={(open) => !open && setEditingTask(null)}
-      />
+      {effectiveProjectId && (
+        <TaskForm
+          task={editingTask || undefined}
+          open={!!editingTask}
+          onOpenChange={(open) => !open && setEditingTask(null)}
+          projectId={effectiveProjectId}
+        />
+      )}
     </div>
   );
 }

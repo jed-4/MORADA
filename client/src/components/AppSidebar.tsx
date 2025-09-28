@@ -65,30 +65,30 @@ const comingSoonItems = new Set([
   "Budget", "Files", "Team"
 ]);
 
-// Project sections
-const projectItems = [
-  { title: "Overview", url: "/", icon: Home },
-  { title: "Messages", url: "/messages", icon: MessageSquare },
-  { title: "Notes", url: "/notes", icon: FileText },
-  { title: "Calendar", url: "/calendar", icon: Calendar },
-  { title: "Schedule", url: "/schedule", icon: Clock },
-  { title: "Tasks", url: "/tasks", icon: CheckSquare },
-  { title: "Take off", url: "/takeoff", icon: Calculator },
-  { title: "Estimates", url: "/estimates", icon: FileBarChart },
-  { title: "Request For Quotes", url: "/rfq", icon: FileSearch },
-  { title: "Request For Information", url: "/rfi", icon: HelpCircle },
-  { title: "Proposal", url: "/proposal", icon: File },
-  { title: "Selections", url: "/selections", icon: CheckCircle },
-  { title: "Allowances", url: "/allowances", icon: DollarSign },
-  { title: "Purchase Orders", url: "/purchase-orders", icon: Receipt },
-  { title: "Variations", url: "/variations", icon: FileText },
-  { title: "Bills", url: "/bills", icon: CreditCard },
-  { title: "Client Invoices", url: "/invoices", icon: Receipt },
-  { title: "Site Diary", url: "/site-diary", icon: BookOpen },
-  { title: "Timesheets", url: "/timesheets", icon: Timer },
-  { title: "Budget", url: "/budget", icon: PiggyBank },
-  { title: "Files", url: "/files", icon: FolderOpen },
-  { title: "Team", url: "/team", icon: Users },
+// Project sections base configuration
+const projectItemsBase = [
+  { title: "Overview", baseUrl: "", icon: Home },
+  { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
+  { title: "Notes", baseUrl: "/notes", icon: FileText },
+  { title: "Calendar", baseUrl: "/calendar", icon: Calendar },
+  { title: "Schedule", baseUrl: "/schedule", icon: Clock },
+  { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
+  { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
+  { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
+  { title: "Request For Quotes", baseUrl: "/rfq", icon: FileSearch },
+  { title: "Request For Information", baseUrl: "/rfi", icon: HelpCircle },
+  { title: "Proposal", baseUrl: "/proposal", icon: File },
+  { title: "Selections", baseUrl: "/selections", icon: CheckCircle },
+  { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
+  { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
+  { title: "Variations", baseUrl: "/variations", icon: FileText },
+  { title: "Bills", baseUrl: "/bills", icon: CreditCard },
+  { title: "Client Invoices", baseUrl: "/invoices", icon: Receipt },
+  { title: "Site Diary", baseUrl: "/site-diary", icon: BookOpen },
+  { title: "Timesheets", baseUrl: "/timesheets", icon: Timer },
+  { title: "Budget", baseUrl: "/budget", icon: PiggyBank },
+  { title: "Files", baseUrl: "/files", icon: FolderOpen },
+  { title: "Team", baseUrl: "/team", icon: Users },
 ];
 
 // Coming soon business items
@@ -117,6 +117,27 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
   const { currentProject, setCurrentProject } = useProject();
   const isBusinessContext = location.startsWith('/business');
   const showComingSoon = sidebarWidth >= 280; // Hide "coming soon" text when sidebar is narrow
+  
+  // Generate project-scoped URLs
+  const getProjectItems = () => {
+    if (!currentProject || currentProject.isBusiness) {
+      // For business projects or no project selected, use global URLs
+      return projectItemsBase.map(item => ({
+        ...item,
+        url: item.baseUrl || "/"
+      }));
+    }
+    
+    // For regular projects, use project-scoped URLs
+    return projectItemsBase.map(item => ({
+      ...item,
+      url: item.baseUrl === "" 
+        ? `/projects/${currentProject.id}` 
+        : `/projects/${currentProject.id}${item.baseUrl}`
+    }));
+  };
+  
+  const projectItems = getProjectItems();
   
   // Fetch projects from API
   const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
@@ -149,7 +170,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
     if (project.isBusiness) {
       navigate('/business');
     } else {
-      navigate('/');
+      navigate(`/projects/${project.id}`);
     }
     console.log(`Selected project: ${project.name} (${project.id})`);
   };

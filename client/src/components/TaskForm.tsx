@@ -73,9 +73,10 @@ interface TaskFormProps {
   onOpenChange: (open: boolean) => void;
   trigger?: React.ReactNode;
   initialStatus?: "todo" | "in-progress" | "done";
+  projectId: string;
 }
 
-export default function TaskForm({ task, open, onOpenChange, trigger, initialStatus = "todo" }: TaskFormProps) {
+export default function TaskForm({ task, open, onOpenChange, trigger, initialStatus = "todo", projectId }: TaskFormProps) {
   const [tagInput, setTagInput] = useState("");
   const [activeTab, setActiveTab] = useState("basic");
   const { toast } = useToast();
@@ -83,8 +84,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   
   const isEditing = !!task;
 
-  // Don't render if no project is selected
-  if (!currentProject) {
+  // Don't render if no projectId is provided
+  if (!projectId) {
     return null;
   }
 
@@ -120,12 +121,12 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
 
   // Fetch potential parent tasks for subtask selection
   const { data: parentTasks = [] } = useQuery({
-    queryKey: ["/api/tasks", currentProject.id, "parents"],
+    queryKey: ["/api/tasks", projectId, "parents"],
     queryFn: async () => {
-      const response = await apiRequest("GET", `/api/tasks?projectId=${currentProject.id}`);
+      const response = await apiRequest("GET", `/api/tasks?projectId=${projectId}`);
       return Array.isArray(response) ? response.filter((t: Task) => t.id !== task?.id) : [];
     },
-    enabled: open && !!currentProject.id,
+    enabled: open && !!projectId,
   });
 
   // Create task mutation
@@ -138,7 +139,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         type: "task",
         priority: data.priority,
         status: data.status,
-        projectId: currentProject.id,
+        projectId: projectId,
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: data.tags,
@@ -157,7 +158,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       return await apiRequest("POST", `/api/tasks`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       toast({ title: "Task created successfully" });
       onOpenChange(false);
       form.reset();
@@ -199,7 +200,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       return await apiRequest("PATCH", `/api/tasks/${task.id}`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       toast({ title: "Task updated successfully" });
       onOpenChange(false);
     },

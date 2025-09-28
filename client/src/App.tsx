@@ -43,7 +43,34 @@ function Router() {
       <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
       <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
       
-      {/* Project sections - Coming Soon */}
+      {/* Project-specific routes */}
+      <Route path="/projects/:projectId" component={Dashboard} />
+      <Route path="/projects/:projectId/notes" component={Notes} />
+      <Route path="/projects/:projectId/tasks" component={Tasks} />
+      <Route path="/projects/:projectId/calendar" component={Calendar} />
+      <Route path="/projects/:projectId/estimates" component={ProjectEstimates} />
+      <Route path="/projects/:projectId/estimates/new" component={EstimateDetail} />
+      <Route path="/projects/:projectId/estimates/:estimateId" component={EstimateDetail} />
+      <Route path="/projects/:projectId/selections" component={Selections} />
+      <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
+      <Route path="/projects/:projectId/messages" component={() => <ComingSoonPage section="messages" />} />
+      <Route path="/projects/:projectId/schedule" component={() => <ComingSoonPage section="schedule" />} />
+      <Route path="/projects/:projectId/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
+      <Route path="/projects/:projectId/rfq" component={() => <ComingSoonPage section="rfq" />} />
+      <Route path="/projects/:projectId/rfi" component={() => <ComingSoonPage section="rfi" />} />
+      <Route path="/projects/:projectId/proposal" component={() => <ComingSoonPage section="proposal" />} />
+      <Route path="/projects/:projectId/allowances" component={() => <ComingSoonPage section="allowances" />} />
+      <Route path="/projects/:projectId/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
+      <Route path="/projects/:projectId/variations" component={() => <ComingSoonPage section="variations" />} />
+      <Route path="/projects/:projectId/bills" component={() => <ComingSoonPage section="bills" />} />
+      <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
+      <Route path="/projects/:projectId/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
+      <Route path="/projects/:projectId/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
+      <Route path="/projects/:projectId/budget" component={() => <ComingSoonPage section="budget" />} />
+      <Route path="/projects/:projectId/files" component={() => <ComingSoonPage section="files" />} />
+      <Route path="/projects/:projectId/team" component={() => <ComingSoonPage section="team" />} />
+      
+      {/* Global Project sections - Coming Soon */}
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
       <Route path="/estimates" component={Estimates} />

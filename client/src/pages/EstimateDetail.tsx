@@ -70,20 +70,26 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 interface EstimateDetailParams {
-  id: string;
+  id?: string;
+  estimateId?: string;
+  projectId?: string;
 }
 
 export default function EstimateDetail() {
-  const { id } = useParams<EstimateDetailParams>();
+  const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   
-  // Check if we're creating a new estimate (check location path since /estimates/new doesn't have :id param)
-  const isNewEstimate = location === '/estimates/new' || id === 'new';
+  // Normalize estimate ID - prioritize estimateId (from project-scoped routes), fall back to id (from global routes)
+  const effectiveEstimateId = estimateId || id;
   
-  // Get project ID from query params for new estimates
+  // Check if we're creating a new estimate (check location path since /estimates/new doesn't have :id param)
+  const isNewEstimate = location === '/estimates/new' || location.includes('/estimates/new') || effectiveEstimateId === 'new';
+  
+  // Get project ID - prioritize route params for project-scoped routes, fall back to query params for backwards compatibility
   const urlParams = new URLSearchParams(window.location.search);
   const projectIdFromQuery = urlParams.get('projectId');
+  const effectiveProjectId = projectIdFromParams || projectIdFromQuery;
   
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -101,14 +107,14 @@ export default function EstimateDetail() {
   const [newEstimateName, setNewEstimateName] = useState("");
 
   // Early validation - show error if invalid ID for non-new estimates
-  if (!id && !isNewEstimate) {
+  if (!effectiveEstimateId && !isNewEstimate) {
     return <div>Invalid estimate ID</div>;
   }
 
   // Fetch all projects for project selection
   const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: isNewEstimate && !projectIdFromQuery,
+    enabled: isNewEstimate && !effectiveProjectId,
   });
 
   // Mutation for creating new estimate
@@ -137,16 +143,16 @@ export default function EstimateDetail() {
 
   // Handler for creating new estimate
   const handleCreateEstimate = () => {
-    if (!newEstimateName.trim() || !projectIdFromQuery) return;
+    if (!newEstimateName.trim() || !effectiveProjectId) return;
     
     createEstimateMutation.mutate({
       name: newEstimateName.trim(),
-      projectId: projectIdFromQuery
+      projectId: effectiveProjectId
     });
   };
 
   // For new estimates without project ID, show project selection
-  if (isNewEstimate && !projectIdFromQuery) {
+  if (isNewEstimate && !effectiveProjectId) {
     return (
       <div className="flex h-full flex-col">
         <div className="border-b border-border p-4">
@@ -202,11 +208,11 @@ export default function EstimateDetail() {
   // Mutation for updating estimate name
   const updateEstimateMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
-      const response = await apiRequest("PATCH", `/api/estimates/${id}`, data);
+      const response = await apiRequest("PATCH", `/api/estimates/${effectiveEstimateId}`, data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
         title: "Success",
@@ -227,12 +233,12 @@ export default function EstimateDetail() {
   // Mutation for updating markup percentage
   const updateMarkupMutation = useMutation({
     mutationFn: async (data: { projectMarkupPercent: number }) => {
-      const response = await apiRequest("PATCH", `/api/estimates/${id}`, data);
+      const response = await apiRequest("PATCH", `/api/estimates/${effectiveEstimateId}`, data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
         title: "Success",
@@ -253,12 +259,12 @@ export default function EstimateDetail() {
   // Mutation for adding estimate items
   const addItemMutation = useMutation({
     mutationFn: async (data: InsertEstimateItem) => {
-      const response = await apiRequest("POST", `/api/estimates/${id}/items`, data);
+      const response = await apiRequest("POST", `/api/estimates/${effectiveEstimateId}/items`, data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       setIsAddItemOpen(false);
       toast({
@@ -278,12 +284,12 @@ export default function EstimateDetail() {
   // Mutation for adding estimate groups
   const addGroupMutation = useMutation({
     mutationFn: async (data: InsertEstimateGroup) => {
-      const response = await apiRequest("POST", `/api/estimates/${id}/groups`, data);
+      const response = await apiRequest("POST", `/api/estimates/${effectiveEstimateId}/groups`, data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "groups"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       setIsAddGroupOpen(false);
       groupForm.reset();
@@ -305,8 +311,8 @@ export default function EstimateDetail() {
   const toggleLockMutation = useMutation({
     mutationFn: async () => {
       const endpoint = estimate?.isLocked ? "unlock" : "lock";
-      console.log(`Making ${endpoint} request for estimate ${id}`);
-      const response = await apiRequest("POST", `/api/estimates/${id}/${endpoint}`);
+      console.log(`Making ${endpoint} request for estimate ${effectiveEstimateId}`);
+      const response = await apiRequest("POST", `/api/estimates/${effectiveEstimateId}/${endpoint}`);
       const data = await response.json();
       console.log(`${endpoint} response:`, data);
       return data;
@@ -314,7 +320,7 @@ export default function EstimateDetail() {
     onSuccess: (updatedEstimate: Estimate) => {
       console.log("Lock mutation success, invalidating queries...");
       console.log("Updated estimate:", updatedEstimate);
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
         title: "Success",
@@ -554,24 +560,24 @@ export default function EstimateDetail() {
 
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
-    queryKey: ["/api/estimates", id],
+    queryKey: ["/api/estimates", effectiveEstimateId],
     enabled: !isNewEstimate,
   });
 
   // Fetch estimate items
   const { data: items = [], isLoading: itemsLoading } = useQuery<EstimateItem[]>({
-    queryKey: ["/api/estimates", id, "items"],
-    enabled: !!id && !isNewEstimate,
+    queryKey: ["/api/estimates", effectiveEstimateId, "items"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
   // Fetch estimate summary
   const { data: summary } = useQuery<EstimateSummary>({
-    queryKey: ["/api/estimates", id, "summary"],
-    enabled: !!id && !isNewEstimate,
+    queryKey: ["/api/estimates", effectiveEstimateId, "summary"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
   // Fetch project details
-  const projectId = isNewEstimate ? projectIdFromQuery : estimate?.projectId;
+  const projectId = isNewEstimate ? effectiveProjectId : estimate?.projectId;
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
     enabled: !!projectId,
@@ -579,8 +585,8 @@ export default function EstimateDetail() {
 
   // Fetch estimate groups
   const { data: groups = [], isLoading: groupsLoading } = useQuery<EstimateGroup[]>({
-    queryKey: ["/api/estimates", id, "groups"],
-    enabled: !!id && !isNewEstimate,
+    queryKey: ["/api/estimates", effectiveEstimateId, "groups"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
   const formatCurrency = (amount: number) => {
