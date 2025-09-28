@@ -386,6 +386,10 @@ export default function Notes() {
     setEditingNote(null);
     setSelectedTemplate(null);
     setIsTyping(false);
+    // Clear vanilla input when closing
+    if (titleInputRef.current) {
+      titleInputRef.current.value = '';
+    }
     // Reset form to default values
     form.reset(defaultValues);
   }, [isTyping, form, defaultValues]);
@@ -403,13 +407,20 @@ export default function Notes() {
     }, 0);
   }, [form, onSubmit]);
 
-  // Watch form title changes to sync with vanilla input (for templates, editing, etc.)
-  const formTitleValue = form.watch('title');
+  // Only sync title when specifically editing a note or applying a template (not on every form change)
   useEffect(() => {
-    if (titleInputRef.current && titleInputRef.current.value !== (formTitleValue || '')) {
-      titleInputRef.current.value = formTitleValue || '';
+    if (titleInputRef.current && editingNote && !isTyping) {
+      titleInputRef.current.value = editingNote.title || '';
     }
-  }, [formTitleValue]);
+  }, [editingNote, isTyping]);
+
+  useEffect(() => {
+    if (titleInputRef.current && selectedTemplate && !isTyping) {
+      // Get the actual title value from the form after template is applied
+      const formTitle = form.getValues('title');
+      titleInputRef.current.value = formTitle || '';
+    }
+  }, [selectedTemplate, isTyping, form]);
 
   // Track title validation errors manually
   const titleError = form.formState.errors.title?.message;
