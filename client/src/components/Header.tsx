@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, BarChart3, Clipboard, StickyNote } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,50 @@ export default function Header() {
           <LayoutDashboard className="h-4 w-4 mr-2" />
           Dashboard
         </Button>
+
+        {/* All Items Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" data-testid="button-all-items">
+              <Clipboard className="h-4 w-4 mr-2" />
+              All Items
+              <ChevronDown className="h-4 w-4 ml-2" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Navigate To</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate('/')} data-testid="menu-home">
+              <Home className="h-4 w-4 mr-2" />
+              Home
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/projects')} data-testid="menu-projects">
+              <Folder className="h-4 w-4 mr-2" />
+              Projects
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/estimates')} data-testid="menu-estimates">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Estimates
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/tasks')} data-testid="menu-tasks">
+              <CheckSquare className="h-4 w-4 mr-2" />
+              Tasks
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/notes')} data-testid="menu-notes">
+              <StickyNote className="h-4 w-4 mr-2" />
+              Notes
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate('/business')} data-testid="menu-business">
+              <Building2 className="h-4 w-4 mr-2" />
+              Business
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/selections')} data-testid="menu-selections">
+              <Palette className="h-4 w-4 mr-2" />
+              Selections
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <SidebarTrigger data-testid="button-sidebar-toggle" />
       </div>
