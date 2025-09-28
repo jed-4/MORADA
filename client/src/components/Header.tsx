@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, BarChart3, Clipboard, StickyNote } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,41 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import ThemeToggle from "./ThemeToggle";
+
+// Project sections base configuration (from AppSidebar)
+const projectItemsBase = [
+  { title: "Overview", baseUrl: "", icon: Home },
+  { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
+  { title: "Notes", baseUrl: "/notes", icon: FileText },
+  { title: "Calendar", baseUrl: "/calendar", icon: Calendar },
+  { title: "Schedule", baseUrl: "/schedule", icon: Clock },
+  { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
+  { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
+  { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
+  { title: "Request For Quotes", baseUrl: "/rfq", icon: FileSearch },
+  { title: "Request For Information", baseUrl: "/rfi", icon: HelpCircle },
+  { title: "Proposal", baseUrl: "/proposal", icon: File },
+  { title: "Selections", baseUrl: "/selections", icon: CheckSquare },
+  { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
+  { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
+  { title: "Variations", baseUrl: "/variations", icon: FileText },
+  { title: "Bills", baseUrl: "/bills", icon: CreditCard },
+  { title: "Client Invoices", baseUrl: "/invoices", icon: Receipt },
+  { title: "Site Diary", baseUrl: "/site-diary", icon: BookOpen },
+  { title: "Timesheets", baseUrl: "/timesheets", icon: Timer },
+  { title: "Budget", baseUrl: "/budget", icon: PiggyBank },
+  { title: "Files", baseUrl: "/files", icon: FolderOpen },
+  { title: "Team", baseUrl: "/team", icon: Users },
+];
+
+// Items to exclude from All Items menu
+const excludedItems = new Set([
+  "Overview", "Messages", "Calendar", "Schedule", "Take off", 
+  "Selections", "Allowances", "Budget", "Files", "Team"
+]);
+
+// Filter items for All Items dropdown
+const allItemsMenuItems = projectItemsBase.filter(item => !excludedItems.has(item.title));
 
 export default function Header() {
   const [location, navigate] = useLocation();
@@ -68,37 +103,19 @@ export default function Header() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuLabel>Navigate To</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/')} data-testid="menu-home">
-              <Home className="h-4 w-4 mr-2" />
-              Home
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/projects')} data-testid="menu-projects">
-              <Folder className="h-4 w-4 mr-2" />
-              Projects
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/estimates')} data-testid="menu-estimates">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Estimates
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/tasks')} data-testid="menu-tasks">
-              <CheckSquare className="h-4 w-4 mr-2" />
-              Tasks
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/notes')} data-testid="menu-notes">
-              <StickyNote className="h-4 w-4 mr-2" />
-              Notes
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/business')} data-testid="menu-business">
-              <Building2 className="h-4 w-4 mr-2" />
-              Business
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/selections')} data-testid="menu-selections">
-              <Palette className="h-4 w-4 mr-2" />
-              Selections
-            </DropdownMenuItem>
+            {allItemsMenuItems.map((item) => {
+              const IconComponent = item.icon;
+              return (
+                <DropdownMenuItem 
+                  key={item.title}
+                  onClick={() => navigate(item.baseUrl)} 
+                  data-testid={`menu-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                >
+                  <IconComponent className="h-4 w-4 mr-2" />
+                  {item.title}
+                </DropdownMenuItem>
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
 
