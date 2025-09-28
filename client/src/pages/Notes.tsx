@@ -376,23 +376,19 @@ export default function Notes() {
   // Stabilize dialog state to prevent flickering
   const isDialogOpen = isAddingNote || !!editingNote;
   
-  // Handle dialog close with debounce to prevent rapid state changes
+  // Handle dialog close - always allow closing
   const handleDialogClose = useCallback(() => {
-    // Don't reset form if user is actively typing
-    if (isTyping) {
-      return;
-    }
     setIsAddingNote(false);
     setEditingNote(null);
     setSelectedTemplate(null);
-    setIsTyping(false);
+    setIsTyping(false); // Reset typing state when closing
     // Clear vanilla input when closing
     if (titleInputRef.current) {
       titleInputRef.current.value = '';
     }
     // Reset form to default values
     form.reset(defaultValues);
-  }, [isTyping, form, defaultValues]);
+  }, [form, defaultValues]);
 
   // Vanilla HTML input approach - completely bypasses React synthetic events
   const handleFormSubmit = useCallback((e: React.FormEvent) => {
