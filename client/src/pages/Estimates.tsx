@@ -35,7 +35,7 @@ export default function Estimates() {
   const { currentProject } = useProject();
 
   const handleNewEstimate = () => {
-    alert('Estimate creation feature will be implemented in the next phase. For now, you can see the comprehensive estimates system with the test data!');
+    setLocation('/estimates/new');
   };
 
   // Fetch estimates filtered by current project
@@ -362,9 +362,10 @@ export default function Estimates() {
                 <CardTitle>Recent Activity</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">
-                  Activity tracking will be implemented in future updates.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">No recent activity to display.</p>
+                  <p className="text-xs text-muted-foreground">Activity will appear here as you work with estimates.</p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
