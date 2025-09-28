@@ -48,6 +48,7 @@ function Router() {
       <Route path="/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/project/:projectId" component={ProjectEstimates} />
+      <Route path="/estimates/new" component={EstimateDetail} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/rfi" component={() => <ComingSoonPage section="rfi" />} />

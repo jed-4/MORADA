@@ -18,7 +18,8 @@ import {
   Edit,
   Trash2,
   MoreHorizontal,
-  FolderPlus
+  FolderPlus,
+  Loader2
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -77,6 +78,13 @@ export default function EstimateDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
+  // Check if we're creating a new estimate
+  const isNewEstimate = id === 'new';
+  
+  // Get project ID from query params for new estimates
+  const urlParams = new URLSearchParams(window.location.search);
+  const projectIdFromQuery = urlParams.get('projectId');
+  
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState("");
@@ -88,10 +96,51 @@ export default function EstimateDetail() {
   
   // Add group modal state
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  
+  // New estimate creation state
+  const [newEstimateName, setNewEstimateName] = useState("");
 
   if (!id) {
     return <div>Invalid estimate ID</div>;
   }
+  
+  if (isNewEstimate && !projectIdFromQuery) {
+    return <div>Project ID is required for new estimates</div>;
+  }
+
+  // Mutation for creating new estimate
+  const createEstimateMutation = useMutation({
+    mutationFn: async (data: { name: string; projectId: string }) => {
+      const response = await apiRequest("POST", `/api/estimates`, data);
+      return response.json();
+    },
+    onSuccess: (newEstimate) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "New estimate created successfully.",
+      });
+      // Redirect to the newly created estimate
+      setLocation(`/estimates/${newEstimate.id}`);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create estimate.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handler for creating new estimate
+  const handleCreateEstimate = () => {
+    if (!newEstimateName.trim() || !projectIdFromQuery) return;
+    
+    createEstimateMutation.mutate({
+      name: newEstimateName.trim(),
+      projectId: projectIdFromQuery
+    });
+  };
 
   // Mutation for updating estimate name
   const updateEstimateMutation = useMutation({
@@ -449,30 +498,32 @@ export default function EstimateDetail() {
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
     queryKey: ["/api/estimates", id],
+    enabled: !isNewEstimate,
   });
 
   // Fetch estimate items
   const { data: items = [], isLoading: itemsLoading } = useQuery<EstimateItem[]>({
     queryKey: ["/api/estimates", id, "items"],
-    enabled: !!id,
+    enabled: !!id && !isNewEstimate,
   });
 
   // Fetch estimate summary
   const { data: summary } = useQuery<EstimateSummary>({
     queryKey: ["/api/estimates", id, "summary"],
-    enabled: !!id,
+    enabled: !!id && !isNewEstimate,
   });
 
   // Fetch project details
+  const projectId = isNewEstimate ? projectIdFromQuery : estimate?.projectId;
   const { data: project } = useQuery<Project>({
-    queryKey: ["/api/projects", estimate?.projectId],
-    enabled: !!estimate?.projectId,
+    queryKey: ["/api/projects", projectId],
+    enabled: !!projectId,
   });
 
   // Fetch estimate groups
   const { data: groups = [], isLoading: groupsLoading } = useQuery<EstimateGroup[]>({
     queryKey: ["/api/estimates", id, "groups"],
-    enabled: !!id,
+    enabled: !!id && !isNewEstimate,
   });
 
   const formatCurrency = (amount: number) => {
@@ -541,7 +592,7 @@ export default function EstimateDetail() {
     );
   }
 
-  if (estimateError || !estimate) {
+  if ((estimateError || !estimate) && !isNewEstimate) {
     return (
       <div className="flex h-full flex-col">
         <div className="border-b border-border p-4">
@@ -558,6 +609,74 @@ export default function EstimateDetail() {
             <p className="text-muted-foreground">
               The estimate you're looking for doesn't exist or has been removed.
             </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle new estimate creation
+  if (isNewEstimate) {
+    return (
+      <div className="flex h-full flex-col">
+        {/* Header */}
+        <div className="border-b border-border p-4">
+          <div className="flex items-center space-x-4">
+            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Estimates
+            </Button>
+            <h1 className="text-2xl font-semibold">New Estimate</h1>
+          </div>
+        </div>
+
+        {/* Creation Form */}
+        <div className="flex-1 p-6">
+          <div className="max-w-md mx-auto">
+            <div className="space-y-6">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Project</label>
+                <p className="text-base font-medium text-muted-foreground">
+                  {project?.name || 'Loading project...'}
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <label htmlFor="estimate-name" className="text-sm font-medium block">
+                  Estimate Name *
+                </label>
+                <Input
+                  id="estimate-name"
+                  placeholder="Enter estimate name..."
+                  value={newEstimateName}
+                  onChange={(e) => setNewEstimateName(e.target.value)}
+                  data-testid="input-new-estimate-name"
+                />
+              </div>
+
+              <div className="flex space-x-3">
+                <Button
+                  onClick={handleCreateEstimate}
+                  disabled={!newEstimateName.trim() || createEstimateMutation.isPending}
+                  data-testid="button-create-estimate"
+                >
+                  {createEstimateMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Estimate
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={() => setLocation("/estimates")} data-testid="button-cancel-create-estimate">
+                  Cancel
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
