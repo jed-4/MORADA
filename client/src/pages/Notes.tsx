@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,7 @@ export default function Notes() {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("newest");
   const [isTyping, setIsTyping] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { currentProject } = useProject();
 
@@ -389,15 +390,39 @@ export default function Notes() {
     form.reset(defaultValues);
   }, [isTyping, form, defaultValues]);
 
-  // Handle typing state to prevent form resets during typing
-  const handleTitleFocus = useCallback(() => {
-    setIsTyping(true);
-  }, []);
+  // Custom form submission wrapper that prevents highlighting issues
+  const handleFormSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    // Ensure ref value is synced to form before validation
+    if (titleInputRef.current) {
+      form.setValue('title', titleInputRef.current.value, { shouldValidate: true });
+    }
+    // Use a small delay to ensure setValue completes before validation
+    setTimeout(() => {
+      form.handleSubmit(onSubmit)(e);
+    }, 0);
+  }, [form, onSubmit]);
 
-  const handleTitleBlur = useCallback(() => {
-    // Small delay to allow for quick refocus
-    setTimeout(() => setIsTyping(false), 100);
-  }, []);
+  // Register title input with React Hook Form using ref callback
+  const titleRegistration = form.register('title', {
+    setValueAs: (value) => titleInputRef.current?.value || value,
+  });
+
+  // Custom ref callback that combines React Hook Form ref with our titleInputRef
+  const combinedTitleRef = useCallback((element: HTMLInputElement | null) => {
+    // Store reference for our use
+    (titleInputRef as React.MutableRefObject<HTMLInputElement | null>).current = element;
+    // Also pass to React Hook Form
+    titleRegistration.ref(element);
+  }, [titleRegistration.ref]);
+
+  // Sync form changes back to ref (for template application, editing, etc.)
+  const titleValue = form.watch('title');
+  useEffect(() => {
+    if (titleInputRef.current && titleInputRef.current.value !== titleValue) {
+      titleInputRef.current.value = titleValue || '';
+    }
+  }, [titleValue]);
 
   const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
     <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -419,23 +444,30 @@ export default function Notes() {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
+          <form onSubmit={handleFormSubmit} className="space-y-4 mt-4">
+            {/* Hybrid Title Input - fixes highlighting while maintaining form integration */}
             <FormField
               control={form.control}
               name="title"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Title</FormLabel>
                   <FormControl>
                     <Input
-                      key="note-title-input" // Stable key to prevent remounting
+                      {...titleRegistration}
+                      ref={combinedTitleRef}
                       placeholder="Enter note title..."
-                      {...field}
                       data-testid="note-title-input"
                       autoComplete="off"
-                      onFocus={handleTitleFocus}
-                      onBlur={handleTitleBlur}
-                      onInput={() => setIsTyping(true)}
+                      onFocus={() => setIsTyping(true)}
+                      onBlur={(e) => {
+                        titleRegistration.onBlur(e);
+                        setTimeout(() => setIsTyping(false), 100);
+                      }}
+                      onChange={(e) => {
+                        titleRegistration.onChange(e);
+                        setIsTyping(true);
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
