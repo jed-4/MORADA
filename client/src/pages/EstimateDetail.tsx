@@ -104,8 +104,64 @@ export default function EstimateDetail() {
     return <div>Invalid estimate ID</div>;
   }
   
+  // Fetch all projects for project selection (needed before early return)
+  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    enabled: isNewEstimate && !projectIdFromQuery,
+  });
+  
+  // For new estimates without project ID, show project selection
   if (isNewEstimate && !projectIdFromQuery) {
-    return <div>Project ID is required for new estimates</div>;
+    return (
+      <div className="flex h-full flex-col">
+        <div className="border-b border-border p-4">
+          <div className="flex items-center space-x-4">
+            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Estimates
+            </Button>
+            <h1 className="text-2xl font-semibold">New Estimate</h1>
+          </div>
+        </div>
+        
+        <div className="flex-1 p-6">
+          <div className="max-w-md mx-auto">
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-medium mb-2">Select Project</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Choose which project to create the estimate for.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                {projectsLoading ? (
+                  <div className="text-center py-4">
+                    <div className="text-muted-foreground">Loading projects...</div>
+                  </div>
+                ) : projects.length === 0 ? (
+                  <div className="text-center py-4">
+                    <div className="text-muted-foreground">No projects available</div>
+                  </div>
+                ) : (
+                  projects.map((project) => (
+                    <Card 
+                      key={project.id}
+                      className="hover-elevate cursor-pointer p-4"
+                      onClick={() => setLocation(`/estimates/new?projectId=${project.id}`)}
+                      data-testid={`button-select-project-${project.id}`}
+                    >
+                      <div className="font-medium">{project.name}</div>
+                      <div className="text-sm text-muted-foreground">{project.address}</div>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Mutation for creating new estimate
@@ -131,6 +187,7 @@ export default function EstimateDetail() {
       });
     },
   });
+
 
   // Handler for creating new estimate
   const handleCreateEstimate = () => {
