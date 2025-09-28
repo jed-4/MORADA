@@ -75,11 +75,11 @@ interface EstimateDetailParams {
 
 export default function EstimateDetail() {
   const { id } = useParams<EstimateDetailParams>();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { toast } = useToast();
   
-  // Check if we're creating a new estimate
-  const isNewEstimate = id === 'new';
+  // Check if we're creating a new estimate (check location path since /estimates/new doesn't have :id param)
+  const isNewEstimate = location === '/estimates/new' || id === 'new';
   
   // Get project ID from query params for new estimates
   const urlParams = new URLSearchParams(window.location.search);
@@ -100,16 +100,51 @@ export default function EstimateDetail() {
   // New estimate creation state
   const [newEstimateName, setNewEstimateName] = useState("");
 
-  if (!id) {
+  // Early validation - show error if invalid ID for non-new estimates
+  if (!id && !isNewEstimate) {
     return <div>Invalid estimate ID</div>;
   }
-  
-  // Fetch all projects for project selection (needed before early return)
+
+  // Fetch all projects for project selection
   const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
     enabled: isNewEstimate && !projectIdFromQuery,
   });
-  
+
+  // Mutation for creating new estimate
+  const createEstimateMutation = useMutation({
+    mutationFn: async (data: { name: string; projectId: string }) => {
+      const response = await apiRequest("POST", `/api/estimates`, data);
+      return response.json();
+    },
+    onSuccess: (newEstimate) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "New estimate created successfully.",
+      });
+      // Redirect to the newly created estimate
+      setLocation(`/estimates/${newEstimate.id}`);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create estimate.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handler for creating new estimate
+  const handleCreateEstimate = () => {
+    if (!newEstimateName.trim() || !projectIdFromQuery) return;
+    
+    createEstimateMutation.mutate({
+      name: newEstimateName.trim(),
+      projectId: projectIdFromQuery
+    });
+  };
+
   // For new estimates without project ID, show project selection
   if (isNewEstimate && !projectIdFromQuery) {
     return (
@@ -163,41 +198,6 @@ export default function EstimateDetail() {
       </div>
     );
   }
-
-  // Mutation for creating new estimate
-  const createEstimateMutation = useMutation({
-    mutationFn: async (data: { name: string; projectId: string }) => {
-      const response = await apiRequest("POST", `/api/estimates`, data);
-      return response.json();
-    },
-    onSuccess: (newEstimate) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      toast({
-        title: "Success",
-        description: "New estimate created successfully.",
-      });
-      // Redirect to the newly created estimate
-      setLocation(`/estimates/${newEstimate.id}`);
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create estimate.",
-        variant: "destructive",
-      });
-    },
-  });
-
-
-  // Handler for creating new estimate
-  const handleCreateEstimate = () => {
-    if (!newEstimateName.trim() || !projectIdFromQuery) return;
-    
-    createEstimateMutation.mutate({
-      name: newEstimateName.trim(),
-      projectId: projectIdFromQuery
-    });
-  };
 
   // Mutation for updating estimate name
   const updateEstimateMutation = useMutation({
