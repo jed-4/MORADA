@@ -102,8 +102,6 @@ export default function Notes() {
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("newest");
-  const [isTyping, setIsTyping] = useState(false);
-  const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { currentProject } = useProject();
 
@@ -194,7 +192,6 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
-      setIsTyping(false);
       form.reset(defaultValues);
     },
     onError: (error) => {
@@ -215,7 +212,6 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", currentProject?.id] });
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
-      setIsTyping(false);
       form.reset(defaultValues);
     },
     onError: (error) => {
@@ -381,40 +377,13 @@ export default function Notes() {
     setIsAddingNote(false);
     setEditingNote(null);
     setSelectedTemplate(null);
-    setIsTyping(false); // Reset typing state when closing
-    // Clear vanilla input when closing
-    if (titleInputRef.current) {
-      titleInputRef.current.value = '';
-    }
     // Reset form to default values
     form.reset(defaultValues);
   }, [form, defaultValues]);
 
-  // Vanilla HTML input approach - completely bypasses React synthetic events
-  const handleFormSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    // Sync vanilla input value to form before validation
-    if (titleInputRef.current) {
-      form.setValue('title', titleInputRef.current.value, { shouldValidate: true });
-    }
-    // Submit directly
-    form.handleSubmit(onSubmit)(e);
-  }, [form, onSubmit]);
+  // Standard form submission
+  const handleFormSubmit = form.handleSubmit(onSubmit);
 
-  // Only sync title when specifically editing a note or applying a template (not on every form change)
-  useEffect(() => {
-    if (titleInputRef.current && editingNote && !isTyping) {
-      titleInputRef.current.value = editingNote.title || '';
-    }
-  }, [editingNote, isTyping]);
-
-  useEffect(() => {
-    if (titleInputRef.current && selectedTemplate && !isTyping) {
-      // Get the actual title value from the form after template is applied
-      const formTitle = form.getValues('title');
-      titleInputRef.current.value = formTitle || '';
-    }
-  }, [selectedTemplate, isTyping, form]);
 
   // Track title validation errors manually
   const titleError = form.formState.errors.title?.message;
@@ -439,32 +408,25 @@ export default function Notes() {
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={handleFormSubmit} className="space-y-4 mt-4">
-            {/* Vanilla HTML Input - no React event handlers to prevent highlighting interruption */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none" htmlFor="note-title-vanilla">
-                Title
-              </label>
-              <input
-                id="note-title-vanilla"
-                ref={titleInputRef}
-                type="text"
-                placeholder="Enter note title..."
-                data-testid="note-title-input"
-                autoComplete="off"
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                onFocus={() => setIsTyping(true)}
-                onBlur={() => {
-                  // Sync to form on blur to preserve the text
-                  if (titleInputRef.current) {
-                    form.setValue('title', titleInputRef.current.value);
-                  }
-                  setIsTyping(false);
-                }}
-              />
-              {titleError && (
-                <p className="text-sm font-medium text-destructive">{titleError}</p>
+            {/* Title Field - using FormField for better stability */}
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Title</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Enter note title..."
+                      {...field}
+                      data-testid="note-title-input"
+                      autoComplete="off"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )}
-            </div>
+            />
             
             {/* Owner Field */}
             <FormField
