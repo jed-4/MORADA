@@ -18,6 +18,7 @@ import ProjectSettings from "@/pages/ProjectSettings";
 import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
+import ProjectEstimates from "@/pages/ProjectEstimates";
 import EstimateDetail from "@/pages/EstimateDetail";
 import Selections from "@/pages/Selections";
 import SelectionDetail from "@/pages/SelectionDetail";
@@ -46,6 +47,7 @@ function Router() {
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
       <Route path="/estimates" component={Estimates} />
+      <Route path="/estimates/project/:projectId" component={ProjectEstimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/rfi" component={() => <ComingSoonPage section="rfi" />} />
