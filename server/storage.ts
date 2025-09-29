@@ -3379,7 +3379,7 @@ export class DbStorage implements IStorage {
   async createProject(project: InsertProject): Promise<Project> { throw new Error("Not implemented"); }
   async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> { return undefined; }
   async deleteProject(id: string): Promise<boolean> { return false; }
-  async getTaskViews(): Promise<TaskView[]> { return []; }
+  async getTaskViews(ownerId?: string): Promise<TaskView[]> { return []; }
   async getTaskView(id: string): Promise<TaskView | undefined> { return undefined; }
   async createTaskView(view: InsertTaskView): Promise<TaskView> { throw new Error("Not implemented"); }
   async updateTaskView(id: string, view: Partial<InsertTaskView>): Promise<TaskView | undefined> { return undefined; }

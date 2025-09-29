@@ -93,7 +93,7 @@ const projectItemsBase = [
 
 // Coming soon business items
 const comingSoonBusinessItems = new Set([
-  "Templates", "Settings", "Checklists", "Emails", "CRM", "Team",
+  "Templates", "Checklists", "Emails", "CRM", "Team",
   "Messages", "Sick Days & Leave"
 ]);
 

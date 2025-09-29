@@ -49,8 +49,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
-    // TEMPORARY: Allow GET field categories for development (remove when auth UI is ready)
-    if ((path.startsWith('/field-categories') || path.startsWith('/field-options')) && req.method === 'GET') {
+    // TEMPORARY: Allow field categories operations for development (remove when auth UI is ready)
+    if ((path.startsWith('/field-categories') || path.startsWith('/field-options')) && process.env.NODE_ENV === 'development') {
       return next();
     }
     
