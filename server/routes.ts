@@ -563,7 +563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Batch update field options (for Buildern-style master-detail UI)
-  app.post("/api/field-categories/:id/options/batch", requireAdmin, async (req, res) => {
+  app.post("/api/field-categories/:id/options/batch", requireAuth, async (req, res) => {
     try {
       // Validate the request body as an array of partial field options
       const batchSchema = z.array(z.object({
