@@ -54,6 +54,7 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
   assigneeName: z.string().optional(),
   dueDate: z.string().optional(), // HTML date input returns string
   tags: z.array(z.string()).default([]),
+  labels: z.array(z.string()).default([]),
   // Advanced Tab
   category: z.string().default("General"),
   customFields: z.record(z.any()).default({}),
@@ -98,6 +99,10 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   const statusOptions = taskStatusCategory?.options || [];
   const availableStatusKeys = statusOptions.map(opt => opt.key);
   
+  // Extract task label options
+  const taskLabelCategory = fieldCategories.find(cat => cat.key === "task.labels");
+  const labelOptions = taskLabelCategory?.options || [];
+  
   // Ensure we always have valid status options (stable during loading)
   const defaultStatusKeys = ["todo", "in-progress", "done"];
   const validStatusKeys = availableStatusKeys.length > 0 ? availableStatusKeys : defaultStatusKeys;
@@ -128,6 +133,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       assigneeName: task?.assigneeName || "",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
       tags: (task?.tags as string[]) || [],
+      labels: (task?.labels as string[]) || [],
       // Advanced
       category: task?.category || "General",
       customFields: (task?.customFields as Record<string, any>) || {},
@@ -144,6 +150,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
 
   // Watch fields for reactive behavior
   const watchedTags = form.watch("tags");
+  const watchedLabels = form.watch("labels");
   const watchedIsRecurring = form.watch("isRecurring");
   const watchedRecurringType = form.watch("recurringType");
 
@@ -170,7 +177,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         projectId: projectId,
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-        tags: data.tags,
+        tags: Array.isArray(data.tags) ? data.tags : [],
+        labels: Array.isArray(data.labels) ? data.labels : [],
         // Advanced fields
         category: data.category,
         customFields: data.customFields,
@@ -212,7 +220,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         status: data.status,
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-        tags: data.tags,
+        tags: Array.isArray(data.tags) ? data.tags : [],
+        labels: Array.isArray(data.labels) ? data.labels : [],
         // Advanced fields
         category: data.category,
         customFields: data.customFields,
@@ -267,6 +276,18 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       e.preventDefault();
       addTag();
     }
+  };
+
+  const addLabel = (labelKey: string) => {
+    if (!watchedLabels?.includes(labelKey)) {
+      const newLabels = [...(watchedLabels || []), labelKey];
+      form.setValue("labels", newLabels);
+    }
+  };
+
+  const removeLabel = (labelToRemove: string) => {
+    const newLabels = (watchedLabels || []).filter(label => label !== labelToRemove);
+    form.setValue("labels", newLabels);
   };
 
   const weekDays = [
@@ -503,6 +524,69 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                           </button>
                         </Badge>
                       ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Labels Field */}
+                <div className="space-y-2">
+                  <FormLabel>Labels</FormLabel>
+                  <div className="flex flex-wrap gap-2">
+                    {labelOptions.map((option) => {
+                      const isSelected = watchedLabels?.includes(option.key);
+                      return (
+                        <Button
+                          key={option.key}
+                          type="button"
+                          variant={isSelected ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => {
+                            if (isSelected) {
+                              removeLabel(option.key);
+                            } else {
+                              addLabel(option.key);
+                            }
+                          }}
+                          className="text-xs"
+                          style={{
+                            backgroundColor: isSelected ? option.color || undefined : undefined,
+                            borderColor: option.color || undefined,
+                            color: isSelected ? "#ffffff" : option.color || undefined,
+                          }}
+                          data-testid={`task-label-${option.key}`}
+                        >
+                          {option.name}
+                          {isSelected && <Check className="h-3 w-3 ml-1" />}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  {watchedLabels && watchedLabels.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {watchedLabels.map((labelKey, index) => {
+                        const labelOption = labelOptions.find(opt => opt.key === labelKey);
+                        return (
+                          <Badge 
+                            key={index} 
+                            variant="secondary" 
+                            className="text-xs"
+                            style={{
+                              backgroundColor: labelOption?.color || "#6B7280",
+                              color: "#ffffff"
+                            }}
+                          >
+                            {labelOption?.name || labelKey}
+                            <button
+                              type="button"
+                              onClick={() => removeLabel(labelKey)}
+                              className="ml-1 hover:text-destructive"
+                              data-testid={`task-remove-label-${index}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

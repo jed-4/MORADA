@@ -174,6 +174,7 @@ export const notes: any = pgTable("notes", {
   dueDate: timestamp("due_date"),
   completedAt: timestamp("completed_at"),
   tags: json("tags").default([]), // string[] for task tags
+  labels: json("labels").default([]), // string[] for task labels from field options
   
   // Subtask support
   parentTaskId: varchar("parent_task_id").references(() => notes.id),
@@ -212,6 +213,7 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
+  labels: z.array(z.string()).optional(),
   // Subtask fields
   parentTaskId: z.string().optional(),
   subtaskOrder: z.number().optional(),

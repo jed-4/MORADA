@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task } from "@shared/schema";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
+import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 import {
   Table,
   TableBody,
@@ -327,6 +328,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   };
 
   const { getStatusInfo } = useTaskStatusOptions();
+  const { getLabelInfo } = useTaskLabelOptions();
   
   const getStatusBadge = (status: string) => {
     const statusInfo = getStatusInfo(status);
@@ -523,7 +525,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                   </span>
                                 {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
                                   <div className="flex gap-1">
-                                    {task.tags.slice(0, 2).map((tag, index) => (
+                                    {task.tags.slice(0, 2).map((tag: string, index: number) => (
                                       <Badge key={index} variant="outline" className="text-xs">
                                         {tag}
                                       </Badge>
@@ -531,6 +533,40 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                     {task.tags.length > 2 && (
                                       <Badge variant="outline" className="text-xs">
                                         +{task.tags.length - 2}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                                {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
+                                  <div className="flex gap-1">
+                                    {task.labels.slice(0, 2).map((labelKey: string, index: number) => {
+                                      const labelInfo = getLabelInfo(labelKey);
+                                      return (
+                                        <Badge 
+                                          key={index} 
+                                          variant="outline" 
+                                          className="text-xs"
+                                          style={{
+                                            backgroundColor: labelInfo.color || undefined,
+                                            color: "#ffffff",
+                                            borderColor: labelInfo.color || undefined
+                                          }}
+                                        >
+                                          {labelInfo.name}
+                                        </Badge>
+                                      );
+                                    })}
+                                    {task.labels.length > 2 && (
+                                      <Badge 
+                                        variant="outline" 
+                                        className="text-xs"
+                                        style={{
+                                          backgroundColor: "#6B7280",
+                                          color: "#ffffff",
+                                          borderColor: "#6B7280"
+                                        }}
+                                      >
+                                        +{task.labels.length - 2}
                                       </Badge>
                                     )}
                                   </div>
@@ -555,7 +591,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                 task.assigneeName ? (
                                   <div className="flex items-center gap-2">
                                     <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                                      {task.assigneeName.split(" ").map(n => n[0]).join("").toUpperCase()}
+                                      {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
                                     </div>
                                     <span className="text-sm">{task.assigneeName}</span>
                                   </div>
@@ -655,7 +691,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                   </span>
                                 {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
                                   <div className="flex gap-1">
-                                    {task.tags.slice(0, 2).map((tag, index) => (
+                                    {task.tags.slice(0, 2).map((tag: string, index: number) => (
                                       <Badge key={index} variant="outline" className="text-xs">
                                         {tag}
                                       </Badge>
@@ -663,6 +699,40 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                     {task.tags.length > 2 && (
                                       <Badge variant="outline" className="text-xs">
                                         +{task.tags.length - 2}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                                {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
+                                  <div className="flex gap-1">
+                                    {task.labels.slice(0, 2).map((labelKey: string, index: number) => {
+                                      const labelInfo = getLabelInfo(labelKey);
+                                      return (
+                                        <Badge 
+                                          key={index} 
+                                          variant="outline" 
+                                          className="text-xs"
+                                          style={{
+                                            backgroundColor: labelInfo.color || undefined,
+                                            color: "#ffffff",
+                                            borderColor: labelInfo.color || undefined
+                                          }}
+                                        >
+                                          {labelInfo.name}
+                                        </Badge>
+                                      );
+                                    })}
+                                    {task.labels.length > 2 && (
+                                      <Badge 
+                                        variant="outline" 
+                                        className="text-xs"
+                                        style={{
+                                          backgroundColor: "#6B7280",
+                                          color: "#ffffff",
+                                          borderColor: "#6B7280"
+                                        }}
+                                      >
+                                        +{task.labels.length - 2}
                                       </Badge>
                                     )}
                                   </div>
@@ -684,7 +754,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                               {task.assigneeName ? (
                                 <div className="flex items-center gap-2">
                                   <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                                    {task.assigneeName.split(" ").map(n => n[0]).join("").toUpperCase()}
+                                    {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
                                   </div>
                                   <span className="text-sm">{task.assigneeName}</span>
                                 </div>

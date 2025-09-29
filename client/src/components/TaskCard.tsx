@@ -5,6 +5,7 @@ import { Calendar, MessageSquare } from "lucide-react";
 import SubtaskList from "@/components/SubtaskList";
 import { Task } from "@shared/schema";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
+import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 
 interface TaskCardProps {
   task: Task;
@@ -25,16 +26,18 @@ export default function TaskCard({
     priority = "medium",
     status = "todo",
     tags = [],
+    labels = [],
   } = task;
   
-  // Type-safe tag handling
+  // Type-safe tag and label handling
   const taskTags = Array.isArray(tags) ? tags as string[] : [];
+  const taskLabels = Array.isArray(labels) ? labels as string[] : [];
   
   // Create assignee object if assigneeName exists
   const assignee = assigneeName ? {
     name: assigneeName,
     avatar: undefined,
-    initials: assigneeName.split(' ').map(n => n[0]).join('').toUpperCase(),
+    initials: assigneeName.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
   } : undefined;
   
   const comments = 0; // TODO: Implement comments system
@@ -45,6 +48,7 @@ export default function TaskCard({
   };
 
   const { getStatusInfo } = useTaskStatusOptions();
+  const { getLabelInfo } = useTaskLabelOptions();
   const statusInfo = getStatusInfo(task.status || "todo");
 
   return (
@@ -73,6 +77,28 @@ export default function TaskCard({
                   {tag}
                 </Badge>
               ))}
+            </div>
+          )}
+
+          {taskLabels.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {taskLabels.map((labelKey: string, index: number) => {
+                const labelInfo = getLabelInfo(labelKey);
+                return (
+                  <Badge 
+                    key={index} 
+                    variant="secondary" 
+                    className="text-xs"
+                    style={{
+                      backgroundColor: labelInfo.color || undefined,
+                      color: "#ffffff",
+                      borderColor: labelInfo.color || undefined
+                    }}
+                  >
+                    {labelInfo.name}
+                  </Badge>
+                );
+              })}
             </div>
           )}
 
