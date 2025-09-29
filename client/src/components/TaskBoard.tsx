@@ -200,39 +200,33 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       }))
     : fallbackColumns; // Use fallback during loading and when no options configured
   
-  // Check for horizontal overflow - simple approach
+  // Robust overflow detection using ResizeObserver
   useEffect(() => {
     const checkOverflow = () => {
       if (scrollContainerRef.current) {
         const container = scrollContainerRef.current;
         const hasOverflow = container.scrollWidth > container.clientWidth;
-        const hasMultipleColumns = columns.length > 2; // Fallback check
-        
-        // Debug logging
-        console.log('Overflow check:', {
-          scrollWidth: container.scrollWidth,
-          clientWidth: container.clientWidth,
-          hasOverflow,
-          columnsLength: columns.length,
-          hasMultipleColumns
-        });
-        
-        setShowNavigation(true); // Force show for testing
+        setShowNavigation(hasOverflow);
       }
     };
 
-    // Check after layout is complete
-    const timer = setTimeout(checkOverflow, 150);
-    
-    // Also check overflow on window resize
-    const handleResize = () => {
-      setTimeout(checkOverflow, 100);
-    };
-    
-    window.addEventListener('resize', handleResize);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Use ResizeObserver for better detection of size changes
+    const resizeObserver = new ResizeObserver(() => {
+      // Small delay to ensure content layout is complete
+      requestAnimationFrame(checkOverflow);
+    });
+
+    resizeObserver.observe(container);
+
+    // Initial check after content loads
+    const timer = setTimeout(checkOverflow, 100);
+
     return () => {
+      resizeObserver.disconnect();
       clearTimeout(timer);
-      window.removeEventListener('resize', handleResize);
     };
   }, [columns]);
   
@@ -387,9 +381,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
           style={{ 
             scrollbarWidth: 'thin', 
-            scrollBehavior: 'smooth',
-            maxWidth: '900px', // Force constraint to test scrolling
-            overflowX: 'auto'
+            scrollBehavior: 'smooth'
           }}>
           <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
