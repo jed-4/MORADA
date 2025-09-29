@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -150,13 +150,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showNavigation, setShowNavigation] = useState(false);
   
-  // Check for horizontal overflow
-  const checkOverflow = () => {
-    if (scrollContainerRef.current) {
-      const hasOverflow = scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth;
-      setShowNavigation(hasOverflow);
-    }
-  };
+  // Placeholder for checkOverflow - will be defined after columns
 
   // Navigation functions for smooth scrolling
   const scrollLeft = () => {
@@ -206,17 +200,30 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       }))
     : fallbackColumns; // Use fallback during loading and when no options configured
   
-  // Check overflow when columns change or component mounts
+  // Check for horizontal overflow - simple approach
   useEffect(() => {
-    checkOverflow();
+    const checkOverflow = () => {
+      if (scrollContainerRef.current) {
+        const container = scrollContainerRef.current;
+        const hasOverflow = container.scrollWidth > container.clientWidth;
+        const hasMultipleColumns = columns.length > 2; // Fallback check
+        setShowNavigation(hasOverflow || hasMultipleColumns);
+      }
+    };
+
+    // Check after layout is complete
+    const timer = setTimeout(checkOverflow, 150);
     
     // Also check overflow on window resize
     const handleResize = () => {
-      setTimeout(checkOverflow, 100); // Small delay to ensure layout is complete
+      setTimeout(checkOverflow, 100);
     };
     
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [columns]);
   
   // Use props tasks if provided, otherwise fetch all tasks
