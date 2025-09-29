@@ -1,22 +1,47 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MessageSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Calendar, MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import SubtaskList from "@/components/SubtaskList";
 import { Task } from "@shared/schema";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
+import { useDeleteSubtask } from "@/hooks/useSubtasks";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useState } from "react";
 
 interface TaskCardProps {
   task: Task;
   showSubtasks?: boolean; // Option to hide subtasks in certain contexts
   onClick?: () => void; // Optional click handler
+  onEdit?: (task: Task) => void; // Optional edit handler
 }
 
 export default function TaskCard({
   task,
   showSubtasks = true,
   onClick,
+  onEdit,
 }: TaskCardProps) {
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const { toast } = useToast();
+  const deleteTaskMutation = useDeleteSubtask();
   const {
     title,
     content: description,
@@ -47,19 +72,78 @@ export default function TaskCard({
 
   const { getLabelInfo } = useTaskLabelOptions();
 
+  const handleDelete = async () => {
+    try {
+      await deleteTaskMutation.mutateAsync({ 
+        taskId: task.id, 
+        parentTaskId: task.parentTaskId || undefined 
+      });
+      toast({ title: "Task deleted successfully" });
+      setShowDeleteDialog(false);
+    } catch (error) {
+      toast({
+        title: "Failed to delete task",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onEdit) {
+      onEdit(task);
+    } else if (onClick) {
+      onClick();
+    }
+  };
+
   return (
+    <>
     <Card 
-      className="hover-elevate cursor-pointer" 
+      className="hover-elevate cursor-pointer group" 
       onClick={onClick}
       data-testid={`task-${task.id}`}
     >
       <CardContent className="p-4">
         <div className="space-y-3">
-          <div className="flex items-start justify-between">
-            <h3 className="font-medium text-sm">{title}</h3>
-            <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
-              {priority}
-            </Badge>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-medium text-sm flex-1">{title}</h3>
+            <div className="flex items-center gap-1">
+              <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
+                {priority}
+              </Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => e.stopPropagation()}
+                    data-testid={`button-task-menu-${task.id}`}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem onClick={handleEdit} data-testid={`menu-edit-task-${task.id}`}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteDialog(true);
+                    }}
+                    className="text-destructive"
+                    data-testid={`menu-delete-task-${task.id}`}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           {description && (
@@ -132,5 +216,28 @@ export default function TaskCard({
         </div>
       </CardContent>
     </Card>
+    <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Task</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{title}"? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+          <AlertDialogAction 
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete();
+            }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
