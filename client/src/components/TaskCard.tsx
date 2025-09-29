@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, MessageSquare } from "lucide-react";
 import SubtaskList from "@/components/SubtaskList";
 import { Task } from "@shared/schema";
-import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 
 interface TaskCardProps {
@@ -24,7 +23,6 @@ export default function TaskCard({
     assigneeName,
     dueDate,
     priority = "medium",
-    status = "todo",
     tags = [],
     labels = [],
   } = task;
@@ -47,9 +45,7 @@ export default function TaskCard({
     high: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   };
 
-  const { getStatusInfo } = useTaskStatusOptions();
   const { getLabelInfo } = useTaskLabelOptions();
-  const statusInfo = getStatusInfo(task.status || "todo");
 
   return (
     <Card 
@@ -126,18 +122,6 @@ export default function TaskCard({
                   {comments}
                 </div>
               )}
-              
-              <div className="flex items-center gap-1">
-                {statusInfo.color && (
-                  <div 
-                    className="w-2 h-2 rounded-full" 
-                    style={{ backgroundColor: statusInfo.color }}
-                  />
-                )}
-                <Badge variant="secondary" className="text-xs">
-                  {statusInfo.name}
-                </Badge>
-              </div>
             </div>
           </div>
           
