@@ -40,8 +40,28 @@ import {
   StickyNote,
   CheckSquare,
   Type,
-  List
+  List,
+  GripVertical
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import {
+  CSS,
+} from '@dnd-kit/utilities';
 import { z } from "zod";
 import type { CompanySettings, CustomFieldDef, InsertCustomFieldDef, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 import { insertCustomFieldDefSchema } from "@shared/schema";
@@ -1141,6 +1161,173 @@ function FieldSettingsSection() {
   );
 }
 
+// Sortable Item Component for Drag and Drop
+interface SortableItemProps {
+  id: string;
+  option: {
+    id?: string;
+    key: string;
+    name: string;
+    color: string | null;
+    isActive: boolean;
+    isDefault: boolean;
+    sortOrder: number;
+    categoryId: string;
+  };
+  index: number;
+  handleOptionChange: (index: number, field: string, value: any) => void;
+  handleRemoveOption: (index: number) => void;
+  colorOptions: string[];
+  options: any[];
+  setOptions: (options: any[]) => void;
+  setIsDirty: (dirty: boolean) => void;
+}
+
+function SortableItem({ 
+  id, 
+  option, 
+  index, 
+  handleOptionChange, 
+  handleRemoveOption, 
+  colorOptions,
+  options,
+  setOptions,
+  setIsDirty
+}: SortableItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="grid grid-cols-12 gap-3 items-center p-3 border rounded-lg hover-elevate"
+      data-testid={`option-row-${index}`}
+    >
+      {/* Drag Handle */}
+      <div className="col-span-1 flex justify-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="cursor-grab active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+          data-testid={`drag-handle-${index}`}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </Button>
+      </div>
+
+      {/* Color Picker */}
+      <div className="col-span-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-8 h-8 rounded border-2 p-0"
+              style={{ backgroundColor: option.color || "#6B7280" }}
+              data-testid={`color-select-${index}`}
+            >
+              <span className="sr-only">Select color</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-48 p-2" align="start">
+            <div className="grid grid-cols-6 gap-1">
+              {colorOptions.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => handleOptionChange(index, "color", color)}
+                  className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                  data-testid={`color-option-${color.replace('#', '')}`}
+                >
+                  <span className="sr-only">{color}</span>
+                </button>
+              ))}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Name Input */}
+      <div className="col-span-3">
+        <Input
+          value={option.name}
+          onChange={(e) => handleOptionChange(index, "name", e.target.value)}
+          className="h-8 text-sm"
+          placeholder="Option name"
+          data-testid={`name-input-${index}`}
+        />
+      </div>
+
+      {/* Key Input */}
+      <div className="col-span-3">
+        <Input
+          value={option.key}
+          onChange={(e) => handleOptionChange(index, "key", e.target.value)}
+          className="h-8 text-sm font-mono"
+          placeholder="option_key"
+          data-testid={`key-input-${index}`}
+        />
+      </div>
+
+      {/* Active Toggle */}
+      <div className="col-span-1 flex justify-center">
+        <Checkbox
+          checked={option.isActive}
+          onCheckedChange={(checked) => handleOptionChange(index, "isActive", checked)}
+          data-testid={`active-checkbox-${index}`}
+        />
+      </div>
+
+      {/* Default Toggle */}
+      <div className="col-span-1 flex justify-center">
+        <Checkbox
+          checked={option.isDefault}
+          onCheckedChange={(checked) => {
+            // Only allow one default option per category
+            const updated = options.map((opt, i) => ({
+              ...opt,
+              isDefault: i === index ? (checked as boolean) : false
+            }));
+            setOptions(updated);
+            setIsDirty(true);
+          }}
+          data-testid={`default-checkbox-${index}`}
+        />
+      </div>
+
+      {/* Remove Button */}
+      <div className="col-span-1 flex justify-center">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => handleRemoveOption(index)}
+          className="h-6 w-6 p-0"
+          data-testid={`remove-button-${index}`}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // Field Categories Section Component (Buildern-style master-detail interface)
 function FieldCategoriesSection() {
   const { toast } = useToast();
@@ -1277,6 +1464,35 @@ function FieldCategoriesSection() {
     "#8B5CF6", "#A855F7", "#D946EF", "#EC4899", "#F43F5E", "#6B7280"
   ];
 
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end event
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      const oldIndex = options.findIndex((option) => option.id === active.id || `option-${options.indexOf(option)}` === active.id);
+      const newIndex = options.findIndex((option) => option.id === over?.id || `option-${options.indexOf(option)}` === over?.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOptions = arrayMove(options, oldIndex, newIndex);
+        // Update sortOrder values based on new positions
+        const updatedOptions = newOptions.map((option, index) => ({
+          ...option,
+          sortOrder: index
+        }));
+        setOptions(updatedOptions);
+        setIsDirty(true);
+      }
+    }
+  };
+
   if (isLoadingCategories) {
     return (
       <div className="text-center py-12">
@@ -1393,127 +1609,39 @@ function FieldCategoriesSection() {
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 <div className="grid grid-cols-12 gap-3 text-xs font-medium text-muted-foreground p-2 border-b">
-                  <div className="col-span-1">Color</div>
-                  <div className="col-span-4">Name</div>
+                  <div className="col-span-1 text-center">Drag</div>
+                  <div className="col-span-2">Color</div>
+                  <div className="col-span-3">Name</div>
                   <div className="col-span-3">Key</div>
                   <div className="col-span-1 text-center">Active</div>
                   <div className="col-span-1 text-center">Default</div>
-                  <div className="col-span-1 text-center">Order</div>
                   <div className="col-span-1 text-center">Remove</div>
                 </div>
-                {options.map((option, index) => (
-                  <div
-                    key={option.id || index}
-                    className="grid grid-cols-12 gap-3 items-center p-3 border rounded-lg hover-elevate"
-                    data-testid={`option-row-${index}`}
+                <DndContext 
+                  sensors={sensors} 
+                  collisionDetection={closestCenter} 
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext 
+                    items={options.map((option, index) => option.id || `option-${index}`)} 
+                    strategy={verticalListSortingStrategy}
                   >
-                    {/* Color Picker */}
-                    <div className="col-span-1">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-8 h-8 rounded border-2 p-0"
-                            style={{ backgroundColor: option.color || "#6B7280" }}
-                            data-testid={`color-select-${index}`}
-                          >
-                            <span className="sr-only">Select color</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-48 p-2" align="start">
-                          <div className="grid grid-cols-6 gap-1">
-                            {colorOptions.map((color) => (
-                              <button
-                                key={color}
-                                type="button"
-                                onClick={() => handleOptionChange(index, "color", color)}
-                                className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
-                                style={{ backgroundColor: color }}
-                                title={color}
-                                data-testid={`color-option-${color.replace('#', '')}`}
-                              >
-                                <span className="sr-only">{color}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-
-                    {/* Name Input */}
-                    <div className="col-span-4">
-                      <Input
-                        value={option.name}
-                        onChange={(e) => handleOptionChange(index, "name", e.target.value)}
-                        className="h-8 text-sm"
-                        placeholder="Option name"
-                        data-testid={`name-input-${index}`}
+                    {options.map((option, index) => (
+                      <SortableItem
+                        key={option.id || `option-${index}`}
+                        id={option.id || `option-${index}`}
+                        option={option}
+                        index={index}
+                        handleOptionChange={handleOptionChange}
+                        handleRemoveOption={handleRemoveOption}
+                        colorOptions={colorOptions}
+                        options={options}
+                        setOptions={setOptions}
+                        setIsDirty={setIsDirty}
                       />
-                    </div>
-
-                    {/* Key Input */}
-                    <div className="col-span-3">
-                      <Input
-                        value={option.key}
-                        onChange={(e) => handleOptionChange(index, "key", e.target.value)}
-                        className="h-8 text-sm font-mono"
-                        placeholder="option_key"
-                        data-testid={`key-input-${index}`}
-                      />
-                    </div>
-
-                    {/* Active Toggle */}
-                    <div className="col-span-1 flex justify-center">
-                      <Checkbox
-                        checked={option.isActive}
-                        onCheckedChange={(checked) => handleOptionChange(index, "isActive", checked)}
-                        data-testid={`active-checkbox-${index}`}
-                      />
-                    </div>
-
-                    {/* Default Toggle */}
-                    <div className="col-span-1 flex justify-center">
-                      <Checkbox
-                        checked={option.isDefault}
-                        onCheckedChange={(checked) => {
-                          // Only allow one default option per category
-                          const updated = options.map((opt, i) => ({
-                            ...opt,
-                            isDefault: i === index ? (checked as boolean) : false
-                          }));
-                          setOptions(updated);
-                          setIsDirty(true);
-                        }}
-                        data-testid={`default-checkbox-${index}`}
-                      />
-                    </div>
-
-                    {/* Sort Order */}
-                    <div className="col-span-1">
-                      <Input
-                        type="number"
-                        value={option.sortOrder}
-                        onChange={(e) => handleOptionChange(index, "sortOrder", parseInt(e.target.value) || 0)}
-                        className="h-8 text-sm w-16"
-                        data-testid={`sort-input-${index}`}
-                      />
-                    </div>
-
-                    {/* Remove Button */}
-                    <div className="col-span-1 flex justify-center">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleRemoveOption(index)}
-                        className="h-6 w-6 p-0"
-                        data-testid={`remove-button-${index}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                    ))}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
           </CardContent>
