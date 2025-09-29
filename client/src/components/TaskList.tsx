@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task } from "@shared/schema";
+import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import {
   Table,
   TableBody,
@@ -325,17 +326,23 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
     }
   };
 
+  const { getStatusInfo } = useTaskStatusOptions();
+  
   const getStatusBadge = (status: string) => {
-    const variants = {
-      todo: "secondary",
-      "in-progress": "default",
-      done: "outline",
-    } as const;
+    const statusInfo = getStatusInfo(status);
     
     return (
-      <Badge variant={variants[status as keyof typeof variants] || "secondary"}>
-        {status.replace("-", " ").toUpperCase()}
-      </Badge>
+      <div className="flex items-center gap-2">
+        {statusInfo.color && (
+          <div 
+            className="w-3 h-3 rounded-full border border-border" 
+            style={{ backgroundColor: statusInfo.color }}
+          />
+        )}
+        <Badge variant="secondary">
+          {statusInfo.name}
+        </Badge>
+      </div>
     );
   };
 

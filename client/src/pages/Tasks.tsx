@@ -44,7 +44,7 @@ import TaskForm from "@/components/TaskForm";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
-import { type TaskView, type Task } from "@shared/schema";
+import { type TaskView, type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useProject } from "@/contexts/ProjectContext";
 import { queryClient } from "@/lib/queryClient";
@@ -164,6 +164,15 @@ export default function Tasks() {
     },
     enabled: !!effectiveProjectId
   });
+
+  // Fetch task status options from field categories
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  // Extract task status options
+  const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const statusOptions = taskStatusCategory?.options || [];
 
   // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
   const groupedTasks = React.useMemo(() => {
@@ -448,24 +457,32 @@ export default function Tasks() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                {[
-                  { value: "todo", label: "To Do" },
-                  { value: "in-progress", label: "In Progress" },
-                  { value: "done", label: "Done" },
-                ].map(option => (
-                  <DropdownMenuItem key={option.value} className="flex items-center">
+                {(statusOptions.length > 0 ? statusOptions : [
+                  { key: "todo", name: "To Do", color: null },
+                  { key: "in-progress", name: "In Progress", color: null },
+                  { key: "done", name: "Done", color: null },
+                ]).map(option => (
+                  <DropdownMenuItem key={option.key} className="flex items-center">
                     <Checkbox
-                      checked={filters.status?.includes(option.value) || false}
+                      checked={filters.status?.includes(option.key) || false}
                       onCheckedChange={() => {
                         const currentStatus = filters.status || [];
-                        const newStatus = currentStatus.includes(option.value)
-                          ? currentStatus.filter(s => s !== option.value)
-                          : [...currentStatus, option.value];
+                        const newStatus = currentStatus.includes(option.key)
+                          ? currentStatus.filter(s => s !== option.key)
+                          : [...currentStatus, option.key];
                         setFilters({...filters, status: newStatus.length > 0 ? newStatus : undefined});
                       }}
                       className="mr-2"
                     />
-                    {option.label}
+                    <div className="flex items-center gap-2">
+                      {option.color && (
+                        <div 
+                          className="w-3 h-3 rounded-full border border-border" 
+                          style={{ backgroundColor: option.color }}
+                        />
+                      )}
+                      {option.name}
+                    </div>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>

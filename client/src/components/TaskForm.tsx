@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type InsertTask } from "@shared/schema";
+import { type Task, type InsertTask, type FieldCategoryWithOptions } from "@shared/schema";
 import { z } from "zod";
 import { useProject } from "@/contexts/ProjectContext";
 
@@ -42,13 +42,15 @@ import {
   Clock,
 } from "lucide-react";
 
-// Enhanced form schema with all available fields
-const taskFormSchema = z.object({
-  // Basic Info Tab
-  title: z.string().min(1, "Title is required"),
-  content: z.string().default(""),
-  priority: z.enum(["low", "medium", "high"]).default("medium"),
-  status: z.enum(["todo", "in-progress", "done"]).default("todo"),
+// Create dynamic task form schema based on available status options
+const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", "done"]) => {
+  const validStatuses = statusOptions.length > 0 ? statusOptions : ["todo", "in-progress", "done"];
+  return z.object({
+    // Basic Info Tab
+    title: z.string().min(1, "Title is required"),
+    content: z.string().default(""),
+    priority: z.enum(["low", "medium", "high"]).default("medium"),
+    status: z.enum(validStatuses as [string, ...string[]]).default(validStatuses[0]),
   assigneeName: z.string().optional(),
   dueDate: z.string().optional(), // HTML date input returns string
   tags: z.array(z.string()).default([]),
@@ -62,10 +64,14 @@ const taskFormSchema = z.object({
   recurringInterval: z.number().min(1).default(1),
   recurringDays: z.array(z.number()).default([]),
   recurringStartDate: z.string().optional(),
-  recurringEndDate: z.string().optional(),
-});
+    recurringEndDate: z.string().optional(),
+  });
+};
 
-type TaskFormData = z.infer<typeof taskFormSchema>;
+// Default schema for initial render
+const defaultTaskFormSchema = createTaskFormSchema();
+
+type TaskFormData = z.infer<ReturnType<typeof createTaskFormSchema>>;
 
 interface TaskFormProps {
   task?: Task;
@@ -82,6 +88,28 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   const { toast } = useToast();
   const { currentProject } = useProject();
   
+  // Fetch task status options from field categories
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  // Extract task status options with fallback handling
+  const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const statusOptions = taskStatusCategory?.options || [];
+  const availableStatusKeys = statusOptions.map(opt => opt.key);
+  
+  // Ensure we always have valid status options (stable during loading)
+  const defaultStatusKeys = ["todo", "in-progress", "done"];
+  const validStatusKeys = availableStatusKeys.length > 0 ? availableStatusKeys : defaultStatusKeys;
+  
+  // If editing an existing task, ensure its current status is included in the options
+  const taskCurrentStatus = task?.status;
+  const finalStatusKeys = taskCurrentStatus && !validStatusKeys.includes(taskCurrentStatus) 
+    ? [...validStatusKeys, taskCurrentStatus] 
+    : validStatusKeys;
+    
+  const taskFormSchema = createTaskFormSchema(finalStatusKeys);
+  
   const isEditing = !!task;
 
   // Don't render if no projectId is provided
@@ -96,7 +124,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       title: task?.title || "",
       content: task?.content || "",
       priority: (task?.priority as "low" | "medium" | "high") || "medium",
-      status: (task?.status as "todo" | "in-progress" | "done") || initialStatus,
+      status: task?.status || finalStatusKeys[0] || "todo",
       assigneeName: task?.assigneeName || "",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
       tags: (task?.tags as string[]) || [],
@@ -361,9 +389,36 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="todo">To Do</SelectItem>
-                            <SelectItem value="in-progress">In Progress</SelectItem>
-                            <SelectItem value="done">Done</SelectItem>
+                            {/* Use dynamic options if available, otherwise show loading fallback */}
+                            {statusOptions.length > 0 ? (
+                              statusOptions.map((option) => (
+                                <SelectItem key={option.key} value={option.key}>
+                                  <div className="flex items-center gap-2">
+                                    {option.color && (
+                                      <div 
+                                        className="w-3 h-3 rounded-full border border-border" 
+                                        style={{ backgroundColor: option.color }}
+                                      />
+                                    )}
+                                    {option.name}
+                                  </div>
+                                </SelectItem>
+                              ))
+                            ) : (
+                              /* Fallback during loading */
+                              finalStatusKeys.map((key) => {
+                                const labels: Record<string, string> = {
+                                  "todo": "To Do",
+                                  "in-progress": "In Progress", 
+                                  "done": "Done"
+                                };
+                                return (
+                                  <SelectItem key={key} value={key}>
+                                    {labels[key] || key}
+                                  </SelectItem>
+                                );
+                              })
+                            )}
                           </SelectContent>
                         </Select>
                         <FormMessage />
