@@ -480,6 +480,21 @@ export class MemStorage implements IStorage {
     };
     this.fieldCategories.set(taskPriorityCategory.id, taskPriorityCategory);
 
+    // Task Labels Category
+    const taskLabelsCategory: FieldCategory = {
+      id: "cat-task-labels",
+      key: "task.labels",
+      label: "Task Labels",
+      entity: "task",
+      description: "Customizable labels for tasks",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 3,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(taskLabelsCategory.id, taskLabelsCategory);
+
     // Trade Categories
     const tradeCategoriesCategory: FieldCategory = {
       id: "cat-trade-types",
@@ -489,7 +504,7 @@ export class MemStorage implements IStorage {
       description: "Construction trade categories",
       isBuiltIn: true,
       isActive: true,
-      sortOrder: 3,
+      sortOrder: 4,
       createdAt: now,
       updatedAt: now,
     };
@@ -531,6 +546,32 @@ export class MemStorage implements IStorage {
       const option: FieldOption = {
         id: `opt-priority-${opt.key}`,
         categoryId: taskPriorityCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
+
+    // Add default options for Task Labels
+    const labelOptions = [
+      { key: "bug", name: "Bug", color: "#EF4444", isDefault: false },
+      { key: "feature", name: "Feature", color: "#3B82F6", isDefault: false },
+      { key: "urgent", name: "Urgent", color: "#DC2626", isDefault: false },
+      { key: "review", name: "Review", color: "#F59E0B", isDefault: false },
+      { key: "documentation", name: "Documentation", color: "#8B5CF6", isDefault: false },
+      { key: "client-request", name: "Client Request", color: "#10B981", isDefault: false },
+    ];
+
+    labelOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-label-${opt.key}`,
+        categoryId: taskLabelsCategory.id,
         key: opt.key,
         name: opt.name,
         color: opt.color,
@@ -2744,6 +2785,16 @@ export class DbStorage implements IStorage {
         sortOrder: 2,
       },
       {
+        id: 'cat-task-labels',
+        key: 'task.labels',
+        label: 'Task Labels',
+        entity: 'task',
+        description: 'Customizable labels for tasks',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 3,
+      },
+      {
         id: 'cat-trade-types',
         key: 'task.trade',
         label: 'Trade Categories',
@@ -2751,7 +2802,7 @@ export class DbStorage implements IStorage {
         description: 'Construction trade categories',
         isBuiltIn: true,
         isActive: true,
-        sortOrder: 3,
+        sortOrder: 4,
       },
       {
         id: 'cat-selection-categories',
@@ -2761,7 +2812,7 @@ export class DbStorage implements IStorage {
         description: 'Categories for selections',
         isBuiltIn: true,
         isActive: true,
-        sortOrder: 4,
+        sortOrder: 5,
       },
       {
         id: 'cat-location-rooms',
@@ -2771,7 +2822,7 @@ export class DbStorage implements IStorage {
         description: 'Room/location options for selections',
         isBuiltIn: true,
         isActive: true,
-        sortOrder: 5,
+        sortOrder: 6,
       },
     ];
 
@@ -2840,6 +2891,15 @@ export class DbStorage implements IStorage {
           { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
           { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
           { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+        ];
+      case 'task.labels':
+        return [
+          { id: 'opt-label-bug', categoryId, key: 'bug', name: 'Bug', color: '#EF4444', isDefault: false, sortOrder: 0 },
+          { id: 'opt-label-feature', categoryId, key: 'feature', name: 'Feature', color: '#3B82F6', isDefault: false, sortOrder: 1 },
+          { id: 'opt-label-urgent', categoryId, key: 'urgent', name: 'Urgent', color: '#DC2626', isDefault: false, sortOrder: 2 },
+          { id: 'opt-label-review', categoryId, key: 'review', name: 'Review', color: '#F59E0B', isDefault: false, sortOrder: 3 },
+          { id: 'opt-label-documentation', categoryId, key: 'documentation', name: 'Documentation', color: '#8B5CF6', isDefault: false, sortOrder: 4 },
+          { id: 'opt-label-client-request', categoryId, key: 'client-request', name: 'Client Request', color: '#10B981', isDefault: false, sortOrder: 5 },
         ];
       case 'task.trade':
         return [
