@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task } from "@shared/schema";
-import { Plus } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import TaskCard from "./TaskCard";
 import TaskForm from "./TaskForm";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
@@ -145,6 +145,37 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const { toast } = useToast();
+  
+  // Scroll container ref for navigation
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showNavigation, setShowNavigation] = useState(false);
+  
+  // Check for horizontal overflow
+  const checkOverflow = () => {
+    if (scrollContainerRef.current) {
+      const hasOverflow = scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth;
+      setShowNavigation(hasOverflow);
+    }
+  };
+
+  // Navigation functions for smooth scrolling
+  const scrollLeft = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({
+        left: -344, // Scroll by column width (320px) + gap (24px)
+        behavior: 'smooth'
+      });
+    }
+  };
+  
+  const scrollRight = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({
+        left: 344, // Scroll by column width (320px) + gap (24px)
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Set up drag sensors
   const sensors = useSensors(
@@ -174,6 +205,19 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         color: option.color || undefined
       }))
     : fallbackColumns; // Use fallback during loading and when no options configured
+  
+  // Check overflow when columns change or component mounts
+  useEffect(() => {
+    checkOverflow();
+    
+    // Also check overflow on window resize
+    const handleResize = () => {
+      setTimeout(checkOverflow, 100); // Small delay to ensure layout is complete
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [columns]);
   
   // Use props tasks if provided, otherwise fetch all tasks
   const { data: fetchedTasks = [], isLoading: fetchIsLoading } = useQuery<Task[]>({
@@ -256,9 +300,10 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
         </div>
-        <div className={`grid gap-6 ${columns.length <= 3 ? 'grid-cols-1 md:grid-cols-3' : columns.length <= 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'}`}>
+        <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+             style={{ scrollbarWidth: 'thin' }}>
           {columns.map((column) => (
-            <Card key={column.id} className="h-fit">
+            <Card key={column.id} className="h-fit min-w-80 flex-shrink-0">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium">{column.title}</CardTitle>
@@ -285,30 +330,58 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       <div className="p-6" data-testid="task-board">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
-          {columns.length > 0 && (
-            <Button 
-              onClick={() => handleAddTaskToColumn(columns[0].status)}
-              data-testid="button-new-task"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Task
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {showNavigation && (
+              <>
+                <Button 
+                  variant="outline"
+                  size="icon"
+                  onClick={scrollLeft}
+                  data-testid="button-scroll-left"
+                  className="h-9 w-9"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline"
+                  size="icon"
+                  onClick={scrollRight}
+                  data-testid="button-scroll-right"
+                  className="h-9 w-9"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            {columns.length > 0 && (
+              <Button 
+                onClick={() => handleAddTaskToColumn(columns[0].status)}
+                data-testid="button-new-task"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Task
+              </Button>
+            )}
+          </div>
         </div>
 
-        <div className={`grid gap-6 ${columns.length <= 3 ? 'grid-cols-1 md:grid-cols-3' : columns.length <= 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'}`}>
+        <div 
+          ref={scrollContainerRef}
+          className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+          style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}>
           <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
               const columnTasks = tasksByStatus[column.status] || [];
               
               return (
-                <DroppableColumn
-                  key={column.id}
-                  column={column}
-                  tasks={columnTasks}
-                  onAddTask={() => handleAddTaskToColumn(column.status)}
-                  onTaskClick={onTaskClick}
-                />
+                <div key={column.id} className="min-w-80 flex-shrink-0">
+                  <DroppableColumn
+                    column={column}
+                    tasks={columnTasks}
+                    onAddTask={() => handleAddTaskToColumn(column.status)}
+                    onTaskClick={onTaskClick}
+                  />
+                </div>
               );
             })}
           </SortableContext>
