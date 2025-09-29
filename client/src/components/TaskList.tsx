@@ -36,6 +36,7 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   useSortable,
   arrayMove,
 } from "@dnd-kit/sortable";
@@ -62,11 +63,20 @@ interface TaskListProps {
   filters?: Record<string, any>;
   columnConfig?: Record<string, any>;
   onTaskClick?: (task: Task) => void;
+  projectId?: string;
 }
 
 type SortConfig = {
   key: keyof Task | null;
   direction: 'asc' | 'desc';
+};
+
+type ColumnConfig = {
+  id: string;
+  label: string;
+  sortKey?: keyof Task;
+  width?: string;
+  visible: boolean;
 };
 
 // Draggable table row component
@@ -128,13 +138,52 @@ function DraggableTableRow({
   );
 }
 
-export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLoading: propIsLoading, filters, columnConfig, onTaskClick }: TaskListProps) {
+export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLoading: propIsLoading, filters, columnConfig, onTaskClick, projectId: propProjectId }: TaskListProps) {
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'asc' });
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeColumn, setActiveColumn] = useState<ColumnConfig | null>(null);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const { toast } = useToast();
+  
+  // Define default columns
+  const defaultColumns: ColumnConfig[] = [
+    { id: 'title', label: 'Task', sortKey: 'title', width: 'min-w-[200px]', visible: true },
+    { id: 'status', label: 'Status', sortKey: 'status', width: 'w-32', visible: true },
+    { id: 'priority', label: 'Priority', sortKey: 'priority', width: 'w-24', visible: true },
+    { id: 'assignee', label: 'Assignee', sortKey: 'assigneeName', width: 'w-40', visible: true },
+    { id: 'dueDate', label: 'Due Date', sortKey: 'dueDate', width: 'w-32', visible: true },
+    { id: 'project', label: 'Project', sortKey: 'projectId', width: 'w-40', visible: true },
+  ];
+  
+  const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
+  
+  // Use passed projectId or fallback to default (but this should always be passed from parent)
+  const projectId = propProjectId || 'default';
+  
+  // Load column order from localStorage per project
+  useEffect(() => {
+    const savedColumns = localStorage.getItem(`taskListColumns_${projectId}`);
+    if (savedColumns) {
+      try {
+        const parsed = JSON.parse(savedColumns);
+        setColumns(parsed);
+      } catch (e) {
+        console.error('Failed to parse saved column config:', e);
+      }
+    } else {
+      // Reset to default when switching projects
+      setColumns(defaultColumns);
+    }
+  }, [projectId]);
+  
+  // Save column order and widths to localStorage when they change
+  useEffect(() => {
+    if (projectId) {
+      localStorage.setItem(`taskListColumns_${projectId}`, JSON.stringify(columns));
+    }
+  }, [columns, projectId]);
 
   // Set up drag sensors
   const sensors = useSensors(
@@ -260,34 +309,57 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   };
 
   const handleDragStart = (event: DragStartEvent) => {
-    const task = tasks.find(t => t.id === event.active.id);
-    setActiveTask(task || null);
+    const activeData = event.active.data.current;
+    
+    if (activeData?.type === 'task') {
+      const task = tasks.find(t => t.id === event.active.id);
+      setActiveTask(task || null);
+    } else if (activeData?.type === 'column') {
+      setActiveColumn(activeData.column);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveTask(null);
+    setActiveColumn(null);
     
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     
-    // Only allow reordering in manual order mode (no sort applied)
-    if (sortConfig.key !== null) {
-      toast({ 
-        title: "Clear sort to reorder", 
-        description: "Remove sorting to manually reorder tasks",
-        variant: "destructive" 
+    const activeData = active.data.current;
+    const overData = over.data.current;
+    
+    // Handle column reordering
+    if (activeData?.type === 'column' && overData?.type === 'column') {
+      setColumns(current => {
+        const oldIndex = current.findIndex(col => col.id === active.id);
+        const newIndex = current.findIndex(col => col.id === over.id);
+        return arrayMove(current, oldIndex, newIndex);
       });
       return;
     }
     
-    setOrderedIds(current => {
-      const oldIndex = current.indexOf(active.id as string);
-      const newIndex = current.indexOf(over.id as string);
-      return arrayMove(current, oldIndex, newIndex);
-    });
-    
-    // TODO: Implement API call to persist order
-    // updateTaskOrderMutation.mutate({ taskIds: newOrderedIds });
+    // Handle task reordering
+    if (activeData?.type === 'task' && overData?.type === 'task') {
+      // Only allow reordering in manual order mode (no sort applied)
+      if (sortConfig.key !== null) {
+        toast({ 
+          title: "Clear sort to reorder", 
+          description: "Remove sorting to manually reorder tasks",
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      setOrderedIds(current => {
+        const oldIndex = current.indexOf(active.id as string);
+        const newIndex = current.indexOf(over.id as string);
+        return arrayMove(current, oldIndex, newIndex);
+      });
+      
+      // TODO: Implement API call to persist order
+      // updateTaskOrderMutation.mutate({ taskIds: newOrderedIds });
+    }
   };
 
   const toggleTaskSelection = (taskId: string) => {
@@ -354,33 +426,268 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
     return format(d, "MMM dd, yyyy");
   };
 
+  // Column resize state
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+
+  // Handle column resize
+  const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const column = columns.find(col => col.id === columnId);
+    if (!column) return;
+    
+    setResizingColumn(columnId);
+    setResizeStartX(e.clientX);
+    // Parse width from Tailwind classes like 'w-32' or 'min-w-[200px]'
+    const currentWidth = parseInt(column.width?.match(/\d+/)?.[0] || '160');
+    setResizeStartWidth(currentWidth);
+  };
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - resizeStartX;
+      const newWidth = Math.max(80, resizeStartWidth + diff); // Min width 80px
+      
+      setColumns(prev => prev.map(col => 
+        col.id === resizingColumn 
+          ? { ...col, width: `w-[${newWidth}px]` }
+          : col
+      ));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
+
+  // Sortable Column Header component
   const SortableHeader = ({ 
-    sortKey, 
-    children, 
+    column,
     className = "" 
   }: { 
-    sortKey: keyof Task; 
-    children: React.ReactNode; 
+    column: ColumnConfig;
     className?: string;
-  }) => (
-    <TableHead className={className}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-auto p-0 font-medium hover:bg-transparent"
-        onClick={() => handleSort(sortKey)}
-        data-testid={`sort-${sortKey}`}
+  }) => {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({
+      id: column.id,
+      data: {
+        type: "column",
+        column,
+      },
+    });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    };
+
+    return (
+      <TableHead 
+        ref={setNodeRef} 
+        style={style}
+        className={`${column.width || className} ${isDragging ? 'relative z-50' : 'relative'} group`}
       >
-        {children}
-        <ArrowUpDown className="ml-2 h-3 w-3" />
-        {sortConfig.key === sortKey && (
-          sortConfig.direction === 'asc' ? 
-            <ChevronUp className="ml-1 h-3 w-3" /> : 
-            <ChevronDown className="ml-1 h-3 w-3" />
-        )}
-      </Button>
-    </TableHead>
-  );
+        <div className="flex items-center gap-1">
+          <div 
+            {...attributes} 
+            {...listeners}
+            className="cursor-grab hover:cursor-grabbing p-1 rounded hover:bg-muted"
+            data-testid={`drag-column-${column.id}`}
+          >
+            <GripVertical className="h-3 w-3 text-muted-foreground" />
+          </div>
+          {column.sortKey && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto p-0 font-medium hover:bg-transparent flex-1"
+              onClick={() => handleSort(column.sortKey!)}
+              data-testid={`sort-${String(column.sortKey)}`}
+            >
+              {column.label}
+              <ArrowUpDown className="ml-2 h-3 w-3" />
+              {sortConfig.key === column.sortKey && (
+                sortConfig.direction === 'asc' ? 
+                  <ChevronUp className="ml-1 h-3 w-3" /> : 
+                  <ChevronDown className="ml-1 h-3 w-3" />
+              )}
+            </Button>
+          )}
+          {!column.sortKey && (
+            <span className="font-medium">{column.label}</span>
+          )}
+        </div>
+        {/* Resize handle */}
+        <div
+          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity"
+          onMouseDown={(e) => handleResizeStart(e, column.id)}
+          data-testid={`resize-handle-${column.id}`}
+        />
+      </TableHead>
+    );
+  };
+
+  // Function to render a cell based on column ID
+  const renderCell = (task: Task, columnId: string) => {
+    switch (columnId) {
+      case 'title':
+        return (
+          <TableCell className="font-medium">
+            <div className="flex items-center gap-2">
+              {!task.parentTaskId && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 p-0"
+                  onClick={() => toggleTaskExpansion(task.id)}
+                  data-testid={`button-toggle-task-${task.id}`}
+                >
+                  {expandedTasks.has(task.id) ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
+              <span 
+                className="truncate cursor-pointer hover:text-primary" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  onTaskClick?.(task);
+                }}
+                data-testid={`task-title-${task.id}`}
+              >
+                {task.title}
+              </span>
+              {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
+                <div className="flex gap-1">
+                  {task.tags.slice(0, 2).map((tag: string, index: number) => (
+                    <Badge key={index} variant="outline" className="text-xs">
+                      {tag}
+                    </Badge>
+                  ))}
+                  {task.tags.length > 2 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{task.tags.length - 2}
+                    </Badge>
+                  )}
+                </div>
+              )}
+              {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
+                <div className="flex gap-1">
+                  {task.labels.slice(0, 2).map((labelKey: string, index: number) => {
+                    const labelInfo = getLabelInfo(labelKey);
+                    return (
+                      <Badge 
+                        key={index} 
+                        variant="outline" 
+                        className="text-xs"
+                        style={{
+                          backgroundColor: labelInfo.color || undefined,
+                          color: "#ffffff",
+                          borderColor: labelInfo.color || undefined
+                        }}
+                      >
+                        {labelInfo.name}
+                      </Badge>
+                    );
+                  })}
+                  {task.labels.length > 2 && (
+                    <Badge 
+                      variant="outline" 
+                      className="text-xs"
+                      style={{
+                        backgroundColor: "#6B7280",
+                        color: "#ffffff",
+                        borderColor: "#6B7280"
+                      }}
+                    >
+                      +{task.labels.length - 2}
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+          </TableCell>
+        );
+      
+      case 'status':
+        if (groupBy === 'status') return null;
+        return <TableCell>{getStatusBadge(task.status || "todo")}</TableCell>;
+      
+      case 'priority':
+        if (groupBy === 'priority') return null;
+        return (
+          <TableCell>
+            <div className="flex items-center gap-2">
+              {getPriorityIcon(task.priority || "medium")}
+              <span className="capitalize text-sm">
+                {task.priority || "medium"}
+              </span>
+            </div>
+          </TableCell>
+        );
+      
+      case 'assignee':
+        if (groupBy === 'assignee') return null;
+        return (
+          <TableCell>
+            {task.assigneeName ? (
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                  {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
+                </div>
+                <span className="text-sm">{task.assigneeName}</span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-sm">Unassigned</span>
+            )}
+          </TableCell>
+        );
+      
+      case 'dueDate':
+        return (
+          <TableCell>
+            <div className="flex items-center gap-2 text-sm">
+              <Calendar className="h-3 w-3 text-muted-foreground" />
+              {formatDate(task.dueDate)}
+            </div>
+          </TableCell>
+        );
+      
+      case 'project':
+        return (
+          <TableCell>
+            <span className="text-sm text-muted-foreground">
+              {task.projectId || "-"}
+            </span>
+          </TableCell>
+        );
+      
+      default:
+        return null;
+    }
+  };
 
   if (isLoading) {
     return (
@@ -448,24 +755,18 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                           data-testid="select-all-tasks"
                         />
                       </TableHead>
-                      <SortableHeader sortKey="title" className="min-w-[200px]">
-                        Task
-                      </SortableHeader>
-                      <SortableHeader sortKey="status" className="w-32">
-                        Status
-                      </SortableHeader>
-                      <SortableHeader sortKey="priority" className="w-24">
-                        Priority
-                      </SortableHeader>
-                      <SortableHeader sortKey="assigneeName" className="w-40">
-                        Assignee
-                      </SortableHeader>
-                      <SortableHeader sortKey="dueDate" className="w-32">
-                        Due Date
-                      </SortableHeader>
-                      <SortableHeader sortKey="projectId" className="w-40">
-                        Project
-                      </SortableHeader>
+                      <SortableContext 
+                        items={columns.map(col => col.id)} 
+                        strategy={horizontalListSortingStrategy}
+                      >
+                        {columns.map(column => (
+                          <SortableHeader 
+                            key={column.id}
+                            column={column}
+                            className={column.width}
+                          />
+                        ))}
+                      </SortableContext>
                       <TableHead className="w-8"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -495,139 +796,28 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                   data-testid={`select-task-${task.id}`}
                                 />
                               </TableCell>
-                              <TableCell className="font-medium">
-                                <div className="flex items-center gap-2">
-                                  {/* Expand/Collapse Button for Parent Tasks */}
-                                  {!task.parentTaskId && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-5 w-5 p-0"
-                                      onClick={() => toggleTaskExpansion(task.id)}
-                                      data-testid={`button-toggle-task-${task.id}`}
-                                    >
-                                      {expandedTasks.has(task.id) ? (
-                                        <ChevronDown className="h-3 w-3" />
-                                      ) : (
-                                        <ChevronRight className="h-3 w-3" />
-                                      )}
+                              {columns.map(column => (
+                                <React.Fragment key={`${task.id}-${column.id}`}>
+                                  {renderCell(task, column.id)}
+                                </React.Fragment>
+                              ))}
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" data-testid={`task-menu-${task.id}`}>
+                                      <MoreHorizontal className="h-4 w-4" />
                                     </Button>
-                                  )}
-                                  <span 
-                                    className="truncate cursor-pointer hover:text-primary" 
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      onTaskClick?.(task);
-                                    }}
-                                    data-testid={`task-title-${task.id}`}
-                                  >
-                                    {task.title}
-                                  </span>
-                                {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {task.tags.slice(0, 2).map((tag: string, index: number) => (
-                                      <Badge key={index} variant="outline" className="text-xs">
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                    {task.tags.length > 2 && (
-                                      <Badge variant="outline" className="text-xs">
-                                        +{task.tags.length - 2}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                )}
-                                {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {task.labels.slice(0, 2).map((labelKey: string, index: number) => {
-                                      const labelInfo = getLabelInfo(labelKey);
-                                      return (
-                                        <Badge 
-                                          key={index} 
-                                          variant="outline" 
-                                          className="text-xs"
-                                          style={{
-                                            backgroundColor: labelInfo.color || undefined,
-                                            color: "#ffffff",
-                                            borderColor: labelInfo.color || undefined
-                                          }}
-                                        >
-                                          {labelInfo.name}
-                                        </Badge>
-                                      );
-                                    })}
-                                    {task.labels.length > 2 && (
-                                      <Badge 
-                                        variant="outline" 
-                                        className="text-xs"
-                                        style={{
-                                          backgroundColor: "#6B7280",
-                                          color: "#ffffff",
-                                          borderColor: "#6B7280"
-                                        }}
-                                      >
-                                        +{task.labels.length - 2}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {groupBy !== 'status' && getStatusBadge(task.status || "todo")}
-                            </TableCell>
-                            <TableCell>
-                              {groupBy !== 'priority' && (
-                                <div className="flex items-center gap-2">
-                                  {getPriorityIcon(task.priority || "medium")}
-                                  <span className="capitalize text-sm">
-                                    {task.priority || "medium"}
-                                  </span>
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {groupBy !== 'assignee' && (
-                                task.assigneeName ? (
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                                      {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
-                                    </div>
-                                    <span className="text-sm">{task.assigneeName}</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-muted-foreground text-sm">Unassigned</span>
-                                )
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2 text-sm">
-                                <Calendar className="h-3 w-3 text-muted-foreground" />
-                                {formatDate(task.dueDate)}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm text-muted-foreground">
-                                {task.projectId || "No Project"}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" data-testid={`task-menu-${task.id}`}>
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem>Edit Task</DropdownMenuItem>
-                                  <DropdownMenuItem>Add Subtask</DropdownMenuItem>
-                                  <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                                  <DropdownMenuItem className="text-red-600">
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem>Edit Task</DropdownMenuItem>
+                                    <DropdownMenuItem>Add Subtask</DropdownMenuItem>
+                                    <DropdownMenuItem>Duplicate</DropdownMenuItem>
+                                    <DropdownMenuItem className="text-red-600">
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
                           </DraggableTableRow>,
                           
                           // Expandable Subtasks Row
@@ -661,119 +851,12 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                   data-testid={`select-task-${task.id}`}
                                 />
                               </TableCell>
-                              <TableCell className="font-medium">
-                                <div className="flex items-center gap-2">
-                                  {/* Expand/Collapse Button for Parent Tasks */}
-                                  {!task.parentTaskId && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-5 w-5 p-0"
-                                      onClick={() => toggleTaskExpansion(task.id)}
-                                      data-testid={`button-toggle-task-${task.id}`}
-                                    >
-                                      {expandedTasks.has(task.id) ? (
-                                        <ChevronDown className="h-3 w-3" />
-                                      ) : (
-                                        <ChevronRight className="h-3 w-3" />
-                                      )}
-                                    </Button>
-                                  )}
-                                  <span 
-                                    className="truncate cursor-pointer hover:text-primary" 
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      onTaskClick?.(task);
-                                    }}
-                                    data-testid={`task-title-${task.id}`}
-                                  >
-                                    {task.title}
-                                  </span>
-                                {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {task.tags.slice(0, 2).map((tag: string, index: number) => (
-                                      <Badge key={index} variant="outline" className="text-xs">
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                    {task.tags.length > 2 && (
-                                      <Badge variant="outline" className="text-xs">
-                                        +{task.tags.length - 2}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                )}
-                                {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {task.labels.slice(0, 2).map((labelKey: string, index: number) => {
-                                      const labelInfo = getLabelInfo(labelKey);
-                                      return (
-                                        <Badge 
-                                          key={index} 
-                                          variant="outline" 
-                                          className="text-xs"
-                                          style={{
-                                            backgroundColor: labelInfo.color || undefined,
-                                            color: "#ffffff",
-                                            borderColor: labelInfo.color || undefined
-                                          }}
-                                        >
-                                          {labelInfo.name}
-                                        </Badge>
-                                      );
-                                    })}
-                                    {task.labels.length > 2 && (
-                                      <Badge 
-                                        variant="outline" 
-                                        className="text-xs"
-                                        style={{
-                                          backgroundColor: "#6B7280",
-                                          color: "#ffffff",
-                                          borderColor: "#6B7280"
-                                        }}
-                                      >
-                                        +{task.labels.length - 2}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {getStatusBadge(task.status || "todo")}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {getPriorityIcon(task.priority || "medium")}
-                                <span className="capitalize text-sm">
-                                  {task.priority || "medium"}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {task.assigneeName ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                                    {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
-                                  </div>
-                                  <span className="text-sm">{task.assigneeName}</span>
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground text-sm">Unassigned</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2 text-sm">
-                                <Calendar className="h-3 w-3 text-muted-foreground" />
-                                {formatDate(task.dueDate)}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm text-muted-foreground">
-                                {task.projectId || "No Project"}
-                              </span>
-                            </TableCell>
-                            <TableCell>
+                              {columns.map(column => (
+                                <React.Fragment key={`${task.id}-${column.id}`}>
+                                  {renderCell(task, column.id)}
+                                </React.Fragment>
+                              ))}
+                              <TableCell>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" size="icon" data-testid={`task-menu-${task.id}`}>

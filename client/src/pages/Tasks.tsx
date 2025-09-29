@@ -847,6 +847,7 @@ export default function Tasks() {
               tasks={effectivelyFilteredTasks} 
               groupedTasks={groupBy !== 'none' ? groupedTasks : undefined}
               groupBy={groupBy}
+              projectId={effectiveProjectId}
               isLoading={tasksLoading} 
               onTaskClick={(task: Task) => setEditingTask(task)} 
             />
@@ -878,7 +879,7 @@ export default function Tasks() {
                     onTaskClick={(task: Task) => setEditingTask(task)} 
                   />
                 ) : (
-                  <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} onTaskClick={(task: Task) => setEditingTask(task)} />
+                  <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
                 )}
               </TabsContent>
             );

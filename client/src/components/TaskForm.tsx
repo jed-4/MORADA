@@ -55,6 +55,7 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
   dueDate: z.string().optional(), // HTML date input returns string
   tags: z.array(z.string()).default([]),
   labels: z.array(z.string()).default([]),
+  projectId: z.string().optional(),
   // Advanced Tab
   category: z.string().default("General"),
   customFields: z.record(z.any()).default({}),
@@ -134,6 +135,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
       tags: (task?.tags as string[]) || [],
       labels: (task?.labels as string[]) || [],
+      projectId: task?.projectId || projectId,
       // Advanced
       category: task?.category || "General",
       customFields: (task?.customFields as Record<string, any>) || {},
@@ -153,6 +155,12 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   const watchedLabels = form.watch("labels");
   const watchedIsRecurring = form.watch("isRecurring");
   const watchedRecurringType = form.watch("recurringType");
+
+  // Fetch all projects for project dropdown
+  const { data: allProjects = [] } = useQuery({
+    queryKey: ["/api/projects"],
+    enabled: open,
+  });
 
   // Fetch potential parent tasks for subtask selection
   const { data: parentTasks = [] } = useQuery({
@@ -174,7 +182,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         type: "task",
         priority: data.priority,
         status: data.status,
-        projectId: projectId,
+        projectId: data.projectId || projectId,
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
@@ -218,6 +226,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         content: data.content,
         priority: data.priority,
         status: data.status,
+        projectId: data.projectId,
         assigneeName: data.assigneeName || undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
@@ -449,6 +458,31 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="projectId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Project</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="task-project-select">
+                              <SelectValue placeholder="Select project" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {allProjects.map((proj: any) => (
+                              <SelectItem key={proj.id} value={proj.id}>
+                                {proj.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                   <FormField
                     control={form.control}
                     name="assigneeName"
