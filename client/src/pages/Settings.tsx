@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -1408,19 +1409,36 @@ function FieldCategoriesSection() {
                   >
                     {/* Color Picker */}
                     <div className="col-span-1">
-                      <select
-                        value={option.color || "#6B7280"}
-                        onChange={(e) => handleOptionChange(index, "color", e.target.value)}
-                        className="w-8 h-8 rounded border-0 bg-transparent cursor-pointer"
-                        style={{ backgroundColor: option.color || "#6B7280" }}
-                        data-testid={`color-select-${index}`}
-                      >
-                        {colorOptions.map((color) => (
-                          <option key={color} value={color} style={{ backgroundColor: color }}>
-                            
-                          </option>
-                        ))}
-                      </select>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-8 h-8 rounded border-2 p-0"
+                            style={{ backgroundColor: option.color || "#6B7280" }}
+                            data-testid={`color-select-${index}`}
+                          >
+                            <span className="sr-only">Select color</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-48 p-2" align="start">
+                          <div className="grid grid-cols-6 gap-1">
+                            {colorOptions.map((color) => (
+                              <button
+                                key={color}
+                                type="button"
+                                onClick={() => handleOptionChange(index, "color", color)}
+                                className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                                style={{ backgroundColor: color }}
+                                title={color}
+                                data-testid={`color-option-${color.replace('#', '')}`}
+                              >
+                                <span className="sr-only">{color}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
 
                     {/* Name Input */}

@@ -3277,12 +3277,12 @@ export class DbStorage implements IStorage {
 
   // Add placeholder implementations for other required interface methods
   // These can be implemented as needed
-  async getUserRoles(): Promise<UserRole[]> { return []; }
+  async getUserRoles(category?: UserCategory): Promise<UserRole[]> { return []; }
   async getUserRole(id: string): Promise<UserRole | undefined> { return undefined; }
   async createUserRole(role: InsertUserRole): Promise<UserRole> { throw new Error("Not implemented"); }
   async updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined> { return undefined; }
   async deleteUserRole(id: string): Promise<boolean> { return false; }
-  async getPermissions(): Promise<Permission[]> { return []; }
+  async getPermissions(category?: string): Promise<Permission[]> { return []; }
   async getPermission(id: string): Promise<Permission | undefined> { return undefined; }
   async createPermission(permission: InsertPermission): Promise<Permission> { throw new Error("Not implemented"); }
   async updatePermission(id: string, permission: Partial<InsertPermission>): Promise<Permission | undefined> { return undefined; }
@@ -3297,7 +3297,7 @@ export class DbStorage implements IStorage {
   async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
   async deleteUserProjectAccess(id: string): Promise<boolean> { return false; }
   async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
-  async getUserInvitations(): Promise<UserInvitation[]> { return []; }
+  async getUserInvitations(status?: string): Promise<UserInvitation[]> { return []; }
   async getUserInvitation(id: string): Promise<UserInvitation | undefined> { return undefined; }
   async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> { return undefined; }
   async createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation> { throw new Error("Not implemented"); }
@@ -3349,7 +3349,7 @@ export class DbStorage implements IStorage {
   async createCustomFieldOption(option: InsertCustomFieldOption): Promise<CustomFieldOption> { throw new Error("Not implemented"); }
   async updateCustomFieldOption(id: string, option: Partial<InsertCustomFieldOption>): Promise<CustomFieldOption | undefined> { return undefined; }
   async deleteCustomFieldOption(id: string): Promise<boolean> { return false; }
-  async getNoteTemplates(): Promise<NoteTemplate[]> { return []; }
+  async getNoteTemplates(ownerId?: string): Promise<NoteTemplate[]> { return []; }
   async getNoteTemplate(id: string): Promise<NoteTemplate | undefined> { return undefined; }
   async createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate> { throw new Error("Not implemented"); }
   async updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined> { return undefined; }
@@ -3386,7 +3386,7 @@ export class DbStorage implements IStorage {
   async deleteTaskView(id: string): Promise<boolean> { return false; }
   async getSubtasks(parentTaskId: string): Promise<Task[]> { return []; }
   async createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task> { throw new Error("Not implemented"); }
-  async getEstimates(): Promise<Estimate[]> { return []; }
+  async getEstimates(projectId?: string): Promise<Estimate[]> { return []; }
   async getEstimate(id: string): Promise<Estimate | undefined> { return undefined; }
   async createEstimate(estimate: InsertEstimate): Promise<Estimate> { throw new Error("Not implemented"); }
   async updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined> { return undefined; }
