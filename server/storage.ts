@@ -3454,7 +3454,46 @@ export class DbStorage implements IStorage {
   async createFieldOption(option: InsertFieldOption): Promise<FieldOption> { throw new Error("Not implemented"); }
   async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> { return undefined; }
   async deleteFieldOption(id: string): Promise<boolean> { return false; }
-  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]> { return []; }
+  async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]> {
+    try {
+      // First, delete existing options for this category
+      await db.delete(schema.fieldOptions)
+        .where(eq(schema.fieldOptions.categoryId, categoryId));
+      
+      if (options.length === 0) {
+        return [];
+      }
+      
+      const now = new Date();
+      
+      // Ensure exactly one default option
+      const hasDefault = options.some(opt => opt.isDefault);
+      
+      // Prepare new options for insertion
+      const newOptions = options.map((optData, index) => ({
+        id: optData.id || randomUUID(),
+        categoryId,
+        key: optData.key,
+        name: optData.name,
+        color: optData.color || "#6B7280",
+        isActive: optData.isActive !== false, // Default to true
+        isDefault: hasDefault ? (optData.isDefault === true) : (index === 0), // First option is default if none specified
+        sortOrder: optData.sortOrder !== undefined ? optData.sortOrder : index,
+        createdAt: optData.createdAt || now,
+        updatedAt: now,
+      }));
+      
+      // Insert new options
+      const createdOptions = await db.insert(schema.fieldOptions)
+        .values(newOptions)
+        .returning();
+      
+      return createdOptions;
+    } catch (error) {
+      console.error("Database error in setCategoryOptions:", error);
+      throw error;
+    }
+  }
   async getOptionAttachments(optionId: string): Promise<OptionAttachment[]> { return []; }
   async createOptionAttachment(attachment: InsertOptionAttachment): Promise<OptionAttachment> { throw new Error("Not implemented"); }
   async deleteOptionAttachment(id: string): Promise<boolean> { return false; }
