@@ -61,6 +61,20 @@ export function applyTaskFilters(tasks: Task[], filters: FilterState): Task[] {
       }
     }
 
+    // Labels filter
+    if (filters.labels && filters.labels.length > 0) {
+      if (!task.labels || !Array.isArray(task.labels)) {
+        return false;
+      }
+      const taskLabels = task.labels as string[];
+      const hasMatchingLabel = filters.labels.some(filterLabel => 
+        taskLabels.includes(filterLabel)
+      );
+      if (!hasMatchingLabel) {
+        return false;
+      }
+    }
+
     // Due date filter
     if (filters.dueDateFrom || filters.dueDateTo) {
       if (!task.dueDate) {
@@ -94,6 +108,7 @@ export function extractFilterOptions(tasks: Task[]) {
   const assignees = new Set<string>();
   const projects = new Set<string>();
   const tags = new Set<string>();
+  const labels = new Set<string>();
 
   tasks.forEach(task => {
     if (task.assigneeName) {
@@ -105,12 +120,16 @@ export function extractFilterOptions(tasks: Task[]) {
     if (task.tags && Array.isArray(task.tags)) {
       (task.tags as string[]).forEach(tag => tags.add(tag));
     }
+    if (task.labels && Array.isArray(task.labels)) {
+      (task.labels as string[]).forEach(label => labels.add(label));
+    }
   });
 
   return {
     availableAssignees: Array.from(assignees).sort(),
     availableProjects: Array.from(projects).sort(),
     availableTags: Array.from(tags).sort(),
+    availableLabels: Array.from(labels).sort(),
   };
 }
 

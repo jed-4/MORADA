@@ -595,6 +595,41 @@ export default function Tasks() {
               </DropdownMenu>
             )}
 
+            {/* Labels Filter */}
+            {filterOptions.availableLabels && filterOptions.availableLabels.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 text-sm">
+                    <Tag className="h-3 w-3 mr-1" />
+                    Labels
+                    {filters.labels && filters.labels.length > 0 && (
+                      <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                        {filters.labels.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {filterOptions.availableLabels.map(label => (
+                    <DropdownMenuItem key={label} className="flex items-center">
+                      <Checkbox
+                        checked={filters.labels?.includes(label) || false}
+                        onCheckedChange={() => {
+                          const currentLabels = filters.labels || [];
+                          const newLabels = currentLabels.includes(label)
+                            ? currentLabels.filter(l => l !== label)
+                            : [...currentLabels, label];
+                          setFilters({...filters, labels: newLabels.length > 0 ? newLabels : undefined});
+                        }}
+                        className="mr-2"
+                      />
+                      {label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
             {/* Group By Controls - Enhanced visibility */}
             <>
               <div className="border-l border-border/50 h-6" />

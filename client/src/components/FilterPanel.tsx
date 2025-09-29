@@ -35,6 +35,7 @@ export interface FilterState {
   assignee?: string[];
   project?: string[];
   tags?: string[];
+  labels?: string[];
   dueDateFrom?: Date;
   dueDateTo?: Date;
   search?: string;
