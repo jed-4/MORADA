@@ -207,7 +207,17 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         const container = scrollContainerRef.current;
         const hasOverflow = container.scrollWidth > container.clientWidth;
         const hasMultipleColumns = columns.length > 2; // Fallback check
-        setShowNavigation(hasOverflow || hasMultipleColumns);
+        
+        // Debug logging
+        console.log('Overflow check:', {
+          scrollWidth: container.scrollWidth,
+          clientWidth: container.clientWidth,
+          hasOverflow,
+          columnsLength: columns.length,
+          hasMultipleColumns
+        });
+        
+        setShowNavigation(true); // Force show for testing
       }
     };
 
@@ -375,7 +385,12 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div 
           ref={scrollContainerRef}
           className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
-          style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}>
+          style={{ 
+            scrollbarWidth: 'thin', 
+            scrollBehavior: 'smooth',
+            maxWidth: '900px', // Force constraint to test scrolling
+            overflowX: 'auto'
+          }}>
           <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
               const columnTasks = tasksByStatus[column.status] || [];
