@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +73,36 @@ export default function Tasks() {
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
   const [filters, setFilters] = useState<FilterState>({});
+  const [cardDisplaySettings, setCardDisplaySettings] = useState({
+    showPriority: true,
+    showDescription: true,
+    showTags: true,
+    showLabels: true,
+    showAssignee: true,
+    showDueDate: true,
+    showSubtasks: true,
+  });
+
+  // Load card display settings from localStorage when project changes
+  React.useEffect(() => {
+    if (effectiveProjectId) {
+      const savedSettings = localStorage.getItem(`cardDisplay_${effectiveProjectId}`);
+      if (savedSettings) {
+        try {
+          setCardDisplaySettings(JSON.parse(savedSettings));
+        } catch (e) {
+          console.error('Failed to parse card display settings:', e);
+        }
+      }
+    }
+  }, [effectiveProjectId]);
+
+  // Save card display settings to localStorage when they change
+  React.useEffect(() => {
+    if (effectiveProjectId) {
+      localStorage.setItem(`cardDisplay_${effectiveProjectId}`, JSON.stringify(cardDisplaySettings));
+    }
+  }, [cardDisplaySettings, effectiveProjectId]);
 
   // ALL HOOKS MUST BE DECLARED HERE BEFORE ANY CONDITIONAL LOGIC
   // Mutation for creating new views
@@ -326,6 +356,112 @@ export default function Tasks() {
             </Badge>
           </div>
           <div className="flex items-center space-x-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-card-display-settings"
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Card Display
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-sm font-semibold">Show on cards</div>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showPriority: !cardDisplaySettings.showPriority});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showPriority}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showPriority: !cardDisplaySettings.showPriority})}
+                    className="mr-2"
+                  />
+                  Priority Badge
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showDescription: !cardDisplaySettings.showDescription});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showDescription}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showDescription: !cardDisplaySettings.showDescription})}
+                    className="mr-2"
+                  />
+                  Description
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showTags: !cardDisplaySettings.showTags});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showTags}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showTags: !cardDisplaySettings.showTags})}
+                    className="mr-2"
+                  />
+                  Tags
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showLabels: !cardDisplaySettings.showLabels});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showLabels}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showLabels: !cardDisplaySettings.showLabels})}
+                    className="mr-2"
+                  />
+                  Labels
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showAssignee: !cardDisplaySettings.showAssignee});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showAssignee}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showAssignee: !cardDisplaySettings.showAssignee})}
+                    className="mr-2"
+                  />
+                  Assignee
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showDueDate: !cardDisplaySettings.showDueDate});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showDueDate}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showDueDate: !cardDisplaySettings.showDueDate})}
+                    className="mr-2"
+                  />
+                  Due Date
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showSubtasks: !cardDisplaySettings.showSubtasks});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showSubtasks}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showSubtasks: !cardDisplaySettings.showSubtasks})}
+                    className="mr-2"
+                  />
+                  Subtasks
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="sm"
@@ -703,7 +839,7 @@ export default function Tasks() {
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden">
           <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
-            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
+            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} />
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
@@ -734,7 +870,7 @@ export default function Tasks() {
             return (
               <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
                 {view.viewType === "kanban" ? (
-                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} />
+                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} displaySettings={cardDisplaySettings} />
                 ) : view.viewType === "calendar" ? (
                   <TaskCalendar 
                     tasks={viewFilteredTasks} 

@@ -33,16 +33,27 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 
+interface CardDisplaySettings {
+  showPriority?: boolean;
+  showDescription?: boolean;
+  showTags?: boolean;
+  showLabels?: boolean;
+  showAssignee?: boolean;
+  showDueDate?: boolean;
+  showSubtasks?: boolean;
+}
+
 interface TaskBoardProps {
   tasks?: Task[];
   isLoading?: boolean;
   filters?: Record<string, any>;
   onTaskClick?: (task: Task) => void;
   projectId?: string;
+  displaySettings?: CardDisplaySettings;
 }
 
 // Draggable Task Card wrapper
-function DraggableTaskCard({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Task) => void }) {
+function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task; onTaskClick?: (task: Task) => void; displaySettings?: CardDisplaySettings }) {
   const {
     attributes,
     listeners,
@@ -73,7 +84,7 @@ function DraggableTaskCard({ task, onTaskClick }: { task: Task; onTaskClick?: (t
       {...listeners}
       className="touch-none"
     >
-      <TaskCard task={task} showSubtasks={true} onClick={() => onTaskClick?.(task)} />
+      <TaskCard task={task} showSubtasks={true} onClick={() => onTaskClick?.(task)} displaySettings={displaySettings} />
     </div>
   );
 }
@@ -83,12 +94,14 @@ function DroppableColumn({
   column, 
   tasks, 
   onAddTask,
-  onTaskClick
+  onTaskClick,
+  displaySettings
 }: { 
   column: { id: string; title: string; status: string; color?: string }; 
   tasks: Task[]; 
   onAddTask: () => void;
   onTaskClick?: (task: Task) => void;
+  displaySettings?: CardDisplaySettings;
 }) {
   const {
     setNodeRef,
@@ -122,7 +135,7 @@ function DroppableColumn({
             </div>
           ) : (
             tasks.map((task) => (
-              <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} />
+              <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} displaySettings={displaySettings} />
             ))
           )}
         </SortableContext>
@@ -140,7 +153,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, projectId }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, projectId, displaySettings }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -394,6 +407,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                     tasks={columnTasks}
                     onAddTask={() => handleAddTaskToColumn(column.status)}
                     onTaskClick={onTaskClick}
+                    displaySettings={displaySettings}
                   />
                 </div>
               );
@@ -414,7 +428,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <DragOverlay>
           {activeTask ? (
             <div className="opacity-90 transform rotate-3 shadow-lg">
-              <DraggableTaskCard task={activeTask} onTaskClick={onTaskClick} />
+              <DraggableTaskCard task={activeTask} onTaskClick={onTaskClick} displaySettings={displaySettings} />
             </div>
           ) : null}
         </DragOverlay>

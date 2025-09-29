@@ -26,11 +26,22 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useState } from "react";
 
+interface CardDisplaySettings {
+  showPriority?: boolean;
+  showDescription?: boolean;
+  showTags?: boolean;
+  showLabels?: boolean;
+  showAssignee?: boolean;
+  showDueDate?: boolean;
+  showSubtasks?: boolean;
+}
+
 interface TaskCardProps {
   task: Task;
   showSubtasks?: boolean; // Option to hide subtasks in certain contexts
   onClick?: () => void; // Optional click handler
   onEdit?: (task: Task) => void; // Optional edit handler
+  displaySettings?: CardDisplaySettings;
 }
 
 export default function TaskCard({
@@ -38,10 +49,23 @@ export default function TaskCard({
   showSubtasks = true,
   onClick,
   onEdit,
+  displaySettings = {},
 }: TaskCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { toast } = useToast();
   const deleteTaskMutation = useDeleteSubtask();
+
+  // Merge default settings with provided settings
+  const settings = {
+    showPriority: true,
+    showDescription: true,
+    showTags: true,
+    showLabels: true,
+    showAssignee: true,
+    showDueDate: true,
+    showSubtasks: true,
+    ...displaySettings
+  };
   const {
     title,
     content: description,
@@ -110,9 +134,11 @@ export default function TaskCard({
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-medium text-sm flex-1">{title}</h3>
             <div className="flex items-center gap-1">
-              <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
-                {priority}
-              </Badge>
+              {settings.showPriority && (
+                <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
+                  {priority}
+                </Badge>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -146,11 +172,11 @@ export default function TaskCard({
             </div>
           </div>
 
-          {description && (
+          {settings.showDescription && description && (
             <p className="text-xs text-muted-foreground line-clamp-2">{description}</p>
           )}
 
-          {taskTags.length > 0 && (
+          {settings.showTags && taskTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {taskTags.map((tag: string, index: number) => (
                 <Badge key={index} variant="secondary" className="text-xs">
@@ -160,7 +186,7 @@ export default function TaskCard({
             </div>
           )}
 
-          {taskLabels.length > 0 && (
+          {settings.showLabels && taskLabels.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {taskLabels.map((labelKey: string, index: number) => {
                 const labelInfo = getLabelInfo(labelKey);
@@ -184,14 +210,14 @@ export default function TaskCard({
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {assignee && (
+              {settings.showAssignee && assignee && (
                 <Avatar className="h-6 w-6">
                   <AvatarImage src={assignee.avatar} alt={assignee.name} />
                   <AvatarFallback className="text-xs">{assignee.initials}</AvatarFallback>
                 </Avatar>
               )}
               
-              {dueDate && (
+              {settings.showDueDate && dueDate && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Calendar className="h-3 w-3" />
                   {new Date(dueDate).toLocaleDateString()}
@@ -210,7 +236,7 @@ export default function TaskCard({
           </div>
           
           {/* Subtasks Section */}
-          {showSubtasks && !task.parentTaskId && (
+          {settings.showSubtasks && showSubtasks && !task.parentTaskId && (
             <SubtaskList parentTask={task} compact={true} />
           )}
         </div>
