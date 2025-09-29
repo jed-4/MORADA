@@ -668,7 +668,7 @@ export default function Tasks() {
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden">
           <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
-            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} />
+            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">

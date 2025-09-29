@@ -9,6 +9,7 @@ import { type Task } from "@shared/schema";
 import { Plus } from "lucide-react";
 import TaskCard from "./TaskCard";
 import TaskForm from "./TaskForm";
+import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 
 // DnD Kit imports
 import {
@@ -31,17 +32,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const columns = [
-  { id: "todo", title: "To Do", status: "todo" as const },
-  { id: "in-progress", title: "In Progress", status: "in-progress" as const },
-  { id: "done", title: "Done", status: "done" as const },
-];
 
 interface TaskBoardProps {
   tasks?: Task[];
   isLoading?: boolean;
   filters?: Record<string, any>;
   onTaskClick?: (task: Task) => void;
+  projectId?: string;
 }
 
 // Draggable Task Card wrapper
@@ -88,7 +85,7 @@ function DroppableColumn({
   onAddTask,
   onTaskClick
 }: { 
-  column: typeof columns[0]; 
+  column: { id: string; title: string; status: string; color?: string }; 
   tasks: Task[]; 
   onAddTask: () => void;
   onTaskClick?: (task: Task) => void;
@@ -143,9 +140,9 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, projectId }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
-  const [selectedColumnStatus, setSelectedColumnStatus] = useState<"todo" | "in-progress" | "done">("todo");
+  const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const { toast } = useToast();
 
@@ -158,6 +155,26 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     })
   );
 
+  // Get dynamic status options
+  const { statusOptions, getStatusInfo, isLoading: statusOptionsLoading, hasLoadedButNoOptions } = useTaskStatusOptions();
+  
+  // Fallback columns for loading and no-options states
+  const fallbackColumns = [
+    { id: "todo", title: "To Do", status: "todo", color: "#6B7280" },
+    { id: "in-progress", title: "In Progress", status: "in-progress", color: "#F59E0B" },
+    { id: "done", title: "Done", status: "done", color: "#10B981" }
+  ];
+
+  // Create dynamic columns from status options with fallback to defaults
+  const columns = statusOptions.length > 0 
+    ? statusOptions.map(option => ({
+        id: option.key,
+        title: option.name,
+        status: option.key,
+        color: option.color || undefined
+      }))
+    : fallbackColumns; // Use fallback during loading and when no options configured
+  
   // Use props tasks if provided, otherwise fetch all tasks
   const { data: fetchedTasks = [], isLoading: fetchIsLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
@@ -165,7 +182,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   });
   
   const tasks = propTasks || fetchedTasks;
-  const isLoading = propIsLoading !== undefined ? propIsLoading : fetchIsLoading;
+  const isLoading = (propIsLoading !== undefined ? propIsLoading : fetchIsLoading) || statusOptionsLoading;
 
   // Move task to different column
   const moveTaskMutation = useMutation({
@@ -194,7 +211,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     return acc;
   }, {} as Record<string, Task[]>);
 
-  const handleAddTaskToColumn = (status: "todo" | "in-progress" | "done") => {
+  const handleAddTaskToColumn = (status: string) => {
     setSelectedColumnStatus(status);
     setIsCreateTaskOpen(true);
   };
@@ -239,7 +256,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`grid gap-6 ${columns.length <= 3 ? 'grid-cols-1 md:grid-cols-3' : columns.length <= 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'}`}>
           {columns.map((column) => (
             <Card key={column.id} className="h-fit">
               <CardHeader className="pb-3">
@@ -268,16 +285,18 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       <div className="p-6" data-testid="task-board">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
-          <Button 
-            onClick={() => handleAddTaskToColumn("todo")}
-            data-testid="button-new-task"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Task
-          </Button>
+          {columns.length > 0 && (
+            <Button 
+              onClick={() => handleAddTaskToColumn(columns[0].status)}
+              data-testid="button-new-task"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Task
+            </Button>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`grid gap-6 ${columns.length <= 3 ? 'grid-cols-1 md:grid-cols-3' : columns.length <= 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'}`}>
           <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
               const columnTasks = tasksByStatus[column.status] || [];
@@ -295,11 +314,14 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           </SortableContext>
         </div>
         
-        <TaskForm 
-          open={isCreateTaskOpen}
-          onOpenChange={setIsCreateTaskOpen}
-          initialStatus={selectedColumnStatus}
-        />
+        {projectId && (
+          <TaskForm 
+            open={isCreateTaskOpen}
+            onOpenChange={setIsCreateTaskOpen}
+            initialStatus={selectedColumnStatus as any}
+            projectId={projectId}
+          />
+        )}
 
         {/* Drag Overlay */}
         <DragOverlay>

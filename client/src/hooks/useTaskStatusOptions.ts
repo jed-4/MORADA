@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type FieldCategoryWithOptions } from "@shared/schema";
 
 export function useTaskStatusOptions() {
-  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+  const { data: fieldCategories = [], isLoading, isError } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
   });
   
@@ -34,6 +34,8 @@ export function useTaskStatusOptions() {
     statusOptions,
     statusMap,
     getStatusInfo,
-    isLoading: fieldCategories.length === 0
+    isLoading,
+    isError,
+    hasLoadedButNoOptions: !isLoading && !isError && statusOptions.length === 0
   };
 }
