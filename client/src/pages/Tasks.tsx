@@ -662,21 +662,21 @@ export default function Tasks() {
             </DropdownMenu>
 
             {/* Assignee Filter */}
-            {filterOptions.availableAssignees.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 text-sm">
-                    <User className="h-3 w-3 mr-1" />
-                    Assignee
-                    {filters.assignee && filters.assignee.length > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
-                        {filters.assignee.length}
-                      </Badge>
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {filterOptions.availableAssignees.map(assignee => (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-sm" data-testid="button-filter-assignee">
+                  <User className="h-3 w-3 mr-1" />
+                  Assignee
+                  {filters.assignee && filters.assignee.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                      {filters.assignee.length}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {filterOptions.availableAssignees.length > 0 ? (
+                  filterOptions.availableAssignees.map(assignee => (
                     <DropdownMenuItem key={assignee} className="flex items-center">
                       <Checkbox
                         checked={filters.assignee?.includes(assignee) || false}
@@ -688,13 +688,18 @@ export default function Tasks() {
                           setFilters({...filters, assignee: newAssignee.length > 0 ? newAssignee : undefined});
                         }}
                         className="mr-2"
+                        data-testid={`filter-assignee-${assignee.replace(/\s+/g, '-').toLowerCase()}`}
                       />
                       {assignee}
                     </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled className="text-muted-foreground text-sm">
+                    No assignees yet
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Tags Filter */}
             {filterOptions.availableTags.length > 0 && (
