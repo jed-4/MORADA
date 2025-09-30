@@ -3446,8 +3446,29 @@ export class DbStorage implements IStorage {
   async deleteTaskView(id: string): Promise<boolean> { return false; }
   async getSubtasks(parentTaskId: string): Promise<Task[]> { return []; }
   async createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task> { throw new Error("Not implemented"); }
-  async getEstimates(projectId?: string): Promise<Estimate[]> { return []; }
-  async getEstimate(id: string): Promise<Estimate | undefined> { return undefined; }
+  async getEstimates(projectId?: string): Promise<Estimate[]> {
+    try {
+      let query = db.select().from(schema.estimates);
+      if (projectId) {
+        query = query.where(eq(schema.estimates.projectId, projectId)) as any;
+      }
+      const estimates = await query.orderBy(schema.estimates.updatedAt);
+      return estimates;
+    } catch (error) {
+      console.error("Database error in getEstimates:", error);
+      return [];
+    }
+  }
+  
+  async getEstimate(id: string): Promise<Estimate | undefined> {
+    try {
+      const result = await db.select().from(schema.estimates).where(eq(schema.estimates.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getEstimate:", error);
+      return undefined;
+    }
+  }
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
     try {
       const estimate = {
@@ -3464,23 +3485,180 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined> { return undefined; }
-  async deleteEstimate(id: string): Promise<boolean> { return false; }
-  async getEstimateItems(estimateId: string): Promise<EstimateItem[]> { return []; }
-  async getEstimateItem(id: string): Promise<EstimateItem | undefined> { return undefined; }
-  async createEstimateItem(item: InsertEstimateItem): Promise<EstimateItem> { throw new Error("Not implemented"); }
+  async updateEstimate(id: string, updateEstimate: Partial<InsertEstimate>): Promise<Estimate | undefined> {
+    try {
+      const estimate = await this.getEstimate(id);
+      if (!estimate) {
+        return undefined;
+      }
+      
+      if (estimate.isLocked) {
+        throw new Error("Cannot update locked estimate. Unlock the estimate first.");
+      }
+      
+      const sanitizedUpdate = { ...updateEstimate };
+      delete sanitizedUpdate.version;
+      delete sanitizedUpdate.isLocked;
+      
+      const result = await db.update(schema.estimates)
+        .set({ ...sanitizedUpdate, updatedAt: new Date() })
+        .where(eq(schema.estimates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateEstimate:", error);
+      throw error;
+    }
+  }
+  
+  async deleteEstimate(id: string): Promise<boolean> {
+    try {
+      const estimate = await this.getEstimate(id);
+      if (!estimate) {
+        return false;
+      }
+
+      if (estimate.isLocked) {
+        throw new Error("Cannot delete locked estimate. Unlock the estimate first.");
+      }
+
+      await db.delete(schema.estimateItems).where(eq(schema.estimateItems.estimateId, id));
+      await db.delete(schema.estimateGroups).where(eq(schema.estimateGroups.estimateId, id));
+      await db.delete(schema.estimates).where(eq(schema.estimates.id, id));
+      
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEstimate:", error);
+      return false;
+    }
+  }
+  async getEstimateItems(estimateId: string): Promise<EstimateItem[]> {
+    try {
+      const items = await db.select().from(schema.estimateItems)
+        .where(eq(schema.estimateItems.estimateId, estimateId))
+        .orderBy(schema.estimateItems.order);
+      return items;
+    } catch (error) {
+      console.error("Database error in getEstimateItems:", error);
+      return [];
+    }
+  }
+  
+  async getEstimateItem(id: string): Promise<EstimateItem | undefined> {
+    try {
+      const result = await db.select().from(schema.estimateItems)
+        .where(eq(schema.estimateItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getEstimateItem:", error);
+      return undefined;
+    }
+  }
+  
+  async createEstimateItem(insertItem: InsertEstimateItem): Promise<EstimateItem> {
+    try {
+      const estimate = await this.getEstimate(insertItem.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
+      }
+      
+      const priceExTax = insertItem.priceExTax || 0;
+      const taxRate = estimate?.taxRate || 10;
+      const taxAmount = Math.round(priceExTax * taxRate / 100);
+      const priceIncTax = priceExTax + taxAmount;
+      
+      const estimateItem = {
+        ...insertItem,
+        taxAmount,
+        priceIncTax,
+        type: insertItem.type || "Material",
+        status: insertItem.status || "pending",
+        order: insertItem.order || 0,
+      };
+      
+      const result = await db.insert(schema.estimateItems).values(estimateItem).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createEstimateItem:", error);
+      throw error;
+    }
+  }
   async updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> { return undefined; }
   async deleteEstimateItem(id: string): Promise<boolean> { return false; }
-  async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> { return []; }
-  async getEstimateGroup(id: string): Promise<EstimateGroup | undefined> { return undefined; }
-  async createEstimateGroup(group: InsertEstimateGroup): Promise<EstimateGroup> { throw new Error("Not implemented"); }
+  async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {
+    try {
+      const groups = await db.select().from(schema.estimateGroups)
+        .where(eq(schema.estimateGroups.estimateId, estimateId))
+        .orderBy(schema.estimateGroups.order);
+      return groups;
+    } catch (error) {
+      console.error("Database error in getEstimateGroups:", error);
+      return [];
+    }
+  }
+  
+  async getEstimateGroup(id: string): Promise<EstimateGroup | undefined> {
+    try {
+      const result = await db.select().from(schema.estimateGroups)
+        .where(eq(schema.estimateGroups.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getEstimateGroup:", error);
+      return undefined;
+    }
+  }
+  
+  async createEstimateGroup(insertGroup: InsertEstimateGroup): Promise<EstimateGroup> {
+    try {
+      const estimate = await this.getEstimate(insertGroup.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot create group in locked estimate. Unlock the estimate first.");
+      }
+
+      const result = await db.insert(schema.estimateGroups).values(insertGroup).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createEstimateGroup:", error);
+      throw error;
+    }
+  }
   async updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined> { return undefined; }
   async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
   async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> { throw new Error("Not implemented"); }
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }
   async unlockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }
-  async getEstimateSummary(estimateId: string): Promise<{ subtotal: number; markup: number; tax: number; total: number; itemCount: number; }> { 
-    return { subtotal: 0, markup: 0, tax: 0, total: 0, itemCount: 0 }; 
+  async getEstimateSummary(estimateId: string): Promise<{
+    subtotal: number;
+    markupAmount: number;
+    taxAmount: number;
+    total: number;
+    itemCount: number;
+  }> {
+    try {
+      const estimate = await this.getEstimate(estimateId);
+      const items = await this.getEstimateItems(estimateId);
+
+      const subtotal = items.reduce((sum, item) => sum + (item.priceExTax * item.quantity), 0);
+      const markupPercent = estimate?.projectMarkupPercent || 0;
+      const markup = Math.round(subtotal * markupPercent / 100);
+      const subtotalWithMarkup = subtotal + markup;
+      const taxRate = estimate?.taxRate || 10;
+      const tax = Math.round(subtotalWithMarkup * taxRate / 100);
+      const total = subtotalWithMarkup + tax;
+
+      return {
+        subtotal,
+        markupAmount: markup,
+        taxAmount: tax,
+        total,
+        itemCount: items.length,
+      };
+    } catch (error) {
+      console.error("Database error in getEstimateSummary:", error);
+      return { subtotal: 0, markupAmount: 0, taxAmount: 0, total: 0, itemCount: 0 };
+    }
   }
   async getCompanySettings(): Promise<CompanySettings | undefined> { return undefined; }
   async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> { return undefined; }
