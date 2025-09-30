@@ -3448,7 +3448,22 @@ export class DbStorage implements IStorage {
   async createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task> { throw new Error("Not implemented"); }
   async getEstimates(projectId?: string): Promise<Estimate[]> { return []; }
   async getEstimate(id: string): Promise<Estimate | undefined> { return undefined; }
-  async createEstimate(estimate: InsertEstimate): Promise<Estimate> { throw new Error("Not implemented"); }
+  async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
+    try {
+      const estimate = {
+        ...insertEstimate,
+        status: insertEstimate.status || "draft",
+        version: 1,
+        isLocked: false,
+      };
+      
+      const result = await db.insert(schema.estimates).values(estimate).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createEstimate:", error);
+      throw error;
+    }
+  }
   async updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined> { return undefined; }
   async deleteEstimate(id: string): Promise<boolean> { return false; }
   async getEstimateItems(estimateId: string): Promise<EstimateItem[]> { return []; }
