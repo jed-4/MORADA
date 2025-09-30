@@ -73,7 +73,7 @@ export default function TaskCard({
   const isCompleted = task.status === completedOption?.key;
   
   // Fetch subtasks to check if any exist (only for parent tasks)
-  const { data: subtasks = [] } = useSubtasks(task.parentTaskId ? null : task.id);
+  const { data: subtasks = [] } = useSubtasks(task.parentTaskId ? undefined : task.id);
   
   // Mutation to update task status
   const updateTaskStatusMutation = useMutation({
