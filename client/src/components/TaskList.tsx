@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 import {
@@ -202,6 +202,16 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   
   const tasks = propTasks || fetchedTasks;
   const isLoading = propIsLoading !== undefined ? propIsLoading : fetchIsLoading;
+  
+  // Fetch field categories to get completed status option
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  // Find the task status category and its completed option
+  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const completedOption = statusCategory?.options.find(opt => opt.isCompleted);
+  const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
 
   // Update task status mutation
   const updateTaskMutation = useMutation({
@@ -221,6 +231,25 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
       });
     },
   });
+  
+  // Handle toggling task completion
+  const handleToggleComplete = (task: Task, checked: boolean | string) => {
+    if (!completedOption) {
+      toast({
+        title: "No completed status configured",
+        description: "Please configure a completed status in field settings",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Set status based on checked state
+    const newStatus = checked
+      ? completedOption.key
+      : (defaultOption?.key || "todo");
+    
+    updateTaskMutation.mutate({ taskId: task.id, newStatus });
+  };
 
   // Tasks are already filtered when passed as props, but apply additional filters if any
   const filteredTasks = filters && Object.keys(filters).length > 0 
@@ -755,6 +784,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                           data-testid="select-all-tasks"
                         />
                       </TableHead>
+                      <TableHead className="w-8" title="Mark as complete"></TableHead>
                       <SortableContext 
                         items={columns.map(col => col.id)} 
                         strategy={horizontalListSortingStrategy}
@@ -794,6 +824,13 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                   checked={selectedTasks.includes(task.id)}
                                   onCheckedChange={() => toggleTaskSelection(task.id)}
                                   data-testid={`select-task-${task.id}`}
+                                />
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={task.status === completedOption?.key}
+                                  onCheckedChange={(checked) => handleToggleComplete(task, checked)}
+                                  data-testid={`complete-task-${task.id}`}
                                 />
                               </TableCell>
                               {columns.map(column => (
@@ -849,6 +886,13 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                                   checked={selectedTasks.includes(task.id)}
                                   onCheckedChange={() => toggleTaskSelection(task.id)}
                                   data-testid={`select-task-${task.id}`}
+                                />
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={task.status === completedOption?.key}
+                                  onCheckedChange={(checked) => handleToggleComplete(task, checked)}
+                                  data-testid={`complete-task-${task.id}`}
                                 />
                               </TableCell>
                               {columns.map(column => (

@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, User } from "lucide-react";
-import type { Task } from "@shared/schema";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Task, FieldCategoryWithOptions } from "@shared/schema";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,6 +33,16 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
   const queryClient = useQueryClient();
   const task = event.resource;
 
+  // Fetch field categories to get completed status option
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  // Find the task status category and its completed option
+  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const completedOption = statusCategory?.options.find(opt => opt.isCompleted);
+  const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
+
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
       return await apiRequest("PATCH", `/api/tasks/${task.id}`, updates);
@@ -54,13 +64,21 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
   });
 
   const handleCompleteToggle = (checked: boolean | string) => {
-    const newStatus = typeof checked === "boolean" && checked ? "done" : task.status === "done" ? "todo" : "done";
-    const updates: Partial<Task> = { status: newStatus };
-    if (newStatus === "done") {
-      updates.completedAt = new Date();
+    if (!completedOption) {
+      toast({
+        title: "No completed status configured",
+        description: "Please configure a completed status in field settings",
+        variant: "destructive",
+      });
+      return;
     }
-    // Note: When marking incomplete, we omit completedAt instead of setting to null
     
+    // Set status based on checked state
+    const newStatus = checked
+      ? completedOption.key
+      : (defaultOption?.key || "todo");
+    
+    const updates: Partial<Task> = { status: newStatus };
     updateTaskMutation.mutate(updates);
   };
 
@@ -77,7 +95,7 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
     }
   };
 
-  const isCompleted = task.status === "done";
+  const isCompleted = task.status === completedOption?.key;
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isCompleted;
 
   return (

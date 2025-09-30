@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Calendar, MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import SubtaskList from "@/components/SubtaskList";
-import { Task } from "@shared/schema";
+import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 import { useDeleteSubtask } from "@/hooks/useSubtasks";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +26,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 interface CardDisplaySettings {
   showPriority?: boolean;
@@ -54,6 +57,36 @@ export default function TaskCard({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { toast } = useToast();
   const deleteTaskMutation = useDeleteSubtask();
+  
+  // Fetch field categories to get completed status option
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  // Find the task status category and its completed option
+  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const completedOption = statusCategory?.options.find(opt => opt.isCompleted);
+  const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
+  
+  // Check if task is currently completed
+  const isCompleted = task.status === completedOption?.key;
+  
+  // Mutation to update task status
+  const updateTaskStatusMutation = useMutation({
+    mutationFn: async (newStatus: string) => {
+      return await apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update task status",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
 
   // Merge default settings with provided settings
   const settings = {
@@ -121,6 +154,24 @@ export default function TaskCard({
       onClick();
     }
   };
+  
+  const handleToggleComplete = (checked: boolean | string) => {
+    if (!completedOption) {
+      toast({
+        title: "No completed status configured",
+        description: "Please configure a completed status in field settings",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Set status based on checked state
+    const newStatus = checked
+      ? completedOption.key
+      : (defaultOption?.key || "todo");
+    
+    updateTaskStatusMutation.mutate(newStatus);
+  };
 
   return (
     <>
@@ -132,7 +183,16 @@ export default function TaskCard({
       <CardContent className="p-4">
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-medium text-sm flex-1">{title}</h3>
+            <div className="flex items-start gap-2 flex-1">
+              <Checkbox
+                checked={isCompleted}
+                onCheckedChange={handleToggleComplete}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5"
+                data-testid={`checkbox-complete-${task.id}`}
+              />
+              <h3 className="font-medium text-sm flex-1">{title}</h3>
+            </div>
             <div className="flex items-center gap-1">
               {settings.showPriority && (
                 <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
