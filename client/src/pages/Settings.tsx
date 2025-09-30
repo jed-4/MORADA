@@ -1171,6 +1171,7 @@ interface SortableItemProps {
     color: string | null;
     isActive: boolean;
     isDefault: boolean;
+    isCompleted: boolean;
     sortOrder: number;
     categoryId: string;
   };
@@ -1213,7 +1214,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="grid grid-cols-12 gap-3 items-center p-3 border rounded-lg hover-elevate"
+      className="grid grid-cols-13 gap-3 items-center p-3 border rounded-lg hover-elevate"
       data-testid={`option-row-${index}`}
     >
       {/* Drag Handle */}
@@ -1312,6 +1313,23 @@ function SortableItem({
         />
       </div>
 
+      {/* Completed Toggle */}
+      <div className="col-span-1 flex justify-center">
+        <Checkbox
+          checked={option.isCompleted}
+          onCheckedChange={(checked) => {
+            // Only allow one completed option per category
+            const updated = options.map((opt, i) => ({
+              ...opt,
+              isCompleted: i === index ? (checked as boolean) : false
+            }));
+            setOptions(updated);
+            setIsDirty(true);
+          }}
+          data-testid={`completed-checkbox-${index}`}
+        />
+      </div>
+
       {/* Remove Button */}
       <div className="col-span-1 flex justify-center">
         <Button
@@ -1340,6 +1358,7 @@ function FieldCategoriesSection() {
     color: string | null;
     isActive: boolean;
     isDefault: boolean;
+    isCompleted: boolean;
     sortOrder: number;
     categoryId: string;
     createdAt?: Date;
@@ -1372,6 +1391,7 @@ function FieldCategoriesSection() {
         color: opt.color || "#6B7280",
         isActive: opt.isActive ?? true,
         isDefault: opt.isDefault ?? false,
+        isCompleted: opt.isCompleted ?? false,
         sortOrder: opt.sortOrder ?? 0,
         categoryId: opt.categoryId
       })));
@@ -1422,6 +1442,7 @@ function FieldCategoriesSection() {
         color: opt.color || "#6B7280",
         isActive: opt.isActive ?? true,
         isDefault: opt.isDefault ?? false,
+        isCompleted: opt.isCompleted ?? false,
         sortOrder: opt.sortOrder ?? 0,
         categoryId: opt.categoryId
       })));
@@ -1445,6 +1466,7 @@ function FieldCategoriesSection() {
       color: "#6B7280",
       isActive: true,
       isDefault: false,
+      isCompleted: false,
       sortOrder: options.length,
       categoryId: selectedCategoryId
     };
@@ -1608,13 +1630,14 @@ function FieldCategoriesSection() {
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                <div className="grid grid-cols-12 gap-3 text-xs font-medium text-muted-foreground p-2 border-b">
+                <div className="grid grid-cols-13 gap-3 text-xs font-medium text-muted-foreground p-2 border-b">
                   <div className="col-span-1 text-center">Drag</div>
                   <div className="col-span-2">Color</div>
                   <div className="col-span-3">Name</div>
                   <div className="col-span-3">Key</div>
                   <div className="col-span-1 text-center">Active</div>
                   <div className="col-span-1 text-center">Default</div>
+                  <div className="col-span-1 text-center">Done</div>
                   <div className="col-span-1 text-center">Remove</div>
                 </div>
                 <DndContext 
