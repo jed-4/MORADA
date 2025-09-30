@@ -876,6 +876,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertEstimateSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.error("Estimate validation failed:", fromZodError(validationResult.error).toString());
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
@@ -884,8 +885,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const estimate = await storage.createEstimate(validationResult.data);
       res.status(201).json(estimate);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create estimate" });
+    } catch (error: any) {
+      console.error("Error creating estimate:", error.message, error.stack);
+      res.status(500).json({ error: "Failed to create estimate", details: error.message });
     }
   });
 
