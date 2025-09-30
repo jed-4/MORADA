@@ -13,7 +13,7 @@ import { Calendar, MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-re
 import SubtaskList from "@/components/SubtaskList";
 import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
-import { useDeleteSubtask } from "@/hooks/useSubtasks";
+import { useDeleteSubtask, useSubtasks } from "@/hooks/useSubtasks";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -31,6 +31,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 
 interface CardDisplaySettings {
   showPriority?: boolean;
+  showStatus?: boolean;
   showDescription?: boolean;
   showTags?: boolean;
   showLabels?: boolean;
@@ -71,6 +72,9 @@ export default function TaskCard({
   // Check if task is currently completed
   const isCompleted = task.status === completedOption?.key;
   
+  // Fetch subtasks to check if any exist (only for parent tasks)
+  const { data: subtasks = [] } = useSubtasks(task.parentTaskId ? null : task.id);
+  
   // Mutation to update task status
   const updateTaskStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -91,6 +95,7 @@ export default function TaskCard({
   // Merge default settings with provided settings
   const settings = {
     showPriority: true,
+    showStatus: true,
     showDescription: true,
     showTags: true,
     showLabels: true,
@@ -99,6 +104,10 @@ export default function TaskCard({
     showSubtasks: true,
     ...displaySettings
   };
+  
+  // Get status option info for display
+  const statusOption = statusCategory?.options.find(opt => opt.key === task.status);
+  const statusLabel = statusOption?.name || task.status;
   const {
     title,
     content: description,
@@ -199,6 +208,11 @@ export default function TaskCard({
                   {priority}
                 </Badge>
               )}
+              {settings.showStatus && (
+                <Badge variant="outline" className="text-xs">
+                  {statusLabel}
+                </Badge>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -295,8 +309,8 @@ export default function TaskCard({
             </div>
           </div>
           
-          {/* Subtasks Section */}
-          {settings.showSubtasks && showSubtasks && !task.parentTaskId && (
+          {/* Subtasks Section - only show when subtasks exist */}
+          {settings.showSubtasks && showSubtasks && !task.parentTaskId && subtasks.length > 0 && (
             <SubtaskList parentTask={task} compact={true} />
           )}
         </div>

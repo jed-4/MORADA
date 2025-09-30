@@ -75,6 +75,7 @@ export default function Tasks() {
   const [filters, setFilters] = useState<FilterState>({});
   const [cardDisplaySettings, setCardDisplaySettings] = useState({
     showPriority: true,
+    showStatus: true,
     showDescription: true,
     showTags: true,
     showLabels: true,
@@ -380,7 +381,20 @@ export default function Tasks() {
                     onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showPriority: !cardDisplaySettings.showPriority})}
                     className="mr-2"
                   />
-                  Priority Badge
+                  Priority
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCardDisplaySettings({...cardDisplaySettings, showStatus: !cardDisplaySettings.showStatus});
+                  }}
+                >
+                  <Checkbox
+                    checked={cardDisplaySettings.showStatus}
+                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showStatus: !cardDisplaySettings.showStatus})}
+                    className="mr-2"
+                  />
+                  Status
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   onClick={(e) => {
