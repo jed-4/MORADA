@@ -946,28 +946,39 @@ export default function EstimateDetail() {
               </div>
             </CardHeader>
             <CardContent>
-              {itemsLoading ? (
+              {itemsLoading || groupsLoading ? (
                 <div className="animate-pulse space-y-2">
                   {[...Array(3)].map((_, i) => (
                     <div key={i} className="h-12 bg-gray-300 rounded"></div>
                   ))}
                 </div>
-              ) : items.length === 0 ? (
+              ) : items.length === 0 && groups.length === 0 ? (
                 <div className="text-center py-8">
                   <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No items added yet</h3>
+                  <h3 className="text-lg font-medium mb-2">No items or groups added yet</h3>
                   <p className="text-muted-foreground mb-4">
-                    Add your first estimate item to start building this estimate.
+                    Add a group to organize items, or add items directly.
                   </p>
-                  <Button 
-                    data-testid="button-add-first-item" 
-                    onClick={handleAddItem}
-                    disabled={estimate?.isLocked}
-                    variant={estimate?.isLocked ? "secondary" : "default"}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create first estimate item
-                  </Button>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button 
+                      data-testid="button-add-first-group" 
+                      onClick={handleAddGroup}
+                      disabled={estimate?.isLocked}
+                      variant={estimate?.isLocked ? "secondary" : "outline"}
+                    >
+                      <FolderPlus className="w-4 h-4 mr-2" />
+                      Add Group
+                    </Button>
+                    <Button 
+                      data-testid="button-add-first-item" 
+                      onClick={handleAddItem}
+                      disabled={estimate?.isLocked}
+                      variant={estimate?.isLocked ? "secondary" : "default"}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Item
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <Table>
