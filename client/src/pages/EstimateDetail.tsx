@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   ArrowLeft, 
@@ -21,7 +22,10 @@ import {
   FolderPlus,
   Loader2,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Eye,
+  GripVertical,
+  Filter
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -108,6 +112,73 @@ export default function EstimateDetail() {
   
   // New estimate creation state
   const [newEstimateName, setNewEstimateName] = useState("");
+
+  // Column configuration state
+  type ColumnConfig = { id: string; label: string; visible: boolean; width: string };
+  const defaultColumns: ColumnConfig[] = [
+    { id: 'item', label: 'Item', visible: true, width: 'min-w-[180px]' },
+    { id: 'type', label: 'Type', visible: true, width: 'w-[100px]' },
+    { id: 'quantity', label: 'Quantity', visible: true, width: 'w-[100px]' },
+    { id: 'priceExTax', label: 'Price Ex-Tax', visible: true, width: 'w-[120px]' },
+    { id: 'tax', label: 'Tax', visible: true, width: 'w-[100px]' },
+    { id: 'totalIncTax', label: 'Total Inc-Tax', visible: true, width: 'w-[120px]' },
+    { id: 'status', label: 'Status', visible: true, width: 'w-[120px]' },
+  ];
+  const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
+
+  // Filter state
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterGroup, setFilterGroup] = useState<string>('all');
+
+  // Resizing state
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+
+  // Load column config from localStorage
+  React.useEffect(() => {
+    if (effectiveEstimateId && !isNewEstimate) {
+      const savedColumns = localStorage.getItem(`estimateTable_${effectiveEstimateId}_columns`);
+      if (savedColumns) {
+        try {
+          setColumns(JSON.parse(savedColumns));
+        } catch (e) {
+          console.error('Failed to parse saved column config:', e);
+        }
+      }
+
+      const savedFilters = localStorage.getItem(`estimateTable_${effectiveEstimateId}_filters`);
+      if (savedFilters) {
+        try {
+          const filters = JSON.parse(savedFilters);
+          setFilterType(filters.type || 'all');
+          setFilterStatus(filters.status || 'all');
+          setFilterGroup(filters.group || 'all');
+        } catch (e) {
+          console.error('Failed to parse saved filters:', e);
+        }
+      }
+    }
+  }, [effectiveEstimateId, isNewEstimate]);
+
+  // Save column config to localStorage
+  React.useEffect(() => {
+    if (effectiveEstimateId && !isNewEstimate) {
+      localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(columns));
+    }
+  }, [columns, effectiveEstimateId, isNewEstimate]);
+
+  // Save filters to localStorage
+  React.useEffect(() => {
+    if (effectiveEstimateId && !isNewEstimate) {
+      localStorage.setItem(`estimateTable_${effectiveEstimateId}_filters`, JSON.stringify({
+        type: filterType,
+        status: filterStatus,
+        group: filterGroup
+      }));
+    }
+  }, [filterType, filterStatus, filterGroup, effectiveEstimateId, isNewEstimate]);
 
   // Early validation - show error if invalid ID for non-new estimates
   if (!effectiveEstimateId && !isNewEstimate) {
@@ -596,6 +667,61 @@ export default function EstimateDetail() {
     groupForm.reset();
   };
 
+  // Column visibility toggle handler
+  const toggleColumn = (columnId: string) => {
+    setColumns(prev => prev.map(col => 
+      col.id === columnId ? { ...col, visible: !col.visible } : col
+    ));
+  };
+
+  // Column resize handlers
+  const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
+    e.preventDefault();
+    const currentWidth = columns.find(col => col.id === columnId)?.width || 'w-[100px]';
+    const widthMatch = currentWidth.match(/\[(\d+)px\]/);
+    const pixelWidth = widthMatch ? parseInt(widthMatch[1]) : 100;
+    
+    setResizingColumn(columnId);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(pixelWidth);
+    
+    // Prevent text selection during resize
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  };
+
+  // Handle resize effect
+  React.useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - resizeStartX;
+      const newWidth = Math.max(80, resizeStartWidth + diff);
+      
+      setColumns(prev => prev.map(col => 
+        col.id === resizingColumn 
+          ? { ...col, width: `w-[${newWidth}px]` }
+          : col
+      ));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
+
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
     queryKey: ["/api/estimates", effectiveEstimateId],
@@ -643,8 +769,28 @@ export default function EstimateDetail() {
     return `${quantity}${unitType ? ` ${unitType}` : ''}`;
   };
 
+  // Filter items based on current filter state
+  const getFilteredItems = () => {
+    return items.filter(item => {
+      // Type filter
+      if (filterType !== 'all' && item.type !== filterType) return false;
+      
+      // Status filter
+      if (filterStatus !== 'all' && item.status !== filterStatus) return false;
+      
+      // Group filter
+      if (filterGroup !== 'all') {
+        if (filterGroup === 'ungrouped' && item.groupId) return false;
+        if (filterGroup !== 'ungrouped' && item.groupId !== filterGroup) return false;
+      }
+      
+      return true;
+    });
+  };
+
   // Organize items by groups for display
   const organizeItemsByGroups = () => {
+    const filteredItems = getFilteredItems();
     const groupedItems: { [key: string]: EstimateItem[] } = {};
     const ungroupedItems: EstimateItem[] = [];
 
@@ -657,7 +803,7 @@ export default function EstimateDetail() {
     });
 
     // Organize items
-    items.forEach(item => {
+    filteredItems.forEach(item => {
       if (item.groupId && groupedItems[item.groupId]) {
         groupedItems[item.groupId].push(item);
       } else {
@@ -674,6 +820,66 @@ export default function EstimateDetail() {
     ungroupedItems.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     return { sortedGroups, groupedItems, ungroupedItems };
+  };
+
+  // Render cell based on column ID
+  const renderCell = (item: EstimateItem, columnId: string) => {
+    switch (columnId) {
+      case 'item':
+        return (
+          <TableCell className="py-0.5 pl-8">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="font-medium text-sm truncate cursor-help max-w-[180px] block">
+                    {item.name}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="max-w-[300px]">
+                    <p className="font-medium">{item.name}</p>
+                    {item.description && (
+                      <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </TableCell>
+        );
+      case 'type':
+        return (
+          <TableCell className="py-0.5">
+            <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
+          </TableCell>
+        );
+      case 'quantity':
+        return <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>;
+      case 'priceExTax':
+        return <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>;
+      case 'tax':
+        return <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>;
+      case 'totalIncTax':
+        return <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>;
+      case 'status':
+        return (
+          <TableCell className="py-0.5">
+            <Badge 
+              variant="outline"
+              className="text-xs h-5"
+              style={{
+                backgroundColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280',
+                color: '#FFFFFF',
+                borderColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280'
+              }}
+            >
+              {estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.name || item.status}
+            </Badge>
+          </TableCell>
+        );
+      default:
+        return <TableCell className="py-0.5"></TableCell>;
+    }
   };
 
   if (estimateLoading) {
@@ -966,6 +1172,37 @@ export default function EstimateDetail() {
                 Estimate Items ({items.length})
               </CardTitle>
               <div className="flex items-center space-x-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      data-testid="button-column-visibility"
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      Columns
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
+                    {columns.map(column => (
+                      <DropdownMenuItem 
+                        key={column.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          toggleColumn(column.id);
+                        }}
+                      >
+                        <Checkbox
+                          checked={column.visible}
+                          onCheckedChange={() => toggleColumn(column.id)}
+                          className="mr-2"
+                        />
+                        {column.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button 
                   size="sm" 
                   data-testid="button-add-group" 
@@ -988,6 +1225,64 @@ export default function EstimateDetail() {
                 </Button>
               </div>
             </CardHeader>
+            
+            {/* Filter Bar */}
+            <div className="px-6 py-3 border-b flex items-center gap-3">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-[140px] h-8" data-testid="filter-type">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {Array.from(new Set(items.map(item => item.type))).map(type => (
+                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-[140px] h-8" data-testid="filter-status">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((opt: any) => (
+                    <SelectItem key={opt.key} value={opt.key}>{opt.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={filterGroup} onValueChange={setFilterGroup}>
+                <SelectTrigger className="w-[140px] h-8" data-testid="filter-group">
+                  <SelectValue placeholder="Group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Groups</SelectItem>
+                  <SelectItem value="ungrouped">Ungrouped</SelectItem>
+                  {groups.map(group => (
+                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              {(filterType !== 'all' || filterStatus !== 'all' || filterGroup !== 'all') && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8"
+                  onClick={() => {
+                    setFilterType('all');
+                    setFilterStatus('all');
+                    setFilterGroup('all');
+                  }}
+                  data-testid="button-clear-filters"
+                >
+                  Clear All
+                </Button>
+              )}
+            </div>
+            
             <CardContent>
               {itemsLoading || groupsLoading ? (
                 <div className="animate-pulse space-y-2">
@@ -1027,13 +1322,23 @@ export default function EstimateDetail() {
                 <Table>
                   <TableHeader>
                     <TableRow className="h-8">
-                      <TableHead className="py-1 text-xs font-medium">Item</TableHead>
-                      <TableHead className="py-1 text-xs font-medium">Type</TableHead>
-                      <TableHead className="py-1 text-xs font-medium">Quantity</TableHead>
-                      <TableHead className="py-1 text-xs font-medium">Price Ex-Tax</TableHead>
-                      <TableHead className="py-1 text-xs font-medium">Tax</TableHead>
-                      <TableHead className="py-1 text-xs font-medium">Total Inc-Tax</TableHead>
-                      <TableHead className="py-1 text-xs font-medium">Status</TableHead>
+                      {columns.filter(col => col.visible).map(column => (
+                        <TableHead 
+                          key={column.id}
+                          className={`py-1 text-xs font-medium ${column.width} relative group`}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>{column.label}</span>
+                          </div>
+                          {/* Resize handle */}
+                          <div
+                            className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                            style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                            onMouseDown={(e) => handleResizeStart(e, column.id)}
+                            data-testid={`resize-handle-${column.id}`}
+                          />
+                        </TableHead>
+                      ))}
                       <TableHead className="py-1 text-xs font-medium w-[80px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1079,45 +1384,11 @@ export default function EstimateDetail() {
                               {/* Render items in this group - only if not collapsed */}
                               {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
                                 <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
-                                  <TableCell className="py-0.5 pl-8">
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="font-medium text-sm truncate cursor-help max-w-[180px] block">
-                                            {item.name}
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <div className="max-w-[300px]">
-                                            <p className="font-medium">{item.name}</p>
-                                            {item.description && (
-                                              <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                                            )}
-                                          </div>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </TableCell>
-                                  <TableCell className="py-0.5">
-                                    <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
-                                  </TableCell>
-                                  <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>
-                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>
-                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>
-                                  <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
-                                  <TableCell className="py-0.5">
-                                    <Badge 
-                                      variant="outline"
-                                      className="text-xs h-5"
-                                      style={{
-                                        backgroundColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280',
-                                        color: '#FFFFFF',
-                                        borderColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280'
-                                      }}
-                                    >
-                                      {estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.name || item.status}
-                                    </Badge>
-                                  </TableCell>
+                                  {columns.filter(col => col.visible).map(column => (
+                                    <React.Fragment key={column.id}>
+                                      {renderCell(item, column.id)}
+                                    </React.Fragment>
+                                  ))}
                                   <TableCell className="py-0.5">
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
@@ -1175,45 +1446,11 @@ export default function EstimateDetail() {
                               
                               {ungroupedItems.map((item) => (
                                 <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
-                                  <TableCell className="py-0.5">
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="font-medium text-sm truncate cursor-help max-w-[200px] block">
-                                            {item.name}
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <div className="max-w-[300px]">
-                                            <p className="font-medium">{item.name}</p>
-                                            {item.description && (
-                                              <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                                            )}
-                                          </div>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </TableCell>
-                                  <TableCell className="py-0.5">
-                                    <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
-                                  </TableCell>
-                                  <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>
-                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>
-                                  <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>
-                                  <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
-                                  <TableCell className="py-0.5">
-                                    <Badge 
-                                      variant="outline"
-                                      className="text-xs h-5"
-                                      style={{
-                                        backgroundColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280',
-                                        color: '#FFFFFF',
-                                        borderColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280'
-                                      }}
-                                    >
-                                      {estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.name || item.status}
-                                    </Badge>
-                                  </TableCell>
+                                  {columns.filter(col => col.visible).map(column => (
+                                    <React.Fragment key={column.id}>
+                                      {renderCell(item, column.id)}
+                                    </React.Fragment>
+                                  ))}
                                   <TableCell className="py-0.5">
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
