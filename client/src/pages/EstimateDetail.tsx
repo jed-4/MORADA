@@ -565,6 +565,7 @@ export default function EstimateDetail() {
     defaultValues: {
       name: "",
       description: "",
+      notes: "",
       type: "material",
       quantity: 1,
       unitType: "each",
@@ -573,6 +574,13 @@ export default function EstimateDetail() {
       status: "pending",
       groupId: undefined,
       costCode: undefined,
+      allowance: "None",
+      attachmentUrl: "",
+      requestForQuote: false,
+      isSelection: false,
+      visibleInProposal: true,
+      showAsInProposal: "price",
+      order: 0,
     },
   });
 
@@ -1500,7 +1508,7 @@ export default function EstimateDetail() {
 
       {/* Add Item Dialog */}
       <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Estimate Item</DialogTitle>
           </DialogHeader>
@@ -1751,6 +1759,154 @@ export default function EstimateDetail() {
                           data-testid="input-item-price-inc-tax"
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator className="my-4" />
+
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Internal Notes (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Internal notes for the team..." {...field} value={field.value || ""} data-testid="input-item-notes" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="allowance"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Allowance</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-item-allowance">
+                          <SelectValue placeholder="Select allowance type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="None">None</SelectItem>
+                        <SelectItem value="Prime Cost">Prime Cost</SelectItem>
+                        <SelectItem value="Provisional Sum">Provisional Sum</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="attachmentUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Attachment URL (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://..." {...field} value={field.value || ""} data-testid="input-item-attachment" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="requestForQuote"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <input
+                          type="checkbox"
+                          checked={field.value}
+                          onChange={(e) => field.onChange(e.target.checked)}
+                          className="h-4 w-4 mt-1"
+                          data-testid="checkbox-request-for-quote"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Request for Quote</FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="isSelection"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <input
+                          type="checkbox"
+                          checked={field.value}
+                          onChange={(e) => field.onChange(e.target.checked)}
+                          className="h-4 w-4 mt-1"
+                          data-testid="checkbox-is-selection"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Link to Selections</FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator className="my-4" />
+
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Proposal Settings</h4>
+                
+                <FormField
+                  control={form.control}
+                  name="visibleInProposal"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <input
+                          type="checkbox"
+                          checked={field.value}
+                          onChange={(e) => field.onChange(e.target.checked)}
+                          className="h-4 w-4 mt-1"
+                          data-testid="checkbox-visible-in-proposal"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Show in client proposal</FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="showAsInProposal"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Show as in proposal</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-show-as-in-proposal">
+                            <SelectValue placeholder="Select display format" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="empty">Empty (no price)</SelectItem>
+                          <SelectItem value="price">Show price</SelectItem>
+                          <SelectItem value="included">Included</SelectItem>
+                          <SelectItem value="excluded">Excluded</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
