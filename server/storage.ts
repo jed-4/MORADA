@@ -3529,7 +3529,15 @@ export class DbStorage implements IStorage {
         .orderBy(schema.projects.createdAt);
     }
   }
-  async getProject(id: string): Promise<Project | undefined> { return undefined; }
+  async getProject(id: string): Promise<Project | undefined> {
+    try {
+      const result = await db.select().from(schema.projects).where(eq(schema.projects.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getProject:", error);
+      return undefined;
+    }
+  }
   async createProject(project: InsertProject): Promise<Project> { throw new Error("Not implemented"); }
   async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> { return undefined; }
   async deleteProject(id: string): Promise<boolean> { return false; }

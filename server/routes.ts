@@ -689,12 +689,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/projects/:id", async (req, res) => {
     try {
+      console.log(`[GET /api/projects/:id] Fetching project with ID: ${req.params.id}`);
       const project = await storage.getProject(req.params.id);
+      console.log(`[GET /api/projects/:id] Result:`, project);
       if (!project) {
+        console.log(`[GET /api/projects/:id] Project not found, returning 404`);
         return res.status(404).json({ error: "Project not found" });
       }
       res.json(project);
     } catch (error) {
+      console.error(`[GET /api/projects/:id] Error:`, error);
       res.status(500).json({ error: "Failed to fetch project" });
     }
   });
