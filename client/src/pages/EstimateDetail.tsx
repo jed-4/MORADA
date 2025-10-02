@@ -627,6 +627,11 @@ export default function EstimateDetail() {
     enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
+  // Fetch estimate item status field category options
+  const { data: estimateItemStatusCategory } = useQuery({
+    queryKey: ["/api/field-categories/by-key/estimate_item.status"],
+  });
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
@@ -1102,10 +1107,15 @@ export default function EstimateDetail() {
                                   <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
                                   <TableCell className="py-0.5">
                                     <Badge 
-                                      variant={item.status === 'confirmed' ? 'default' : 'secondary'}
+                                      variant="outline"
                                       className="text-xs h-5"
+                                      style={{
+                                        backgroundColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280',
+                                        color: '#FFFFFF',
+                                        borderColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280'
+                                      }}
                                     >
-                                      {item.status}
+                                      {estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.name || item.status}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="py-0.5">
@@ -1193,10 +1203,15 @@ export default function EstimateDetail() {
                                   <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>
                                   <TableCell className="py-0.5">
                                     <Badge 
-                                      variant={item.status === 'confirmed' ? 'default' : 'secondary'}
+                                      variant="outline"
                                       className="text-xs h-5"
+                                      style={{
+                                        backgroundColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280',
+                                        color: '#FFFFFF',
+                                        borderColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280'
+                                      }}
                                     >
-                                      {item.status}
+                                      {estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.name || item.status}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="py-0.5">
@@ -1371,9 +1386,17 @@ export default function EstimateDetail() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="quoted">Quoted</SelectItem>
-                          <SelectItem value="confirmed">Confirmed</SelectItem>
+                          {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                            <SelectItem key={option.key} value={option.key}>
+                              {option.name}
+                            </SelectItem>
+                          )) || (
+                            <>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="quoted">Quoted</SelectItem>
+                              <SelectItem value="confirmed">Confirmed</SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                       <FormMessage />
