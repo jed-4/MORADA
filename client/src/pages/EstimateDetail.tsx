@@ -27,7 +27,7 @@ import {
   GripVertical,
   Filter
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -762,7 +762,7 @@ export default function EstimateDetail() {
   });
 
   // Fetch estimate item status field category options
-  const { data: estimateItemStatusCategory } = useQuery({
+  const { data: estimateItemStatusCategory } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/estimate_item.status"],
   });
 
