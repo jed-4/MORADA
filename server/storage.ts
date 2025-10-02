@@ -2876,6 +2876,16 @@ export class DbStorage implements IStorage {
         isActive: true,
         sortOrder: 7,
       },
+      {
+        id: 'cat-estimate-status',
+        key: 'estimate.status',
+        label: 'Estimate Statuses',
+        entity: 'estimate',
+        description: 'Status options for estimates',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 8,
+      },
     ];
 
     for (const categoryData of requiredCategories) {
@@ -2983,6 +2993,13 @@ export class DbStorage implements IStorage {
           { id: 'opt-estimate-item-status-confirmed', categoryId, key: 'confirmed', name: 'Confirmed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
           { id: 'opt-estimate-item-status-ordered', categoryId, key: 'ordered', name: 'Ordered', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 3 },
           { id: 'opt-estimate-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 4 },
+        ];
+      case 'estimate.status':
+        return [
+          { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-status-locked', categoryId, key: 'locked', name: 'Locked', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 2 },
+          { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 3 },
         ];
       default:
         return [];
