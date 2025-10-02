@@ -464,6 +464,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
     e.preventDefault();
     e.stopPropagation();
+    
     const column = columns.find(col => col.id === columnId);
     if (!column) return;
     
@@ -472,12 +473,17 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
     // Parse width from Tailwind classes like 'w-32' or 'min-w-[200px]'
     const currentWidth = parseInt(column.width?.match(/\d+/)?.[0] || '160');
     setResizeStartWidth(currentWidth);
+    
+    // Prevent any text selection during drag
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
   };
 
   useEffect(() => {
     if (!resizingColumn) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
       const diff = e.clientX - resizeStartX;
       const newWidth = Math.max(80, resizeStartWidth + diff); // Min width 80px
       
@@ -490,6 +496,9 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
 
     const handleMouseUp = () => {
       setResizingColumn(null);
+      // Restore cursor and selection
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -498,6 +507,9 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // Cleanup in case component unmounts during resize
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
     };
   }, [resizingColumn, resizeStartX, resizeStartWidth]);
 
@@ -568,7 +580,8 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
         </div>
         {/* Resize handle */}
         <div
-          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          style={{ pointerEvents: 'auto', touchAction: 'none' }}
           onMouseDown={(e) => handleResizeStart(e, column.id)}
           data-testid={`resize-handle-${column.id}`}
         />
