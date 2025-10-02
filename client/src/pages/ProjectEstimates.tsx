@@ -160,12 +160,16 @@ export default function ProjectEstimates() {
     });
 
     return (
-      <Card key={estimate.id} className="hover-elevate">
+      <Card 
+        key={estimate.id} 
+        className="hover-elevate cursor-pointer"
+        onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
+        data-testid={`card-estimate-${estimate.id}`}
+      >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="flex-1">
             <CardTitle 
-              className="text-lg cursor-pointer hover:text-blue-600 transition-colors" 
-              onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
+              className="text-lg" 
               data-testid={`link-estimate-title-${estimate.id}`}
             >
               {estimate.name}
@@ -174,34 +178,36 @@ export default function ProjectEstimates() {
           <div className="flex items-center space-x-2">
             {getStatusBadge(estimate)}
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="icon" data-testid={`button-estimate-menu-${estimate.id}`}>
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem 
-                  data-testid={`button-edit-estimate-${estimate.id}`}
-                  onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
+                  data-testid={`button-open-estimate-${estimate.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
+                  }}
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  Edit Items
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  data-testid={`button-view-summary-${estimate.id}`}
-                  onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
-                >
-                  <Calculator className="w-4 h-4 mr-2" />
-                  View Summary
+                  Open estimate
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem data-testid={`button-clone-estimate-${estimate.id}`}>
+                <DropdownMenuItem 
+                  data-testid={`button-clone-estimate-${estimate.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <Copy className="w-4 h-4 mr-2" />
                   Create Version
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   data-testid={`button-toggle-lock-${estimate.id}`}
-                  onClick={() => toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked });
+                  }}
                   disabled={toggleLockMutation.isPending}
                 >
                   {estimate.isLocked ? (
