@@ -1410,6 +1410,7 @@ export default function EstimateDetail() {
                           step="0.01" 
                           min="0"
                           placeholder="0.00"
+                          className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
                           onChange={(e) => {
                             const exTax = parseFloat(e.target.value) || 0;
@@ -1439,6 +1440,7 @@ export default function EstimateDetail() {
                           step="0.01" 
                           min="0"
                           placeholder="0.00"
+                          className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
                           onChange={(e) => {
                             const incTax = parseFloat(e.target.value) || 0;
