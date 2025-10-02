@@ -216,12 +216,12 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const getColumnWidthClass = () => {
     switch (columnWidth) {
       case 'small':
-        return 'min-w-60'; // 240px
+        return 'w-60'; // 240px
       case 'wide':
-        return 'min-w-[400px]'; // 400px
+        return 'w-[400px]'; // 400px
       case 'medium':
       default:
-        return 'min-w-80'; // 320px (default)
+        return 'w-80'; // 320px (default)
     }
   };
 
