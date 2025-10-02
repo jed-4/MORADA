@@ -1899,9 +1899,26 @@ export class MemStorage implements IStorage {
 
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
     try {
+      // Get default status from field settings if not provided
+      let defaultStatus = "draft";
+      if (!insertEstimate.status) {
+        const statusCategory = await this.getFieldCategoryByKey('estimate.status');
+        if (statusCategory) {
+          const statusOptions = await db.select().from(schema.fieldOptions)
+            .where(and(
+              eq(schema.fieldOptions.categoryId, statusCategory.id),
+              eq(schema.fieldOptions.isDefault, true)
+            ))
+            .limit(1);
+          if (statusOptions.length > 0) {
+            defaultStatus = statusOptions[0].key;
+          }
+        }
+      }
+
       const estimate = {
         ...insertEstimate,
-        status: insertEstimate.status || "draft",
+        status: insertEstimate.status || defaultStatus,
         version: 1,
         isLocked: false,
       };
