@@ -19,7 +19,9 @@ import {
   Trash2,
   MoreHorizontal,
   FolderPlus,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -338,6 +340,24 @@ export default function EstimateDetail() {
     },
   });
 
+  // Mutation for toggling group collapse state
+  const toggleGroupCollapseMutation = useMutation({
+    mutationFn: async ({ groupId, isCollapsed }: { groupId: string; isCollapsed: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/estimate-groups/${groupId}`, { isCollapsed });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to toggle group collapse state.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handlers for inline name editing
   const handleNameEdit = () => {
     if (estimate?.isLocked) {
@@ -550,6 +570,14 @@ export default function EstimateDetail() {
   const handleToggleLock = () => {
     if (!estimate) return;
     toggleLockMutation.mutate();
+  };
+
+  // Handler for toggling group collapse
+  const handleToggleGroupCollapse = (groupId: string, currentIsCollapsed: boolean) => {
+    toggleGroupCollapseMutation.mutate({ 
+      groupId, 
+      isCollapsed: !currentIsCollapsed 
+    });
   };
 
   const handleSubmitGroup = (data: z.infer<typeof addGroupFormSchema>) => {
@@ -1018,9 +1046,19 @@ export default function EstimateDetail() {
                                 <TableCell colSpan={8} className="py-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-2">
-                                      <Badge variant="secondary" className="text-xs font-medium">
-                                        Group
-                                      </Badge>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                                        data-testid={`button-toggle-group-${group.id}`}
+                                      >
+                                        {group.isCollapsed ? (
+                                          <ChevronRight className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronDown className="h-4 w-4" />
+                                        )}
+                                      </Button>
                                       <span className="font-medium text-sm">{group.name}</span>
                                       {group.description && (
                                         <span className="text-xs text-muted-foreground">- {group.description}</span>
@@ -1033,8 +1071,8 @@ export default function EstimateDetail() {
                                 </TableCell>
                               </TableRow>
                               
-                              {/* Render items in this group */}
-                              {groupedItems[group.id]?.map((item) => (
+                              {/* Render items in this group - only if not collapsed */}
+                              {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
                                 <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
                                   <TableCell className="py-0.5 pl-8">
                                     <TooltipProvider>
