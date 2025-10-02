@@ -6,7 +6,13 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task } from "@shared/schema";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Columns3 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import TaskCard from "./TaskCard";
 import TaskForm from "./TaskForm";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
@@ -32,6 +38,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
+
+type ColumnWidth = 'small' | 'medium' | 'wide';
 
 interface CardDisplaySettings {
   showPriority?: boolean;
@@ -159,6 +167,26 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const { toast } = useToast();
   
+  // Column width state with localStorage persistence
+  const [columnWidth, setColumnWidth] = useState<ColumnWidth>('medium');
+  
+  // Load column width from localStorage
+  useEffect(() => {
+    if (projectId) {
+      const savedWidth = localStorage.getItem(`columnWidth_${projectId}`);
+      if (savedWidth && (savedWidth === 'small' || savedWidth === 'medium' || savedWidth === 'wide')) {
+        setColumnWidth(savedWidth as ColumnWidth);
+      }
+    }
+  }, [projectId]);
+  
+  // Save column width to localStorage when it changes
+  useEffect(() => {
+    if (projectId) {
+      localStorage.setItem(`columnWidth_${projectId}`, columnWidth);
+    }
+  }, [columnWidth, projectId]);
+  
   // Scroll container ref for navigation
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showNavigation, setShowNavigation] = useState(false);
@@ -181,6 +209,19 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         left: 344, // Scroll by column width (320px) + gap (24px)
         behavior: 'smooth'
       });
+    }
+  };
+  
+  // Get column width class based on setting
+  const getColumnWidthClass = () => {
+    switch (columnWidth) {
+      case 'small':
+        return 'min-w-60'; // 240px
+      case 'wide':
+        return 'min-w-[400px]'; // 400px
+      case 'medium':
+      default:
+        return 'min-w-80'; // 320px (default)
     }
   };
 
@@ -327,7 +368,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
              style={{ scrollbarWidth: 'thin' }}>
           {columns.map((column) => (
-            <Card key={column.id} className="h-fit min-w-80 flex-shrink-0">
+            <Card key={column.id} className={`h-fit ${getColumnWidthClass()} flex-shrink-0`}>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium">{column.title}</CardTitle>
@@ -355,6 +396,39 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
           <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-column-width"
+                  className="h-9"
+                >
+                  <Columns3 className="h-4 w-4 mr-2" />
+                  {columnWidth === 'small' ? 'Small' : columnWidth === 'wide' ? 'Wide' : 'Medium'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => setColumnWidth('small')}
+                  data-testid="menu-item-column-small"
+                >
+                  Small (240px)
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setColumnWidth('medium')}
+                  data-testid="menu-item-column-medium"
+                >
+                  Medium (320px)
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setColumnWidth('wide')}
+                  data-testid="menu-item-column-wide"
+                >
+                  Wide (400px)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {showNavigation && (
               <>
                 <Button 
@@ -401,7 +475,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
               const columnTasks = tasksByStatus[column.status] || [];
               
               return (
-                <div key={column.id} className="min-w-80 flex-shrink-0">
+                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0`}>
                   <DroppableColumn
                     column={column}
                     tasks={columnTasks}
