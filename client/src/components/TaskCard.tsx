@@ -202,48 +202,36 @@ export default function TaskCard({
               />
               <h3 className="font-medium text-sm flex-1">{title}</h3>
             </div>
-            <div className="flex items-center gap-1">
-              {settings.showPriority && (
-                <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
-                  {priority}
-                </Badge>
-              )}
-              {settings.showStatus && (
-                <Badge variant="outline" className="text-xs">
-                  {statusLabel}
-                </Badge>
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
-                    data-testid={`button-task-menu-${task.id}`}
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenuItem onClick={handleEdit} data-testid={`menu-edit-task-${task.id}`}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteDialog(true);
-                    }}
-                    className="text-destructive"
-                    data-testid={`menu-delete-task-${task.id}`}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`button-task-menu-${task.id}`}
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onClick={handleEdit} data-testid={`menu-edit-task-${task.id}`}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteDialog(true);
+                  }}
+                  className="text-destructive"
+                  data-testid={`menu-delete-task-${task.id}`}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {settings.showDescription && description && (
@@ -282,8 +270,8 @@ export default function TaskCard({
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {settings.showAssignee && assignee && (
                 <Avatar className="h-6 w-6">
                   <AvatarImage src={assignee.avatar} alt={assignee.name} />
@@ -296,6 +284,18 @@ export default function TaskCard({
                   <Calendar className="h-3 w-3" />
                   {new Date(dueDate).toLocaleDateString()}
                 </div>
+              )}
+              
+              {settings.showPriority && (
+                <Badge className={`text-xs ${priorityColors[priority as keyof typeof priorityColors] || priorityColors.medium}`}>
+                  {priority}
+                </Badge>
+              )}
+              
+              {settings.showStatus && (
+                <Badge variant="outline" className="text-xs">
+                  {statusLabel}
+                </Badge>
               )}
             </div>
 
