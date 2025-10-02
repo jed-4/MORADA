@@ -604,6 +604,48 @@ export class MemStorage implements IStorage {
         color: opt.color,
         isActive: true,
         isDefault: index === 0, // First one is default
+        isCompleted: false,
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
+
+    // Estimate Item Status Category
+    const estimateItemStatusCategory: FieldCategory = {
+      id: "cat-estimate-item-status",
+      key: "estimate_item.status",
+      label: "Estimate Item Statuses",
+      entity: "estimate_item",
+      description: "Status options for estimate items",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 5,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(estimateItemStatusCategory.id, estimateItemStatusCategory);
+
+    // Add default options for Estimate Item Status
+    const estimateItemStatusOptions = [
+      { key: "pending", name: "Pending", color: "#6B7280", isDefault: true },
+      { key: "quoted", name: "Quoted", color: "#F59E0B", isDefault: false },
+      { key: "confirmed", name: "Confirmed", color: "#10B981", isDefault: false },
+      { key: "ordered", name: "Ordered", color: "#3B82F6", isDefault: false },
+      { key: "cancelled", name: "Cancelled", color: "#EF4444", isDefault: false },
+    ];
+
+    estimateItemStatusOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-estimate-item-status-${opt.key}`,
+        categoryId: estimateItemStatusCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        isCompleted: opt.key === "confirmed", // Mark "confirmed" as completed status
         sortOrder: index,
         createdAt: now,
         updatedAt: now,
