@@ -68,6 +68,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 
 interface EstimateDetailParams {
   id?: string;
@@ -460,9 +461,11 @@ export default function EstimateDetail() {
 
   // Form setup for adding items
   const addItemFormSchema = insertEstimateItemSchema.omit({ 
-    estimateId: true 
+    estimateId: true,
+    taxAmount: true, // Calculated field
   }).extend({
     priceExTax: z.number().min(0, "Price must be positive"),
+    priceIncTax: z.number().min(0, "Price must be positive"),
     quantity: z.number().min(0.01, "Quantity must be greater than 0"),
   });
 
@@ -475,7 +478,10 @@ export default function EstimateDetail() {
       quantity: 1,
       unitType: "each",
       priceExTax: 0,
+      priceIncTax: 0,
       status: "pending",
+      groupId: undefined,
+      costCode: undefined,
     },
   });
 
@@ -510,9 +516,13 @@ export default function EstimateDetail() {
   const handleSubmitItem = (data: z.infer<typeof addItemFormSchema>) => {
     if (!estimate) return;
     
+    // Calculate tax amount from the difference
+    const taxAmount = data.priceIncTax - data.priceExTax;
+    
     const itemData: InsertEstimateItem = {
       ...data,
       estimateId: estimate.id,
+      taxAmount,
     };
     
     addItemMutation.mutate(itemData);
@@ -1237,6 +1247,58 @@ export default function EstimateDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
+                  name="groupId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Group (Optional)</FormLabel>
+                      <Select 
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                        value={field.value || "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-item-group">
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None (ungrouped)</SelectItem>
+                          {groups.map((group) => (
+                            <SelectItem key={group.id} value={group.id}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="costCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cost Code (Optional)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined} disabled>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-item-costcode">
+                            <SelectValue placeholder="Not configured" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
                   name="type"
                   render={({ field }) => (
                     <FormItem>
@@ -1282,7 +1344,9 @@ export default function EstimateDetail() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <Separator className="my-4" />
+
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="quantity"
@@ -1331,13 +1395,15 @@ export default function EstimateDetail() {
                     </FormItem>
                   )}
                 />
+              </div>
 
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="priceExTax"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price (Ex-Tax)</FormLabel>
+                      <FormLabel>Price Ex Tax</FormLabel>
                       <FormControl>
                         <Input 
                           type="number" 
@@ -1345,8 +1411,44 @@ export default function EstimateDetail() {
                           min="0"
                           placeholder="0.00"
                           {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                          data-testid="input-item-price"
+                          onChange={(e) => {
+                            const exTax = parseFloat(e.target.value) || 0;
+                            field.onChange(exTax);
+                            // Auto-calculate price inc tax using tax rate from estimate
+                            const taxRate = (estimate?.taxRate || 10) / 100;
+                            const incTax = exTax * (1 + taxRate);
+                            form.setValue('priceIncTax', incTax);
+                          }}
+                          data-testid="input-item-price-ex-tax"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="priceIncTax"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price Inc Tax</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          min="0"
+                          placeholder="0.00"
+                          {...field}
+                          onChange={(e) => {
+                            const incTax = parseFloat(e.target.value) || 0;
+                            field.onChange(incTax);
+                            // Auto-calculate price ex tax using tax rate from estimate
+                            const taxRate = (estimate?.taxRate || 10) / 100;
+                            const exTax = incTax / (1 + taxRate);
+                            form.setValue('priceExTax', exTax);
+                          }}
+                          data-testid="input-item-price-inc-tax"
                         />
                       </FormControl>
                       <FormMessage />
