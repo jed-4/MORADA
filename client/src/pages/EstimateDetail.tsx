@@ -23,6 +23,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Eye,
   GripVertical,
   Filter,
@@ -1055,7 +1056,182 @@ export default function EstimateDetail() {
     });
   };
 
-  // Organize items by groups for display
+  // State to track collapsed parent items
+  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
+
+  // Helper function to get sub-items for a parent item
+  const getSubItems = (parentItemId: string): EstimateItem[] => {
+    const subItems = items.filter(item => item.parentItemId === parentItemId);
+    return subItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+  };
+
+  // Toggle parent item collapse
+  const handleToggleItemCollapse = (itemId: string) => {
+    setCollapsedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  // Column reordering functions
+  const moveColumnUp = (columnId: string) => {
+    setColumns(prev => {
+      const index = prev.findIndex(col => col.id === columnId);
+      if (index > 0) {
+        const newColumns = [...prev];
+        [newColumns[index - 1], newColumns[index]] = [newColumns[index], newColumns[index - 1]];
+        const effectiveEstimateId = estimate?.id || estimateId;
+        if (effectiveEstimateId) {
+          localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(newColumns));
+        }
+        return newColumns;
+      }
+      return prev;
+    });
+  };
+
+  const moveColumnDown = (columnId: string) => {
+    setColumns(prev => {
+      const index = prev.findIndex(col => col.id === columnId);
+      if (index < prev.length - 1) {
+        const newColumns = [...prev];
+        [newColumns[index + 1], newColumns[index]] = [newColumns[index], newColumns[index + 1]];
+        const effectiveEstimateId = estimate?.id || estimateId;
+        if (effectiveEstimateId) {
+          localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(newColumns));
+        }
+        return newColumns;
+      }
+      return prev;
+    });
+  };
+
+  // Helper function to render an item row with its sub-items
+  const renderItemWithSubItems = (item: EstimateItem) => {
+    const subItems = getSubItems(item.id);
+    const isCollapsed = collapsedItems.has(item.id);
+    
+    const rows = [
+      // Parent item row
+      <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
+        {columns.filter(col => col.visible).map(column => renderCell(item, column.id))}
+        <TableCell className="py-0.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 w-8 p-0" 
+                data-testid={`button-actions-${item.id}`}
+                disabled={estimate?.isLocked}
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem 
+                onClick={() => {
+                  if (estimate?.isLocked) return;
+                  form.reset({
+                    name: '',
+                    type: 'Material',
+                    quantity: 1,
+                    priceExTax: 0,
+                    priceIncTax: 0,
+                    groupId: item.groupId || undefined,
+                    parentItemId: item.id,
+                    status: 'pending',
+                    description: '',
+                    costCode: '',
+                    notes: '',
+                    attachmentUrl: '',
+                    requestForQuote: false,
+                    isSelection: false,
+                    visibleInProposal: true,
+                    showAsInProposal: 'price',
+                    order: 0,
+                  });
+                  setIsAddItemOpen(true);
+                }}
+                data-testid={`button-add-subitem-${item.id}`}
+                disabled={estimate?.isLocked}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Sub-Item
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                data-testid={`button-edit-item-${item.id}`}
+                disabled={estimate?.isLocked}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Item
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                data-testid={`button-delete-item-${item.id}`} 
+                className="text-destructive"
+                disabled={estimate?.isLocked}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Item
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
+      </TableRow>
+    ];
+    
+    // Add sub-items if not collapsed
+    if (!isCollapsed) {
+      subItems.forEach(subItem => {
+        rows.push(
+          <TableRow key={subItem.id} data-testid={`row-subitem-${subItem.id}`} className="min-h-8 bg-muted/20">
+            {columns.filter(col => col.visible).map(column => renderCell(subItem, column.id))}
+            <TableCell className="py-0.5">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 w-8 p-0" 
+                    data-testid={`button-actions-${subItem.id}`}
+                    disabled={estimate?.isLocked}
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem 
+                    data-testid={`button-edit-item-${subItem.id}`}
+                    disabled={estimate?.isLocked}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Item
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    data-testid={`button-delete-item-${subItem.id}`} 
+                    className="text-destructive"
+                    disabled={estimate?.isLocked}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete Item
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </TableCell>
+          </TableRow>
+        );
+      });
+    }
+    
+    return rows;
+  };
+
+  // Organize items by groups for display (including sub-items)
   const organizeItemsByGroups = () => {
     const filteredItems = getFilteredItems();
     const groupedItems: { [key: string]: EstimateItem[] } = {};
@@ -1069,8 +1245,11 @@ export default function EstimateDetail() {
       groupedItems[group.id] = [];
     });
 
-    // Organize items
-    filteredItems.forEach(item => {
+    // First, filter only parent items (items without parentItemId)
+    const parentItems = filteredItems.filter(item => !item.parentItemId);
+    
+    // Organize parent items into groups
+    parentItems.forEach(item => {
       if (item.groupId && groupedItems[item.groupId]) {
         groupedItems[item.groupId].push(item);
       } else {
@@ -1096,9 +1275,15 @@ export default function EstimateDetail() {
 
     switch (columnId) {
       case 'item':
+        const subItems = getSubItems(item.id);
+        const hasSubItems = subItems.length > 0;
+        const isCollapsed = collapsedItems.has(item.id);
+        const isSubItem = !!item.parentItemId;
+        const indentClass = isSubItem ? 'pl-16' : 'pl-8';
+        
         if (isEditing) {
           return (
-            <TableCell className="py-0.5 pl-8">
+            <TableCell className={`py-0.5 ${indentClass}`}>
               <Input
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
@@ -1113,27 +1298,47 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 pl-8 ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            className={`py-0.5 ${indentClass} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
             onClick={() => !isLocked && handleCellEdit(item, 'name')}
             data-testid={`cell-name-${item.id}`}
           >
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="font-medium text-sm truncate max-w-[180px] block">
-                    {item.name}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <div className="max-w-[300px]">
-                    <p className="font-medium">{item.name}</p>
-                    {item.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <div className="flex items-center gap-2">
+              {hasSubItems && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-4 w-4 p-0 -ml-6"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleItemCollapse(item.id);
+                  }}
+                  data-testid={`button-toggle-item-${item.id}`}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="font-medium text-sm truncate max-w-[180px] block">
+                      {item.name}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="max-w-[300px]">
+                      <p className="font-medium">{item.name}</p>
+                      {item.description && (
+                        <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                      )}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </TableCell>
         );
       case 'type':
@@ -1640,7 +1845,7 @@ export default function EstimateDetail() {
                       Columns
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuContent align="end" className="w-64">
                     <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
                     {columns.map(column => (
                       <DropdownMenuItem 
@@ -1656,6 +1861,45 @@ export default function EstimateDetail() {
                           className="mr-2"
                         />
                         {column.label}
+                      </DropdownMenuItem>
+                    ))}
+                    <Separator className="my-2" />
+                    <div className="px-2 py-1.5 text-sm font-semibold">Reorder columns</div>
+                    {columns.map((column, index) => (
+                      <DropdownMenuItem 
+                        key={`reorder-${column.id}`}
+                        onClick={(e) => e.preventDefault()}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="text-sm">{column.label}</span>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveColumnUp(column.id);
+                            }}
+                            disabled={index === 0}
+                            data-testid={`button-move-up-${column.id}`}
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveColumnDown(column.id);
+                            }}
+                            disabled={index === columns.length - 1}
+                            data-testid={`button-move-down-${column.id}`}
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
@@ -1875,47 +2119,7 @@ export default function EstimateDetail() {
                               </TableRow>
                               
                               {/* Render items in this group - only if not collapsed */}
-                              {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
-                                <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
-                                  {columns.filter(col => col.visible).map(column => (
-                                    <React.Fragment key={column.id}>
-                                      {renderCell(item, column.id)}
-                                    </React.Fragment>
-                                  ))}
-                                  <TableCell className="py-0.5">
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button 
-                                          variant="ghost" 
-                                          size="sm" 
-                                          className="h-8 w-8 p-0" 
-                                          data-testid={`button-actions-${item.id}`}
-                                          disabled={estimate?.isLocked}
-                                        >
-                                          <MoreHorizontal className="w-4 h-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem 
-                                          data-testid={`button-edit-item-${item.id}`}
-                                          disabled={estimate?.isLocked}
-                                        >
-                                          <Edit className="w-4 h-4 mr-2" />
-                                          Edit Item
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem 
-                                          data-testid={`button-delete-item-${item.id}`} 
-                                          className="text-destructive"
-                                          disabled={estimate?.isLocked}
-                                        >
-                                          <Trash2 className="w-4 h-4 mr-2" />
-                                          Delete Item
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                              {!group.isCollapsed && groupedItems[group.id]?.map((item) => renderItemWithSubItems(item))}
                             </React.Fragment>
                           ))}
                           
@@ -1937,47 +2141,7 @@ export default function EstimateDetail() {
                                 </TableRow>
                               )}
                               
-                              {ungroupedItems.map((item) => (
-                                <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
-                                  {columns.filter(col => col.visible).map(column => (
-                                    <React.Fragment key={column.id}>
-                                      {renderCell(item, column.id)}
-                                    </React.Fragment>
-                                  ))}
-                                  <TableCell className="py-0.5">
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button 
-                                          variant="ghost" 
-                                          size="sm" 
-                                          className="h-8 w-8 p-0" 
-                                          data-testid={`button-actions-${item.id}`}
-                                          disabled={estimate?.isLocked}
-                                        >
-                                          <MoreHorizontal className="w-4 h-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem 
-                                          data-testid={`button-edit-item-${item.id}`}
-                                          disabled={estimate?.isLocked}
-                                        >
-                                          <Edit className="w-4 h-4 mr-2" />
-                                          Edit Item
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem 
-                                          data-testid={`button-delete-item-${item.id}`} 
-                                          className="text-destructive"
-                                          disabled={estimate?.isLocked}
-                                        >
-                                          <Trash2 className="w-4 h-4 mr-2" />
-                                          Delete Item
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                              {ungroupedItems.map((item) => renderItemWithSubItems(item))}
                             </>
                           )}
                         </>
