@@ -1674,15 +1674,15 @@ export default function EstimateDetail() {
               )}
             </div>
             
-            <CardContent>
+            <CardContent className="p-0 overflow-x-auto">
               {itemsLoading || groupsLoading ? (
-                <div className="animate-pulse space-y-2">
+                <div className="animate-pulse space-y-2 p-6">
                   {[...Array(3)].map((_, i) => (
                     <div key={i} className="h-12 bg-gray-300 rounded"></div>
                   ))}
                 </div>
               ) : items.length === 0 && groups.length === 0 ? (
-                <div className="text-center py-8">
+                <div className="text-center py-8 px-6">
                   <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium mb-2">No items or groups added yet</h3>
                   <p className="text-muted-foreground mb-4">
@@ -1710,8 +1710,8 @@ export default function EstimateDetail() {
                   </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
                   <Table style={{ 
+                    tableLayout: 'fixed',
                     width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`,
                     minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`
                   }}>
@@ -1894,7 +1894,6 @@ export default function EstimateDetail() {
                     })()}
                   </TableBody>
                 </Table>
-              </div>
               )}
             </CardContent>
           </Card>
