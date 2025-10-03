@@ -1711,7 +1711,10 @@ export default function EstimateDetail() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
+                  <Table style={{ 
+                    width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`,
+                    minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`
+                  }}>
                     <colgroup>
                       {columns.filter(col => col.visible).map(column => (
                         <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
