@@ -1438,7 +1438,7 @@ export default function EstimateDetail() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           {/* Summary Cards */}
           {summary && (
             <div className="grid gap-4 md:grid-cols-4">
@@ -1711,6 +1711,7 @@ export default function EstimateDetail() {
                 </div>
               ) : (
                   <Table style={{ 
+                    display: 'table',
                     tableLayout: 'fixed',
                     width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`,
                     minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`
