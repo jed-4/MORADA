@@ -822,16 +822,15 @@ export default function EstimateDetail() {
   const handleExportEstimate = () => {
     if (!estimate || !items) return;
     
-    // Get visible column headers
-    const visibleColumns = columns.filter(col => col.visible);
-    const headers = visibleColumns.map(col => col.label);
+    // Get all column headers (not filtering by visibility)
+    const headers = columns.map(col => col.label);
     const csvRows = [headers.join(',')];
     
     // Add data rows for items
     items.forEach((item) => {
       const row: string[] = [];
       
-      visibleColumns.forEach(col => {
+      columns.forEach(col => {
         switch (col.id) {
           case 'item':
             row.push(escapeCsvField(item.name || ''));
