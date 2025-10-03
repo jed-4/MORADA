@@ -113,6 +113,10 @@ export default function EstimateDetail() {
   // New estimate creation state
   const [newEstimateName, setNewEstimateName] = useState("");
 
+  // Inline editing state for table cells
+  const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
+  const [editingValue, setEditingValue] = useState<any>("");
+
   // Column configuration state
   type ColumnConfig = { id: string; label: string; visible: boolean; width: string };
   const defaultColumns: ColumnConfig[] = [
@@ -429,6 +433,30 @@ export default function EstimateDetail() {
     },
   });
 
+  // Mutation for updating estimate items
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<InsertEstimateItem> }) => {
+      const response = await apiRequest("PATCH", `/api/estimate-items/${itemId}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "Item updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update item.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handlers for inline name editing
   const handleNameEdit = () => {
     if (estimate?.isLocked) {
@@ -547,6 +575,136 @@ export default function EstimateDetail() {
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleMarkupCancel();
+    }
+  };
+
+  // Handlers for inline cell editing
+  const handleCellEdit = (item: EstimateItem, field: string) => {
+    if (estimate?.isLocked) {
+      toast({
+        title: "Cannot Edit",
+        description: "This estimate is locked and cannot be modified.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setEditingCell({ itemId: item.id, field });
+    
+    // Set initial value based on field type
+    switch (field) {
+      case 'quantity':
+        setEditingValue(item.quantity);
+        break;
+      case 'priceExTax':
+        // Convert cents to dollars for display
+        setEditingValue((item.priceExTax / 100).toFixed(2));
+        break;
+      case 'priceIncTax':
+        // Convert cents to dollars for display
+        setEditingValue((item.priceIncTax / 100).toFixed(2));
+        break;
+      case 'type':
+        setEditingValue(item.type);
+        break;
+      case 'status':
+        setEditingValue(item.status);
+        break;
+      case 'name':
+        setEditingValue(item.name);
+        break;
+      default:
+        setEditingValue('');
+    }
+  };
+
+  const handleCellSave = (item: EstimateItem, field: string) => {
+    if (!editingCell) return;
+    
+    // Validate based on field type
+    if (field === 'quantity' || field === 'priceExTax' || field === 'priceIncTax') {
+      const numValue = parseFloat(editingValue);
+      if (isNaN(numValue) || numValue < 0) {
+        toast({
+          title: "Invalid Value",
+          description: "Please enter a valid positive number.",
+          variant: "destructive",
+        });
+        // Reset to original value in dollars for price fields
+        if (field === 'priceExTax' || field === 'priceIncTax') {
+          setEditingValue(((item as any)[field] / 100).toFixed(2));
+        } else {
+          setEditingValue((item as any)[field]);
+        }
+        return;
+      }
+    }
+    
+    if (field === 'name' && !editingValue.trim()) {
+      toast({
+        title: "Invalid Name",
+        description: "Item name cannot be empty.",
+        variant: "destructive",
+      });
+      setEditingValue(item.name);
+      return;
+    }
+    
+    // Prepare update data
+    let valueToSave: any;
+    if (field === 'priceExTax' || field === 'priceIncTax') {
+      // Convert dollars to cents
+      valueToSave = Math.round(parseFloat(editingValue) * 100);
+      
+      // Check if value actually changed (compare cents to cents)
+      if (valueToSave === (item as any)[field]) {
+        setEditingCell(null);
+        return;
+      }
+    } else if (field === 'quantity') {
+      valueToSave = parseFloat(editingValue);
+      if (valueToSave === item.quantity) {
+        setEditingCell(null);
+        return;
+      }
+    } else {
+      valueToSave = editingValue;
+      if (valueToSave === (item as any)[field]) {
+        setEditingCell(null);
+        return;
+      }
+    }
+    
+    const updateData: Partial<InsertEstimateItem> = {
+      [field]: valueToSave
+    };
+    
+    // If updating prices, recalculate tax
+    if (field === 'priceExTax' || field === 'priceIncTax') {
+      const priceExTax = field === 'priceExTax' ? valueToSave : item.priceExTax;
+      const priceIncTax = field === 'priceIncTax' ? valueToSave : item.priceIncTax;
+      updateData.taxAmount = priceIncTax - priceExTax;
+    }
+    
+    // Clear editing state first (optimistic update)
+    setEditingCell(null);
+    
+    // Update the item
+    updateItemMutation.mutate({ itemId: item.id, data: updateData });
+  };
+
+  const handleCellCancel = () => {
+    setEditingCell(null);
+    setEditingValue('');
+  };
+
+  const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCellSave(item, field);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleCellCancel();
     }
   };
 
@@ -862,14 +1020,36 @@ export default function EstimateDetail() {
 
   // Render cell based on column ID
   const renderCell = (item: EstimateItem, columnId: string) => {
+    const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
+    const isLocked = estimate?.isLocked;
+
     switch (columnId) {
       case 'item':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5 pl-8">
+              <Input
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
+                onBlur={() => handleCellSave(item, 'name')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                data-testid={`input-edit-name-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
         return (
-          <TableCell className="py-0.5 pl-8">
+          <TableCell 
+            className={`py-0.5 pl-8 ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'name')}
+            data-testid={`cell-name-${item.id}`}
+          >
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="font-medium text-sm truncate cursor-help max-w-[180px] block">
+                  <span className="font-medium text-sm truncate max-w-[180px] block">
                     {item.name}
                   </span>
                 </TooltipTrigger>
@@ -886,22 +1066,171 @@ export default function EstimateDetail() {
           </TableCell>
         );
       case 'type':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Select 
+                value={editingValue} 
+                onValueChange={(value) => {
+                  setEditingValue(value);
+                  // Auto-save on selection change
+                  setTimeout(() => {
+                    updateItemMutation.mutate({ 
+                      itemId: item.id, 
+                      data: { type: value } 
+                    });
+                    setEditingCell(null);
+                  }, 0);
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs border-primary" data-testid={`select-edit-type-${item.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="material">Material</SelectItem>
+                  <SelectItem value="labour">Labour</SelectItem>
+                  <SelectItem value="subcontractor">Subcontractor</SelectItem>
+                  <SelectItem value="fee">Fee</SelectItem>
+                </SelectContent>
+              </Select>
+            </TableCell>
+          );
+        }
         return (
-          <TableCell className="py-0.5">
+          <TableCell 
+            className={`py-0.5 ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'type')}
+            data-testid={`cell-type-${item.id}`}
+          >
             <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
           </TableCell>
         );
       case 'quantity':
-        return <TableCell className="py-0.5 text-sm">{formatQuantity(item.quantity, item.unitType)}</TableCell>;
-      case 'priceExTax':
-        return <TableCell className="py-0.5 text-sm">{formatCurrency(item.priceExTax)}</TableCell>;
-      case 'tax':
-        return <TableCell className="py-0.5 text-sm">{formatCurrency(item.taxAmount)}</TableCell>;
-      case 'totalIncTax':
-        return <TableCell className="py-0.5 text-sm font-medium">{formatCurrency(item.priceIncTax)}</TableCell>;
-      case 'status':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'quantity')}
+                onBlur={() => handleCellSave(item, 'quantity')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                min="0"
+                step="0.01"
+                data-testid={`input-edit-quantity-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
         return (
-          <TableCell className="py-0.5">
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'quantity')}
+            data-testid={`cell-quantity-${item.id}`}
+          >
+            {formatQuantity(item.quantity, item.unitType)}
+          </TableCell>
+        );
+      case 'priceExTax':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'priceExTax')}
+                onBlur={() => handleCellSave(item, 'priceExTax')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                min="0"
+                step="0.01"
+                data-testid={`input-edit-priceExTax-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'priceExTax')}
+            data-testid={`cell-priceExTax-${item.id}`}
+          >
+            {formatCurrency(item.priceExTax)}
+          </TableCell>
+        );
+      case 'tax':
+        return (
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-tax-${item.id}`}>
+            {formatCurrency(item.taxAmount)}
+          </TableCell>
+        );
+      case 'totalIncTax':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'priceIncTax')}
+                onBlur={() => handleCellSave(item, 'priceIncTax')}
+                className="h-7 text-sm border-primary font-medium"
+                autoFocus
+                min="0"
+                step="0.01"
+                data-testid={`input-edit-priceIncTax-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm font-medium ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'priceIncTax')}
+            data-testid={`cell-priceIncTax-${item.id}`}
+          >
+            {formatCurrency(item.priceIncTax)}
+          </TableCell>
+        );
+      case 'status':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Select 
+                value={editingValue} 
+                onValueChange={(value) => {
+                  setEditingValue(value);
+                  // Auto-save on selection change
+                  setTimeout(() => {
+                    updateItemMutation.mutate({ 
+                      itemId: item.id, 
+                      data: { status: value } 
+                    });
+                    setEditingCell(null);
+                  }, 0);
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs border-primary" data-testid={`select-edit-status-${item.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((opt: any) => (
+                    <SelectItem key={opt.key} value={opt.key}>{opt.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'status')}
+            data-testid={`cell-status-${item.id}`}
+          >
             <Badge 
               variant="outline"
               className="text-xs h-5"

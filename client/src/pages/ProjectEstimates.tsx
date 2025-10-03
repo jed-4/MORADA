@@ -40,7 +40,8 @@ import {
   Search,
   ArrowLeft,
   LayoutGrid,
-  Columns3
+  Columns3,
+  Download
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -93,6 +94,52 @@ export default function ProjectEstimates() {
 
   const handleBackToAllEstimates = () => {
     setLocation('/estimates');
+  };
+
+  // Helper function to escape CSV fields
+  const escapeCsvField = (field: string): string => {
+    return `"${field.replace(/"/g, '""')}"`;
+  };
+
+  // Handler for exporting estimates to CSV
+  const handleExportEstimates = () => {
+    const headers = ['Estimate Name', 'Project', 'Status', 'Subtotal', 'Markup', 'Tax', 'Total', 'Item Count'];
+    const csvRows = [headers.join(',')];
+    
+    filteredEstimates.forEach((estimate) => {
+      const projectName = project?.name || 'Unknown Project';
+      const statusName = estimateStatuses.find(s => s.key === estimate.status)?.name || estimate.status || 'Draft';
+      const summaryQuery = queryClient.getQueryData<EstimateSummary>(["/api/estimates", estimate.id, "summary"]);
+      
+      const row = [
+        escapeCsvField(estimate.name),
+        escapeCsvField(projectName),
+        escapeCsvField(statusName),
+        summaryQuery?.subtotal ? (summaryQuery.subtotal / 100).toFixed(2) : '0.00',
+        summaryQuery?.markupAmount ? (summaryQuery.markupAmount / 100).toFixed(2) : '0.00',
+        summaryQuery?.taxAmount ? (summaryQuery.taxAmount / 100).toFixed(2) : '0.00',
+        summaryQuery?.total ? (summaryQuery.total / 100).toFixed(2) : '0.00',
+        summaryQuery?.itemCount?.toString() || '0',
+      ];
+      csvRows.push(row.join(','));
+    });
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${project?.name || 'project'}_estimates_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Success",
+      description: `Exported ${filteredEstimates.length} estimates to CSV.`,
+    });
   };
 
   // Fetch project details
@@ -529,10 +576,21 @@ export default function ProjectEstimates() {
               </p>
             </div>
           </div>
-          <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
-            <Plus className="w-4 h-4 mr-2" />
-            New Estimate
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleExportEstimates}
+              disabled={filteredEstimates.length === 0}
+              data-testid="button-export-estimates"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export
+            </Button>
+            <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
+              <Plus className="w-4 h-4 mr-2" />
+              New Estimate
+            </Button>
+          </div>
         </div>
         
         {/* Section separator */}

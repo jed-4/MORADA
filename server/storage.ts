@@ -3760,8 +3760,40 @@ export class DbStorage implements IStorage {
   }
   async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
   async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> { throw new Error("Not implemented"); }
-  async lockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }
-  async unlockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }
+  
+  async lockEstimate(estimateId: string): Promise<Estimate | undefined> {
+    try {
+      const result = await db.update(schema.estimates)
+        .set({ 
+          isLocked: true, 
+          updatedAt: new Date() 
+        })
+        .where(eq(schema.estimates.id, estimateId))
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      console.error("Database error in lockEstimate:", error);
+      throw error;
+    }
+  }
+  
+  async unlockEstimate(estimateId: string): Promise<Estimate | undefined> {
+    try {
+      const result = await db.update(schema.estimates)
+        .set({ 
+          isLocked: false, 
+          updatedAt: new Date() 
+        })
+        .where(eq(schema.estimates.id, estimateId))
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      console.error("Database error in unlockEstimate:", error);
+      throw error;
+    }
+  }
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
     markupAmount: number;
