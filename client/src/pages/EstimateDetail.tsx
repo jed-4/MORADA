@@ -25,7 +25,8 @@ import {
   ChevronRight,
   Eye,
   GripVertical,
-  Filter
+  Filter,
+  Download
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -812,6 +813,74 @@ export default function EstimateDetail() {
     toggleLockMutation.mutate();
   };
 
+  // Helper function to escape CSV fields
+  const escapeCsvField = (field: string): string => {
+    return `"${field.replace(/"/g, '""')}"`;
+  };
+
+  // Handler for exporting estimate items to CSV
+  const handleExportEstimate = () => {
+    if (!estimate || !items) return;
+    
+    // Get visible column headers
+    const visibleColumns = columns.filter(col => col.visible);
+    const headers = visibleColumns.map(col => col.label);
+    const csvRows = [headers.join(',')];
+    
+    // Add data rows for items
+    items.forEach((item) => {
+      const row: string[] = [];
+      
+      visibleColumns.forEach(col => {
+        switch (col.id) {
+          case 'item':
+            row.push(escapeCsvField(item.name || ''));
+            break;
+          case 'type':
+            row.push(escapeCsvField(item.type || ''));
+            break;
+          case 'quantity':
+            row.push(item.quantity?.toString() || '0');
+            break;
+          case 'priceExTax':
+            row.push(item.priceExTax ? (item.priceExTax / 100).toFixed(2) : '0.00');
+            break;
+          case 'tax':
+            row.push(item.tax ? (item.tax / 100).toFixed(2) : '0.00');
+            break;
+          case 'totalIncTax':
+            row.push(item.totalIncTax ? (item.totalIncTax / 100).toFixed(2) : '0.00');
+            break;
+          case 'status':
+            row.push(escapeCsvField(item.status || ''));
+            break;
+          default:
+            row.push('');
+        }
+      });
+      
+      csvRows.push(row.join(','));
+    });
+    
+    // Create and download the file
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${estimate.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Success",
+      description: `Exported ${items.length} items to CSV.`,
+    });
+  };
+
   // Handler for toggling group collapse
   const handleToggleGroupCollapse = (groupId: string, currentIsCollapsed: boolean) => {
     toggleGroupCollapseMutation.mutate({ 
@@ -1413,6 +1482,16 @@ export default function EstimateDetail() {
             <Button variant="outline" size="sm" data-testid="button-edit-estimate">
               <Edit className="w-4 h-4 mr-2" />
               Edit
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleExportEstimate}
+              disabled={!items || items.length === 0}
+              data-testid="button-export-estimate"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export
             </Button>
             {estimate && (
               <Button 
