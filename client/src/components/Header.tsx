@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import ThemeToggle from "./ThemeToggle";
 
 // Project sections base configuration (from AppSidebar)
@@ -118,8 +117,6 @@ export default function Header() {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <SidebarTrigger data-testid="button-sidebar-toggle" />
       </div>
 
       <div className="flex items-center gap-2">
