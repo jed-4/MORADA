@@ -13,7 +13,8 @@ import {
   Search,
   DollarSign,
   LayoutGrid,
-  Columns3
+  Columns3,
+  Download
 } from "lucide-react";
 import {
   Select,
@@ -56,6 +57,57 @@ export default function Estimates() {
 
   const handleNewEstimate = () => {
     setLocation('/estimates/new');
+  };
+
+  // Helper function to escape CSV fields
+  const escapeCsvField = (field: string): string => {
+    return `"${field.replace(/"/g, '""')}"`;
+  };
+
+  // Handler for exporting estimates to CSV
+  const handleExportEstimates = () => {
+    // Create CSV content
+    const headers = ['Estimate Name', 'Project', 'Status', 'Subtotal', 'Markup', 'Tax', 'Total', 'Item Count'];
+    const csvRows = [headers.join(',')];
+    
+    // Add data rows for filtered estimates
+    filteredEstimates.forEach((estimate) => {
+      const projectName = getProjectName(estimate.projectId);
+      const statusName = estimateStatuses.find(s => s.key === estimate.status)?.name || estimate.status || 'Draft';
+      
+      // Fetch summary for this estimate (we'll need to get it from queries)
+      const summaryQuery = queryClient.getQueryData<EstimateSummary>(["/api/estimates", estimate.id, "summary"]);
+      
+      const row = [
+        escapeCsvField(estimate.name),
+        escapeCsvField(projectName),
+        escapeCsvField(statusName),
+        summaryQuery?.subtotal ? (summaryQuery.subtotal / 100).toFixed(2) : '0.00',
+        summaryQuery?.markupAmount ? (summaryQuery.markupAmount / 100).toFixed(2) : '0.00',
+        summaryQuery?.taxAmount ? (summaryQuery.taxAmount / 100).toFixed(2) : '0.00',
+        summaryQuery?.total ? (summaryQuery.total / 100).toFixed(2) : '0.00',
+        summaryQuery?.itemCount?.toString() || '0',
+      ];
+      csvRows.push(row.join(','));
+    });
+    
+    // Create and download the file
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `estimates_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Success",
+      description: `Exported ${filteredEstimates.length} estimates to CSV.`,
+    });
   };
 
   // Fetch all estimates across all projects
@@ -276,10 +328,21 @@ export default function Estimates() {
               View and manage estimates across all your projects
             </p>
           </div>
-          <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
-            <Plus className="h-4 w-4 mr-2" />
-            New Estimate
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleExportEstimates} 
+              data-testid="button-export-estimates"
+              disabled={filteredEstimates.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
+              <Plus className="h-4 w-4 mr-2" />
+              New Estimate
+            </Button>
+          </div>
         </div>
         
         {/* Section separator */}
