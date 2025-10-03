@@ -14,8 +14,8 @@
 ### A. Color Palette
 **Primary Colors:**
 - Light Mode: 0 0% 99% (near-white background), 0 0% 100% (pure white cards)
-- Brand Primary: 215 35% 45% (muted blue for CTAs - accessible contrast)
-- Secondary: 215 18% 80% (light muted blue for subtle emphasis)
+- Brand Primary: 240 50% 48% (periwinkle purple for CTAs - 8.2:1 contrast)
+- Secondary: 240 30% 85% (light purple for subtle emphasis)
 - Foreground: 220 12% 18% (dark text for strong readability)
 
 **Neutral Colors:**
@@ -30,10 +30,12 @@
 
 ### B. Typography
 **Font Families:** Inter (primary), JetBrains Mono (code/data)
-**Hierarchy:**
-- Headers: 600 weight, 1.5rem to 2.25rem
+**Hierarchy (enhanced for stronger contrast):**
+- H1/H2: 700 weight (bold), 1.5rem to 2.25rem
+- H3/H4: 600 weight (semibold), 1.125rem to 1.25rem  
 - Body: 400-500 weight, 0.875rem to 1rem
 - Captions: 400 weight, 0.75rem
+- Key principle: Bold headings create clear visual hierarchy against body text
 
 ### C. Layout System
 **Spacing Units:** Tailwind units with minimalist approach
