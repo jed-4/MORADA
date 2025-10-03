@@ -55,6 +55,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { Project } from "@shared/schema";
 import { useState, useEffect } from "react";
 import CreateProjectDialog from "./CreateProjectDialog";
+import { ProjectIcon } from "./ProjectIcon";
 
 // Coming soon items that should have strikeout styling
 const comingSoonItems = new Set([
@@ -193,10 +194,19 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="w-full justify-between" data-testid="button-projects-dropdown" disabled={projectsLoading}>
-              <span className="text-sm font-medium">
-                {currentProject ? currentProject.name : (projectsLoading ? "Loading..." : "Select Project")}
-              </span>
-              <ChevronDown className="h-4 w-4" />
+              <div className="flex items-center gap-2">
+                {currentProject && (
+                  <ProjectIcon 
+                    icon={currentProject.icon} 
+                    color={currentProject.color} 
+                    className="w-4 h-4 flex-shrink-0" 
+                  />
+                )}
+                <span className="text-sm font-medium truncate">
+                  {currentProject ? currentProject.name : (projectsLoading ? "Loading..." : "Select Project")}
+                </span>
+              </div>
+              <ChevronDown className="h-4 w-4 flex-shrink-0" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64 z-[60] shadow-lg border-2 bg-background/95 backdrop-blur-sm mt-2">
@@ -218,23 +228,30 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                   onClick={() => handleProjectSelect(project)}
                   className={currentProject?.id === project.id ? "bg-accent" : ""}
                 >
-                  <div className="flex flex-col w-full">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{project.name}</span>
-                      {project.isBusiness && (
-                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                          Business
-                        </Badge>
-                      )}
-                      {currentProject?.id === project.id && (
-                        <Badge variant="outline" className="text-xs ml-auto">
-                          Current
-                        </Badge>
+                  <div className="flex items-center gap-2 w-full">
+                    <ProjectIcon 
+                      icon={project.icon} 
+                      color={project.color} 
+                      className="w-4 h-4 flex-shrink-0" 
+                    />
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">{project.name}</span>
+                        {project.isBusiness && (
+                          <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0">
+                            Business
+                          </Badge>
+                        )}
+                        {currentProject?.id === project.id && (
+                          <Badge variant="outline" className="text-xs ml-auto flex-shrink-0">
+                            Current
+                          </Badge>
+                        )}
+                      </div>
+                      {project.description && (
+                        <span className="text-sm text-muted-foreground truncate">{project.description}</span>
                       )}
                     </div>
-                    {project.description && (
-                      <span className="text-sm text-muted-foreground truncate">{project.description}</span>
-                    )}
                   </div>
                 </DropdownMenuItem>
               ))
