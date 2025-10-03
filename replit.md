@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 3, 2025
+- **Estimate Table Column Resizing**: Implemented fully functional column resizing with horizontal scroll support for estimates table
+- **Architecture Fix**: Refactored from Tailwind classes to numeric pixel widths (widthPx) with colgroup architecture for stable column sizing
+- **Overflow System**: Added proper flex constraints (min-w-0) to parent containers and overflow-x-auto to CardContent to enable horizontal scrolling when columns exceed viewport width
+- **Table Layout**: Implemented table-layout: fixed with explicit width calculations from sum of visible column widths, ensuring smooth drag-to-resize with persistence in localStorage
+- **Technical Solution**: Key fix was adding min-w-0 to flex parent containers and display: table to force width respect, preventing viewport clamping while maintaining responsive design
+
 ### September 24, 2025
 - **Authentication System Fix**: Resolved critical login bug that was preventing all user access due to incorrect password hashing - implemented proper bcrypt validation
 - **Color Theme Selection**: Conducted comprehensive color testing with 9 total theme variations including 5 pre-selected colors (Deep Forest Green, Charcoal Slate, Teal, Deep Purple, Olive Green) and 4 custom soft purple variations (Lavender, Muted Purple, Dusty Purple, Periwinkle)
