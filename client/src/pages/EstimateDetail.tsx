@@ -1445,116 +1445,98 @@ export default function EstimateDetail() {
           {/* Collapsible Summary */}
           {summary && (
             <Card>
-              <CardHeader className="cursor-pointer hover-elevate" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
+              <CardHeader className="cursor-pointer hover-elevate py-3" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-6 w-6"
+                      className="h-5 w-5"
                       data-testid="button-toggle-summary"
                     >
                       {isSummaryExpanded ? (
-                        <ChevronDown className="h-4 w-4" />
+                        <ChevronDown className="h-3 w-3" />
                       ) : (
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="h-3 w-3" />
                       )}
                     </Button>
-                    <CardTitle className="flex items-center text-lg">
-                      <Calculator className="w-5 h-5 mr-2" />
+                    <CardTitle className="flex items-center text-sm font-medium">
+                      <Calculator className="w-4 h-4 mr-1" />
                       Estimate Total
                     </CardTitle>
                   </div>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-total">
+                  <div className="text-xl font-bold text-primary" data-testid="text-total">
                     {formatCurrency(summary.total)}
                   </div>
                 </div>
               </CardHeader>
               
               {isSummaryExpanded && (
-                <CardContent className="pt-0 space-y-3">
+                <CardContent className="pt-0 pb-3 space-y-2">
                   <Separator />
                   
                   {/* Subtotal Line */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Subtotal</p>
-                      <p className="text-xs text-muted-foreground">Ex-tax</p>
-                    </div>
-                    <p className="text-lg font-semibold" data-testid="text-subtotal">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal (ex-tax)</span>
+                    <span className="font-semibold" data-testid="text-subtotal">
                       {formatCurrency(summary.subtotal)}
-                    </p>
+                    </span>
                   </div>
 
                   {/* Markup Line */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">
-                        Markup (
-                        {isEditingMarkup ? (
-                          <Input
-                            value={editingMarkup}
-                            onChange={(e) => setEditingMarkup(e.target.value)}
-                            onKeyDown={handleMarkupKeyDown}
-                            onBlur={handleMarkupSave}
-                            className="inline-block w-16 h-6 text-sm bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                            data-testid="input-markup-percentage"
-                            autoFocus
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                          />
-                        ) : (
-                          <span 
-                            className="cursor-pointer hover:text-primary transition-colors underline decoration-dotted"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMarkupEdit();
-                            }}
-                            title="Click to edit markup percentage"
-                            data-testid="text-markup-percentage"
-                          >
-                            {estimate?.projectMarkupPercent || 0}
-                          </span>
-                        )}
-                        %)
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {estimate?.projectMarkupPercent || 0}% of subtotal
-                      </p>
-                    </div>
-                    <p className="text-lg font-semibold" data-testid="text-markup">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Markup (
+                      {isEditingMarkup ? (
+                        <Input
+                          value={editingMarkup}
+                          onChange={(e) => setEditingMarkup(e.target.value)}
+                          onKeyDown={handleMarkupKeyDown}
+                          onBlur={handleMarkupSave}
+                          className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          data-testid="input-markup-percentage"
+                          autoFocus
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                        />
+                      ) : (
+                        <span 
+                          className="cursor-pointer hover:text-primary transition-colors underline decoration-dotted"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkupEdit();
+                          }}
+                          title="Click to edit markup percentage"
+                          data-testid="text-markup-percentage"
+                        >
+                          {estimate?.projectMarkupPercent || 0}
+                        </span>
+                      )}
+                      %)
+                    </span>
+                    <span className="font-semibold" data-testid="text-markup">
                       {formatCurrency(summary.markupAmount)}
-                    </p>
+                    </span>
                   </div>
 
                   {/* GST Line */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">GST ({estimate?.taxRate || 10}%)</p>
-                      <p className="text-xs text-muted-foreground">
-                        On marked-up total
-                      </p>
-                    </div>
-                    <p className="text-lg font-semibold" data-testid="text-tax">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
+                    <span className="font-semibold" data-testid="text-tax">
                       {formatCurrency(summary.taxAmount)}
-                    </p>
+                    </span>
                   </div>
 
-                  <Separator />
+                  <Separator className="my-2" />
 
                   {/* Total Line (expanded view) */}
-                  <div className="flex items-center justify-between pt-2">
-                    <div>
-                      <p className="text-base font-semibold">Total</p>
-                      <p className="text-xs text-muted-foreground">
-                        Inc. {estimate?.taxRate || 10}% GST
-                      </p>
-                    </div>
-                    <p className="text-2xl font-bold text-primary">
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-sm font-medium">Total (inc. GST)</span>
+                    <span className="text-lg font-bold text-primary">
                       {formatCurrency(summary.total)}
-                    </p>
+                    </span>
                   </div>
                 </CardContent>
               )}
