@@ -16,19 +16,19 @@
 
   --background: 0 0% 99%;
 
-  --foreground: 220 12% 18%;
+  --foreground: 0 0% 0%;
 
   --border: 220 6% 90%;
 
   --card: 0 0% 100%;
 
-  --card-foreground: 220 12% 18%;
+  --card-foreground: 0 0% 0%;
 
   --card-border: 220 6% 92%;
 
   --sidebar: 0 0% 98%;
 
-  --sidebar-foreground: 220 12% 18%;
+  --sidebar-foreground: 0 0% 0%;
 
   --sidebar-border: 220 6% 92%;
 
@@ -38,13 +38,13 @@
 
   --sidebar-accent: 220 8% 94%;
 
-  --sidebar-accent-foreground: 220 12% 18%;
+  --sidebar-accent-foreground: 0 0% 0%;
 
   --sidebar-ring: 240 50% 65%; /* Matches primary color */
 
   --popover: 0 0% 100%;
 
-  --popover-foreground: 220 12% 18%;
+  --popover-foreground: 0 0% 0%;
 
   --popover-border: 220 6% 90%;
 
@@ -55,7 +55,7 @@
 
   --secondary: 240 30% 85%; /* Light purple */
 
-  --secondary-foreground: 220 12% 18%;
+  --secondary-foreground: 0 0% 0%;
 
   --muted: 220 6% 94%;
 
