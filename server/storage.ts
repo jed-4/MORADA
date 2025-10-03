@@ -3726,7 +3726,38 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined> { return undefined; }
+  async updateEstimateGroup(id: string, updateGroup: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined> {
+    try {
+      // Get the group to check if parent estimate is locked
+      const existingGroup = await db.query.estimateGroups.findFirst({
+        where: eq(schema.estimateGroups.id, id),
+      });
+
+      if (!existingGroup) {
+        return undefined;
+      }
+
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(existingGroup.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot update group in locked estimate. Unlock the estimate first.");
+      }
+
+      const result = await db
+        .update(schema.estimateGroups)
+        .set({
+          ...updateGroup,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.estimateGroups.id, id))
+        .returning();
+
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateEstimateGroup:", error);
+      throw error;
+    }
+  }
   async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
   async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> { throw new Error("Not implemented"); }
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> { return undefined; }

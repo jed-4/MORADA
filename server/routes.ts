@@ -65,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // TEMPORARY: Allow projects, tasks, estimates, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options')) {
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options')) {
       return next();
     }
     
