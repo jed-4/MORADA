@@ -14,7 +14,7 @@
 ### A. Color Palette
 **Primary Colors:**
 - Light Mode: 0 0% 99% (near-white background), 0 0% 100% (pure white cards)
-- Brand Primary: 240 50% 48% (periwinkle purple for CTAs - 8.2:1 contrast)
+- Brand Primary: 240 50% 65% (original periwinkle purple)
 - Secondary: 240 30% 85% (light purple for subtle emphasis)
 - Foreground: 220 12% 18% (dark text for strong readability)
 

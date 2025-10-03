@@ -32,7 +32,7 @@
 
   --sidebar-border: 220 6% 92%;
 
-  --sidebar-primary: 240 50% 48%; /* Purple - matches primary */
+  --sidebar-primary: 240 50% 65%; /* Purple - matches primary */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
@@ -40,7 +40,7 @@
 
   --sidebar-accent-foreground: 220 12% 18%;
 
-  --sidebar-ring: 240 50% 48%; /* Matches primary color */
+  --sidebar-ring: 240 50% 65%; /* Matches primary color */
 
   --popover: 0 0% 100%;
 
@@ -49,7 +49,7 @@
   --popover-border: 220 6% 90%;
 
   /* Minimalist Purple Palette */
-  --primary: 240 50% 48%; /* Periwinkle purple - accessible */
+  --primary: 240 50% 65%; /* Original Periwinkle purple */
 
   --primary-foreground: 0 0% 100%;
 
@@ -80,7 +80,7 @@
   --construction-safety: 60 100% 50%;
 
   --input: 220 8% 90%;
-  --ring: 240 50% 48%;
+  --ring: 240 50% 65%;
   --chart-1: 210 40% 50%;
   --chart-2: 142 70% 40%;
   --chart-3: 38 85% 50%;
