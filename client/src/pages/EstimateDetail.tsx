@@ -166,12 +166,12 @@ export default function EstimateDetail() {
     }
   }, [effectiveEstimateId, isNewEstimate]);
 
-  // Save column config to localStorage
+  // Save column config to localStorage (skip during active resizing)
   React.useEffect(() => {
-    if (effectiveEstimateId && !isNewEstimate) {
+    if (effectiveEstimateId && !isNewEstimate && !resizingColumn) {
       localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(columns));
     }
-  }, [columns, effectiveEstimateId, isNewEstimate]);
+  }, [columns, effectiveEstimateId, isNewEstimate, resizingColumn]);
 
   // Save filters to localStorage
   React.useEffect(() => {
@@ -874,8 +874,9 @@ export default function EstimateDetail() {
   const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
     e.preventDefault();
     const currentWidth = columns.find(col => col.id === columnId)?.width || 'w-[100px]';
-    const widthMatch = currentWidth.match(/\[(\d+)px\]/);
-    const pixelWidth = widthMatch ? parseInt(widthMatch[1]) : 100;
+    // Match both 'w-[100px]' and 'min-w-[180px]' patterns
+    const widthMatch = currentWidth.match(/(min-)?w-\[(\d+)px\]/);
+    const pixelWidth = widthMatch ? parseInt(widthMatch[2]) : 100;
     
     setResizingColumn(columnId);
     setResizeStartX(e.clientX);
@@ -894,14 +895,19 @@ export default function EstimateDetail() {
       const diff = e.clientX - resizeStartX;
       const newWidth = Math.max(80, resizeStartWidth + diff);
       
-      setColumns(prev => prev.map(col => 
-        col.id === resizingColumn 
-          ? { ...col, width: `w-[${newWidth}px]` }
-          : col
-      ));
+      setColumns(prev => prev.map(col => {
+        if (col.id === resizingColumn) {
+          // Preserve the original prefix (min-w or w)
+          const currentWidth = col.width;
+          const prefix = currentWidth.startsWith('min-w-') ? 'min-w-' : 'w-';
+          return { ...col, width: `${prefix}[${newWidth}px]` };
+        }
+        return col;
+      }));
     };
 
     const handleMouseUp = () => {
+      // Clear resizing state - this will trigger the localStorage save via useEffect
       setResizingColumn(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
