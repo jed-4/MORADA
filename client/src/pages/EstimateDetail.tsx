@@ -659,6 +659,36 @@ export default function EstimateDetail() {
     });
   };
 
+  // Handler for collapse/expand all groups
+  const handleToggleAllGroups = async () => {
+    if (!estimate || groups.length === 0) return;
+    
+    // Determine if we should collapse all or expand all
+    // If any group is expanded, collapse all. Otherwise, expand all.
+    const anyExpanded = groups.some(group => !group.isCollapsed);
+    const targetState = anyExpanded; // true = collapse all, false = expand all
+    
+    // Update all groups
+    const updatePromises = groups.map(group => 
+      apiRequest("PATCH", `/api/estimate-groups/${group.id}`, { isCollapsed: targetState })
+    );
+    
+    try {
+      await Promise.all(updatePromises);
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      toast({
+        title: "Success",
+        description: targetState ? "All groups collapsed." : "All groups expanded.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update groups.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSubmitGroup = (data: z.infer<typeof addGroupFormSchema>) => {
     if (!estimate) return;
     
@@ -1236,6 +1266,30 @@ export default function EstimateDetail() {
             
             {/* Filter Bar */}
             <div className="px-6 py-3 border-b flex items-center gap-3">
+              {groups.length > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={handleToggleAllGroups}
+                    data-testid="button-toggle-all-groups"
+                  >
+                    {groups.some(group => !group.isCollapsed) ? (
+                      <>
+                        <ChevronDown className="h-4 w-4 mr-2" />
+                        Collapse All
+                      </>
+                    ) : (
+                      <>
+                        <ChevronRight className="h-4 w-4 mr-2" />
+                        Expand All
+                      </>
+                    )}
+                  </Button>
+                  <Separator orientation="vertical" className="h-6" />
+                </>
+              )}
               <Filter className="h-4 w-4 text-muted-foreground" />
               <Select value={filterType} onValueChange={setFilterType}>
                 <SelectTrigger className="w-[140px] h-8" data-testid="filter-type">
