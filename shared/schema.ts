@@ -321,6 +321,22 @@ export const PROJECT_TYPES = [
 
 export type ProjectType = typeof PROJECT_TYPES[number];
 
+// Project Icons (Lucide React icon names)
+export const PROJECT_ICONS = [
+  { name: 'Building2', label: 'Building' },
+  { name: 'Home', label: 'Home' },
+  { name: 'Hammer', label: 'Hammer' },
+  { name: 'Wrench', label: 'Wrench' },
+  { name: 'HardHat', label: 'Hard Hat' },
+  { name: 'Drill', label: 'Drill' },
+  { name: 'Paintbrush', label: 'Paint Brush' },
+  { name: 'Scissors', label: 'Scissors' },
+  { name: 'Ruler', label: 'Ruler' },
+  { name: 'PenTool', label: 'Pen Tool' },
+  { name: 'Boxes', label: 'Boxes' },
+  { name: 'Package', label: 'Package' },
+] as const;
+
 // Projects (for task organization)
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
