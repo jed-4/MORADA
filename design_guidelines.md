@@ -1,27 +1,32 @@
 # Project Management Software Design Guidelines
 
 ## Design Approach
-**Design System Approach**: Material Design - optimized for productivity and information-dense applications with strong visual feedback suitable for construction industry workflows.
+**Design System Approach**: White & Minimalist - optimized for clarity, focus, and reduced visual noise while maintaining productivity for construction industry workflows.
 
 **Key Design Principles:**
-- Professional construction industry aesthetic with clean, organized layouts
-- Clear visual hierarchy for complex project data
-- Efficient navigation between projects and modules
-- Dashboard-centric design optimized for quick decision making
+- Clean, minimalist aesthetic with generous white space
+- Subtle visual hierarchy through typography and spacing
+- Muted color palette with intentional accent colors
+- Focus on content with minimal decorative elements
 
 ## Core Design Elements
 
 ### A. Color Palette
 **Primary Colors:**
-- Dark Mode: 220 15% 12% (dark slate background), 220 25% 20% (card backgrounds)
-- Light Mode: 220 5% 98% (light background), 0 0% 100% (card backgrounds)
-- Brand Primary: 210 90% 50% (professional blue for CTAs and active states)
-- Secondary: 220 10% 65% (muted text and borders)
+- Light Mode: 0 0% 99% (near-white background), 0 0% 100% (pure white cards)
+- Brand Primary: 215 30% 55% (muted blue for CTAs and key actions)
+- Secondary: 215 18% 80% (light muted blue for subtle emphasis)
+- Foreground: 220 12% 18% (dark text for strong readability)
 
-**Accent Colors:**
-- Success: 142 70% 45% (project completion, task done)
-- Warning: 38 85% 60% (deadlines, pending items)
-- Error: 0 75% 55% (overdue tasks, critical issues)
+**Neutral Colors:**
+- Border: 220 6% 90% (subtle borders)
+- Muted: 220 6% 94% (background variations)
+- Muted Foreground: 220 10% 45% (secondary text)
+
+**Accent Colors (unchanged for semantic meaning):**
+- Success: 142 76% 36% (project completion, task done)
+- Warning: 25 95% 53% (deadlines, pending items)
+- Error: 0 84% 60% (overdue tasks, critical issues)
 
 ### B. Typography
 **Font Families:** Inter (primary), JetBrains Mono (code/data)
@@ -31,10 +36,16 @@
 - Captions: 400 weight, 0.75rem
 
 ### C. Layout System
-**Spacing Units:** Tailwind units of 2, 4, 6, 8, 12, 16
-- Compact data displays: p-2, gap-2
-- Standard sections: p-4, gap-4, m-4
-- Major layout divisions: p-8, gap-8
+**Spacing Units:** Tailwind units with minimalist approach
+- Compact data displays: p-3, gap-2
+- Standard sections: p-4, gap-3, m-3
+- Major layout divisions: p-6, gap-6
+
+**Visual Hierarchy:**
+- Rely on typography weight, size, and generous whitespace
+- Use subtle borders (1px) instead of heavy shadows
+- Minimal elevation changes - content speaks for itself
+- Intentional use of color for CTAs and status only
 
 ### D. Component Library
 
