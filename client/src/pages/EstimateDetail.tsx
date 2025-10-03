@@ -1439,92 +1439,99 @@ export default function EstimateDetail() {
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
         <div className="space-y-6 min-w-0">
-          {/* Summary Cards */}
+          {/* Summary Cards - Two Card Split Design */}
           {summary && (
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Breakdown Card */}
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Subtotal</CardTitle>
-                  <Calculator className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold" data-testid="text-subtotal">
-                    {formatCurrency(summary.subtotal)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Ex-tax
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Markup (
-                    {isEditingMarkup ? (
-                      <Input
-                        value={editingMarkup}
-                        onChange={(e) => setEditingMarkup(e.target.value)}
-                        onKeyDown={handleMarkupKeyDown}
-                        onBlur={handleMarkupSave}
-                        className="inline-block w-16 h-5 text-xs bg-transparent border-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                        data-testid="input-markup-percentage"
-                        autoFocus
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
-                    ) : (
-                      <span 
-                        className="cursor-pointer hover:text-blue-600 transition-colors underline decoration-dotted"
-                        onClick={handleMarkupEdit}
-                        title="Click to edit markup percentage"
-                        data-testid="text-markup-percentage"
-                      >
-                        {estimate?.projectMarkupPercent || 0}
-                      </span>
-                    )}
-                    %)
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <Calculator className="w-5 h-5 mr-2" />
+                    Cost Breakdown
                   </CardTitle>
-                  <Calculator className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold" data-testid="text-markup">
-                    {formatCurrency(summary.markupAmount)}
+                <CardContent className="space-y-3">
+                  {/* Subtotal Line */}
+                  <div className="flex items-center justify-between pb-3 border-b">
+                    <div>
+                      <p className="text-sm font-medium">Subtotal</p>
+                      <p className="text-xs text-muted-foreground">Ex-tax</p>
+                    </div>
+                    <p className="text-xl font-semibold" data-testid="text-subtotal">
+                      {formatCurrency(summary.subtotal)}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {estimate?.projectMarkupPercent || 0}% of subtotal
-                  </p>
+
+                  {/* Markup Line */}
+                  <div className="flex items-center justify-between pb-3 border-b">
+                    <div>
+                      <p className="text-sm font-medium">
+                        Markup (
+                        {isEditingMarkup ? (
+                          <Input
+                            value={editingMarkup}
+                            onChange={(e) => setEditingMarkup(e.target.value)}
+                            onKeyDown={handleMarkupKeyDown}
+                            onBlur={handleMarkupSave}
+                            className="inline-block w-16 h-6 text-sm bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            data-testid="input-markup-percentage"
+                            autoFocus
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                          />
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:text-primary transition-colors underline decoration-dotted"
+                            onClick={handleMarkupEdit}
+                            title="Click to edit markup percentage"
+                            data-testid="text-markup-percentage"
+                          >
+                            {estimate?.projectMarkupPercent || 0}
+                          </span>
+                        )}
+                        %)
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {estimate?.projectMarkupPercent || 0}% of subtotal
+                      </p>
+                    </div>
+                    <p className="text-xl font-semibold" data-testid="text-markup">
+                      {formatCurrency(summary.markupAmount)}
+                    </p>
+                  </div>
+
+                  {/* GST Line */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">GST ({estimate?.taxRate || 10}%)</p>
+                      <p className="text-xs text-muted-foreground">
+                        On marked-up total
+                      </p>
+                    </div>
+                    <p className="text-xl font-semibold" data-testid="text-tax">
+                      {formatCurrency(summary.taxAmount)}
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">GST ({estimate?.taxRate || 10}%)</CardTitle>
-                  <Calculator className="h-4 w-4 text-muted-foreground" />
+              {/* Total Card */}
+              <Card className="bg-primary/5 border-primary/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg text-primary">
+                    <Calculator className="w-5 h-5 mr-2" />
+                    Estimate Total
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold" data-testid="text-tax">
-                    {formatCurrency(summary.taxAmount)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {estimate?.taxRate || 10}% on marked-up total
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total</CardTitle>
-                  <Calculator className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-600" data-testid="text-total">
+                <CardContent className="flex flex-col items-center justify-center py-8">
+                  <p className="text-sm text-muted-foreground mb-2">Final Amount</p>
+                  <p className="text-5xl font-bold text-primary" data-testid="text-total">
                     {formatCurrency(summary.total)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Final amount
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Inc. {estimate?.taxRate || 10}% GST
                   </p>
                 </CardContent>
               </Card>
