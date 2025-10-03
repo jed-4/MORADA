@@ -1532,7 +1532,7 @@ export default function EstimateDetail() {
           )}
 
           {/* Items Table */}
-          <Card>
+          <Card className="min-w-0">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center">
                 <FileText className="w-5 h-5 mr-2" />
