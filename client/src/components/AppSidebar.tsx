@@ -263,12 +263,10 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <div className="flex items-center justify-between w-full">
-                        <span>{item.title}</span>
-                        {showComingSoon && comingSoonItems.has(item.title) && (
-                          <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
-                        )}
-                      </div>
+                      <span>{item.title}</span>
+                      {showComingSoon && comingSoonItems.has(item.title) && (
+                        <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -329,12 +327,10 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business/messages">
                     <MessageSquare className="h-4 w-4" />
-                    <div className="flex items-center justify-between w-full">
-                      <span>Messages</span>
-                      {showComingSoon && comingSoonBusinessItems.has("Messages") && (
-                        <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
-                      )}
-                    </div>
+                    <span>Messages</span>
+                    {showComingSoon && comingSoonBusinessItems.has("Messages") && (
+                      <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
+                    )}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -347,12 +343,10 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business/leave">
                     <Calendar className="h-4 w-4" />
-                    <div className="flex items-center justify-between w-full">
-                      <span>Sick Days & Leave</span>
-                      {showComingSoon && comingSoonBusinessItems.has("Sick Days & Leave") && (
-                        <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
-                      )}
-                    </div>
+                    <span>Sick Days & Leave</span>
+                    {showComingSoon && comingSoonBusinessItems.has("Sick Days & Leave") && (
+                      <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
+                    )}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -366,12 +360,10 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <div className="flex items-center justify-between w-full">
-                        <span>{item.title}</span>
-                        {showComingSoon && comingSoonBusinessItems.has(item.title) && (
-                          <span className="text-xs text-muted-foreground/60 ml-2">coming soon</span>
-                        )}
-                      </div>
+                      <span>{item.title}</span>
+                      {showComingSoon && comingSoonBusinessItems.has(item.title) && (
+                        <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
