@@ -1891,7 +1891,7 @@ export default function EstimateDetail() {
                     })()}
                   </TableBody>
                 </Table>
-                </div>
+              </div>
               )}
             </CardContent>
           </Card>
