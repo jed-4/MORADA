@@ -14,7 +14,9 @@ import { Separator } from "@/components/ui/separator";
 import { Save, Settings, Palette, Info, Archive, Users, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project, PROJECT_TYPES, ProjectType } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS } from "@shared/schema";
+import { ProjectIcon } from "@/components/ProjectIcon";
+import * as LucideIcons from "lucide-react";
 
 export default function ProjectSettings() {
   const { currentProject, setCurrentProject } = useProject();
@@ -31,6 +33,7 @@ export default function ProjectSettings() {
     jobNumber: currentProject?.jobNumber || "",
     projectType: currentProject?.projectType || "",
     color: currentProject?.color || "#3b82f6",
+    icon: currentProject?.icon || "Building2",
     isActive: currentProject?.isActive ?? true,
     isBusiness: currentProject?.isBusiness ?? false,
   });
@@ -56,6 +59,7 @@ export default function ProjectSettings() {
         jobNumber: currentProject.jobNumber || "",
         projectType: currentProject.projectType || "",
         color: currentProject.color || "#3b82f6",
+        icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
         isBusiness: currentProject.isBusiness,
       });
@@ -101,6 +105,7 @@ export default function ProjectSettings() {
         jobNumber: currentProject.jobNumber || "",
         projectType: currentProject.projectType || "",
         color: currentProject.color || "#3b82f6",
+        icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
         isBusiness: currentProject.isBusiness,
       });
@@ -346,6 +351,57 @@ export default function ProjectSettings() {
                 />
                 <span className="text-sm font-mono" data-testid="text-project-color">
                   {currentProject.color || "#3b82f6"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Project Icon</Label>
+            {isEditing ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-3 bg-muted rounded-md">
+                  <ProjectIcon icon={formData.icon} color={formData.color} className="w-8 h-8" />
+                  <div className="text-sm">
+                    <div className="font-medium">Preview</div>
+                    <div className="text-muted-foreground">
+                      {PROJECT_ICONS.find(i => i.name === formData.icon)?.label || "Icon"}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-6 gap-2">
+                  {PROJECT_ICONS.map((iconOption) => {
+                    const IconComponent = (LucideIcons as any)[iconOption.name];
+                    return (
+                      <button
+                        key={iconOption.name}
+                        className={`p-3 rounded-md border-2 hover-elevate active-elevate-2 ${
+                          formData.icon === iconOption.name ? 'border-foreground' : 'border-border'
+                        }`}
+                        onClick={() => setFormData({ ...formData, icon: iconOption.name })}
+                        title={iconOption.label}
+                        data-testid={`button-icon-${iconOption.name}`}
+                      >
+                        {IconComponent && (
+                          <IconComponent 
+                            className="w-6 h-6 mx-auto" 
+                            style={{ color: formData.color }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-3 bg-muted rounded-md">
+                <ProjectIcon 
+                  icon={currentProject.icon} 
+                  color={currentProject.color} 
+                  className="w-6 h-6" 
+                />
+                <span className="text-sm" data-testid="text-project-icon">
+                  {PROJECT_ICONS.find(i => i.name === currentProject.icon)?.label || "Building"}
                 </span>
               </div>
             )}
