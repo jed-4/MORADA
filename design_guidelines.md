@@ -14,7 +14,7 @@
 ### A. Color Palette
 **Primary Colors:**
 - Light Mode: 0 0% 99% (near-white background), 0 0% 100% (pure white cards)
-- Brand Primary: 215 30% 55% (muted blue for CTAs and key actions)
+- Brand Primary: 215 35% 45% (muted blue for CTAs - accessible contrast)
 - Secondary: 215 18% 80% (light muted blue for subtle emphasis)
 - Foreground: 220 12% 18% (dark text for strong readability)
 
