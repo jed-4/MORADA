@@ -1710,13 +1710,20 @@ export default function EstimateDetail() {
                   </div>
                 </div>
               ) : (
-                <Table>
+                <Table style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    {columns.filter(col => col.visible).map(column => (
+                      <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                    ))}
+                    <col style={{ width: '80px' }} />
+                  </colgroup>
                   <TableHeader>
                     <TableRow className="h-8">
                       {columns.filter(col => col.visible).map(column => (
                         <TableHead 
                           key={column.id}
-                          className={`py-1 text-xs font-medium ${column.width} relative group`}
+                          className="py-1 text-xs font-medium relative group"
+                          style={{ width: `${column.widthPx}px` }}
                         >
                           <div className="flex items-center gap-1">
                             <span>{column.label}</span>
@@ -1730,7 +1737,7 @@ export default function EstimateDetail() {
                           />
                         </TableHead>
                       ))}
-                      <TableHead className="py-1 text-xs font-medium w-[80px]">Actions</TableHead>
+                      <TableHead className="py-1 text-xs font-medium">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
