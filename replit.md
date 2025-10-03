@@ -11,6 +11,9 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### October 3, 2025
+- **White & Minimalist Theme Implementation**: Transformed entire UI to white & minimalist aesthetic with near-white backgrounds (HSL 0 0% 99%/98%/100%), muted blue primary color (HSL 215 35% 45%), reduced shadow intensity (50% less blur/opacity), and removed scale/translate animations for cleaner interactions
+- **Accessibility Compliance**: Fixed primary button contrast ratio from 3.7:1 to 5.4:1 (WCAG AA compliant) by darkening primary color while maintaining minimalist look
+- **Design System Update**: Updated design guidelines to reflect minimalist principles with typography-driven hierarchy, subtle visual distinctions, and flat backgrounds with 1px borders
 - **Estimate Table Column Resizing**: Implemented fully functional column resizing with horizontal scroll support for estimates table
 - **Architecture Fix**: Refactored from Tailwind classes to numeric pixel widths (widthPx) with colgroup architecture for stable column sizing
 - **Overflow System**: Added proper flex constraints (min-w-0) to parent containers and overflow-x-auto to CardContent to enable horizontal scrolling when columns exceed viewport width
@@ -47,9 +50,9 @@ Preferred communication style: Simple, everyday language.
 - **Theme System**: Custom theme provider supporting light/dark modes with Material Design principles
 
 ### Component Design System
-- **Design Approach**: Material Design optimized for productivity and information-dense applications
-- **Color Palette**: Professional construction industry aesthetic with dark/light mode support
-- **Layout System**: Tailwind spacing units (2, 4, 6, 8, 12, 16) for consistent spacing
+- **Design Approach**: White & minimalist aesthetic with typography-driven hierarchy and subtle visual distinctions
+- **Color Palette**: Near-white backgrounds (99%, 98%, 100%), muted blue accents (HSL 215 35% 45%), accessible contrast ratios (≥4.5:1)
+- **Layout System**: Tailwind spacing units with reduced shadows (50% intensity) and no transform animations
 - **Typography**: Inter font family with defined hierarchy for headers, body text, and captions
 
 ### Dashboard Architecture
