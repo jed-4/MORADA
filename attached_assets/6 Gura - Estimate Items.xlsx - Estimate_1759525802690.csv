@@ -1,0 +1,857 @@
+Name,Parent Name,Cost Type,Status,Cost Code,Cost Title,Quantity,Unit cost ex. tax,Unit tax,Unit cost inc. tax,Unit,Builder Cost,Markup %,Markup $,Unit price ex. tax,Unit price tax,Unit price inc. tax,Amount,Description
+Notes & RFI's,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Estimated Project Duration,Notes & RFI's,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Weeks,0,20,0,0,0,0,0,
+Contingency,Notes & RFI's,FEE,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,"A contingency of 3% is recommended for all projects. If you would like this factored into tour proposa please advise
+"
+BAL Rating,Notes & RFI's,FEE,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Build Area,Notes & RFI's,FEE,Incomplete,FLRT,Flat rate,0,0,0,0,m2,0,20,0,0,0,0,0,
+Council,Notes & RFI's,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,"Council Fees, Bonds, Levy's &amp; Permits: No Allowance. Paid By Owner
+"
+Construction Documentation & Architect,Notes & RFI's,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,"No Allowance for Architectural Works or Additional Costs for Architecturally Administered Contracts
+"
+Critical Inspection / Private Certifier,Notes & RFI's,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,"Critical Inspections During a Construction Project - Owner to Pay Direct
+"
+Engineers,Notes & RFI's,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,"Owner to Pay Direct For All Requirements for Engineers Including Inspections
+"
+Preliminaries & General,,GROUP,Incomplete,,,,,,,,772,0,154.4,,,,1019.04,
+LABOUR - Preliminaries,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+LABOUR - Off-Site Project Management,Preliminaries & General,LABOUR,Incomplete,120,Labour - Project Management (Off-Site),0,100,10,110,unit,0,20,0,0,0,0,0,
+LABOUR - On-Site Project Management,Preliminaries & General,LABOUR,Incomplete,121,Labour - Project Management (On-Site),0,90,9,99,unit,0,20,0,0,0,0,0,
+Home Building Compensation Fund,Preliminaries & General,ALLOWANCE,Incomplete,101,HBCF,0,600,60,660,unit,0,20,0,0,0,0,0,"HBCF is an insurance policy that provides a safety net for home owners in NSW faced with incomplete and defective building work carried out by a builder or tradesperson, and is required on all jobs valued over $20,000. The cost is calculated on the total of construction costs.
+NOTE - As this fee is calculated on total construction costs it may be necessary to be adjusted while calculating the final invoice on the project if the cost of the project increases.
+"
+HBCF Broker Fee,Preliminaries & General,MATERIAL,Incomplete,101,HBCF,1,510,51,561,unit,510,20,102,612,61.2,673.2,673.2,
+HIA Contract,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,1,40,4,44,unit,40,20,8,48,4.8,52.8,52.8,
+Project Management,Preliminaries & General,LABOUR,Complete,120,Labour - Project Management (Off-Site),0,900,90,990,Weeks,0,20,0,0,0,0,0,"A job is only as good as the supervision it gets during construction. We pride ourselves on keeping up to date with all current industry rules and regulations, which we then make sure all our carpenters and contractors adhere to. All our projects, no matter how big or small all get constant supervision by our team, every single element is checked and passed by our stringent quality control measures.
+"
+Construction Insurance,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,"Protects your project against unforeseen damage or delays due to events like storms or equipment failure, ensuring continuity and financial security
+"
+Public Liability Insurance,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,"Covers any accidental injury or property damage to third parties on site, providing peace of mind for you and the community
+"
+Work Cover,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,Ea,0,20,0,0,0,0,0,"This covers the mandatory workers’ compensation insurance required to ensure all on-site workers are protected in the event of injury. It’s a legal requirement and ensures compliance with workplace safety and insurance obligations throughout the project
+"
+Buildpass,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,175,17.5,192.5,unit,0,20,0,0,0,0,0,"We use Buildpass as our site safety hub to ensure all works are performed with complete safety in mind
+"
+Health & Safety,Preliminaries & General,FEE,Incomplete,100,Preliminaries,1,1,0.1,1.1,unit,1,20,0.2,1.2,0.12,1.32,1.32,"Site health and safety measures throughout build
+Hazardco safety software used on-site
+"
+Toolbox Meeting On-site,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,1,1,0.1,1.1,unit,1,20,0.2,1.2,0.12,1.32,1.32,
+Job Photography,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,1000,100,1100,unit,0,20,0,0,0,0,0,
+Power Cost During Build,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,
+Buildern Project Management,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,250,25,275,unit,0,20,0,0,0,0,0,"We use Buildern as our project management software
+This gives you access to the client portal where you can view the project information, schedule &amp; site diaries
+"
+Contract Signing,Preliminaries & General,LABOUR,Incomplete,100,Preliminaries,0,80,8,88,unit,0,20,0,0,0,0,0,
+Quantity Surveying,Preliminaries & General,SUBCONTRACTOR,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,
+Future Builder,Preliminaries & General,FEE,Incomplete,100,Preliminaries,0,1813.64,181.364,1995.004,unit,0,20,0,0,0,0,0,
+Asbestos Testing,Preliminaries & General,FEE,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,"Allowance for testing for asbestos as necessary
+"
+Subscriptions,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,172,17.2,189.2,Months,0,20,0,0,0,0,0,
+Handover Gift,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,0,200,20,220,unit,0,20,0,0,0,0,0,
+Waste Management,Preliminaries & General,LABOUR,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,"Design Waste Management Plan and Existing Resources plan to Reduce, Re-use or Recycle existing materials
+"
+Refer & Earn,Preliminaries & General,FEE,Incomplete,100,Preliminaries,1,0,0,0,unit,0,20,0,0,0,0,0,
+Warehouse,Preliminaries & General,FEE,Incomplete,100,Preliminaries,1,220,22,242,Weeks,220,20,44,264,26.4,290.4,290.4,
+New Tool,Preliminaries & General,MATERIAL,Incomplete,100,Preliminaries,1,0,0,0,unit,0,20,0,0,0,0,0,
+Site Identification Surveying,Preliminaries & General,SUBCONTRACTOR,Incomplete,100,Preliminaries,1,0,0,0,unit,0,20,0,0,0,0,0,"Licenced Surveyor to carry out site identification and peg all boundaries
+"
+Final Building Location Report,Preliminaries & General,SUBCONTRACTOR,Incomplete,100,Preliminaries,1,0,0,0,unit,0,20,0,0,0,0,0,"Licenced surveyor to provide set-out certificate for the new home to provide to certifier for final certification
+"
+Site Services,,GROUP,Incomplete,,,,,,,,300,0,60,,,,396,
+LABOUR - Site Establishment,Site Services,MATERIAL,Incomplete,124,Labour - Site Establishment,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+LABOUR - Site Services,Site Services,MATERIAL,Incomplete,125,Labour - Site Services,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Site Establishment,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,day,0,20,0,0,0,0,0,"Establishment of all equipment &amp; materials required for construciton
+"
+Site Decommission,Site Services,LABOUR,Incomplete,202,Site Services,0,0,0,0,day,0,20,0,0,0,0,0,"Pack up and clean of all construction materiasl and equipment on-site.
+Removal of all signage, fencing and items that were on-site and responsible by Lighthouse Projects
+"
+Skip Bin,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,"Skip bins to be on-site at all times during construction. If suitable access is unavailable, then rubbish will be contained in a suitable area and collected in a truck to be taken to the dump. This would be carried out as required throughout the construction of your project to ensure the site is kept tidy.
+"
+Waste Disposal,Site Services,MATERIAL,Complete,111,Waste Disposal,1,200,20,220,unit,200,20,40,240,24,264,264,"Skip bins or trailer to be on-site at all times during construction. If suitable access is unavailable, then rubbish will be contained in a suitable area and collected in a truck to be taken to the dump. This would be carried out as required throughout the construction of your project to ensure the site is kept tidy.
+"
+Site Signage,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,"We are required by law to show all necessary signage for Workplace Health and Safety and NSW legislation. This includes signage that shows our site rules and business information.
+"
+Site Toilet,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,month,0,20,0,0,0,0,0,"We have included for a temporary toilet to be on-site at all times during construction unless noted otherwise. Toilet to be dropped off to and picked from site, as well as pumped out regularly
+"
+Site Fence,Site Services,MATERIAL,Incomplete,202,Site Services,1,0,0,0,unit,0,20,0,0,0,0,0,
+Site Toilet,Site Services,ASSEMBLY,Incomplete,,,0,0,0,0,Weeks,0,0,0,0,0,0,0,"We have included for a temporary toilet to be on-site at all times during construction unless noted otherwise. Toilet to be dropped off to and picked from site, as well as pumped out regularly
+"
+Site Toilet Hire,Site Toilet,EQUIPMENT,Incomplete,202,Site Services,0,80,8,88,unit,0,20,0,0,0,0,0,
+Pump Out,Site Toilet,EQUIPMENT,Incomplete,202,Site Services,0,70,7,77,unit,0,20,0,0,0,0,0,
+Drop Off,Site Toilet,EQUIPMENT,Incomplete,202,Site Services,0,150,15,165,unit,0,20,0,0,0,0,0,
+Pick Up,Site Toilet,EQUIPMENT,Incomplete,202,Site Services,0,150,15,165,unit,0,20,0,0,0,0,0,
+Site Toilet - Purchase ( cheaper than hiring ),Site Services,MATERIAL,Incomplete,FLRT,Flat rate,0,2090.91,209.091,2300.001,Ea,0,20,0,0,0,0,0,
+Site Toilet - Purchase Hire,Site Services,MATERIAL,Incomplete,FLRT,Flat rate,0,40.91,4.091,45.001,Weeks,0,20,0,0,0,0,0,
+Site Toilet - Pump + Clean,Site Services,MATERIAL,Incomplete,FLRT,Flat rate,0,72.73,7.273,80.003,Ea,0,20,0,0,0,0,0,
+Site Toilet - Delivery & Pickup,Site Services,MATERIAL,Incomplete,FLRT,Flat rate,0,136.36,13.636,149.996,Ea,0,20,0,0,0,0,0,
+Site cleans throughout build,Site Services,LABOUR,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,"Site to be regularly cleaned and looking respectable and being safe for trades to work in and around
+"
+Ply for walls while concreting,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,ea,0,20,0,0,0,0,0,
+Floor Protection,Site Services,MATERIAL,Incomplete,202,Site Services,0,100,10,110,unit,0,20,0,0,0,0,0,"Floor protection installed to building. Floor protection to stay down for duration of the build.
+"
+Floor Protection,Site Services,MATERIAL,Incomplete,202,Site Services,0,4.55,0.455,5.005,m2,0,20,0,0,0,0,0,"Floor protection installed to building. Floor protection to stay down for duration of the build.
+"
+Temporary Fencing,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,Lm,0,20,0,0,0,0,0,"Setting up and hiring site fencing as required for workplace health and safety. Site fencing to remain on-site at all times during construction. ***We have allowed for this to be across the front boundary only.***
+"
+Site Shed,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,Allowance,0,20,0,0,0,0,0,
+Temporary Utilities,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Crane Hire,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Aluminium Scaffold,Site Services,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Scaffolding,Site Services,MATERIAL,Incomplete,114,Scaffolding,0,0,0,0,unit,0,20,0,0,0,0,0,"
+Supply and Install scaffold to full building perimeter to allow for all trades a safe working platform to carry out the required works.
+Scaffold to be 3 &amp; 5 Boards wide with a level of hop-ups (where possible). Boards and mesh every 2 meters
+1 x Standard Stair access, Roof protection, through lower roofs as discussed
+
+"
+Edge Protection,Site Services,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Surveyors,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Tree Removal,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Stair Void Fall Protection,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Traffic Control,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Other,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Ply to cover house,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Truss Crane Lift,Site Services,EQUIPMENT,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Temporary Driveway,Site Services,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,"As part of our site establishment, we are required to set up a temporary driveway/access point to the construction site. This is to allow us all weather access at all times during construction and prevent mud and silt from being carried onto the road way.
+"
+Small Tools & Consumables,Site Services,MATERIAL,Incomplete,202,Site Services,1,0,0,0,unit,0,20,0,0,0,0,0,
+Materials Delivery,Site Services,FEE,Incomplete,202,Site Services,1,0,0,0,unit,0,20,0,0,0,0,0,"Delivery of materials to site
+"
+Sediment Control,Site Services,EQUIPMENT,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Waste Management,Site Services,GROUP,Incomplete,,,,,,,,100,0,20,,,,132,
+Wheelie Bin,Waste Management,MATERIAL,Incomplete,202,Site Services,0,0,0,0,unit,0,20,0,0,0,0,0,
+Slurry Tub Filters,Waste Management,MATERIAL,Incomplete,202,Site Services,1,100,10,110,unit,100,20,20,120,12,132,132,
+Set Out,,GROUP,Incomplete,,,,,,,,75,0,15,,,,99,"Carpenters to construct profile around the site and set out the position of the proposed building
+"
+LABOUR - Set Out,Set Out,MATERIAL,Incomplete,128,Labour - Set Out,1,75,7.5,82.5,unit,75,20,15,90,9,99,99,
+Surveyors Set Out,Set Out,MATERIAL,Incomplete,100,Preliminaries,1,0,0,0,unit,0,20,0,0,0,0,0,"To set out the house position on the block and height reference
+"
+Site Set Out Materials,Set Out,MATERIAL,Incomplete,204,Set Out,0,0,0,0,Allowance,0,20,0,0,0,0,0,
+70x35 Timber Lm,Set Out,MATERIAL,Incomplete,204,Set Out,0,4.5,0.45,4.95,Lm,0,20,0,0,0,0,0,
+Tek Screws,Set Out,MATERIAL,Incomplete,204,Set Out,0,20,2,22,ea,0,20,0,0,0,0,0,
+Demolition,,GROUP,Incomplete,,,,,,,,75,0,15,,,,99,
+LABOUR - Demolition,Demolition,MATERIAL,Incomplete,126,Labour - Demolition,1,75,7.5,82.5,unit,75,20,15,90,9,99,99,
+Ramboard Temporary Floor Protection,Demolition,MATERIAL,Incomplete,203,Demolition,0,118.421,11.8421,130.2631,ea,0,20,0,0,0,0,0,
+1.7t Excavator,Demolition,EQUIPMENT,Incomplete,113,Hire,0,500,50,550,day,0,20,0,0,0,0,0,
+Dumper,Demolition,EQUIPMENT,Incomplete,113,Hire,0,300,30,330,day,0,20,0,0,0,0,0,
+Tipper,Demolition,EQUIPMENT,Incomplete,113,Hire,0,100,10,110,day,0,20,0,0,0,0,0,
+Plastic for Covering Doorways etc,Demolition,MATERIAL,Incomplete,203,Demolition,0,27.2727,2.7273,30,Ea,0,20,0,0,0,0,0,
+Blue Painters Tape,Demolition,MATERIAL,Incomplete,203,Demolition,0,12.2727,1.2273,13.5,Ea,0,20,0,0,0,0,0,
+Work To Existing,,GROUP,Incomplete,,,,,,,,75,0,15,,,,99,
+LABOUR - Work To Existing,Work To Existing,MATERIAL,Incomplete,127,Labour - Work to Existing,1,75,7.5,82.5,unit,75,20,15,90,9,99,99,
+Excavation,,GROUP,Incomplete,,,,,,,,75,0,15,,,,99,
+LABOUR - Excavation,Excavation,MATERIAL,Incomplete,129,Labour - Excavation,1,75,7.5,82.5,unit,75,20,15,90,9,99,99,
+Excavation,Excavation,SUBCONTRACTOR,Incomplete,206,Excavation,0,0,0,0,unit,0,20,0,0,0,0,0,
+1.7t Excavator,Excavation,EQUIPMENT,Incomplete,113,Hire,0,500,50,550,day,0,20,0,0,0,0,0,
+Dumper,Excavation,EQUIPMENT,Incomplete,113,Hire,0,300,30,330,day,0,20,0,0,0,0,0,
+Tipper,Excavation,EQUIPMENT,Incomplete,113,Hire,0,100,10,110,day,0,20,0,0,0,0,0,
+Earthworks Trenching & Back filling,Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Hours,0,20,0,0,0,0,0,
+Site Cut / Earthworks,Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Hours,0,20,0,0,0,0,0,
+Footings & Foundations,Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Hours,0,20,0,0,0,0,0,
+Slab Prep and Place.,Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Hours,0,20,0,0,0,0,0,
+"Supply Excavation Materials - Base, Dust Etc.",Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+ROCK CLAUSE - Any material that requires breaking or blasting will be a Variation and to be discussed on site prior to proceeding.,Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+NOTE - Excavated spoil to stay on site.,Excavation,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Concrete Works,,GROUP,Incomplete,,,,,,,,75,0,15,,,,99,"Supply &amp; Install Footings to Documentation with Standard Trowel Finish
+Construct formwork
+Supply &amp; Install Edge Boards, Stakes &amp; Braces
+Blinding Sand - Allow for Blinding Sand to Base of Slab Area 50mm Thick&nbsp;
+Supply &amp; Install 110mm Concrete Slab On Ground Including Edge Thickening, Edge Beam &amp; Internal Beam Footings with Standard Trowel Finish
+Supply &amp; Install Steel Reinforcement as per Documentation
+"
+LABOUR - Concrete Work,Concrete Works,MATERIAL,Incomplete,130,Labour - Concrete Works,1,75,7.5,82.5,unit,75,20,15,90,9,99,99,
+Retaining Wall,Concrete Works,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Retaining Wall,Retaining Wall,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Strip Footings,Concrete Works,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Supply &amp; Install Footings to Documentation with Standard Trowel Finish
+"
+Strip Footing Concrete,Strip Footings,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,m3,0,20,0,0,0,0,0,
+Concreting,Concrete Works,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Concreting,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Excavating,Concreting,SUBCONTRACTOR,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Concrete Slab Piers 450d,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Trench Mesh 3-TM12 6000x200,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,54,5.4,59.4,ea,0,20,0,0,0,0,0,
+Trench Mesh 3-TM12 Lm x 1,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Trench Mesh 3-TM12 6000x200 Lm x 2,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,19,1.9,20.9,Lm,0,20,0,0,0,0,0,
+Trench Mesh Bar Chairs,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,25,2.5,27.5,unit,0,20,0,0,0,0,0,
+Starter Bars,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Trench Mesh Spacers 50pk,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,100,10,110,unit,0,20,0,0,0,0,0,
+Trench Mesh Chairs 20pk,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,25,2.5,27.5,unit,0,20,0,0,0,0,0,
+Strip Footing Labour Chippy,Concreting,LABOUR,Incomplete,207,Concrete Works,0,560,56,616,day,0,20,0,0,0,0,0,
+Strip Footing Labour Apprentice,Concreting,LABOUR,Incomplete,207,Concrete Works,0,320,32,352,day,0,20,0,0,0,0,0,
+Strip Footing Concrete 450 x 600 = 0.27m2,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,Lm,0,20,0,0,0,0,0,
+Formwork Materials,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,Allowance,0,20,0,0,0,0,0,
+Formwork Labour Chippy,Concreting,LABOUR,Incomplete,207,Concrete Works,0,560,56,616,day,0,20,0,0,0,0,0,
+Formwork Labour Apprentice,Concreting,LABOUR,Incomplete,207,Concrete Works,0,320,32,352,day,0,20,0,0,0,0,0,
+Black Plastic,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,100,10,110,ea,0,20,0,0,0,0,0,
+SL72 Reinforcing Mesh,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,146,14.6,160.6,ea,0,20,0,0,0,0,0,
+SL72 Reinforcing Mesh m2,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,10.5,1.05,11.55,m2,0,20,0,0,0,0,0,
+Bar Chairs 100pk,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,50,5,55,ea,0,20,0,0,0,0,0,
+Raft Slab Beams,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,Lm,0,20,0,0,0,0,0,
+Concrete Supply,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Concrete Labour,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Concrete Supply - 110 Thick,Concreting,ASSEMBLY,Incomplete,,,0,0,0,0,m2,0,0,0,0,0,0,0,
+Concrete - 1m x 1m x 0.1m = 0.1m3/m2,Concrete Supply - 110 Thick,MATERIAL,Incomplete,207,Concrete Works,0,300,30,330,m3,0,20,0,0,0,0,0,
+Concrete Supply - Decking Concrete Pier 450dia x 600d,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,ea,0,20,0,0,0,0,0,
+Concrete Pump,Concreting,MATERIAL,Incomplete,207,Concrete Works,0,0,0,0,unit,0,20,0,0,0,0,0,
+Footings - Concrete,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,186.36,18.636,204.996,m3,0,20,0,0,0,0,0,
+Slab - Concrete - Mix Standard,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,186.36,18.636,204.996,m3,0,20,0,0,0,0,0,
+Delivery - Truck Standby Time,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,163.64,16.364,180.004,Hours,0,20,0,0,0,0,0,
+Concrete Pump - Line,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,209.09,20.909,229.999,Hours,0,20,0,0,0,0,0,
+Concrete Pump - Per m3,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,6.36,0.636,6.996,m3,0,20,0,0,0,0,0,
+Concrete Pump - Primer Fee,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,13.64,1.364,15.004,Ea,0,20,0,0,0,0,0,
+Concrete Pump - Travel,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,209.09,20.909,229.999,Ea,0,20,0,0,0,0,0,
+Concrete Pump - Clean Out,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,206.61,20.661,227.271,Ea,0,20,0,0,0,0,0,
+Plastic Membrane - 200um 4m x 50m = 200m2 Roll (Black),Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,119.34,11.934,131.274,Ea,0,20,0,0,0,0,0,
+PVC Tape - 50mm x 30mtr Grey Roll,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,5.37,0.537,5.907,Ea,0,20,0,0,0,0,0,
+Tie Wire - Coil Black 1.6mm x 5kg,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,26.45,2.645,29.095,Ea,0,20,0,0,0,0,0,
+Delivery - Steel Reo. Zone 1,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,63.64,6.364,70.004,Ea,0,20,0,0,0,0,0,
+Fabric Mesh - SL81  2400 x 6000 - Single Layer - Polished Areas Only - ZB Recommendation,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,283.64,28.364,312.004,Ea,0,20,0,0,0,0,0,
+Fabric Mesh - SL82  2400 x 6000,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,107.27,10.727,117.997,Ea,0,20,0,0,0,0,0,
+Top & Bottom - Trench Mesh - L11TM3  11 x 200 x 6000mm,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,33.52,3.352,36.872,Ea,0,20,0,0,0,0,0,
+Bar Chairs - SOG 50/65,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,19.09,1.909,20.999,Ea,0,20,0,0,0,0,0,
+Bar Chairs - TM Supports 290 x 65mm,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,19.72,1.972,21.692,Ea,0,20,0,0,0,0,0,
+Starter Bars - N12 1000 x 200mm (90 Deg.),Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,2.23,0.223,2.453,Ea,0,20,0,0,0,0,0,
+Corner Bars - N12   600 x 600 - 90 deg.,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,2.25,0.225,2.475,Ea,0,20,0,0,0,0,0,
+Dowels - 16 x 16 x 400mm Square - Galv.,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,8.68,0.868,9.548,Ea,0,20,0,0,0,0,0,
+Dowels - 16mm Sleeve (2 Part System),Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,1.95,0.195,2.145,Ea,0,20,0,0,0,0,0,
+Safety Caps - 12-20mm 50/Bag,Concrete Works,MATERIAL,Incomplete,FLRT,Flat rate,0,13.68,1.368,15.048,Ea,0,20,0,0,0,0,0,
+Blockwork,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Quote,Blockwork,MATERIAL,Incomplete,309,Brickwork,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Polished Concrete,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Polished Concrete -,Polished Concrete,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,m2,0,20,0,0,0,0,0,
+Burnished Concrete -,Polished Concrete,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,m2,0,20,0,0,0,0,0,
+Ram Board,Polished Concrete,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Sub-Floor,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Sub-Floor,Sub-Floor,MATERIAL,Incomplete,132,Labour - Sub-Floor,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Ezi-Pier Base,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,27,2.7,29.7,ea,0,20,0,0,0,0,0,
+Ezi-Pier Head,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,53.5,5.35,58.85,ea,0,20,0,0,0,0,0,
+Ezi-Pier Post 2.4,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,200,20,220,ea,0,20,0,0,0,0,0,
+Bearers,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,Lm,0,20,0,0,0,0,0,
+Joists,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,Lm,0,20,0,0,0,0,0,
+Flooring m2,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,m2,0,20,0,0,0,0,0,
+Flooring Ea,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,ea,0,20,0,0,0,0,0,
+Wet-Area Flooring m2,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,m2,0,20,0,0,0,0,0,
+Wet-Area Flooring Ea,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,ea,0,20,0,0,0,0,0,
+Toolbox Glue,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,unit,0,20,0,0,0,0,0,
+Fixings,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,unit,0,20,0,0,0,0,0,
+Underfloor Insulation,Sub-Floor,MATERIAL,Incomplete,209,Sub-Floor,0,0,0,0,unit,0,20,0,0,0,0,0,
+Structural Steel,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Structural Steel,Structural Steel,MATERIAL,Incomplete,131,Labour - Structural Steel,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Structural Steel materials,Structural Steel,MATERIAL,Incomplete,310,Structural Steel,0,0,0,0,unit,0,20,0,0,0,0,0,
+Framing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Framing,Framing,LABOUR,Incomplete,133,Labour - Framing,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+New Timber Framing,Framing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Frame 90 x 35 Plates & Studs - 2400 @ 600c,New Timber Framing,ASSEMBLY,Incomplete,,,0,0,0,0,Lm,0,0,0,0,0,0,0,
+Bottom Plate,Frame 90 x 35 Plates & Studs - 2400 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Top Plate,Frame 90 x 35 Plates & Studs - 2400 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Noggin,Frame 90 x 35 Plates & Studs - 2400 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Studs 2400 @ 600c,Frame 90 x 35 Plates & Studs - 2400 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Frame 90 x 35 Plates & Studs - 2700 @ 600c,New Timber Framing,ASSEMBLY,Incomplete,,,0,0,0,0,Lm,0,0,0,0,0,0,0,
+Bottom Plate,Frame 90 x 35 Plates & Studs - 2700 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Top Plate,Frame 90 x 35 Plates & Studs - 2700 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Noggin,Frame 90 x 35 Plates & Studs - 2700 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Studs 2700 @ 600c,Frame 90 x 35 Plates & Studs - 2700 @ 600c,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,unit,0,20,0,0,0,0,0,
+Frame Junction 90 x 35 @ 2400,New Timber Framing,ASSEMBLY,Incomplete,,,0,0,0,0,Lm,0,0,0,0,0,0,0,
+Stud,Frame Junction 90 x 35 @ 2400,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,Lm,0,20,0,0,0,0,0,
+Stud,Frame Junction 90 x 35 @ 2400,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,Lm,0,20,0,0,0,0,0,
+Stud,Frame Junction 90 x 35 @ 2400,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,Lm,0,20,0,0,0,0,0,
+Frame Junction 90 x 35 @ 2700,New Timber Framing,ASSEMBLY,Incomplete,,,0,0,0,0,Lm,0,0,0,0,0,0,0,
+Stud,Frame Junction 90 x 35 @ 2700,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,Lm,0,20,0,0,0,0,0,
+Stud,Frame Junction 90 x 35 @ 2700,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,Lm,0,20,0,0,0,0,0,
+Stud,Frame Junction 90 x 35 @ 2700,MATERIAL,Incomplete,210,Framing,0,4.3,0.43,4.73,Lm,0,20,0,0,0,0,0,
+Ribbon Plate - 90 x 45,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,5.4,0.54,5.94,unit,0,20,0,0,0,0,0,
+Window Lintels - 200x45 LVL,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,22.27,2.227,24.497,unit,0,20,0,0,0,0,0,
+Pre-Fab Frame Supply,New Timber Framing,SUBCONTRACTOR,Incomplete,210,Framing,0,0,0,0,ea,0,20,0,0,0,0,0,
+Pre-Fab Truss Supply,New Timber Framing,SUBCONTRACTOR,Incomplete,210,Framing,0,0,0,0,ea,0,20,0,0,0,0,0,
+Paslode 75mm Galvanised Nails 3000,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,181.82,18.182,200.002,unit,0,20,0,0,0,0,0,
+Wurth Concrete Screws 50pk,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Roof Frame Pitched Supply,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Hoop Iron,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Brace Tensioners,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Speed Brace 6000,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,15,1.5,16.5,unit,0,20,0,0,0,0,0,
+Brace Board,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,25,2.5,27.5,unit,0,20,0,0,0,0,0,
+Ramset Dynabolts 10x100 25pk,New Timber Framing,MATERIAL,Incomplete,210,Framing,0,0,0,0,unit,0,20,0,0,0,0,0,
+430 - Floor & Wall Framing,Framing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+"Wall Frame - Ground Floor,  Pine 90 x 35",430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,7.17,0.717,7.887,Lm,0,20,0,0,0,0,0,
+Flashing Support,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,136.61,13.661,150.271,Ea,0,20,0,0,0,0,0,
+Flashing Support - Pine MGP10 - 70 x 35,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,4.5,0.45,4.95,Lm,0,20,0,0,0,0,0,
+Lintel - LT1 Smart LVL 15 190 x 42,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,42.09,4.209,46.299,Lm,0,20,0,0,0,0,0,
+Lintel - LT2 Smart LVL 15 300 x 42,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,65.08,6.508,71.588,Lm,0,20,0,0,0,0,0,
+Lintel - LT3 Smart LVL 15 240 x 42,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,51.45,5.145,56.595,Lm,0,20,0,0,0,0,0,
+Lintel - LT4 Smart LVL 15 140 x 42,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,30.37,3.037,33.407,Lm,0,20,0,0,0,0,0,
+Lintel - LT5 Smart LVL 15 90 x 42,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,19.22,1.922,21.142,Lm,0,20,0,0,0,0,0,
+Lintel - LT6 Smart LVL 15 300 x 42,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,65.08,6.508,71.588,Lm,0,20,0,0,0,0,0,
+Plywood - Bracing 2440 x 900 x 4.0mm F22,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,23.27,2.327,25.597,Ea,0,20,0,0,0,0,0,
+Rafters - R1 Hyne LVL 240 x 45,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,45.17,4.517,49.687,Lm,0,20,0,0,0,0,0,
+Trimmers - TR1 Pine MGP12 140 x 45,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,13.05,1.305,14.355,Lm,0,20,0,0,0,0,0,
+Extra Materials Contingency,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,289.25,28.925,318.175,Ea,0,20,0,0,0,0,0,
+Nails - Paslode Framing 75 x 3.06mm BRT VP,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,73.64,7.364,81.004,Ea,0,20,0,0,0,0,0,
+Nails - Senco Framing 75 x 3.06mm Points,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,68,6.8,74.8,Ea,0,20,0,0,0,0,0,
+Delivery - Timber & Hardware,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,157.03,15.703,172.733,Ea,0,20,0,0,0,0,0,
+Extra Material,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,22.32,2.232,24.552,m2,0,20,0,0,0,0,0,
+Bolts - Cupheads M12 (Galv.) - 170mm  (with Nut),430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,2.22,0.222,2.442,Ea,0,20,0,0,0,0,0,
+Hardware Allowance,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,661.15,66.115,727.265,Ea,0,20,0,0,0,0,0,
+Strapping - 0.8mm x 30 x 10mtr,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,22.55,2.255,24.805,Ea,0,20,0,0,0,0,0,
+Punch Strapping - Tensioners,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,2.73,0.273,3.003,Ea,0,20,0,0,0,0,0,
+Nails - Connector 30 x 2.8mm Galv.,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,14,1.4,15.4,Ea,0,20,0,0,0,0,0,
+Nails - Coil  45 x 2.5mm Galv.,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,13,1.3,14.3,Ea,0,20,0,0,0,0,0,
+Screws - Coach - Coach - M12 x 50mm  Galv.,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,1.73,0.173,1.903,Ea,0,20,0,0,0,0,0,
+Macsim 38 x 38 x 3mm M12 Galvanised Square Washer - 20 Pack,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,7.45,0.745,8.195,Ea,0,20,0,0,0,0,0,
+Flashing - 7 x 38 - Custom Roll,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,11.77,1.177,12.947,Lm,0,20,0,0,0,0,0,
+PASLODE 90mm Hot Dip Gal Framing Nails 3000 Pack,430 - Floor & Wall Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,216.36,21.636,237.996,Ea,0,20,0,0,0,0,0,
+Level 1 Floor,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Level 1 Floor,Level 1 Floor,MATERIAL,Incomplete,134,Labour - Level 1 Floor,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Level 1 Framing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Level 1 Framing,Level 1 Framing,MATERIAL,Incomplete,135,Labour - Level 1 Framing,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Roof Framing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Roof Framing,Roof Framing,MATERIAL,Incomplete,138,Labour - Roof Framing,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Supply - Trusses,Roof Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,Quote #
+Pitched Roof framing,Roof Framing,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Windows & External Doors,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Windows & External Doors,Windows & External Doors,MATERIAL,Incomplete,140,Labour - Windows & External Doors,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Windows Supply,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,0,0,0,0,ea,0,20,0,0,0,0,0,
+External Door Jambs,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,0,0,0,0,ea,0,20,0,0,0,0,0,
+External Door Hinges,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,0,0,0,0,ea,0,20,0,0,0,0,0,
+Front Entry Door,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,1,0,0,0,unit,0,20,0,0,0,0,0,
+External Door Threshold,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,1,0,0,0,unit,0,20,0,0,0,0,0,
+Skylight,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,1,0,0,0,unit,0,20,0,0,0,0,0,
+Garage Personal Door,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,1,0,0,0,unit,0,20,0,0,0,0,0,
+Laundry External Door,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,1,0,0,0,unit,0,20,0,0,0,0,0,
+Security Screens,Windows & External Doors,MATERIAL,Incomplete,216,Windows & External Doors,1,0,0,0,unit,0,20,0,0,0,0,0,
+Weather Resistive Barrier,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Weather Resistive Barrier,Weather Resistive Barrier,MATERIAL,Incomplete,141,Labour - Weather Resisitive Barrier,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Bradford Proctorwrap 1500x50m,Weather Resistive Barrier,MATERIAL,Incomplete,217,Weather Resistive Barrier,0,227.27,22.727,249.997,unit,0,20,0,0,0,0,0,
+Bradford Ultratape 25m,Weather Resistive Barrier,MATERIAL,Incomplete,217,Weather Resistive Barrier,0,56.36,5.636,61.996,unit,0,20,0,0,0,0,0,
+Eaves & Soffits,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Eaves & Soffits,Eaves & Soffits,LABOUR,Incomplete,143,Labour - Eaves & Soffits,0,75,7.5,82.5,Hours,0,20,0,0,0,0,0,
+70x35 Pine,Eaves & Soffits,MATERIAL,Incomplete,143,Labour - Eaves & Soffits,0,4.5,0.45,4.95,Lm,0,20,0,0,0,0,0,
+Joints Strips,Eaves & Soffits,MATERIAL,Incomplete,143,Labour - Eaves & Soffits,0,6,0.6,6.6,ea,0,20,0,0,0,0,0,
+Soft Sheet Nails 2kg,Eaves & Soffits,MATERIAL,Incomplete,143,Labour - Eaves & Soffits,0,29,2.9,31.9,ea,0,20,0,0,0,0,0,
+42x19 Primed Pine,Eaves & Soffits,MATERIAL,Incomplete,143,Labour - Eaves & Soffits,0,5.3,0.53,5.83,Lm,0,20,0,0,0,0,0,
+JH Hardieflex 2400x600x4.5,Eaves & Soffits,MATERIAL,Incomplete,143,Labour - Eaves & Soffits,0,6.25,0.625,6.875,Lm,0,20,0,0,0,0,0,
+External Linings,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - External Linings,External Linings,MATERIAL,Incomplete,142,Labour - External Linings,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+External Linings,External Linings,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Dampcourse 150mmx30m,External Linings,MATERIAL,Incomplete,218,External Linings,0,12,1.2,13.2,ea,0,20,0,0,0,0,0,
+Paslode 50mm Gal Nails,External Linings,MATERIAL,Incomplete,218,External Linings,0,91,9.1,100.1,ea,0,20,0,0,0,0,0,
+Colourbond Window Flashings,External Linings,MATERIAL,Incomplete,218,External Linings,0,7,0.7,7.7,Lm,0,20,0,0,0,0,0,
+Ametalin Insulation Tape,External Linings,MATERIAL,Incomplete,218,External Linings,0,30,3,33,ea,0,20,0,0,0,0,0,
+JH Joint Sealant 300ml,External Linings,MATERIAL,Incomplete,218,External Linings,0,24,2.4,26.4,ea,0,20,0,0,0,0,0,
+JH Joint Sealant 600ml,External Linings,MATERIAL,Incomplete,218,External Linings,0,38,3.8,41.8,ea,0,20,0,0,0,0,0,
+Bradford Enviroseal Wrap,External Linings,MATERIAL,Incomplete,218,External Linings,0,0,0,0,ea,0,20,0,0,0,0,0,
+66x42 Primed Pine Window Arcs,External Linings,MATERIAL,Incomplete,218,External Linings,0,54,5.4,59.4,ea,0,20,0,0,0,0,0,
+James Hardie Linea Cladding,External Linings,MATERIAL,Incomplete,218,External Linings,0,54.06,5.406,59.466,m2,0,20,0,0,0,0,0,
+100mm Timber Screws 100pk,External Linings,MATERIAL,Incomplete,218,External Linings,0,40,4,44,ea,0,20,0,0,0,0,0,
+Internal Carpentry,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Metal Ceiling Battens
+"
+LABOUR - Internal Carpentry,Internal Carpentry,MATERIAL,Incomplete,144,Labour - Internal Carpentry,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+CSD,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,1,0,0,0,unit,0,20,0,0,0,0,0,
+Lock-Up Hardware,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,1,0,0,0,unit,0,20,0,0,0,0,0,
+90x35 Pine 6m,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,0,27,2.7,29.7,ea,0,20,0,0,0,0,0,
+Consumables,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,1,0,0,0,unit,0,20,0,0,0,0,0,
+L Brackets,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,1,0,0,0,unit,0,20,0,0,0,0,0,
+Packing Strips x 10,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,0,15,1.5,16.5,ea,0,20,0,0,0,0,0,
+Hume Evolution CSD Push to Open,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,1,0,0,0,unit,0,20,0,0,0,0,0,
+Hume CSD Soft Close,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,1,0,0,0,unit,0,20,0,0,0,0,0,
+Metal Ceiling Batten,Internal Carpentry,MATERIAL,Incomplete,220,Internal Carpentry,0,0,0,0,unit,0,20,0,0,0,0,0,
+Internal Linings,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Internal Linings,Internal Linings,MATERIAL,Incomplete,145,Labour - Internal Linings,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Fix Out,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Fix Out,Fix Out,MATERIAL,Incomplete,146,Labour - Fix Out,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+110 x 18mm 5.4m White Pine FJ Primed,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,33.64,3.364,37.004,Ea,0,20,0,0,0,0,0,
+110 Single Rebate Jamb White Pine,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,54.55,5.455,60.005,Ea,0,20,0,0,0,0,0,
+820 Internal Flush Door,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,42.73,4.273,47.003,Ea,0,20,0,0,0,0,0,
+Architraves,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,23.5,2.35,25.85,unit,0,20,0,0,0,0,0,"66 x 18 Architraves
+"
+Skirting,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,4,0.4,4.4,unit,0,20,0,0,0,0,0,"90 x 18 Pine Skirting
+"
+31 x 11 Pine Loose Stop,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,10,1,11,unit,0,20,0,0,0,0,0,
+Hume Smart Robe,Fix Out,ALLOWANCE,Incomplete,222,Fix Out,0,400,40,440,unit,0,20,0,0,0,0,0,
+Robe Joinery,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,0,0,0,unit,0,20,0,0,0,0,0,
+100mm Hirline Hinges x 2,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,10,1,11,unit,0,20,0,0,0,0,0,
+100mm Butt Hinges x 2,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,10,1,11,unit,0,20,0,0,0,0,0,
+Paslode 50mm Gal Brads,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,55,5.5,60.5,unit,0,20,0,0,0,0,0,
+Titebond Glue,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,27,2.7,29.7,unit,0,20,0,0,0,0,0,
+Sandpaper,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,1,0.1,1.1,unit,0,20,0,0,0,0,0,
+Hume Evolution CSD 820,Fix Out,MATERIAL,Incomplete,222,Fix Out,0,200,20,220,unit,0,20,0,0,0,0,0,
+Internal Feature Work,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Internal Feature Work,Internal Feature Work,MATERIAL,Incomplete,FLRT,Flat rate,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Carpentry Fit Off,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Bathroom furniture
+Install door furniture
+Door stops
+Install external door seals and weather strips
+"
+LABOUR - Carpentry Fit Off,Carpentry Fit Off,MATERIAL,Incomplete,147,Labour - Carpentry Fit Off,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Consumables,Carpentry Fit Off,MATERIAL,Incomplete,223,Carpentry Fit Off,0,20,2,22,ea,0,20,0,0,0,0,0,
+Raven Door Bottom Seal,Carpentry Fit Off,MATERIAL,Incomplete,223,Carpentry Fit Off,0,25,2.5,27.5,unit,0,20,0,0,0,0,0,"Raven RP3 door bottom seal
+"
+Door Weather Seal,Carpentry Fit Off,MATERIAL,Incomplete,223,Carpentry Fit Off,0,10,1,11,unit,0,20,0,0,0,0,0,"Raven RP59 door weather strip
+"
+Tile Drill Bits,Carpentry Fit Off,MATERIAL,Incomplete,223,Carpentry Fit Off,0,100,10,110,unit,0,20,0,0,0,0,0,
+Door Stops,Carpentry Fit Off,ALLOWANCE,Incomplete,223,Carpentry Fit Off,0,0,0,0,unit,0,20,0,0,0,0,0,
+Decking,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Decking,Decking,MATERIAL,Incomplete,149,Labour - Decking,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Stainless Steel Post Stirrup,Decking,MATERIAL,Incomplete,225,Decking,0,50,5,55,ea,0,20,0,0,0,0,0,
+Rapid Set Concrete Bag,Decking,MATERIAL,Incomplete,225,Decking,0,9,0.9,9.9,ea,0,20,0,0,0,0,0,
+Gal Post Stirrup,Decking,MATERIAL,Incomplete,225,Decking,0,11,1.1,12.1,ea,0,20,0,0,0,0,0,
+100mm Bugles,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Posts,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Bearers,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Joists,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Triple Grips,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Joist Hangers,Decking,MATERIAL,Incomplete,225,Decking,0,3,0.3,3.3,ea,0,20,0,0,0,0,0,
+G-Taps 50mmx20m,Decking,MATERIAL,Incomplete,225,Decking,0,32,3.2,35.2,ea,0,20,0,0,0,0,0,
+Decking Boards,Decking,MATERIAL,Incomplete,225,Decking,0,0,0,0,unit,0,20,0,0,0,0,0,
+Screws,Decking,MATERIAL,Incomplete,225,Decking,0,0,0,0,ea,0,20,0,0,0,0,0,
+Spacers,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Cutek CD50 10L,Decking,MATERIAL,Incomplete,225,Decking,0,300,30,330,ea,0,20,0,0,0,0,0,
+Staining Materials,Decking,MATERIAL,Incomplete,225,Decking,0,30,3,33,ea,0,20,0,0,0,0,0,
+Fixing Hardware,Decking,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Exterior Work,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Exterior Work,Exterior Work,MATERIAL,Incomplete,154,Labour - Exterior Work,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Pool,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Pool,Pool,MATERIAL,Incomplete,150,Labour - Pool,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Swimming Pool,Pool,MATERIAL,Incomplete,226,Pool,1,0,0,0,unit,0,20,0,0,0,0,0,
+Driveways & Footpaths,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Driveways & Footpaths,Driveways & Footpaths,MATERIAL,Incomplete,152,Labour - Driveways & Footpaths,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Fencing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Fencing,Fencing,MATERIAL,Incomplete,153,Labour - Fencing,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Landscaping,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Landscaping,Landscaping,MATERIAL,Incomplete,151,Labour - Landscaping,0,75,7.5,82.5,unit,0,20,0,0,0,0,0,
+Turf Mix Supply,Landscaping,MATERIAL,Incomplete,227,Landscaping,0,0,0,0,unit,0,20,0,0,0,0,0,
+Turf Mix Install,Landscaping,LABOUR,Incomplete,227,Landscaping,0,0,0,0,unit,0,20,0,0,0,0,0,"Spread &amp; screed
+"
+Turf,Landscaping,MATERIAL,Incomplete,227,Landscaping,0,15,1.5,16.5,m2,0,20,0,0,0,0,0,"Buffalo turf
+"
+Turf Install,Landscaping,LABOUR,Incomplete,227,Landscaping,0,0,0,0,unit,0,20,0,0,0,0,0,"Buffalo turf will then be installed on top
+Turf will be thoroughly watered and rolled
+"
+Asbestos Removal,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Termite Protection,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Termite Protection,Termite Protection,MATERIAL,Incomplete,307,Termite Protection,1,0,0,0,unit,0,20,0,0,0,0,0,
+Brickwork,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Brickwork Supply & Install,Brickwork,SUBCONTRACTOR,Incomplete,309,Brickwork,0,0,0,0,ea,0,20,0,0,0,0,0,
+Brickwork Install,Brickwork,SUBCONTRACTOR,Incomplete,309,Brickwork,0,0,0,0,ea,0,20,0,0,0,0,0,
+Face Bricks,Brickwork,MATERIAL,Incomplete,309,Brickwork,1,0,0,0,unit,0,20,0,0,0,0,0,
+Common Bricks,Brickwork,MATERIAL,Incomplete,309,Brickwork,1,0,0,0,unit,0,20,0,0,0,0,0,
+Cement Bag,Brickwork,MATERIAL,Incomplete,309,Brickwork,0,9,0.9,9.9,ea,0,20,0,0,0,0,0,
+Lime Bag,Brickwork,MATERIAL,Incomplete,309,Brickwork,0,0,0,0,ea,0,20,0,0,0,0,0,
+Brick Ties 150pk,Brickwork,MATERIAL,Incomplete,309,Brickwork,0,0,0,0,ea,0,20,0,0,0,0,0,
+Flat Gal Lintel,Brickwork,MATERIAL,Incomplete,309,Brickwork,1,0,0,0,unit,0,20,0,0,0,0,0,
+L Gal Lintel,Brickwork,MATERIAL,Incomplete,309,Brickwork,1,0,0,0,unit,0,20,0,0,0,0,0,
+Weep Holes,Brickwork,MATERIAL,Incomplete,309,Brickwork,1,0,0,0,unit,0,20,0,0,0,0,0,
+Acid Wash Face Brickwork,Brickwork,MATERIAL,Incomplete,309,Brickwork,1,0,0,0,unit,0,20,0,0,0,0,0,
+Blockwork,Brickwork,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Blockwork,Blockwork,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Block Supply,Blockwork,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Block Labour,Blockwork,LABOUR,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Corefill Labour,Blockwork,LABOUR,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Corefill Concrete,Blockwork,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Reinforcing Steel,Blockwork,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Structural Steel Supply,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Structural Steel Supply & Install Quote,Structural Steel Supply,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Roofing - Metal,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Roofing Supply & install,Roofing - Metal,SUBCONTRACTOR,Incomplete,311,Roofing,0,0,0,0,ea,0,20,0,0,0,0,0,
+Roof Install,Roofing - Metal,SUBCONTRACTOR,Incomplete,311,Roofing,0,0,0,0,ea,0,20,0,0,0,0,0,
+Battening,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Metal Fascia,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,Lm,0,20,0,0,0,0,0,
+Metal Gutter,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,Lm,0,20,0,0,0,0,0,
+Metal Roofing,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Metal Fascia & Gutter Install,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Supply & Fit Guard Railfall,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Down Pipes Install,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Anticon Blanket,Roofing - Metal,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Metal Roofing - Zanetto Builders,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,81.82,8.182,90.002,m2,0,20,0,0,0,0,0,Colour XXX
+Flashing & Capping - Wall / Roof Flashing - Custom 3 Fold,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,15.7,1.57,17.27,Lm,0,20,0,0,0,0,0,Colour XXX
+Fascia - Cemintel Barestone FC - External Panel 9 x 1200 x 2400mm,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,271.98,27.198,299.178,Ea,0,20,0,0,0,0,0,
+Box Gutter with Hangers C/B & Ply Support,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,94.55,9.455,104.005,Lm,0,20,0,0,0,0,0,Colour XXX
+Fascia - Colourbond,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Lm,0,20,0,0,0,0,0,Colour XXX
+Gutters - Colourbond,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,Colour XXX
+Metal Roofing,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Tile Roofing,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Poly Carb Roofing,Roofing - Metal,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Roofing - Tile,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Roof Tiling,Roofing - Tile,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Roof Tiles Labour,Roofing - Tile,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Guard Rail Supply & Install,Roofing - Tile,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Roof Tiles Supply,Roofing - Tile,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Supply Supply,Roofing - Tile,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Battens,Roofing - Tile,MATERIAL,Incomplete,311,Roofing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Plumbing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Plumbing Quote,Plumbing,MATERIAL,Incomplete,316,Plumbing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Plumbing Materials,Plumbing,MATERIAL,Incomplete,316,Plumbing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Plumbing Disconnect,Plumbing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Drainage Plumbing,Plumbing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Dig in plumbing for drainage for House/Extension
+Re-configure drainage plumbing for Bathroom
+Re-configure drainage plumbing for Ensuite
+"
+Plumbing Rough In,Plumbing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Complete Plumbing Rough In for the following rooms:
+Kitchen
+Butlers
+Bath 1
+Bath 2
+Ensuite
+Laundry
+"
+Plumbing Fit Off,Plumbing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Complete Plumbing Fit Off for the following rooms:
+Kitchen
+Butlers
+Bath 1
+Bath 2
+Ensuite
+Laundry
+"
+Install Dishwasher,Plumbing Fit Off,SUBCONTRACTOR,Incomplete,316,Plumbing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Install washer and dryer to Laundry,Plumbing Fit Off,SUBCONTRACTOR,Incomplete,316,Plumbing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Install and commission kitchen appliances,Plumbing Fit Off,SUBCONTRACTOR,Incomplete,316,Plumbing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Stormwater,Plumbing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Dig in &amp; install stormwater
+Install Downpipes
+Install rainwater tank
+"
+610 - Plumbing - Rainwater Tanks,Plumbing,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Quotation,610 - Plumbing - Rainwater Tanks,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+"2 x 24,000 Litre Corrugated Poly Water - Style: Corrugated Colour: XXXXXXX",610 - Plumbing - Rainwater Tanks,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+"10,000 Litre Galvanised Steel Fire Tank - Style: Corrugated Material: Galvanised",610 - Plumbing - Rainwater Tanks,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Base Materials & Sleeper Frame,610 - Plumbing - Rainwater Tanks,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+HOT WATER HEAT PUMP - XXXX,Plumbing,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Electrical,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Electrical Quote,Electrical,MATERIAL,Incomplete,321,Electrical,1,0,0,0,unit,0,20,0,0,0,0,0,
+Electrical Materials,Electrical,MATERIAL,Incomplete,321,Electrical,1,0,0,0,unit,0,20,0,0,0,0,0,
+Electrical - Fixtures & Fittings,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Mechanical - HVAC,,GROUP,Incomplete,,,,,,,,9090.91,0,1818.18,,,,12000,
+Air Conditioning Supply & Install,Mechanical - HVAC,MATERIAL,Incomplete,325,Electrical - HVAC,1,0,0,0,unit,0,20,0,0,0,0,0,"Supply &amp; install heating &amp; cooling to the following rooms:
+"
+Heating Supply & Install,Mechanical - HVAC,MATERIAL,Incomplete,325,Electrical - HVAC,1,0,0,0,unit,0,20,0,0,0,0,0,
+Supply and install HVAC Allowance,Mechanical - HVAC,MATERIAL,Incomplete,FLRT,Flat rate,1,9090.91,909.091,10000.001,Ea,9090.91,20,1818.18,10909.09,1090.91,12000,12000,
+HRV System (Including Electrical Connectcions/ Circuits) - Allowance per m2 (Based on Floor - Internal Area),Mechanical - HVAC,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+HRV - Install,Mechanical - HVAC,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,"NOTE - HRV location subject to change, price variance TBC."
+Fire Place - XXXX,Mechanical - HVAC,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Labour to Install Fire Place - XXXXX,Mechanical - HVAC,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Hearth,Mechanical - HVAC,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Services,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Security Install,Services,MATERIAL,Incomplete,325,Electrical - HVAC,1,0,0,0,unit,0,20,0,0,0,0,0,
+Automation Supply & Install,Services,MATERIAL,Incomplete,325,Electrical - HVAC,1,0,0,0,unit,0,20,0,0,0,0,0,
+Internal Lift,Services,MATERIAL,Incomplete,325,Electrical - HVAC,1,0,0,0,unit,0,20,0,0,0,0,0,
+Insulation,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR,Insulation,LABOUR,Incomplete,327,Insulation,0,75,7.5,82.5,Hours,0,20,0,0,0,0,0,
+Earthwool R2.5 Wall Batts,Insulation,MATERIAL,Incomplete,327,Insulation,0,0,0,0,m2,0,20,0,0,0,0,0,
+Earthwool R3.5 Ceiling Batts,Insulation,MATERIAL,Incomplete,327,Insulation,0,0,0,0,m2,0,20,0,0,0,0,0,
+Plastering,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"All plasterboard to be finished to a level 4 standard AS/NZS 2589:2017, 10mm plasterboard throughout. NOTE - no level 5 on walls, if required for wall lights TBC on site.
+"
+Quote Plaster Supply & Install,Plastering,SUBCONTRACTOR,Incomplete,328,Plaster,0,45,4.5,49.5,m2,0,20,0,0,0,0,0,"Supply &amp; install plasterboard to the following rooms:
+
+Kitchen
+Living
+Dining
+Bedrooms 1, 2, 3 &amp; 4
+Laundry
+Rumpus
+Study
+
+Cornice/square set
+Deliver materials to site
+WR plasterboard to bathroom ceilings
+WR plaster to any walls with water points
+Villaboard to all bathroom walls
+"
+Plaster to Skylights,Plastering,MATERIAL,Incomplete,FLRT,Flat rate,0,500,50,550,Ea,0,20,0,0,0,0,0,
+Revel beads to windows and external doors,Plastering,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+P50 shadow line to skirting,Plastering,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,Ea,0,20,0,0,0,0,0,
+Plaster Materials,Plastering,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Plastamasta Delivery - m3,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,0,0,0,m2,0,20,0,0,0,0,0,
+Plastamasta Delivery,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,0,0,0,ea,0,20,0,0,0,0,0,
+Stud Adhesive,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,30,3,33,ea,0,20,0,0,0,0,0,
+Rondo Furring Channel - Ea,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,2,0.2,2.2,ea,0,20,0,0,0,0,0,
+Rondo Furring Channel - Lm,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,11,1.1,12.1,Lm,0,20,0,0,0,0,0,
+P50,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,0,0,0,Lm,0,20,0,0,0,0,0,
+Collated Plasterboard Screws,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,20,2,22,ea,0,20,0,0,0,0,0,
+Cornice 2,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,0,0,0,Lm,0,20,0,0,0,0,0,
+Cornice,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,4,0.4,4.4,Lm,0,20,0,0,0,0,0,
+6mm Villaboard,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,10.25,1.025,11.275,m2,0,20,0,0,0,0,0,
+10mm Plasterboard WR m2,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,10.19,1.019,11.209,m2,0,20,0,0,0,0,0,
+10mm Plasterboard Ceiling 600 m2,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,7.27,0.727,7.997,m2,0,20,0,0,0,0,0,
+10mm Plasterboard m2,Plaster Materials,MATERIAL,Incomplete,328,Plaster,0,5.95,0.595,6.545,m2,0,20,0,0,0,0,0,
+Rendering,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Render Internal Supply & Install,Rendering,SUBCONTRACTOR,Incomplete,339,Render,0,0,0,0,ea,0,20,0,0,0,0,0,
+Render External Supply & Install,Rendering,SUBCONTRACTOR,Incomplete,339,Render,0,0,0,0,ea,0,20,0,0,0,0,0,
+Waterproofing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Supply &amp; install waterproofing materials
+Full floor for all bathrooms &amp; wet areas
+Full height for walls in all shower recesses
+Waterproof up to all water points cover by tiles
+Second waterproofing coat over top of tile screed
+"
+Waterproofing - Supply & Install Under Screed,Waterproofing,MATERIAL,Incomplete,FLRT,Flat rate,0,80,8,88,unit,0,20,0,0,0,0,0,
+Waterproofing - Supply & Install Over Screed,Waterproofing,MATERIAL,Incomplete,FLRT,Flat rate,0,60,6,66,unit,0,20,0,0,0,0,0,
+Quote - Waterproofing Supply & Install,Waterproofing,SUBCONTRACTOR,Not Relevant,336,Waterproofing,0,0,0,0,ea,0,20,0,0,0,0,0,
+In-House Waterproofing,Waterproofing,GROUP,Not Relevant,,,,,,,,0,0,0,,,,0,
+Apprentice Labour,In-House Waterproofing,LABOUR,Not Relevant,336,Waterproofing,0,320,32,352,day,0,20,0,0,0,0,0,
+LABOUR - Waterproofing,In-House Waterproofing,LABOUR,Not Relevant,336,Waterproofing,0,75,7.5,82.5,Hours,0,20,0,0,0,0,0,
+Gripset 38FC 15L,In-House Waterproofing,MATERIAL,Not Relevant,336,Waterproofing,0,135,13.5,148.5,ea,0,20,0,0,0,0,0,
+Butyl Tape,In-House Waterproofing,MATERIAL,Not Relevant,336,Waterproofing,0,0,0,0,ea,0,20,0,0,0,0,0,
+Tap Penetrations,In-House Waterproofing,MATERIAL,Not Relevant,336,Waterproofing,0,5,0.5,5.5,ea,0,20,0,0,0,0,0,
+Waterproofing Over Screed,In-House Waterproofing,MATERIAL,Not Relevant,336,Waterproofing,0,70,7,77,hour,0,20,0,0,0,0,0,
+Waterproofing of Balcony/Deck,In-House Waterproofing,SUBCONTRACTOR,Not Relevant,336,Waterproofing,0,0,0,0,ea,0,20,0,0,0,0,0,
+Tiling - Supply,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Sand,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,30,3,33,ea,0,20,0,0,0,0,0,
+Cement Bag,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,9,0.9,9.9,ea,0,20,0,0,0,0,0,
+Tile Mesh - Ea,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,15,1.5,16.5,ea,0,20,0,0,0,0,0,
+Tile Mesh - m2,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,21.6,2.16,23.76,m2,0,20,0,0,0,0,0,
+Bath 1 Floor Tiles - Supply,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,m2,0,20,0,0,0,0,0,
+Bath 1 Wall Tiles - Supply,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,m2,0,20,0,0,0,0,0,
+Bath 1 Feature Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,m2,0,20,0,0,0,0,0,
+Ensuite Floor Tiles - Supply,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,m2,0,20,0,0,0,0,0,
+Ensuite Wall Tiles - Supply,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,m2,0,20,0,0,0,0,0,
+Ensuite Feature Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,100,10,110,unit,0,20,0,0,0,0,0,
+Bath 2 Floor Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,unit,0,20,0,0,0,0,0,
+Bath 2 Wall Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,60,6,66,unit,0,20,0,0,0,0,0,
+Bath 2 Feature Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,100,10,110,unit,0,20,0,0,0,0,0,
+Laundry Floor Tiles,Tiling - Supply,MATERIAL,Incomplete,FLRT,Flat rate,0,60,6,66,unit,0,20,0,0,0,0,0,
+Laundry Splashback Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,100,10,110,m2,0,20,0,0,0,0,0,
+WC Floor Tiles,Tiling - Supply,MATERIAL,Incomplete,FLRT,Flat rate,0,60,6,66,unit,0,20,0,0,0,0,0,
+WC Wall Tiles,Tiling - Supply,MATERIAL,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Kitchen Splashback Tiles,Tiling - Supply,ALLOWANCE,Incomplete,337,Tiling Supply,0,100,10,110,m2,0,20,0,0,0,0,0,
+Tile Trim,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,20,2,22,ea,0,20,0,0,0,0,0,
+Tile Clips,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,50,5,55,ea,0,20,0,0,0,0,0,
+Primer - Ardex Multiprime 4L,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,60,6,66,ea,0,20,0,0,0,0,0,
+Ardex SE Silicone,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,18,1.8,19.8,ea,0,20,0,0,0,0,0,
+Tile Glue - Gripset C-Lite,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,28,2.8,30.8,ea,0,20,0,0,0,0,0,
+Grout - Ardex 5kg,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,25,2.5,27.5,ea,0,20,0,0,0,0,0,
+Sealer,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,0,0,0,ea,0,20,0,0,0,0,0,
+Sealing Labour,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,70,7,77,hour,0,20,0,0,0,0,0,
+Tiling Delivery,Tiling - Supply,FEE,Incomplete,337,Tiling Supply,0,150,15,165,ea,0,20,0,0,0,0,0,
+Employee Tile Delivery,Tiling - Supply,LABOUR,Incomplete,337,Tiling Supply,0,0,0,0,unit,0,20,0,0,0,0,0,
+Tile Insert Waste,Tiling - Supply,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,unit,0,20,0,0,0,0,0,
+Strip Drain,Tiling - Supply,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,unit,0,20,0,0,0,0,0,
+Tiling Sealing,Tiling - Supply,MATERIAL,Incomplete,337,Tiling Supply,0,0,0,0,ea,0,20,0,0,0,0,0,"No allowance for tile sealing
+"
+Tiling - Install,,GROUP,Incomplete,,,,,,,,210,0,42,,,,277.2,"Supply and lay sand and cement bedding to all internal bathrooms, laundry &amp; WC floors to achieve correct falls to floor waste
+Set out tiles as best as reasonably possible with full tiles where possible and avoiding small cuts
+Bathrooms
+Lay floor tiles
+Lay wall tiles
+Tile height**
+Tile in shower niche to shower recess**
+Tile into aluminium window
+All external corners of nib walls in wet areas to be mitred
+All external corners of nib walls in wet areas to have metal angle installed
+Laundry
+Lay Laundry floor tiles
+Lay skirting tiles to floor &amp; wall junctions in Laundry
+Lay Laundry splashback tiles
+WC
+Lay WC floor tiles
+Lay WC wall/skirting tiles
+Kitchen
+Lay Kitchen splashback tiles
+Flooring
+Lay general flooring tiles Kitchen, Living &amp; Dining
+"
+Screed Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,60,6,66,m2,0,20,0,0,0,0,0,
+Bath 1 Floor Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,90,9,99,m2,0,20,0,0,0,0,0,
+Bath 1 Wall Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,80,8,88,m2,0,20,0,0,0,0,0,
+Bath 1 Feature Tiles,Tiling - Install,SUBCONTRACTOR,Incomplete,FLRT,Flat rate,0,150,15,165,unit,0,20,0,0,0,0,0,
+Ensuite Floor Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,90,9,99,m2,0,20,0,0,0,0,0,
+Ensuite Wall Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,80,8,88,m2,0,20,0,0,0,0,0,
+Ensuite Feature Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,FLRT,Flat rate,0,150,15,165,unit,0,20,0,0,0,0,0,
+Bath 2 Floor Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,90,9,99,unit,0,20,0,0,0,0,0,
+Bath 2 Will Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,80,8,88,unit,0,20,0,0,0,0,0,
+Bath 2 Feature Tiles - Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,150,15,165,m2,0,20,0,0,0,0,0,
+Shower Niche,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,300,30,330,ea,0,20,0,0,0,0,0,
+Tile Into Window,Tiling - Install,SUBCONTRACTOR,Incomplete,FLRT,Flat rate,0,300,30,330,unit,0,20,0,0,0,0,0,
+Laundry Splashback Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,100,10,110,m2,0,20,0,0,0,0,0,
+Laundry Floor Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+WC Floor Tiles,Tiling - Install,SUBCONTRACTOR,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+WC Wall Tiles,Tiling - Install,SUBCONTRACTOR,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,
+Kitchen Splashback Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,100,10,110,m2,0,20,0,0,0,0,0,
+Corner Wall/Bath Tiling,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,150,15,165,ea,0,20,0,0,0,0,0,
+Mitring Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,60,6,66,Lm,0,20,0,0,0,0,0,
+Strip Drain Labour,Tiling - Install,SUBCONTRACTOR,Incomplete,337,Tiling Supply,0,50,5,55,ea,0,20,0,0,0,0,0,
+Supervisor Set Out Meeting,Tiling - Install,LABOUR,Incomplete,337,Tiling Supply,3,70,7,77,unit,210,20,42,84,8.4,92.4,277.2,
+Glazing,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Shower Screen Bath 1,Glazing,ALLOWANCE,Incomplete,329,Glazing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Shower Screen Ensuite,Glazing,ALLOWANCE,Incomplete,329,Glazing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Shower Screen Bath 2,Glazing,ALLOWANCE,Incomplete,329,Glazing,0,0,0,0,unit,0,20,0,0,0,0,0,
+Mirror,Glazing,SUBCONTRACTOR,Incomplete,329,Glazing,1,0,0,0,unit,0,20,0,0,0,0,0,
+Joinery,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Allowance for supply &amp; install of joinery by cabinet maker
+"
+Kitchen Joinery,Joinery,ALLOWANCE,Incomplete,330,Joinery,1,0,0,0,unit,0,20,0,0,0,0,0,
+Butlers Pantry Joinery,Joinery,ALLOWANCE,Incomplete,330,Joinery,1,0,0,0,unit,0,20,0,0,0,0,0,
+Laundry Joinery,Joinery,ALLOWANCE,Incomplete,330,Joinery,1,0,0,0,unit,0,20,0,0,0,0,0,
+Main Bed Joinery,Joinery,ALLOWANCE,Incomplete,330,Joinery,1,0,0,0,unit,0,20,0,0,0,0,0,
+Bed Robe Joinery,Joinery,ALLOWANCE,Incomplete,330,Joinery,1,0,0,0,unit,0,20,0,0,0,0,0,
+Vanity,Joinery,ALLOWANCE,Incomplete,330,Joinery,1,0,0,0,unit,0,20,0,0,0,0,0,
+Painting,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Internal Paint Supply & Install,Painting,SUBCONTRACTOR,Incomplete,332,Painting,1,0,0,0,ea,0,20,0,0,0,0,0,
+External Paint Supply & Install,Painting,SUBCONTRACTOR,Incomplete,332,Painting,1,0,0,0,ea,0,20,0,0,0,0,0,
+Flooring,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Carpet Supply & Install,Flooring,ALLOWANCE,Incomplete,335,Floor Coverings,0,72.7273,7.2727,80,m2,0,20,0,0,0,0,0,"We work in Lineal Metres but as a quide if you add 15% to the sqm it will give you an average
+Nylon ranges start at $55.00sqm (builders)
+Mid would be about $80.00sqm
+Top $115.00sqm&nbsp;
+Wools start at about $70.00 sqm to $140sqm
+Just add 15% waste
+"
+Flooring Supply & Install,Flooring,MATERIAL,Incomplete,335,Floor Coverings,1,0,0,0,unit,0,20,0,0,0,0,0,
+Flooring Supply,Flooring,ALLOWANCE,Incomplete,335,Floor Coverings,0,0,0,0,unit,0,20,0,0,0,0,0,
+Underlay Supply,Flooring,MATERIAL,Incomplete,335,Floor Coverings,1,0,0,0,unit,0,20,0,0,0,0,0,
+Flooring Labour,Flooring,MATERIAL,Incomplete,335,Floor Coverings,1,0,0,0,unit,0,20,0,0,0,0,0,
+Flooring Delivery,Flooring,MATERIAL,Incomplete,335,Floor Coverings,1,0,0,0,unit,0,20,0,0,0,0,0,
+Floor Protection Supply & Install,Flooring,SUBCONTRACTOR,Incomplete,335,Floor Coverings,0,8,0.8,8.8,unit,0,20,0,0,0,0,0,
+Hardwood Flooring Sand & Polish,Flooring,SUBCONTRACTOR,Incomplete,335,Floor Coverings,0,0,0,0,unit,0,20,0,0,0,0,0,
+Stair & Balustrade,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Silicone,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Labour,Silicone,LABOUR,Incomplete,348,Silicone,0,600,60,660,day,0,20,0,0,0,0,0,
+Ardex SE Silicone,Silicone,MATERIAL,Incomplete,348,Silicone,0,18,1.8,19.8,Ea,0,20,0,0,0,0,0,
+Internal Silicone,Silicone,LABOUR,Incomplete,348,Silicone,0,0,0,0,unit,0,20,0,0,0,0,0,"All skirtings to tiled and timber floorsAll aluminium window frames to timber jambsPerimeter of all internal JoineryBoth sides of timber stair stringers to wallsAll internal expansion joints and internal corners of all tiled areas.
+"
+External Silicone,Silicone,LABOUR,Incomplete,348,Silicone,0,0,0,0,unit,0,20,0,0,0,0,0,"All expansion joints in blockwork and claddings&nbsp;
+Perimeter of all aluminium window frames&nbsp;
+Any external Joinery if applicable.
+"
+PC Items,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Allowances for supply of PC Items
+"
+Bathroom,PC Items,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Bath 1 Vanity,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,2500,250,2750,Ea,0,20,0,0,0,0,0,
+Bath 1 Vanity Basin,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Bath 1 Vanity Taps,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 1 Vanity Waste,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,40,4,44,Ea,0,20,0,0,0,0,0,
+Bath 1 Shower Mixer,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 1 Shower Head,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 1 Shower Arm,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 1 Shower Rail,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,700,70,770,Ea,0,20,0,0,0,0,0,
+Bath 1 Handheld Shower Head,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Bath 1 Inset Bath,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,400,40,440,Ea,0,20,0,0,0,0,0,
+Bath 1 Freestanding Bath,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,1800,180,1980,Ea,0,20,0,0,0,0,0,
+Bath 1 Bath Taps,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 1 Bath Waste,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,80,8,88,Ea,0,20,0,0,0,0,0,
+Bath 1 Heated Towel Rail,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,900,90,990,Ea,0,20,0,0,0,0,0,
+Bath 1 Towel Rail,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,150,15,165,Ea,0,20,0,0,0,0,0,
+Bath 1 Robe Hooks,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,40,4,44,Ea,0,20,0,0,0,0,0,
+Bath 1 Hand Towel Holder,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Bath 1 Shaving Cabinet,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,600,60,660,Ea,0,20,0,0,0,0,0,
+Bath 1 Mirror,Bathroom,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Ensuite,PC Items,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Ensuite Vanity,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,2500,250,2750,Ea,0,20,0,0,0,0,0,
+Ensuite Vanity Basin,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Ensuite Vanity Taps,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Ensuite Vanity Waste,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,40,4,44,Ea,0,20,0,0,0,0,0,
+Ensuite Shower Mixer,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Ensuite Shower Head,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Ensuite Shower Arm,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Ensuite Shower Rail,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,700,70,770,Ea,0,20,0,0,0,0,0,
+Ensuite Handheld Shower Head,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Ensuite Inset Bath,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,400,40,440,Ea,0,20,0,0,0,0,0,
+Ensuite Freestanding Bath,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,1800,180,1980,Ea,0,20,0,0,0,0,0,
+Ensuite Bath Taps,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Ensuite Bath Waste,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,80,8,88,Ea,0,20,0,0,0,0,0,
+Ensuite Heated Towel Rail,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,1000,100,1100,Ea,0,20,0,0,0,0,0,
+Ensuite Towel Rail,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,150,15,165,Ea,0,20,0,0,0,0,0,
+Ensuite Robe Hooks,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,30,3,33,Ea,0,20,0,0,0,0,0,
+Ensuite Hand Towel Holder,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Ensuite Shaving Cabinet,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,600,60,660,Ea,0,20,0,0,0,0,0,
+Ensuite Mirror,Ensuite,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Bathroom 2,PC Items,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Bath 2 Vanity,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,2500,250,2750,Ea,0,20,0,0,0,0,0,
+Bath 2 Vanity Basin,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Bath 2 Vanity Taps,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 2 Vanity Waste,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,40,4,44,Ea,0,20,0,0,0,0,0,
+Bath 2 Shower Mixer,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 2 Shower Head,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 2 Shower Arm,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 2 Shower Rail,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,700,70,770,Ea,0,20,0,0,0,0,0,
+Bath 2 Handheld Shower Head,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+Bath 2 Inset Bath,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,400,40,440,Ea,0,20,0,0,0,0,0,
+Bath 2 Freestanding Bath,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,1800,180,1980,Ea,0,20,0,0,0,0,0,
+Bath 2 Bath Taps,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+Bath 2 Bath Waste,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,80,8,88,Ea,0,20,0,0,0,0,0,
+Bath 2 Heated Towel Rail,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,900,90,990,Ea,0,20,0,0,0,0,0,
+Bath 2 Towel Rail,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,150,15,165,Ea,0,20,0,0,0,0,0,
+Bath 2 Robe Hooks,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,30,3,33,Ea,0,20,0,0,0,0,0,
+Bath 2 Hand Towel Holder,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Bath 2 Shaving Cabinet,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,600,60,660,Ea,0,20,0,0,0,0,0,
+Bath 2 Mirror,Bathroom 2,ALLOWANCE,Incomplete,241,PC Items,0,300,30,330,Ea,0,20,0,0,0,0,0,
+General,PC Items,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Toilet Roll Holder,General,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Toilet Suite,General,ALLOWANCE,Incomplete,241,PC Items,0,600,60,660,Ea,0,20,0,0,0,0,0,
+Kitchen Tap,General,ALLOWANCE,Incomplete,241,PC Items,0,500,50,550,Ea,0,20,0,0,0,0,0,
+Kitchen Sink,General,ALLOWANCE,Incomplete,241,PC Items,0,700,70,770,Ea,0,20,0,0,0,0,0,
+Kitchen Sink Waste,General,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Laundry Tap,General,ALLOWANCE,Incomplete,241,PC Items,0,500,50,550,Ea,0,20,0,0,0,0,0,
+Laundry Sink,General,ALLOWANCE,Incomplete,241,PC Items,0,600,60,660,Ea,0,20,0,0,0,0,0,
+Laundry Sink Waste,General,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Butlers Tap,General,ALLOWANCE,Incomplete,241,PC Items,0,500,50,550,Ea,0,20,0,0,0,0,0,
+Butlers Sink,General,ALLOWANCE,Incomplete,241,PC Items,0,500,50,550,Ea,0,20,0,0,0,0,0,
+Butlers Sink Waste,General,ALLOWANCE,Incomplete,241,PC Items,0,60,6,66,Ea,0,20,0,0,0,0,0,
+Zip Tap,General,ALLOWANCE,Incomplete,241,PC Items,0,0,0,0,Ea,0,20,0,0,0,0,0,
+WC Taps,General,ALLOWANCE,Incomplete,241,PC Items,0,200,20,220,Ea,0,20,0,0,0,0,0,
+WC Basin,General,ALLOWANCE,Incomplete,241,PC Items,0,450,45,495,Ea,0,20,0,0,0,0,0,
+Front Door Hardware,General,ALLOWANCE,Incomplete,241,PC Items,0,400,40,440,Ea,0,20,0,0,0,0,0,
+Door Handles,General,ALLOWANCE,Incomplete,241,PC Items,0,70,7,77,Ea,0,20,0,0,0,0,0,
+CSD Door Handles,General,ALLOWANCE,Incomplete,241,PC Items,0,70,7,77,Ea,0,20,0,0,0,0,0,
+Appliances,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Allowances for supply of Appliances
+"
+Cooktop,Appliances,ALLOWANCE,Incomplete,243,Appliances,0,2500,250,2750,unit,0,20,0,0,0,0,0,
+Oven,Appliances,ALLOWANCE,Incomplete,243,Appliances,0,2500,250,2750,unit,0,20,0,0,0,0,0,
+Freestanding Cooker,Appliances,ALLOWANCE,Incomplete,243,Appliances,0,5000,500,5500,unit,0,20,0,0,0,0,0,
+Rangehood,Appliances,ALLOWANCE,Incomplete,243,Appliances,0,1200,120,1320,unit,0,20,0,0,0,0,0,
+Dishwasher,Appliances,ALLOWANCE,Incomplete,243,Appliances,0,1500,150,1650,unit,0,20,0,0,0,0,0,
+Fridge,Appliances,MATERIAL,Incomplete,243,Appliances,0,0,0,0,unit,0,20,0,0,0,0,0,
+BBQ,Appliances,MATERIAL,Incomplete,243,Appliances,0,0,0,0,unit,0,20,0,0,0,0,0,
+Washing Machine,Appliances,MATERIAL,Incomplete,243,Appliances,0,0,0,0,unit,0,20,0,0,0,0,0,
+Dryer,Appliances,MATERIAL,Incomplete,243,Appliances,0,0,0,0,unit,0,20,0,0,0,0,0,
+Fireplace,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Fireplace Supply & Install,Fireplace,LABOUR,Incomplete,325,Electrical - HVAC,0,0,0,0,unit,0,20,0,0,0,0,0,
+Internal Feature Items,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - Internal Feature Items,Internal Feature Items,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+External Feature Items,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+LABOUR - External Feature Work,External Feature Items,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+External Fixtures,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Clothesline Supply,External Fixtures,MATERIAL,Incomplete,240,Exterior Works,0,0,0,0,ea,0,20,0,0,0,0,0,
+Clothesline Install,External Fixtures,MATERIAL,Incomplete,240,Exterior Works,0,0,0,0,hour,0,20,0,0,0,0,0,
+Letterbox Supply,External Fixtures,MATERIAL,Incomplete,240,Exterior Works,0,0,0,0,ea,0,20,0,0,0,0,0,
+Letterbox Install,External Fixtures,MATERIAL,Incomplete,240,Exterior Works,0,0,0,0,hour,0,20,0,0,0,0,0,
+Street Name/Number,External Fixtures,MATERIAL,Incomplete,240,Exterior Works,0,0,0,0,ea,0,20,0,0,0,0,0,
+Street Name/Number Install,External Fixtures,MATERIAL,Incomplete,240,Exterior Works,0,0,0,0,hour,0,20,0,0,0,0,0,
+Garage Door,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Garage Door,Garage Door,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Window Furnishings,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"No allowance for WIndow Furnishings
+"
+Blinds & Curtains Supply & Install,Window Furnishings,MATERIAL,Incomplete,349,Window Furnishings,1,0,0,0,unit,0,20,0,0,0,0,0,
+Cleaning,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,"Professional builders clean at completion of all works. This is a builders clean only and includes the following; vacuuming, mopping, sweeping and wiping down of all surfaces.
+"
+Interior Builders Clean,Cleaning,MATERIAL,Incomplete,350,Cleaning,0,0,0,0,unit,0,20,0,0,0,0,0,
+Cleaning Windows,Cleaning,MATERIAL,Incomplete,350,Cleaning,0,0,0,0,unit,0,20,0,0,0,0,0,
+Site Clean,Cleaning,MATERIAL,Incomplete,350,Cleaning,0,1500,150,1650,unit,0,20,0,0,0,0,0,
+Exclusions,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Exclusions,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Appliance install,Exclusions,LABOUR,Incomplete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,"No allowance for install of appliance not built into joinery
+"
+Certification Fees,Exclusions,MATERIAL,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,
+Engineering Inspections,Exclusions,MATERIAL,Incomplete,103,Engineering,0,0,0,0,unit,0,20,0,0,0,0,0,
+Portable Long Service Levy,Exclusions,MATERIAL,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,
+Design Fees,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Postage/delivery fees for materials & PC items.,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Engineer Inspections,Exclusions,SUBCONTRACTOR,Incomplete,103,Engineering,0,0,0,0,unit,0,20,0,0,0,0,0,
+Soil Test,Exclusions,SUBCONTRACTOR,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,
+Engineering,Exclusions,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+Energy Report,Exclusions,FEE,Incomplete,100,Preliminaries,0,0,0,0,unit,0,20,0,0,0,0,0,
+Landscaping and all associated notes on plan.,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Wind Turbine and any assocaited work,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Solar - Truss provisions for future works included.,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+All Fee's and Connections during construction to be paid by owner.,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Pool and any other associated works - Future Provisions TBC,Exclusions,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,Ea,0,20,0,0,0,0,0,
+Terms,,GROUP,Incomplete,,,,,,,,0,0,0,,,,0,
+"Tile installation pricing is for standard tiles only. If tiles installed are decorative, mosaic, subway or the like, their installation will incur added cost to the labour component.",Terms,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+"Everything that is not mentioned in this quote, is not included.",Terms,MATERIAL,Incomplete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Concrete saw blade,,MATERIAL,Incomplete,203,Demolition,1,350,35,385,unit,350,0,0,350,35,385,385,
+,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+Summary,,,,,,,,,,,,,,,,,,
+Totals,,,,,,,,,,,,,,,,,,
+Builder Fixed Cost,,11097.91,,,,,,,,,,,,,,,,
+Allowances,,0,,,,,,,,,,,,,,,,
+Overheads,,0,,,,,,,,,,,,,,,,
+Insurances,,0,,,,,,,,,,,,,,,,
+Markup,,2149.58,,,,,,,,,,,,,,,,
+Total Tax,,1324.75,,,,,,,,,,,,,,,,
+Adjust,,0,,,,,,,,,,,,,,,,
+Total,,14572.24,,,,,,,,,,,,,,,,

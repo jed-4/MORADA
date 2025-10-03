@@ -17,6 +17,7 @@ import {
   type UserInvitation, type InsertUserInvitation,
   type UserWithRole, type PermissionAction, type UserCategory,
   type CompanySettings, type InsertCompanySettings,
+  type CostCode, type InsertCostCode,
   type FieldCategory, type InsertFieldCategory,
   type FieldOption, type InsertFieldOption,
   type FieldCategoryWithOptions,
@@ -159,6 +160,13 @@ export interface IStorage {
   updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined>;
   deleteEstimateGroup(id: string): Promise<boolean>;
 
+  // Cost Codes CRUD
+  getCostCodes(projectId: string): Promise<CostCode[]>;
+  getCostCode(id: string): Promise<CostCode | undefined>;
+  createCostCode(costCode: InsertCostCode): Promise<CostCode>;
+  updateCostCode(id: string, costCode: Partial<InsertCostCode>): Promise<CostCode | undefined>;
+  deleteCostCode(id: string): Promise<boolean>;
+
   // Versioning and Locking
   createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate>;
   lockEstimate(estimateId: string): Promise<Estimate | undefined>;
@@ -236,6 +244,7 @@ export class MemStorage implements IStorage {
   private estimates: Map<string, Estimate>;
   private estimateItems: Map<string, EstimateItem>;
   private estimateGroups: Map<string, EstimateGroup>;
+  private costCodes: Map<string, CostCode>;
   private companySettings: CompanySettings | undefined;
   private fieldCategories: Map<string, FieldCategory>;
   private fieldOptions: Map<string, FieldOption>;
@@ -260,6 +269,7 @@ export class MemStorage implements IStorage {
     this.estimates = new Map();
     this.estimateItems = new Map();
     this.estimateGroups = new Map();
+    this.costCodes = new Map();
     this.fieldCategories = new Map();
     this.fieldOptions = new Map();
     this.selections = new Map();
@@ -903,6 +913,7 @@ export class MemStorage implements IStorage {
       const item: EstimateItem = {
         ...itemData,
         groupId: null,
+        parentItemId: null,
         costCode: null,
         allowance: "None",
         notes: null,
@@ -2208,6 +2219,51 @@ export class MemStorage implements IStorage {
     }
 
     return this.estimateGroups.delete(id);
+  }
+
+  // Cost Codes CRUD operations
+  async getCostCodes(projectId: string): Promise<CostCode[]> {
+    const codes = Array.from(this.costCodes.values())
+      .filter(code => code.projectId === projectId && code.isActive);
+    return codes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  }
+
+  async getCostCode(id: string): Promise<CostCode | undefined> {
+    return this.costCodes.get(id);
+  }
+
+  async createCostCode(insertCode: InsertCostCode): Promise<CostCode> {
+    const id = randomUUID();
+    const now = new Date();
+    const code: CostCode = {
+      ...insertCode,
+      id,
+      isActive: insertCode.isActive ?? true,
+      sortOrder: insertCode.sortOrder ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.costCodes.set(id, code);
+    return code;
+  }
+
+  async updateCostCode(id: string, updateCode: Partial<InsertCostCode>): Promise<CostCode | undefined> {
+    const code = this.costCodes.get(id);
+    if (!code) {
+      return undefined;
+    }
+
+    const updatedCode: CostCode = {
+      ...code,
+      ...updateCode,
+      updatedAt: new Date(),
+    };
+    this.costCodes.set(id, updatedCode);
+    return updatedCode;
+  }
+
+  async deleteCostCode(id: string): Promise<boolean> {
+    return this.costCodes.delete(id);
   }
 
   // Versioning and Locking
@@ -3759,6 +3815,80 @@ export class DbStorage implements IStorage {
     }
   }
   async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
+
+  // Cost Codes CRUD operations
+  async getCostCodes(projectId: string): Promise<CostCode[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.costCodes)
+        .where(and(
+          eq(schema.costCodes.projectId, projectId),
+          eq(schema.costCodes.isActive, true)
+        ))
+        .orderBy(schema.costCodes.sortOrder);
+    } catch (error) {
+      console.error("Database error in getCostCodes:", error);
+      throw error;
+    }
+  }
+
+  async getCostCode(id: string): Promise<CostCode | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(schema.costCodes)
+        .where(eq(schema.costCodes.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getCostCode:", error);
+      throw error;
+    }
+  }
+
+  async createCostCode(insertCode: InsertCostCode): Promise<CostCode> {
+    try {
+      const result = await db
+        .insert(schema.costCodes)
+        .values(insertCode)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createCostCode:", error);
+      throw error;
+    }
+  }
+
+  async updateCostCode(id: string, updateCode: Partial<InsertCostCode>): Promise<CostCode | undefined> {
+    try {
+      const result = await db
+        .update(schema.costCodes)
+        .set({
+          ...updateCode,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.costCodes.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateCostCode:", error);
+      throw error;
+    }
+  }
+
+  async deleteCostCode(id: string): Promise<boolean> {
+    try {
+      await db
+        .delete(schema.costCodes)
+        .where(eq(schema.costCodes.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteCostCode:", error);
+      return false;
+    }
+  }
+
   async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> { throw new Error("Not implemented"); }
   
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> {

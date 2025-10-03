@@ -12,6 +12,7 @@ import {
   insertEstimateSchema,
   insertEstimateItemSchema,
   insertEstimateGroupSchema,
+  insertCostCodeSchema,
   insertUserSchema,
   insertUserRoleSchema,
   insertPermissionSchema,
@@ -65,7 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // TEMPORARY: Allow projects, tasks, estimates, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options')) {
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options')) {
       return next();
     }
     
@@ -1087,6 +1088,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to delete estimate group" });
+    }
+  });
+
+  // Cost Codes API Routes
+  app.get("/api/projects/:projectId/cost-codes", async (req, res) => {
+    try {
+      const costCodes = await storage.getCostCodes(req.params.projectId);
+      res.json(costCodes);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cost codes" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/cost-codes", async (req, res) => {
+    try {
+      const validationResult = insertCostCodeSchema.safeParse({
+        ...req.body,
+        projectId: req.params.projectId
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const costCode = await storage.createCostCode(validationResult.data);
+      res.status(201).json(costCode);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create cost code" });
+    }
+  });
+
+  app.patch("/api/cost-codes/:id", async (req, res) => {
+    try {
+      const updateSchema = insertCostCodeSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const costCode = await storage.updateCostCode(req.params.id, validationResult.data);
+      if (!costCode) {
+        return res.status(404).json({ error: "Cost code not found" });
+      }
+      res.json(costCode);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update cost code" });
+    }
+  });
+
+  app.delete("/api/cost-codes/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCostCode(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Cost code not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete cost code" });
     }
   });
 

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Save, Settings, Palette, Info, Archive, Users, Plus } from "lucide-react";
+import { Save, Settings, Palette, Info, Archive, Users, Plus, Code, Trash2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS } from "@shared/schema";
@@ -465,6 +465,22 @@ export default function ProjectSettings() {
         </CardContent>
       </Card>
 
+      {/* Cost Codes */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Code className="h-5 w-5" />
+            Cost Codes
+          </CardTitle>
+          <CardDescription>
+            Manage cost codes used for organizing estimate items
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CostCodesManager projectId={currentProject.id} />
+        </CardContent>
+      </Card>
+
       {/* Project Details */}
       <Card>
         <CardHeader>
@@ -545,6 +561,245 @@ export default function ProjectSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Cost Codes Manager Component
+function CostCodesManager({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingCode, setEditingCode] = useState<any>(null);
+  const [newCode, setNewCode] = useState({ code: "", title: "", description: "" });
+
+  // Fetch cost codes
+  const { data: costCodes = [], isLoading } = useQuery({
+    queryKey: [`/api/projects/${projectId}/cost-codes`],
+  });
+
+  // Create cost code
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("POST", `/api/projects/${projectId}/cost-codes`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/cost-codes`] });
+      toast({ title: "Cost code created successfully" });
+      setIsAdding(false);
+      setNewCode({ code: "", title: "", description: "" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create cost code", variant: "destructive" });
+    },
+  });
+
+  // Update cost code
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest("PATCH", `/api/cost-codes/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/cost-codes`] });
+      toast({ title: "Cost code updated successfully" });
+      setEditingCode(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to update cost code", variant: "destructive" });
+    },
+  });
+
+  // Delete cost code
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/cost-codes/${id}`);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/cost-codes`] });
+      toast({ title: "Cost code deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete cost code", variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading cost codes...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-muted-foreground">
+          {costCodes.length} cost code{costCodes.length !== 1 ? 's' : ''}
+        </p>
+        <Button
+          onClick={() => setIsAdding(true)}
+          size="sm"
+          data-testid="button-add-cost-code"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Cost Code
+        </Button>
+      </div>
+
+      {costCodes.length === 0 && !isAdding ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <Code className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>No cost codes yet. Add your first cost code to get started.</p>
+        </div>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left p-3 text-sm font-medium">Code</th>
+                <th className="text-left p-3 text-sm font-medium">Title</th>
+                <th className="text-left p-3 text-sm font-medium">Description</th>
+                <th className="text-right p-3 text-sm font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isAdding && (
+                <tr className="border-t bg-muted/20">
+                  <td className="p-2">
+                    <Input
+                      value={newCode.code}
+                      onChange={(e) => setNewCode({ ...newCode, code: e.target.value })}
+                      placeholder="e.g., FLRT"
+                      className="h-8"
+                      data-testid="input-new-code"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <Input
+                      value={newCode.title}
+                      onChange={(e) => setNewCode({ ...newCode, title: e.target.value })}
+                      placeholder="e.g., Flat rate"
+                      className="h-8"
+                      data-testid="input-new-title"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <Input
+                      value={newCode.description}
+                      onChange={(e) => setNewCode({ ...newCode, description: e.target.value })}
+                      placeholder="Optional description"
+                      className="h-8"
+                      data-testid="input-new-description"
+                    />
+                  </td>
+                  <td className="p-2 text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setIsAdding(false);
+                          setNewCode({ code: "", title: "", description: "" });
+                        }}
+                        className="h-8"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => createMutation.mutate(newCode)}
+                        disabled={!newCode.code.trim() || !newCode.title.trim() || createMutation.isPending}
+                        className="h-8"
+                        data-testid="button-save-cost-code"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {costCodes.map((code: any) => (
+                <tr key={code.id} className="border-t" data-testid={`row-cost-code-${code.id}`}>
+                  {editingCode?.id === code.id ? (
+                    <>
+                      <td className="p-2">
+                        <Input
+                          value={editingCode.code}
+                          onChange={(e) => setEditingCode({ ...editingCode, code: e.target.value })}
+                          className="h-8"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={editingCode.title}
+                          onChange={(e) => setEditingCode({ ...editingCode, title: e.target.value })}
+                          className="h-8"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={editingCode.description || ""}
+                          onChange={(e) => setEditingCode({ ...editingCode, description: e.target.value })}
+                          className="h-8"
+                        />
+                      </td>
+                      <td className="p-2 text-right">
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingCode(null)}
+                            className="h-8"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => updateMutation.mutate({ id: code.id, data: editingCode })}
+                            disabled={updateMutation.isPending}
+                            className="h-8"
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="p-3 font-mono text-sm">{code.code}</td>
+                      <td className="p-3 text-sm">{code.title}</td>
+                      <td className="p-3 text-sm text-muted-foreground">{code.description || '—'}</td>
+                      <td className="p-3 text-right">
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditingCode(code)}
+                            data-testid={`button-edit-${code.id}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this cost code?')) {
+                                deleteMutation.mutate(code.id);
+                              }
+                            }}
+                            data-testid={`button-delete-${code.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

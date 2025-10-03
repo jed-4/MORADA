@@ -417,6 +417,7 @@ export const estimateItems = pgTable("estimate_items", {
   name: text("name").notNull(),
   type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee"
   groupId: varchar("group_id").references(() => estimateGroups.id), // Reference to estimate groups
+  parentItemId: varchar("parent_item_id").references((): any => estimateItems.id, { onDelete: "cascade" }), // For sub-items (3-level nesting)
   costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
   allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
   quantity: integer("quantity").notNull().default(1),
@@ -513,6 +514,28 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings).o
 
 export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
 export type CompanySettings = typeof companySettings.$inferSelect;
+
+// Cost Codes (for estimate items)
+export const costCodes = pgTable("cost_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  code: text("code").notNull(), // e.g., "FLRT", "100", "202"
+  title: text("title").notNull(), // e.g., "Flat rate", "Preliminaries", "Site Services"
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCostCodeSchema = createInsertSchema(costCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCostCode = z.infer<typeof insertCostCodeSchema>;
+export type CostCode = typeof costCodes.$inferSelect;
 
 // Field Categories (Buildern-style predefined categories)
 export const fieldCategories = pgTable("field_categories", {
