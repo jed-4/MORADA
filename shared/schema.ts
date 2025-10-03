@@ -329,6 +329,7 @@ export const projects = pgTable("projects", {
   jobNumber: text("job_number"), // Optional job/project reference number
   projectType: text("project_type"), // References PROJECT_TYPES
   color: text("color").default("#3b82f6"), // Default blue
+  icon: text("icon").default("Building2"), // Lucide icon name
   isActive: boolean("is_active").notNull().default(true),
   isBusiness: boolean("is_business").notNull().default(false), // Business project flag
   ownerId: varchar("owner_id").references(() => users.id),
