@@ -263,7 +263,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                       {showComingSoon && comingSoonItems.has(item.title) && (
                         <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
                       )}
@@ -288,7 +288,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business">
                     <Home className="h-4 w-4" />
-                    <span>Business Overview</span>
+                    <span className="group-data-[collapsible=icon]:hidden">Business Overview</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -301,7 +301,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business/expenses">
                     <CreditCard className="h-4 w-4" />
-                    <span>Expenses</span>
+                    <span className="group-data-[collapsible=icon]:hidden">Expenses</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -314,7 +314,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business/timesheets">
                     <Timer className="h-4 w-4" />
-                    <span>Timesheets</span>
+                    <span className="group-data-[collapsible=icon]:hidden">Timesheets</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -327,7 +327,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business/messages">
                     <MessageSquare className="h-4 w-4" />
-                    <span>Messages</span>
+                    <span className="group-data-[collapsible=icon]:hidden">Messages</span>
                     {showComingSoon && comingSoonBusinessItems.has("Messages") && (
                       <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
                     )}
@@ -343,7 +343,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                 >
                   <Link href="/business/leave">
                     <Calendar className="h-4 w-4" />
-                    <span>Sick Days & Leave</span>
+                    <span className="group-data-[collapsible=icon]:hidden">Sick Days & Leave</span>
                     {showComingSoon && comingSoonBusinessItems.has("Sick Days & Leave") && (
                       <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
                     )}
@@ -360,7 +360,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                       {showComingSoon && comingSoonBusinessItems.has(item.title) && (
                         <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
                       )}
