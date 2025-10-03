@@ -2,68 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE */
+/* LIGHT MODE - WHITE & MINIMALIST */
 :root {
-  --button-outline: rgba(0,0,0, .10);
-  --badge-outline: rgba(0,0,0, .05);
+  --button-outline: rgba(0,0,0, .08);
+  --badge-outline: rgba(0,0,0, .04);
 
   /* Automatic computation of border around primary / danger buttons */
-  --opaque-button-border-intensity: -8; /* In terms of percentages */
+  --opaque-button-border-intensity: -4; /* In terms of percentages */
 
   /* Backgrounds applied on top of other backgrounds when hovered/active */
-  --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
+  --elevate-1: rgba(0,0,0, .02);
+  --elevate-2: rgba(0,0,0, .05);
 
-  --background: 220 5% 98%;
+  --background: 0 0% 99%;
 
-  --foreground: 220 15% 15%;
+  --foreground: 220 12% 18%;
 
-  --border: 220 8% 88%;
+  --border: 220 6% 90%;
 
   --card: 0 0% 100%;
 
-  --card-foreground: 220 15% 15%;
+  --card-foreground: 220 12% 18%;
 
-  --card-border: 220 8% 95%;
+  --card-border: 220 6% 92%;
 
-  --sidebar: 220 6% 96%;
+  --sidebar: 0 0% 98%;
 
-  --sidebar-foreground: 220 15% 15%;
+  --sidebar-foreground: 220 12% 18%;
 
-  --sidebar-border: 220 8% 90%;
+  --sidebar-border: 220 6% 92%;
 
-  --sidebar-primary: 240 50% 65%; /* Periwinkle matching primary */
+  --sidebar-primary: 215 30% 55%; /* Muted blue for minimalist look */
 
-  --sidebar-primary-foreground: 0 0% 98%;
+  --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 220 12% 89%;
+  --sidebar-accent: 220 8% 94%;
 
-  --sidebar-accent-foreground: 220 15% 15%;
+  --sidebar-accent-foreground: 220 12% 18%;
 
-  --sidebar-ring: 240 50% 65%; /* Periwinkle matching primary */
+  --sidebar-ring: 210 35% 55%; /* Softer ring color */
 
-  --popover: 220 8% 94%;
+  --popover: 0 0% 100%;
 
-  --popover-foreground: 220 15% 15%;
+  --popover-foreground: 220 12% 18%;
 
-  --popover-border: 220 10% 87%;
+  --popover-border: 220 6% 90%;
 
-  /* SOFT PURPLE TEST #4: Periwinkle - Soft Blue-Purple Blend */
-  --primary: 240 50% 65%; /* Periwinkle */
+  /* Minimalist Blue Palette */
+  --primary: 215 30% 55%; /* Muted blue */
 
-  --primary-foreground: 0 0% 98%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 240 40% 75%; /* Lighter periwinkle to complement primary */
+  --secondary: 215 18% 80%; /* Light muted blue */
 
-  --secondary-foreground: 240 50% 20%;
+  --secondary-foreground: 220 12% 18%;
 
-  --muted: 220 8% 92%;
+  --muted: 220 6% 94%;
 
-  --muted-foreground: 220 12% 42%;
+  --muted-foreground: 220 10% 45%;
 
-  --accent: 210 100% 45%; /* BOLD construction blue */
+  --accent: 210 15% 35%; /* Subtle accent */
 
-  --accent-foreground: 0 0% 98%;
+  --accent-foreground: 0 0% 100%;
 
   /* Construction-specific colors */
   --success: 142 76% 36%; /* Keep success green consistent */
@@ -79,31 +79,31 @@
   --construction-steel: 210 11% 71%;
   --construction-safety: 60 100% 50%;
 
-  --input: 220 15% 75%;
-  --ring: 210 90% 50%;
-  --chart-1: 210 90% 35%;
-  --chart-2: 142 70% 35%;
-  --chart-3: 38 85% 45%;
-  --chart-4: 280 60% 45%;
-  --chart-5: 15 80% 45%;
+  --input: 220 8% 90%;
+  --ring: 210 35% 55%;
+  --chart-1: 210 40% 50%;
+  --chart-2: 142 70% 40%;
+  --chart-3: 38 85% 50%;
+  --chart-4: 280 50% 50%;
+  --chart-5: 15 75% 50%;
 
   --font-sans: Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, monospace;
   --radius: .5rem; /* 8px */
-  /* DRAMATIC Enhanced shadows for BOLD visual impact */
-  --shadow-2xs: 0px 2px 4px 0px hsl(220 15% 15% / 0.12);
-  --shadow-xs: 0px 3px 6px 0px hsl(220 15% 15% / 0.16);
-  --shadow-sm: 0px 4px 8px 0px hsl(220 15% 15% / 0.18), 0px 2px 6px -1px hsl(220 15% 15% / 0.12);
-  --shadow: 0px 6px 12px 0px hsl(220 15% 15% / 0.22), 0px 3px 8px -1px hsl(220 15% 15% / 0.16);
-  --shadow-md: 0px 8px 16px -1px hsl(220 15% 15% / 0.28), 0px 4px 12px -1px hsl(220 15% 15% / 0.18);
-  --shadow-lg: 0px 16px 32px -3px hsl(220 15% 15% / 0.32), 0px 8px 16px -2px hsl(220 15% 15% / 0.16);
-  --shadow-xl: 0px 32px 48px -5px hsl(220 15% 15% / 0.38), 0px 16px 20px -5px hsl(220 15% 15% / 0.18);
-  --shadow-2xl: 0px 48px 80px -12px hsl(220 15% 15% / 0.48);
+  /* Minimalist subtle shadows */
+  --shadow-2xs: 0px 1px 2px 0px hsl(220 15% 15% / 0.06);
+  --shadow-xs: 0px 1px 3px 0px hsl(220 15% 15% / 0.08);
+  --shadow-sm: 0px 2px 4px 0px hsl(220 15% 15% / 0.09), 0px 1px 3px -1px hsl(220 15% 15% / 0.06);
+  --shadow: 0px 3px 6px 0px hsl(220 15% 15% / 0.11), 0px 1px 4px -1px hsl(220 15% 15% / 0.08);
+  --shadow-md: 0px 4px 8px -1px hsl(220 15% 15% / 0.14), 0px 2px 6px -1px hsl(220 15% 15% / 0.09);
+  --shadow-lg: 0px 8px 16px -3px hsl(220 15% 15% / 0.16), 0px 4px 8px -2px hsl(220 15% 15% / 0.08);
+  --shadow-xl: 0px 16px 24px -5px hsl(220 15% 15% / 0.19), 0px 8px 10px -5px hsl(220 15% 15% / 0.09);
+  --shadow-2xl: 0px 24px 40px -12px hsl(220 15% 15% / 0.24);
   
-  /* BOLD professional card shadow for construction industry */
-  --shadow-card: 0px 8px 16px -1px hsl(220 15% 15% / 0.20), 0px 4px 8px -1px hsl(220 15% 15% / 0.12);
-  --shadow-card-hover: 0px 16px 32px -1px hsl(220 15% 15% / 0.32), 0px 8px 16px -1px hsl(220 15% 15% / 0.20);
+  /* Subtle card shadow for minimalist look */
+  --shadow-card: 0px 1px 3px 0px hsl(220 15% 15% / 0.08), 0px 1px 2px -1px hsl(220 15% 15% / 0.05);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(220 15% 15% / 0.12), 0px 2px 4px -1px hsl(220 15% 15% / 0.08);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
