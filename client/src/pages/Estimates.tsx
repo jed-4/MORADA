@@ -45,6 +45,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { type Estimate, type EstimateSummary, type Project, type FieldCategoryWithOptions, type FieldOption } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ProjectIcon } from "@/components/ProjectIcon";
 
 export default function Estimates() {
   const [, setLocation] = useLocation();
@@ -310,7 +311,14 @@ export default function Estimates() {
               <SelectItem value="All">All Projects</SelectItem>
               {projects.map((project) => (
                 <SelectItem key={project.id} value={project.id}>
-                  {project.name}
+                  <div className="flex items-center gap-2">
+                    <ProjectIcon 
+                      icon={project.icon} 
+                      color={project.color} 
+                      className="w-4 h-4 flex-shrink-0" 
+                    />
+                    <span className="truncate">{project.name}</span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
