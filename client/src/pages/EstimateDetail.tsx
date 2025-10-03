@@ -118,15 +118,15 @@ export default function EstimateDetail() {
   const [editingValue, setEditingValue] = useState<any>("");
 
   // Column configuration state
-  type ColumnConfig = { id: string; label: string; visible: boolean; width: string };
+  type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
   const defaultColumns: ColumnConfig[] = [
-    { id: 'item', label: 'Item', visible: true, width: 'min-w-[180px]' },
-    { id: 'type', label: 'Type', visible: true, width: 'w-[100px]' },
-    { id: 'quantity', label: 'Quantity', visible: true, width: 'w-[100px]' },
-    { id: 'priceExTax', label: 'Price Ex-Tax', visible: true, width: 'w-[120px]' },
-    { id: 'tax', label: 'Tax', visible: true, width: 'w-[100px]' },
-    { id: 'totalIncTax', label: 'Total Inc-Tax', visible: true, width: 'w-[120px]' },
-    { id: 'status', label: 'Status', visible: true, width: 'w-[120px]' },
+    { id: 'item', label: 'Item', visible: true, widthPx: 180 },
+    { id: 'type', label: 'Type', visible: true, widthPx: 100 },
+    { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
+    { id: 'priceExTax', label: 'Price Ex-Tax', visible: true, widthPx: 120 },
+    { id: 'tax', label: 'Tax', visible: true, widthPx: 100 },
+    { id: 'totalIncTax', label: 'Total Inc-Tax', visible: true, widthPx: 120 },
+    { id: 'status', label: 'Status', visible: true, widthPx: 120 },
   ];
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
 
@@ -873,14 +873,11 @@ export default function EstimateDetail() {
   // Column resize handlers
   const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
     e.preventDefault();
-    const currentWidth = columns.find(col => col.id === columnId)?.width || 'w-[100px]';
-    // Match both 'w-[100px]' and 'min-w-[180px]' patterns
-    const widthMatch = currentWidth.match(/(min-)?w-\[(\d+)px\]/);
-    const pixelWidth = widthMatch ? parseInt(widthMatch[2]) : 100;
+    const currentWidth = columns.find(col => col.id === columnId)?.widthPx || 100;
     
     setResizingColumn(columnId);
     setResizeStartX(e.clientX);
-    setResizeStartWidth(pixelWidth);
+    setResizeStartWidth(currentWidth);
     
     // Prevent text selection during resize
     document.body.style.userSelect = 'none';
@@ -897,10 +894,7 @@ export default function EstimateDetail() {
       
       setColumns(prev => prev.map(col => {
         if (col.id === resizingColumn) {
-          // Preserve the original prefix (min-w or w)
-          const currentWidth = col.width;
-          const prefix = currentWidth.startsWith('min-w-') ? 'min-w-' : 'w-';
-          return { ...col, width: `${prefix}[${newWidth}px]` };
+          return { ...col, widthPx: newWidth };
         }
         return col;
       }));
