@@ -1710,13 +1710,14 @@ export default function EstimateDetail() {
                   </div>
                 </div>
               ) : (
-                <Table style={{ tableLayout: 'fixed' }}>
-                  <colgroup>
-                    {columns.filter(col => col.visible).map(column => (
-                      <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                    ))}
-                    <col style={{ width: '80px' }} />
-                  </colgroup>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <colgroup>
+                      {columns.filter(col => col.visible).map(column => (
+                        <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                      ))}
+                      <col style={{ width: '80px' }} />
+                    </colgroup>
                   <TableHeader>
                     <TableRow className="h-8">
                       {columns.filter(col => col.visible).map(column => (
@@ -1890,6 +1891,7 @@ export default function EstimateDetail() {
                     })()}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>
