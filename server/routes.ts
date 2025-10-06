@@ -25,7 +25,9 @@ import {
   insertSelectionSchema,
   insertSelectionOptionSchema,
   insertOptionAttachmentSchema,
-  insertClientSelectionSchema
+  insertClientSelectionSchema,
+  insertSupplierSchema,
+  insertBillSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -65,8 +67,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
-    // TEMPORARY: Allow projects, tasks, estimates, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options')) {
+    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, and other core operations for development
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills')) {
       return next();
     }
     
@@ -1853,6 +1855,156 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(clientSelection);
     } catch (error) {
       res.status(500).json({ error: "Failed to create client selection" });
+    }
+  });
+
+  // Suppliers API Routes
+  app.get("/api/suppliers", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const suppliers = await storage.getSuppliers(projectId as string | undefined);
+      res.json(suppliers);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch suppliers" });
+    }
+  });
+
+  app.get("/api/suppliers/:id", async (req, res) => {
+    try {
+      const supplier = await storage.getSupplierById(req.params.id);
+      if (!supplier) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(supplier);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier" });
+    }
+  });
+
+  app.post("/api/suppliers", async (req, res) => {
+    try {
+      const validationResult = insertSupplierSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const supplier = await storage.createSupplier(validationResult.data);
+      res.status(201).json(supplier);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create supplier" });
+    }
+  });
+
+  app.patch("/api/suppliers/:id", async (req, res) => {
+    try {
+      const validationResult = insertSupplierSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const supplier = await storage.updateSupplier(req.params.id, validationResult.data);
+      res.json(supplier);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Supplier not found") {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.status(500).json({ error: "Failed to update supplier" });
+    }
+  });
+
+  app.delete("/api/suppliers/:id", async (req, res) => {
+    try {
+      await storage.deleteSupplier(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete supplier" });
+    }
+  });
+
+  // Bills API Routes
+  app.get("/api/bills", async (req, res) => {
+    try {
+      const { projectId, status } = req.query;
+      const bills = await storage.getBills(
+        projectId as string | undefined, 
+        status as string | undefined
+      );
+      res.json(bills);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch bills" });
+    }
+  });
+
+  app.get("/api/bills/:id", async (req, res) => {
+    try {
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) {
+        return res.status(404).json({ error: "Bill not found" });
+      }
+      res.json(bill);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch bill" });
+    }
+  });
+
+  app.post("/api/bills", async (req, res) => {
+    try {
+      const validationResult = insertBillSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const bill = await storage.createBill(validationResult.data);
+      res.status(201).json(bill);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create bill" });
+    }
+  });
+
+  app.patch("/api/bills/:id", async (req, res) => {
+    try {
+      const validationResult = insertBillSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const bill = await storage.updateBill(req.params.id, validationResult.data);
+      res.json(bill);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Bill not found") {
+        return res.status(404).json({ error: "Bill not found" });
+      }
+      res.status(500).json({ error: "Failed to update bill" });
+    }
+  });
+
+  app.delete("/api/bills/:id", async (req, res) => {
+    try {
+      await storage.deleteBill(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete bill" });
+    }
+  });
+
+  app.get("/api/bills/:id/line-items", async (req, res) => {
+    try {
+      const lineItems = await storage.getBillLineItems(req.params.id);
+      res.json(lineItems);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch bill line items" });
     }
   });
 

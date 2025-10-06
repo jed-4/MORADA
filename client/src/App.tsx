@@ -22,6 +22,8 @@ import ProjectEstimates from "@/pages/ProjectEstimates";
 import EstimateDetail from "@/pages/EstimateDetail";
 import Selections from "@/pages/Selections";
 import SelectionDetail from "@/pages/SelectionDetail";
+import Suppliers from "@/pages/Suppliers";
+import Bills from "@/pages/Bills";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -86,7 +88,8 @@ function Router() {
       <Route path="/allowances" component={() => <ComingSoonPage section="allowances" />} />
       <Route path="/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
       <Route path="/variations" component={() => <ComingSoonPage section="variations" />} />
-      <Route path="/bills" component={() => <ComingSoonPage section="bills" />} />
+      <Route path="/bills" component={Bills} />
+      <Route path="/bills/:id" component={() => <ComingSoonPage section="bill-detail" />} />
       <Route path="/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
       <Route path="/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
@@ -97,6 +100,7 @@ function Router() {
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
       <Route path="/settings" component={Settings} />
+      <Route path="/suppliers" component={Suppliers} />
       <Route path="/checklists" component={() => <ComingSoonPage section="checklists" />} />
       <Route path="/emails" component={() => <ComingSoonPage section="emails" />} />
       <Route path="/crm" component={() => <ComingSoonPage section="crm" />} />

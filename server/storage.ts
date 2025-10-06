@@ -25,7 +25,10 @@ import {
   type SelectionOption, type InsertSelectionOption,
   type OptionAttachment, type InsertOptionAttachment,
   type ClientSelection, type InsertClientSelection,
-  type SelectionWithOptions
+  type SelectionWithOptions,
+  type Supplier, type InsertSupplier,
+  type Bill, type InsertBill,
+  type BillLineItem, type InsertBillLineItem
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -226,6 +229,21 @@ export interface IStorage {
   getClientSelections(projectId: string): Promise<ClientSelection[]>;
   createClientSelection(selection: InsertClientSelection): Promise<ClientSelection>;
   deleteClientSelection(id: string): Promise<boolean>;
+
+  // Suppliers CRUD
+  getSuppliers(projectId?: string): Promise<Supplier[]>;
+  getSupplierById(id: string): Promise<Supplier | null>;
+  createSupplier(supplier: InsertSupplier): Promise<Supplier>;
+  updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier>;
+  deleteSupplier(id: string): Promise<void>;
+
+  // Bills CRUD
+  getBills(projectId?: string, status?: string): Promise<Bill[]>;
+  getBillById(id: string): Promise<Bill | null>;
+  createBill(bill: InsertBill): Promise<Bill>;
+  updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
+  deleteBill(id: string): Promise<void>;
+  getBillLineItems(billId: string): Promise<BillLineItem[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -4048,6 +4066,159 @@ export class DbStorage implements IStorage {
   async getClientSelections(projectId: string): Promise<ClientSelection[]> { return []; }
   async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
   async deleteClientSelection(id: string): Promise<boolean> { return false; }
+
+  async getSuppliers(projectId?: string): Promise<Supplier[]> {
+    try {
+      if (projectId) {
+        return await db.select()
+          .from(schema.suppliers)
+          .where(eq(schema.suppliers.projectId, projectId));
+      }
+      return await db.select().from(schema.suppliers);
+    } catch (error) {
+      console.error("Database error in getSuppliers:", error);
+      throw error;
+    }
+  }
+
+  async getSupplierById(id: string): Promise<Supplier | null> {
+    try {
+      const suppliers = await db.select()
+        .from(schema.suppliers)
+        .where(eq(schema.suppliers.id, id));
+      return suppliers[0] || null;
+    } catch (error) {
+      console.error("Database error in getSupplierById:", error);
+      throw error;
+    }
+  }
+
+  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
+    try {
+      const newSuppliers = await db.insert(schema.suppliers)
+        .values(supplier)
+        .returning();
+      return newSuppliers[0];
+    } catch (error) {
+      console.error("Database error in createSupplier:", error);
+      throw error;
+    }
+  }
+
+  async updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier> {
+    try {
+      const updatedSuppliers = await db.update(schema.suppliers)
+        .set({ ...supplier, updatedAt: new Date() })
+        .where(eq(schema.suppliers.id, id))
+        .returning();
+      
+      if (!updatedSuppliers[0]) {
+        throw new Error("Supplier not found");
+      }
+      
+      return updatedSuppliers[0];
+    } catch (error) {
+      console.error("Database error in updateSupplier:", error);
+      throw error;
+    }
+  }
+
+  async deleteSupplier(id: string): Promise<void> {
+    try {
+      await db.delete(schema.suppliers)
+        .where(eq(schema.suppliers.id, id));
+    } catch (error) {
+      console.error("Database error in deleteSupplier:", error);
+      throw error;
+    }
+  }
+
+  async getBills(projectId?: string, status?: string): Promise<Bill[]> {
+    try {
+      let query = db.select().from(schema.bills);
+      const conditions = [];
+      
+      if (projectId) {
+        conditions.push(eq(schema.bills.projectId, projectId));
+      }
+      if (status) {
+        conditions.push(eq(schema.bills.status, status as any));
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+      
+      return await query.orderBy(desc(schema.bills.createdAt));
+    } catch (error) {
+      console.error("Database error in getBills:", error);
+      throw error;
+    }
+  }
+
+  async getBillById(id: string): Promise<Bill | null> {
+    try {
+      const bills = await db.select()
+        .from(schema.bills)
+        .where(eq(schema.bills.id, id));
+      return bills[0] || null;
+    } catch (error) {
+      console.error("Database error in getBillById:", error);
+      throw error;
+    }
+  }
+
+  async createBill(bill: InsertBill): Promise<Bill> {
+    try {
+      const newBills = await db.insert(schema.bills)
+        .values(bill)
+        .returning();
+      return newBills[0];
+    } catch (error) {
+      console.error("Database error in createBill:", error);
+      throw error;
+    }
+  }
+
+  async updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill> {
+    try {
+      const updatedBills = await db.update(schema.bills)
+        .set({ ...bill, updatedAt: new Date() })
+        .where(eq(schema.bills.id, id))
+        .returning();
+      
+      if (!updatedBills[0]) {
+        throw new Error("Bill not found");
+      }
+      
+      return updatedBills[0];
+    } catch (error) {
+      console.error("Database error in updateBill:", error);
+      throw error;
+    }
+  }
+
+  async deleteBill(id: string): Promise<void> {
+    try {
+      await db.delete(schema.bills)
+        .where(eq(schema.bills.id, id));
+    } catch (error) {
+      console.error("Database error in deleteBill:", error);
+      throw error;
+    }
+  }
+
+  async getBillLineItems(billId: string): Promise<BillLineItem[]> {
+    try {
+      return await db.select()
+        .from(schema.billLineItems)
+        .where(eq(schema.billLineItems.billId, billId))
+        .orderBy(schema.billLineItems.order);
+    } catch (error) {
+      console.error("Database error in getBillLineItems:", error);
+      throw error;
+    }
+  }
 }
 
 // Create and initialize storage

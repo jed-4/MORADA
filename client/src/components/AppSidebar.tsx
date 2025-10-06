@@ -26,6 +26,7 @@ import {
   Building2,
   ChevronDown,
   Plus,
+  Truck,
 } from "lucide-react";
 
 import {
@@ -102,6 +103,8 @@ const comingSoonBusinessItems = new Set([
 const businessItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Suppliers", url: "/suppliers", icon: Truck },
+  { title: "Bills", url: "/bills", icon: Receipt },
   { title: "Checklists", url: "/checklists", icon: CheckCircle },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: UserPlus },
