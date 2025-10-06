@@ -243,7 +243,12 @@ export interface IStorage {
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
   deleteBill(id: string): Promise<void>;
+  
+  // Bill Line Items CRUD
   getBillLineItems(billId: string): Promise<BillLineItem[]>;
+  createBillLineItem(item: InsertBillLineItem): Promise<BillLineItem>;
+  updateBillLineItem(id: string, item: Partial<InsertBillLineItem>): Promise<BillLineItem>;
+  deleteBillLineItem(id: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -4216,6 +4221,46 @@ export class DbStorage implements IStorage {
         .orderBy(schema.billLineItems.order);
     } catch (error) {
       console.error("Database error in getBillLineItems:", error);
+      throw error;
+    }
+  }
+
+  async createBillLineItem(item: InsertBillLineItem): Promise<BillLineItem> {
+    try {
+      const newItems = await db.insert(schema.billLineItems)
+        .values(item)
+        .returning();
+      return newItems[0];
+    } catch (error) {
+      console.error("Database error in createBillLineItem:", error);
+      throw error;
+    }
+  }
+
+  async updateBillLineItem(id: string, item: Partial<InsertBillLineItem>): Promise<BillLineItem> {
+    try {
+      const updatedItems = await db.update(schema.billLineItems)
+        .set(item)
+        .where(eq(schema.billLineItems.id, id))
+        .returning();
+      
+      if (!updatedItems[0]) {
+        throw new Error("Bill line item not found");
+      }
+      
+      return updatedItems[0];
+    } catch (error) {
+      console.error("Database error in updateBillLineItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteBillLineItem(id: string): Promise<void> {
+    try {
+      await db.delete(schema.billLineItems)
+        .where(eq(schema.billLineItems.id, id));
+    } catch (error) {
+      console.error("Database error in deleteBillLineItem:", error);
       throw error;
     }
   }

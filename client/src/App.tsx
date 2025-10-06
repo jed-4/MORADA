@@ -24,6 +24,7 @@ import Selections from "@/pages/Selections";
 import SelectionDetail from "@/pages/SelectionDetail";
 import Suppliers from "@/pages/Suppliers";
 import Bills from "@/pages/Bills";
+import BillDetail from "@/pages/BillDetail";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -89,7 +90,8 @@ function Router() {
       <Route path="/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
       <Route path="/variations" component={() => <ComingSoonPage section="variations" />} />
       <Route path="/bills" component={Bills} />
-      <Route path="/bills/:id" component={() => <ComingSoonPage section="bill-detail" />} />
+      <Route path="/bills/new" component={BillDetail} />
+      <Route path="/bills/:id" component={BillDetail} />
       <Route path="/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
       <Route path="/timesheets" component={() => <ComingSoonPage section="timesheets" />} />

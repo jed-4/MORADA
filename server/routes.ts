@@ -27,7 +27,8 @@ import {
   insertOptionAttachmentSchema,
   insertClientSelectionSchema,
   insertSupplierSchema,
-  insertBillSchema
+  insertBillSchema,
+  insertBillLineItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -2005,6 +2006,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(lineItems);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bill line items" });
+    }
+  });
+
+  app.post("/api/bills/:billId/line-items", async (req, res) => {
+    try {
+      const validationResult = insertBillLineItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const lineItem = await storage.createBillLineItem(validationResult.data);
+      res.status(201).json(lineItem);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create bill line item" });
+    }
+  });
+
+  app.patch("/api/bills/:billId/line-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertBillLineItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const lineItem = await storage.updateBillLineItem(req.params.id, validationResult.data);
+      res.json(lineItem);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Bill line item not found") {
+        return res.status(404).json({ error: "Bill line item not found" });
+      }
+      res.status(500).json({ error: "Failed to update bill line item" });
+    }
+  });
+
+  app.delete("/api/bills/:billId/line-items/:id", async (req, res) => {
+    try {
+      await storage.deleteBillLineItem(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete bill line item" });
     }
   });
 
