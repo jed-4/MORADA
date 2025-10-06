@@ -401,7 +401,8 @@ export default function Suppliers() {
                         placeholder="Synced from Xero" 
                         {...field} 
                         readOnly
-                        className="bg-muted"
+                        disabled
+                        className="bg-muted cursor-not-allowed"
                         data-testid="input-supplier-xero-id"
                       />
                     </FormControl>
