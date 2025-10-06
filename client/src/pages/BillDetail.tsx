@@ -11,7 +11,10 @@ import {
   Plus, 
   Trash2, 
   Paperclip,
-  MessageSquare 
+  MessageSquare,
+  Check,
+  X,
+  Send
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,9 +44,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Bill, Supplier, Project, CostCode, BillLineItem } from "@shared/schema";
+import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval } from "@shared/schema";
 
 const billFormSchema = z.object({
   billNumber: z.string().min(1, "Bill number is required"),
@@ -84,6 +95,8 @@ export default function BillDetail() {
 
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectComments, setRejectComments] = useState("");
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -105,6 +118,16 @@ export default function BillDetail() {
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
+  });
+
+  const { data: approvals = [] } = useQuery<BillApproval[]>({
+    queryKey: ["/api/bills", id, "approvals"],
+    enabled: isEditMode,
+  });
+
+  const { data: canApprove = false } = useQuery<boolean>({
+    queryKey: ["/api/user/can-approve-bills"],
+    enabled: isEditMode,
   });
 
   const form = useForm<BillFormData>({
@@ -369,6 +392,97 @@ export default function BillDetail() {
     },
   });
 
+  const submitForApprovalMutation = useMutation({
+    mutationFn: async () => {
+      const currentSupplierId = form.getValues('supplierId');
+      
+      if (!currentSupplierId) {
+        throw new Error("Please select a supplier");
+      }
+      
+      if (lineItems.length === 0) {
+        throw new Error("Please add line items");
+      }
+      
+      const missingCostCodes = lineItems.some((item) => !item.costCodeId);
+      if (missingCostCodes) {
+        throw new Error("Please set cost codes for all line items");
+      }
+      
+      const response = await apiRequest("PATCH", `/api/bills/${id}`, {
+        status: "awaiting_approval"
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      toast({
+        title: "Success",
+        description: "Bill submitted for approval",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit bill for approval",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (comments?: string) => {
+      const response = await apiRequest("POST", `/api/bills/${id}/approve`, {
+        comments: comments || null,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
+      toast({
+        title: "Success",
+        description: "Bill approved successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve bill",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (comments: string) => {
+      const response = await apiRequest("POST", `/api/bills/${id}/reject`, {
+        comments,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "approvals"] });
+      setRejectDialogOpen(false);
+      setRejectComments("");
+      toast({
+        title: "Success",
+        description: "Bill rejected",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reject bill",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: BillFormData) => {
     if (isEditMode) {
       updateMutation.mutate(data);
@@ -381,6 +495,29 @@ export default function BillDetail() {
     if (!costCodeId) return "";
     const code = costCodes.find((c) => c.id === costCodeId);
     return code ? `${code.code} - ${code.title}` : "";
+  };
+
+  const getSubmitForApprovalValidation = () => {
+    const currentSupplierId = form.watch('supplierId');
+    const errors: string[] = [];
+    
+    if (!currentSupplierId) {
+      errors.push("Please select a supplier");
+    }
+    
+    if (lineItems.length === 0) {
+      errors.push("Please add line items");
+    }
+    
+    const missingCostCodes = lineItems.some((item) => !item.costCodeId);
+    if (missingCostCodes) {
+      errors.push("Please set cost codes for all line items");
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
   };
 
   if (billLoading) {
@@ -427,6 +564,32 @@ export default function BillDetail() {
                 {formatCurrency(due)}
               </span>
             </div>
+            {isEditMode && bill?.status === "awaiting_approval" && canApprove && (
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => approveMutation.mutate(undefined)}
+                  disabled={approveMutation.isPending}
+                  data-testid="button-approve"
+                  className="gap-2"
+                >
+                  <Check className="h-4 w-4" />
+                  {approveMutation.isPending ? "Approving..." : "Approve"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejectDialogOpen(true)}
+                  disabled={rejectMutation.isPending}
+                  data-testid="button-reject"
+                  className="gap-2"
+                >
+                  <X className="h-4 w-4" />
+                  Reject
+                </Button>
+              </>
+            )}
             {isEditMode && (
               <Button variant="ghost" size="icon" data-testid="button-duplicate">
                 <Copy className="h-4 w-4" />
@@ -889,28 +1052,140 @@ export default function BillDetail() {
               </div>
             </Card>
 
-            <div className="flex items-center justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setLocation("/bills")}
-                data-testid="button-cancel"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending}
-                data-testid="button-save"
-              >
-                {createMutation.isPending || updateMutation.isPending
-                  ? "Saving..."
-                  : "Save"}
-              </Button>
+            {isEditMode && approvals.length > 0 && (
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Approval History</h3>
+                <div className="space-y-3">
+                  {approvals.map((approval) => (
+                    <div
+                      key={approval.id}
+                      className="flex items-start gap-3 p-3 border rounded-lg"
+                      data-testid={`approval-history-${approval.id}`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">
+                            {approval.approvedById}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              approval.status === "approved"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                            }`}
+                          >
+                            {approval.status === "approved" ? "Approved" : "Rejected"}
+                          </span>
+                        </div>
+                        {approval.comments && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {approval.comments}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {format(new Date(approval.createdAt), "PPp")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            <div className="flex flex-col items-end gap-3">
+              {isEditMode && bill?.status === "draft" && (() => {
+                const validation = getSubmitForApprovalValidation();
+                return (
+                  <>
+                    {!validation.isValid && (
+                      <div className="text-sm text-destructive space-y-1" data-testid="text-submit-validation-errors">
+                        {validation.errors.map((error, index) => (
+                          <div key={index}>• {error}</div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setLocation("/bills")}
+                  data-testid="button-cancel"
+                >
+                  Cancel
+                </Button>
+                {isEditMode && bill?.status === "draft" && (() => {
+                  const validation = getSubmitForApprovalValidation();
+                  return (
+                    <Button
+                      type="button"
+                      variant="default"
+                      onClick={() => submitForApprovalMutation.mutate()}
+                      disabled={!validation.isValid || submitForApprovalMutation.isPending}
+                      data-testid="button-submit-for-approval"
+                      className="gap-2"
+                    >
+                      <Send className="h-4 w-4" />
+                      {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                    </Button>
+                  );
+                })()}
+                <Button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-save"
+                >
+                  {createMutation.isPending || updateMutation.isPending
+                    ? "Saving..."
+                    : "Save"}
+                </Button>
+              </div>
             </div>
           </form>
         </Form>
       </div>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent data-testid="dialog-reject-bill">
+          <DialogHeader>
+            <DialogTitle>Reject Bill</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this bill.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectComments}
+            onChange={(e) => setRejectComments(e.target.value)}
+            placeholder="Enter rejection comments..."
+            rows={4}
+            data-testid="textarea-reject-comments"
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setRejectDialogOpen(false);
+                setRejectComments("");
+              }}
+              data-testid="button-cancel-reject"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => rejectMutation.mutate(rejectComments)}
+              disabled={!rejectComments.trim() || rejectMutation.isPending}
+              data-testid="button-confirm-reject"
+            >
+              {rejectMutation.isPending ? "Rejecting..." : "Reject Bill"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

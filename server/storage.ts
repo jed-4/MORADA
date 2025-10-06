@@ -28,7 +28,8 @@ import {
   type SelectionWithOptions,
   type Supplier, type InsertSupplier,
   type Bill, type InsertBill,
-  type BillLineItem, type InsertBillLineItem
+  type BillLineItem, type InsertBillLineItem,
+  type BillApproval, type InsertBillApproval
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -249,6 +250,11 @@ export interface IStorage {
   createBillLineItem(item: InsertBillLineItem): Promise<BillLineItem>;
   updateBillLineItem(id: string, item: Partial<InsertBillLineItem>): Promise<BillLineItem>;
   deleteBillLineItem(id: string): Promise<void>;
+
+  // Bill Approvals
+  getBillApprovals(billId: string): Promise<BillApproval[]>;
+  createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
+  canUserApproveBills(userId: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -4262,6 +4268,92 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteBillLineItem:", error);
       throw error;
+    }
+  }
+
+  async getBillApprovals(billId: string): Promise<BillApproval[]> {
+    try {
+      const approvals = await db
+        .select({
+          id: schema.billApprovals.id,
+          billId: schema.billApprovals.billId,
+          approvedById: schema.billApprovals.approvedById,
+          approvedByName: schema.users.firstName,
+          approvedByLastName: schema.users.lastName,
+          status: schema.billApprovals.status,
+          comments: schema.billApprovals.comments,
+          createdAt: schema.billApprovals.createdAt,
+        })
+        .from(schema.billApprovals)
+        .leftJoin(schema.users, eq(schema.billApprovals.approvedById, schema.users.id))
+        .where(eq(schema.billApprovals.billId, billId))
+        .orderBy(desc(schema.billApprovals.createdAt));
+
+      return approvals.map(approval => ({
+        id: approval.id,
+        billId: approval.billId,
+        approvedById: approval.approvedById,
+        status: approval.status,
+        comments: approval.comments,
+        createdAt: approval.createdAt,
+      })) as BillApproval[];
+    } catch (error) {
+      console.error("Database error in getBillApprovals:", error);
+      throw error;
+    }
+  }
+
+  async createBillApproval(approval: InsertBillApproval): Promise<BillApproval> {
+    try {
+      const [newApproval] = await db.insert(schema.billApprovals)
+        .values(approval)
+        .returning();
+      return newApproval;
+    } catch (error) {
+      console.error("Database error in createBillApproval:", error);
+      throw error;
+    }
+  }
+
+  async canUserApproveBills(userId: string): Promise<boolean> {
+    try {
+      const user = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user.length || !user[0].roleId) {
+        return false;
+      }
+
+      const billsApprovePermission = await db.select()
+        .from(schema.permissions)
+        .where(eq(schema.permissions.key, 'bills.approve'))
+        .limit(1);
+
+      if (!billsApprovePermission.length) {
+        return false;
+      }
+
+      const rolePermission = await db.select()
+        .from(schema.rolePermissions)
+        .where(
+          and(
+            eq(schema.rolePermissions.roleId, user[0].roleId),
+            eq(schema.rolePermissions.permissionId, billsApprovePermission[0].id)
+          )
+        )
+        .limit(1);
+
+      if (!rolePermission.length) {
+        return false;
+      }
+
+      const allowedActions = rolePermission[0].allowedActions as string[];
+      return allowedActions && allowedActions.includes('approve');
+    } catch (error) {
+      console.error("Database error in canUserApproveBills:", error);
+      return false;
     }
   }
 }

@@ -28,7 +28,8 @@ import {
   insertClientSelectionSchema,
   insertSupplierSchema,
   insertBillSchema,
-  insertBillLineItemSchema
+  insertBillLineItemSchema,
+  insertBillApprovalSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -1279,6 +1280,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ user: toSafeUser(req.user!) });
   });
 
+  // Check if current user can approve bills
+  app.get("/api/user/can-approve-bills", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.json(false);
+      }
+      const canApprove = await storage.canUserApproveBills(req.user.id);
+      res.json(canApprove);
+    } catch (error) {
+      console.error("Error checking bill approval permission:", error);
+      res.json(false);
+    }
+  });
+
   // User Management Routes
   app.get("/api/users", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
@@ -2052,6 +2067,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item" });
+    }
+  });
+
+  // Bill Approvals routes
+  app.get("/api/bills/:id/approvals", async (req, res) => {
+    try {
+      const approvals = await storage.getBillApprovals(req.params.id);
+      res.json(approvals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch bill approvals" });
+    }
+  });
+
+  app.post("/api/bills/:id/approve", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const canApprove = await storage.canUserApproveBills(req.user.id);
+      if (!canApprove) {
+        return res.status(403).json({ error: "You do not have permission to approve bills" });
+      }
+
+      const validationResult = insertBillApprovalSchema.safeParse({
+        billId: req.params.id,
+        approvedById: req.user.id,
+        status: "approved",
+        comments: req.body.comments || null,
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const approval = await storage.createBillApproval(validationResult.data);
+      
+      await storage.updateBill(req.params.id, { 
+        status: "awaiting_payment" 
+      });
+
+      res.status(201).json(approval);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve bill" });
+    }
+  });
+
+  app.post("/api/bills/:id/reject", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const canApprove = await storage.canUserApproveBills(req.user.id);
+      if (!canApprove) {
+        return res.status(403).json({ error: "You do not have permission to reject bills" });
+      }
+
+      const validationResult = insertBillApprovalSchema.safeParse({
+        billId: req.params.id,
+        approvedById: req.user.id,
+        status: "rejected",
+        comments: req.body.comments || null,
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const approval = await storage.createBillApproval(validationResult.data);
+      
+      await storage.updateBill(req.params.id, { 
+        status: "draft" 
+      });
+
+      res.status(201).json(approval);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reject bill" });
     }
   });
 
