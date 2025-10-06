@@ -97,7 +97,7 @@ type LineItem = {
 };
 
 export default function BillDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const isEditMode = !!(id && id !== "new");
@@ -201,15 +201,15 @@ export default function BillDetail() {
 
   useEffect(() => {
     if (!isEditMode && projects.length > 0) {
-      const firstProject = projects[0];
-      if (firstProject) {
-        form.setValue("projectId", firstProject.id);
+      const projectIdToUse = projectId || projects[0]?.id;
+      if (projectIdToUse) {
+        form.setValue("projectId", projectIdToUse);
         
         const billNumber = `BILL-${Date.now().toString().slice(-6)}`;
         form.setValue("billNumber", billNumber);
       }
     }
-  }, [projects, isEditMode, form]);
+  }, [projects, isEditMode, form, projectId]);
 
   const addLineItem = () => {
     setLineItems([
@@ -328,7 +328,7 @@ export default function BillDetail() {
         title: "Success",
         description: "Bill created successfully",
       });
-      setLocation("/bills");
+      setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
     onError: (error: Error) => {
       toast({
@@ -393,7 +393,7 @@ export default function BillDetail() {
         title: "Success",
         description: "Bill updated successfully",
       });
-      setLocation("/bills");
+      setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
     onError: (error: Error) => {
       toast({
@@ -693,7 +693,7 @@ export default function BillDetail() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setLocation("/bills")}
+              onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
               data-testid="button-back"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -780,17 +780,34 @@ export default function BillDetail() {
                   )}
                 />
 
-                <FormItem>
-                  <FormLabel>Related PO or Subcontract</FormLabel>
-                  <Select>
-                    <SelectTrigger data-testid="select-related-po">
-                      <SelectValue placeholder="Select..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormItem>
+                <FormField
+                  control={form.control}
+                  name="projectId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project *</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={!isEditMode && !!projectId}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-project">
+                            <SelectValue placeholder="Select project..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {projects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}
@@ -1442,7 +1459,7 @@ export default function BillDetail() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setLocation("/bills")}
+                  onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
                   data-testid="button-cancel"
                 >
                   Cancel

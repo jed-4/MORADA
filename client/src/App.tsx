@@ -65,7 +65,8 @@ function Router() {
       <Route path="/projects/:projectId/allowances" component={() => <ComingSoonPage section="allowances" />} />
       <Route path="/projects/:projectId/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
       <Route path="/projects/:projectId/variations" component={() => <ComingSoonPage section="variations" />} />
-      <Route path="/projects/:projectId/bills" component={() => <ComingSoonPage section="bills" />} />
+      <Route path="/projects/:projectId/bills" component={Bills} />
+      <Route path="/projects/:projectId/bills/:id" component={BillDetail} />
       <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/projects/:projectId/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
       <Route path="/projects/:projectId/timesheets" component={() => <ComingSoonPage section="timesheets" />} />

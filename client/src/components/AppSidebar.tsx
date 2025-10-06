@@ -63,7 +63,7 @@ const comingSoonItems = new Set([
   "Messages", "Schedule", "Take off", 
   "Request For Quotes", "Request For Information", "Proposal", 
   "Allowances", "Purchase Orders", "Variations", 
-  "Bills", "Client Invoices", "Site Diary", "Timesheets", 
+  "Client Invoices", "Site Diary", "Timesheets", 
   "Budget", "Files", "Team"
 ]);
 
@@ -84,7 +84,7 @@ const projectItemsBase = [
   { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
   { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
   { title: "Variations", baseUrl: "/variations", icon: FileText },
-  { title: "Bills", baseUrl: "/bills", icon: CreditCard },
+  { title: "Bills", baseUrl: "/bills", icon: Receipt },
   { title: "Client Invoices", baseUrl: "/invoices", icon: Receipt },
   { title: "Site Diary", baseUrl: "/site-diary", icon: BookOpen },
   { title: "Timesheets", baseUrl: "/timesheets", icon: Timer },
@@ -133,12 +133,14 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
     }
     
     // For regular projects, use project-scoped URLs
-    return projectItemsBase.map(item => ({
-      ...item,
-      url: item.baseUrl === "" 
-        ? `/projects/${currentProject.id}` 
-        : `/projects/${currentProject.id}${item.baseUrl}`
-    }));
+    return projectItemsBase.map(item => {
+      return {
+        ...item,
+        url: item.baseUrl === "" 
+          ? `/projects/${currentProject.id}` 
+          : `/projects/${currentProject.id}${item.baseUrl}`
+      };
+    });
   };
   
   const projectItems = getProjectItems();

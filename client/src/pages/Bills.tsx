@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation, useSearch } from "wouter";
+import { useLocation, useSearch, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -50,10 +50,11 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Bills() {
   const [, setLocation] = useLocation();
+  const params = useParams<{ projectId?: string }>();
   const searchString = useSearch();
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const statusFromUrl = searchParams.get("status") || "all";
-  const projectIdFromUrl = searchParams.get("projectId") || "";
+  const projectIdFromUrl = params.projectId || "";
 
   const [selectedStatus, setSelectedStatus] = useState<string>(statusFromUrl);
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
@@ -207,7 +208,11 @@ export default function Bills() {
   };
 
   const handleRowClick = (billId: string) => {
-    setLocation(`/bills/${billId}`);
+    if (projectIdFromUrl) {
+      setLocation(`/projects/${projectIdFromUrl}/bills/${billId}`);
+    } else {
+      setLocation(`/bills/${billId}`);
+    }
   };
 
   const handleResetFilters = () => {
