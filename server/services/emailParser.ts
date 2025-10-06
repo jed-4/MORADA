@@ -35,25 +35,69 @@ export interface SendGridInboundEmail {
 export class EmailParserService {
   /**
    * Parse SendGrid inbound email format
+   * @param data - Email metadata from SendGrid (multipart body fields)
+   * @param files - Attachment files from multer (when using multipart/form-data)
    */
-  parseSendGridEmail(data: SendGridInboundEmail): ParsedEmail {
+  parseSendGridEmail(data: SendGridInboundEmail, files?: Array<{ fieldname: string; originalname: string; mimetype: string; buffer: Buffer; size: number }>): ParsedEmail {
     const attachments: EmailAttachment[] = [];
     
-    // SendGrid sends attachments as attachment1, attachment2, etc.
-    const attachmentCount = data.attachments || 0;
-    
-    for (let i = 1; i <= attachmentCount; i++) {
-      const attachmentData = data[`attachment${i}`];
-      const attachmentInfo = data.attachment_info ? JSON.parse(data.attachment_info) : {};
-      
-      if (attachmentData) {
-        const info = attachmentInfo[`attachment${i}`] || {};
+    // If files provided (via multer), use them directly
+    if (files && files.length > 0) {
+      // Parse attachment-info if available for metadata
+      let attachmentInfo: any = {};
+      try {
+        if (data['attachment-info']) {
+          attachmentInfo = JSON.parse(data['attachment-info']);
+        }
+      } catch (e) {
+        console.warn("Failed to parse attachment-info:", e);
+      }
+
+      for (const file of files) {
+        // SendGrid may use various fieldnames: "file", "attachment1", etc.
+        // Accept all files - we'll filter by type later
+        const filename = file.originalname || file.fieldname || 'attachment';
+        
+        // Try to determine content type from multiple sources
+        let contentType = file.mimetype;
+        
+        // Fallback to extension-based detection if no mimetype
+        if (!contentType || contentType === 'application/octet-stream') {
+          const ext = filename.split('.').pop()?.toLowerCase();
+          const typeMap: Record<string, string> = {
+            'pdf': 'application/pdf',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+          };
+          contentType = typeMap[ext || ''] || 'application/octet-stream';
+        }
+
         attachments.push({
-          filename: info.filename || `attachment${i}`,
-          contentType: info.type || 'application/octet-stream',
-          content: attachmentData,
-          size: attachmentData.length,
+          filename,
+          contentType,
+          content: file.buffer,
+          size: file.size,
         });
+      }
+    } else {
+      // Fallback: Parse base64 attachments from body (old format)
+      const attachmentCount = data.attachments || 0;
+      
+      for (let i = 1; i <= attachmentCount; i++) {
+        const attachmentData = data[`attachment${i}`];
+        const attachmentInfo = data.attachment_info ? JSON.parse(data.attachment_info) : {};
+        
+        if (attachmentData) {
+          const info = attachmentInfo[`attachment${i}`] || {};
+          attachments.push({
+            filename: info.filename || `attachment${i}`,
+            contentType: info.type || 'application/octet-stream',
+            content: attachmentData,
+            size: attachmentData.length,
+          });
+        }
       }
     }
 
@@ -81,12 +125,20 @@ export class EmailParserService {
     ];
 
     return attachments.filter(att => {
-      // Check content type
-      if (validTypes.includes(att.contentType.toLowerCase())) {
+      // Check content type (case-insensitive)
+      const contentType = att.contentType.toLowerCase();
+      if (validTypes.includes(contentType)) {
         return true;
       }
 
-      // Check filename extension as fallback
+      // For unknown/octet-stream types, check filename extension as fallback
+      // This handles cases where MIME type is missing or generic
+      if (contentType === 'application/octet-stream' || !contentType) {
+        const ext = att.filename.split('.').pop()?.toLowerCase();
+        return ['pdf', 'jpg', 'jpeg', 'png', 'gif'].includes(ext || '');
+      }
+
+      // Also check extension as a secondary check for all files
       const ext = att.filename.split('.').pop()?.toLowerCase();
       return ['pdf', 'jpg', 'jpeg', 'png', 'gif'].includes(ext || '');
     });

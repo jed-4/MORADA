@@ -2201,24 +2201,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Email-to-Bill Webhook endpoint
-  app.post("/api/webhooks/email-invoice", async (req, res) => {
+  // Email-to-Bill Webhook endpoint (accepts SendGrid multipart/form-data)
+  const multer = require("multer");
+  const upload = multer({ storage: multer.memoryStorage() });
+  
+  app.post("/api/webhooks/email-invoice", upload.any(), async (req, res) => {
     try {
+      console.log("Email webhook received:", {
+        hasBody: !!req.body,
+        hasFiles: !!req.files,
+        fileCount: req.files?.length || 0,
+        bodyKeys: Object.keys(req.body || {}),
+      });
+
       const { getEmailParserService } = await import("./services/emailParser");
       const { getAutoBillCreatorService } = await import("./services/autoBillCreator");
       
       const emailParser = getEmailParserService();
       const autoBillCreator = getAutoBillCreatorService();
 
-      // Parse email (supports SendGrid format)
-      const parsedEmail = emailParser.parseSendGridEmail(req.body);
+      // Check if we have the required email data
+      if (!req.body || (!req.body.from && !req.body.subject)) {
+        return res.status(400).json({ 
+          error: "Invalid email data",
+          message: "Request must contain email metadata (from, subject, etc.)",
+          received: { body: req.body, files: req.files?.length || 0 }
+        });
+      }
+
+      // Parse email (supports SendGrid multipart format)
+      const parsedEmail = emailParser.parseSendGridEmail(req.body, req.files as any);
 
       if (!parsedEmail.attachments || parsedEmail.attachments.length === 0) {
         return res.status(400).json({ 
           error: "No attachments found in email",
-          message: "Please forward an email with invoice attachments (PDF or images)"
+          message: "Please forward an email with invoice attachments (PDF or images)",
+          emailData: { from: parsedEmail.from, subject: parsedEmail.subject }
         });
       }
+
+      console.log("Parsed email:", {
+        from: parsedEmail.from,
+        subject: parsedEmail.subject,
+        attachmentCount: parsedEmail.attachments.length,
+      });
 
       // Get default user (system user or first admin)
       const users = await storage.getUsers("team");
@@ -2234,6 +2260,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         autoMatch: true, // Auto-match suppliers and projects
       });
 
+      console.log("Email processing complete:", {
+        processedCount: results.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+      });
+
       // Return results
       res.json({
         success: true,
@@ -2242,7 +2274,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error: any) {
       console.error("Email-to-bill webhook error:", error);
-      res.status(500).json({ error: error.message || "Failed to process email invoice" });
+      res.status(500).json({ 
+        error: error.message || "Failed to process email invoice",
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined
+      });
     }
   });
 
