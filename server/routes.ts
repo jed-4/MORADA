@@ -2181,6 +2181,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // OCR Invoice Processing endpoint
+  app.post("/api/ocr/process-invoice", async (req, res) => {
+    try {
+      const { getOCRService } = await import("./services/ocr");
+      const ocrService = getOCRService();
+
+      const { fileData, fileName } = req.body;
+
+      if (!fileData || !fileName) {
+        return res.status(400).json({ error: "File data and file name are required" });
+      }
+
+      const result = await ocrService.processInvoiceFromBase64(fileData, fileName);
+      res.json(result);
+    } catch (error: any) {
+      console.error("OCR processing error:", error);
+      res.status(500).json({ error: error.message || "Failed to process invoice with OCR" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

@@ -14,7 +14,11 @@ import {
   MessageSquare,
   Check,
   X,
-  Send
+  Send,
+  Upload,
+  FileText,
+  Loader2,
+  ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -52,6 +56,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval } from "@shared/schema";
@@ -97,6 +106,9 @@ export default function BillDetail() {
   const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectComments, setRejectComments] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [ocrResults, setOcrResults] = useState<any>(null);
+  const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -483,12 +495,157 @@ export default function BillDetail() {
     },
   });
 
+  const ocrMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const reader = new FileReader();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          if (reader.result) {
+            resolve(reader.result as string);
+          } else {
+            reject(new Error("Failed to read file"));
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const response = await apiRequest("POST", "/api/ocr/process-invoice", {
+        fileData: base64Data,
+        fileName: file.name,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setOcrResults(data);
+      setOcrPreviewOpen(true);
+      toast({
+        title: "Success",
+        description: "Invoice data extracted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to process invoice with OCR",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: BillFormData) => {
     if (isEditMode) {
       updateMutation.mutate(data);
     } else {
       createMutation.mutate(data);
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const validTypes = [
+        "application/pdf",
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+      ];
+      if (!validTypes.includes(file.type)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload a PDF or image file (JPG, JPEG, PNG)",
+          variant: "destructive",
+        });
+        return;
+      }
+      setUploadedFile(file);
+      setOcrResults(null);
+      setOcrPreviewOpen(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      const validTypes = [
+        "application/pdf",
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+      ];
+      if (!validTypes.includes(file.type)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload a PDF or image file (JPG, JPEG, PNG)",
+          variant: "destructive",
+        });
+        return;
+      }
+      setUploadedFile(file);
+      setOcrResults(null);
+      setOcrPreviewOpen(false);
+    }
+  };
+
+  const handleProcessOCR = () => {
+    if (uploadedFile) {
+      ocrMutation.mutate(uploadedFile);
+    }
+  };
+
+  const handleApplyOCR = () => {
+    if (!ocrResults) return;
+
+    if (ocrResults.billReference || ocrResults.invoiceNumber) {
+      form.setValue("billReference", ocrResults.billReference || ocrResults.invoiceNumber);
+    }
+
+    if (ocrResults.billDate || ocrResults.invoiceDate) {
+      const dateStr = ocrResults.billDate || ocrResults.invoiceDate;
+      form.setValue("billDate", format(new Date(dateStr), "yyyy-MM-dd"));
+    }
+
+    if (ocrResults.dueDate) {
+      form.setValue("dueDate", format(new Date(ocrResults.dueDate), "yyyy-MM-dd"));
+    }
+
+    if (ocrResults.supplierName) {
+      const matchedSupplier = suppliers.find(
+        (s) => s.name.toLowerCase() === ocrResults.supplierName.toLowerCase()
+      );
+      if (matchedSupplier) {
+        form.setValue("supplierId", matchedSupplier.id);
+      }
+    }
+
+    if (ocrResults.lineItems && ocrResults.lineItems.length > 0) {
+      const firstCostCode = costCodes[0]?.id;
+      const newLineItems = ocrResults.lineItems.map((item: any, index: number) => ({
+        lineType: "custom" as const,
+        description: item.description || "",
+        costCodeId: firstCostCode,
+        quantity: item.quantity || 1,
+        unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
+        unit: "",
+        tax: "GST on expenses" as const,
+        account: "",
+        total: item.totalAmount ? item.totalAmount / 100 : 0,
+        order: index,
+      }));
+      setLineItems(newLineItems);
+    }
+
+    toast({
+      title: "Success",
+      description: "OCR data applied to bill",
+    });
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
   const getCostCodeName = (costCodeId?: string) => {
@@ -754,6 +911,180 @@ export default function BillDetail() {
                     </FormItem>
                   )}
                 />
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Upload Invoice for OCR</h3>
+              
+              <div className="space-y-4">
+                {!uploadedFile ? (
+                  <div
+                    className="border-2 border-dashed rounded-lg p-8 text-center hover-elevate cursor-pointer transition-colors"
+                    onDrop={handleDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    onClick={() => document.getElementById('file-upload')?.click()}
+                    data-testid="dropzone-upload"
+                  >
+                    <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Drag and drop your invoice here, or click to browse
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Supports PDF, JPG, JPEG, PNG
+                    </p>
+                    <input
+                      id="file-upload"
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      data-testid="input-file-upload"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-4 border rounded-lg" data-testid="card-uploaded-file">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-8 w-8 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium" data-testid="text-filename">{uploadedFile.name}</p>
+                          <p className="text-sm text-muted-foreground" data-testid="text-filesize">
+                            {formatFileSize(uploadedFile.size)}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setUploadedFile(null);
+                          setOcrResults(null);
+                          setOcrPreviewOpen(false);
+                        }}
+                        data-testid="button-remove-file"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {!ocrResults && (
+                      <Button
+                        onClick={handleProcessOCR}
+                        disabled={ocrMutation.isPending}
+                        className="w-full"
+                        data-testid="button-process-ocr"
+                      >
+                        {ocrMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Extracting invoice data...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4 mr-2" />
+                            Process with OCR
+                          </>
+                        )}
+                      </Button>
+                    )}
+
+                    {ocrResults && (
+                      <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-between"
+                            data-testid="button-toggle-ocr-preview"
+                          >
+                            <span>OCR Results</span>
+                            <ChevronDown className={`h-4 w-4 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-4 space-y-4" data-testid="card-ocr-results">
+                          <div className="border rounded-lg p-4 space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-sm text-muted-foreground">Supplier</p>
+                                <p className="font-medium" data-testid="text-ocr-supplier">
+                                  {ocrResults.supplierName || "Not detected"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Invoice Number</p>
+                                <p className="font-medium" data-testid="text-ocr-invoice-number">
+                                  {ocrResults.invoiceNumber || "Not detected"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Invoice Date</p>
+                                <p className="font-medium" data-testid="text-ocr-invoice-date">
+                                  {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Due Date</p>
+                                <p className="font-medium" data-testid="text-ocr-due-date">
+                                  {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="border-t pt-3">
+                              <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Subtotal</p>
+                                  <p className="font-medium" data-testid="text-ocr-subtotal">
+                                    {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Tax</p>
+                                  <p className="font-medium" data-testid="text-ocr-tax">
+                                    {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Total</p>
+                                  <p className="font-medium" data-testid="text-ocr-total">
+                                    {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
+                              <div className="border-t pt-3">
+                                <p className="text-sm font-medium mb-2">Line Items</p>
+                                <div className="space-y-2">
+                                  {ocrResults.lineItems.map((item: any, idx: number) => (
+                                    <div key={idx} className="flex justify-between text-sm p-2 bg-muted/50 rounded" data-testid={`text-ocr-line-item-${idx}`}>
+                                      <span>{item.description || "Unknown"}</span>
+                                      <div className="flex gap-4">
+                                        <span>Qty: {item.quantity || 1}</span>
+                                        <span className="font-medium">
+                                          {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <Button
+                            onClick={handleApplyOCR}
+                            className="w-full"
+                            data-testid="button-apply-ocr"
+                          >
+                            Apply to Bill
+                          </Button>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
 
