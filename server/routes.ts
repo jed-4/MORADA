@@ -2201,6 +2201,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Email-to-Bill Webhook endpoint
+  app.post("/api/webhooks/email-invoice", async (req, res) => {
+    try {
+      const { getEmailParserService } = await import("./services/emailParser");
+      const { getAutoBillCreatorService } = await import("./services/autoBillCreator");
+      
+      const emailParser = getEmailParserService();
+      const autoBillCreator = getAutoBillCreatorService();
+
+      // Parse email (supports SendGrid format)
+      const parsedEmail = emailParser.parseSendGridEmail(req.body);
+
+      if (!parsedEmail.attachments || parsedEmail.attachments.length === 0) {
+        return res.status(400).json({ 
+          error: "No attachments found in email",
+          message: "Please forward an email with invoice attachments (PDF or images)"
+        });
+      }
+
+      // Get default user (system user or first admin)
+      const users = await storage.getUsers("team");
+      const defaultUser = users.find(u => u.username === "admin") || users[0];
+
+      if (!defaultUser) {
+        return res.status(500).json({ error: "No system user found" });
+      }
+
+      // Process email and create bills
+      const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
+        defaultUserId: defaultUser.id,
+        autoMatch: true, // Auto-match suppliers and projects
+      });
+
+      // Return results
+      res.json({
+        success: true,
+        message: `Processed ${results.length} invoice(s)`,
+        results,
+      });
+    } catch (error: any) {
+      console.error("Email-to-bill webhook error:", error);
+      res.status(500).json({ error: error.message || "Failed to process email invoice" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

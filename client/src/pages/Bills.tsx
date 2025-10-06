@@ -24,16 +24,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Plus,
   Filter,
   X,
   FileText,
   Paperclip,
   Circle,
+  Mail,
+  Copy,
+  ChevronDown,
 } from "lucide-react";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Bills() {
   const [, setLocation] = useLocation();
@@ -44,6 +53,7 @@ export default function Bills() {
 
   const [selectedStatus, setSelectedStatus] = useState<string>(statusFromUrl);
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
+  const [setupInstructionsOpen, setSetupInstructionsOpen] = useState(false);
   const [filters, setFilters] = useState({
     costCode: "",
     status: "",
@@ -53,6 +63,8 @@ export default function Bills() {
     invoiced: "",
     sync: "",
   });
+
+  const { toast } = useToast();
 
   useEffect(() => {
     setSelectedStatus(statusFromUrl);
@@ -198,6 +210,16 @@ export default function Bills() {
 
   const hasActiveFilters = Object.values(filters).some((v) => v !== "");
 
+  const webhookUrl = `${window.location.origin}/api/webhooks/email-invoice`;
+
+  const handleCopyWebhookUrl = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    toast({
+      title: "Copied to clipboard",
+      description: "Webhook URL has been copied to your clipboard.",
+    });
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="page-bills">
       <div className="flex-none p-6 border-b space-y-4">
@@ -208,6 +230,94 @@ export default function Bills() {
             Create
           </Button>
         </div>
+
+        <Card className="p-4" data-testid="card-email-to-bill">
+          <div className="flex items-start gap-3">
+            <Mail className="h-5 w-5 text-muted-foreground mt-0.5" data-testid="icon-email-to-bill" />
+            <div className="flex-1 space-y-3">
+              <div>
+                <h3 className="font-semibold mb-1" data-testid="text-email-to-bill-heading">
+                  Email-to-Bill Feature
+                </h3>
+                <p className="text-sm text-muted-foreground" data-testid="text-email-to-bill-description">
+                  Forward invoices to auto-create bills
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={webhookUrl}
+                      readOnly
+                      className="font-mono text-sm"
+                      data-testid="input-webhook-url"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopyWebhookUrl}
+                      data-testid="button-copy-webhook-url"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <Collapsible
+                open={setupInstructionsOpen}
+                onOpenChange={setSetupInstructionsOpen}
+              >
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="p-0 h-auto font-normal text-sm hover:bg-transparent"
+                    data-testid="button-toggle-setup-instructions"
+                  >
+                    Setup Instructions
+                    <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${setupInstructionsOpen ? 'rotate-180' : ''}`} />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3" data-testid="content-setup-instructions">
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <h4 className="font-semibold mb-2" data-testid="text-sendgrid-heading">
+                        For SendGrid Inbound Parse:
+                      </h4>
+                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                        <li data-testid="text-sendgrid-step-1">
+                          Go to SendGrid → Settings → Inbound Parse
+                        </li>
+                        <li data-testid="text-sendgrid-step-2">
+                          Add your domain and set the URL to the webhook
+                        </li>
+                        <li data-testid="text-sendgrid-step-3">
+                          Forward invoices to your configured email address
+                        </li>
+                      </ol>
+                    </div>
+
+                    <div>
+                      <h4 className="font-semibold mb-2" data-testid="text-manual-testing-heading">
+                        For manual testing:
+                      </h4>
+                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                        <li data-testid="text-manual-step-1">
+                          Use tools like Postman to POST to the webhook
+                        </li>
+                        <li data-testid="text-manual-step-2">
+                          Include email data with attachments in SendGrid format
+                        </li>
+                      </ol>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          </div>
+        </Card>
 
         <div className="flex items-center gap-2 flex-wrap">
           <DropdownMenu>
