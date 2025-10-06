@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, integer, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -699,3 +699,158 @@ export type SelectionWithOptions = Selection & {
 export type SelectionOptionWithAttachments = SelectionOption & {
   attachments: OptionAttachment[];
 };
+
+// Bill-related enums
+export const billTypeEnum = pgEnum("bill_type", ["bill", "credit"]);
+export const billStatusEnum = pgEnum("bill_status", ["draft", "awaiting_approval", "awaiting_payment", "paid"]);
+export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "custom"]);
+export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected"]);
+export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
+
+// Suppliers (for bills)
+export const suppliers = pgTable("suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  abn: text("abn"), // Australian Business Number
+  address: text("address"),
+  xeroContactId: text("xero_contact_id"), // For Xero integration linking
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+
+// Bills
+export const bills = pgTable("bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billNumber: text("bill_number").notNull().unique(), // Auto-generated unique number
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id),
+  billType: billTypeEnum("bill_type").notNull().default("bill"),
+  status: billStatusEnum("status").notNull().default("draft"),
+  billDate: timestamp("bill_date").notNull(),
+  dueDate: timestamp("due_date"),
+  billReference: text("bill_reference"), // Supplier's invoice/reference number
+  notes: text("notes"),
+  reminders: text("reminders"),
+  subtotal: integer("subtotal").notNull().default(0), // Amount in cents
+  tax: integer("tax").notNull().default(0), // Tax amount in cents
+  total: integer("total").notNull().default(0), // Total amount in cents
+  paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
+  sendToXero: boolean("send_to_xero").notNull().default(false), // Checkbox for Xero sync
+  xeroInvoiceId: text("xero_invoice_id"), // Xero bill ID
+  xeroPaidStatus: text("xero_paid_status"), // Synced from Xero
+  attachmentUrls: json("attachment_urls").default([]), // Array of PDF/image URLs
+  ocrProcessed: boolean("ocr_processed").notNull().default(false),
+  ocrData: json("ocr_data"), // Raw OCR results
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBillSchema = createInsertSchema(bills).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  billType: z.enum(["bill", "credit"]),
+  status: z.enum(["draft", "awaiting_approval", "awaiting_payment", "paid"]),
+  billDate: z.coerce.date(),
+  dueDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  tax: z.number().default(0),
+  total: z.number().default(0),
+  paidAmount: z.number().default(0),
+  attachmentUrls: z.array(z.string()).optional(),
+});
+
+export type InsertBill = z.infer<typeof insertBillSchema>;
+export type Bill = typeof bills.$inferSelect;
+
+// Bill Line Items
+export const billLineItems = pgTable("bill_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  lineType: billLineTypeEnum("line_type").notNull().default("custom"),
+  description: text("description").notNull(),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
+  tax: taxTypeEnum("tax").notNull().default("GST on expenses"),
+  account: text("account"), // Xero account code
+  total: integer("total").notNull().default(0), // Total in cents
+  order: integer("order").notNull().default(0), // For sorting
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertBillLineItemSchema = createInsertSchema(billLineItems).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  lineType: z.enum(["estimate", "item", "custom"]),
+  tax: z.enum(["GST on expenses", "No GST"]),
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  total: z.number().default(0),
+  order: z.number().default(0),
+});
+
+export type InsertBillLineItem = z.infer<typeof insertBillLineItemSchema>;
+export type BillLineItem = typeof billLineItems.$inferSelect;
+
+// Bill Approvals
+export const billApprovals = pgTable("bill_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  approvedById: varchar("approved_by_id").notNull().references(() => users.id),
+  status: billApprovalStatusEnum("status").notNull(),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertBillApprovalSchema = createInsertSchema(billApprovals).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  status: z.enum(["approved", "rejected"]),
+});
+
+export type InsertBillApproval = z.infer<typeof insertBillApprovalSchema>;
+export type BillApproval = typeof billApprovals.$inferSelect;
+
+// Xero Connections
+export const xeroConnections = pgTable("xero_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => projects.id), // Nullable for global connection
+  tenantId: text("tenant_id").notNull(), // Xero organization ID
+  tenantName: text("tenant_name").notNull(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  tokenExpiresAt: timestamp("token_expires_at").notNull(),
+  trackingCategory1Name: text("tracking_category_1_name"), // For job/project
+  trackingCategory2Name: text("tracking_category_2_name"), // For cost code
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertXeroConnectionSchema = createInsertSchema(xeroConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  tokenExpiresAt: z.coerce.date(),
+});
+
+export type InsertXeroConnection = z.infer<typeof insertXeroConnectionSchema>;
+export type XeroConnection = typeof xeroConnections.$inferSelect;
