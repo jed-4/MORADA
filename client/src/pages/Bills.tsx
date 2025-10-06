@@ -29,8 +29,12 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Plus,
-  Filter,
   X,
   FileText,
   Paperclip,
@@ -222,35 +226,33 @@ export default function Bills() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="page-bills">
-      <div className="flex-none p-6 border-b space-y-4">
+      <div className="flex-none p-6 border-b">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Bills</h1>
-          <Button onClick={() => setLocation("/bills/new")} data-testid="button-create-bill">
-            <Plus className="h-4 w-4 mr-2" />
-            Create
-          </Button>
-        </div>
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-email-setup">
+                  <Mail className="h-4 w-4 mr-2" />
+                  Email Setup
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="max-w-[min(500px,90vw)] w-full" align="end" data-testid="popover-email-setup">
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-semibold mb-1" data-testid="text-email-to-bill-heading">
+                      Email-to-Bill Feature
+                    </h3>
+                    <p className="text-sm text-muted-foreground" data-testid="text-email-to-bill-description">
+                      Forward invoices to auto-create bills
+                    </p>
+                  </div>
 
-        <Card className="p-4" data-testid="card-email-to-bill">
-          <div className="flex items-start gap-3">
-            <Mail className="h-5 w-5 text-muted-foreground mt-0.5" data-testid="icon-email-to-bill" />
-            <div className="flex-1 space-y-3">
-              <div>
-                <h3 className="font-semibold mb-1" data-testid="text-email-to-bill-heading">
-                  Email-to-Bill Feature
-                </h3>
-                <p className="text-sm text-muted-foreground" data-testid="text-email-to-bill-description">
-                  Forward invoices to auto-create bills
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <Input
                       value={webhookUrl}
                       readOnly
-                      className="font-mono text-sm"
+                      className="font-mono text-sm flex-1"
                       data-testid="input-webhook-url"
                     />
                     <Button
@@ -262,173 +264,65 @@ export default function Bills() {
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
-                </div>
-              </div>
 
-              <Collapsible
-                open={setupInstructionsOpen}
-                onOpenChange={setSetupInstructionsOpen}
-              >
-                <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="p-0 h-auto font-normal text-sm hover:bg-transparent"
-                    data-testid="button-toggle-setup-instructions"
+                  <Collapsible
+                    open={setupInstructionsOpen}
+                    onOpenChange={setSetupInstructionsOpen}
                   >
-                    Setup Instructions
-                    <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${setupInstructionsOpen ? 'rotate-180' : ''}`} />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-3" data-testid="content-setup-instructions">
-                  <div className="space-y-4 text-sm">
-                    <div>
-                      <h4 className="font-semibold mb-2" data-testid="text-sendgrid-heading">
-                        For SendGrid Inbound Parse:
-                      </h4>
-                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                        <li data-testid="text-sendgrid-step-1">
-                          Go to SendGrid → Settings → Inbound Parse
-                        </li>
-                        <li data-testid="text-sendgrid-step-2">
-                          Add your domain and set the URL to the webhook
-                        </li>
-                        <li data-testid="text-sendgrid-step-3">
-                          Forward invoices to your configured email address
-                        </li>
-                      </ol>
-                    </div>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="p-0 h-auto font-normal text-sm hover:bg-transparent"
+                        data-testid="button-toggle-setup-instructions"
+                      >
+                        Setup Instructions
+                        <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${setupInstructionsOpen ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-3" data-testid="content-setup-instructions">
+                      <div className="space-y-4 text-sm">
+                        <div>
+                          <h4 className="font-semibold mb-2" data-testid="text-sendgrid-heading">
+                            For SendGrid Inbound Parse:
+                          </h4>
+                          <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                            <li data-testid="text-sendgrid-step-1">
+                              Go to SendGrid → Settings → Inbound Parse
+                            </li>
+                            <li data-testid="text-sendgrid-step-2">
+                              Add your domain and set the URL to the webhook
+                            </li>
+                            <li data-testid="text-sendgrid-step-3">
+                              Forward invoices to your configured email address
+                            </li>
+                          </ol>
+                        </div>
 
-                    <div>
-                      <h4 className="font-semibold mb-2" data-testid="text-manual-testing-heading">
-                        For manual testing:
-                      </h4>
-                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                        <li data-testid="text-manual-step-1">
-                          Use tools like Postman to POST to the webhook
-                        </li>
-                        <li data-testid="text-manual-step-2">
-                          Include email data with attachments in SendGrid format
-                        </li>
-                      </ol>
-                    </div>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
-          </div>
-        </Card>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-cost-code">
-                <Filter className="h-4 w-4 mr-2" />
-                Cost Code
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Cost Code</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All Cost Codes</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-status">
-                <Filter className="h-4 w-4 mr-2" />
-                Status
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Status</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All Statuses</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-type">
-                <Filter className="h-4 w-4 mr-2" />
-                Type
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Type</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All Types</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-vendors">
-                <Filter className="h-4 w-4 mr-2" />
-                Sub/Vendors
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Suppliers & Vendors</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All Vendors</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-date">
-                <Filter className="h-4 w-4 mr-2" />
-                Date
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Date Range</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All Dates</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-invoiced">
-                <Filter className="h-4 w-4 mr-2" />
-                Invoiced
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Invoiced Status</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-filter-sync">
-                <Filter className="h-4 w-4 mr-2" />
-                Sync
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Xero Sync</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>All</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleResetFilters}
-              data-testid="button-reset-filters"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Reset
+                        <div>
+                          <h4 className="font-semibold mb-2" data-testid="text-manual-testing-heading">
+                            For manual testing:
+                          </h4>
+                          <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                            <li data-testid="text-manual-step-1">
+                              Use tools like Postman to POST to the webhook
+                            </li>
+                            <li data-testid="text-manual-step-2">
+                              Include email data with attachments in SendGrid format
+                            </li>
+                          </ol>
+                        </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button onClick={() => setLocation("/bills/new")} data-testid="button-create-bill">
+              <Plus className="h-4 w-4 mr-2" />
+              New Bill
             </Button>
-          )}
+          </div>
         </div>
       </div>
 
@@ -501,6 +395,113 @@ export default function Bills() {
               </Badge>
             </TabsTrigger>
           </TabsList>
+        </div>
+
+        <div className="flex-none border-b">
+          <div className="flex flex-row gap-2 overflow-x-auto px-6 py-3" data-testid="container-filters">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-cost-code">
+                  Cost Code
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Cost Code</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All Cost Codes</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-status">
+                  Status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All Statuses</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-type">
+                  Type
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All Types</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-suppliers">
+                  Suppliers
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Suppliers</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All Suppliers</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-date">
+                  Date
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Date Range</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All Dates</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-invoiced">
+                  Invoiced
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Invoiced Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-filter-sync">
+                  Sync
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Xero Sync</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>All</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                data-testid="button-reset-filters"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+            )}
+          </div>
         </div>
 
         <TabsContent value={selectedStatus} className="flex-1 overflow-auto m-0 p-6">
