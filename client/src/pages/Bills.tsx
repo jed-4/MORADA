@@ -84,6 +84,16 @@ export default function Bills() {
 
   const { data: bills = [], isLoading: billsLoading } = useQuery<Bill[]>({
     queryKey: ["/api/bills", queryParams],
+    queryFn: async () => {
+      const params = new URLSearchParams(queryParams);
+      const queryString = params.toString();
+      const url = queryString ? `/api/bills?${queryString}` : "/api/bills";
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(`${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
