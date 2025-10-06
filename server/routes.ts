@@ -35,6 +35,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
+import multer from "multer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // put application routes here
@@ -2202,7 +2203,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Email-to-Bill Webhook endpoint (accepts SendGrid multipart/form-data)
-  const multer = require("multer");
   const upload = multer({ storage: multer.memoryStorage() });
   
   app.post("/api/webhooks/email-invoice", upload.any(), async (req, res) => {
