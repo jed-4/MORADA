@@ -139,6 +139,21 @@ export default function ClientInvoiceDetail() {
     enabled: isEditMode,
   });
 
+  const { data: linkedEstimates = [] } = useQuery<any[]>({
+    queryKey: [`/api/client-invoices/${effectiveInvoiceId}/estimates`],
+    enabled: isEditMode,
+  });
+
+  const { data: linkedVariations = [] } = useQuery<any[]>({
+    queryKey: [`/api/client-invoices/${effectiveInvoiceId}/variations`],
+    enabled: isEditMode,
+  });
+
+  const { data: linkedBills = [] } = useQuery<any[]>({
+    queryKey: [`/api/client-invoices/${effectiveInvoiceId}/bills`],
+    enabled: isEditMode,
+  });
+
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
@@ -151,17 +166,17 @@ export default function ClientInvoiceDetail() {
   });
 
   const { data: estimates = [] } = useQuery<Estimate[]>({
-    queryKey: ["/api/estimates", { projectId: selectedProjectId }],
+    queryKey: [`/api/estimates?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
   });
 
   const { data: variations = [] } = useQuery<Variation[]>({
-    queryKey: ["/api/variations", { projectId: selectedProjectId }],
+    queryKey: [`/api/variations?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
   });
 
   const { data: bills = [] } = useQuery<Bill[]>({
-    queryKey: ["/api/bills", { projectId: selectedProjectId }],
+    queryKey: [`/api/bills?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
   });
 
@@ -230,6 +245,26 @@ export default function ClientInvoiceDetail() {
       }
     }
   }, [projects, isEditMode, form, projectIdFromParams]);
+
+  useEffect(() => {
+    if (linkedEstimates.length > 0 && isEditMode) {
+      const estimate = linkedEstimates[0];
+      setSelectedEstimateId(estimate.estimateId);
+      setProgressPercent(estimate.progressPercent || undefined);
+    }
+  }, [linkedEstimates, isEditMode]);
+
+  useEffect(() => {
+    if (linkedVariations.length > 0 && isEditMode) {
+      setSelectedVariationIds(linkedVariations.map(v => v.variationId));
+    }
+  }, [linkedVariations, isEditMode]);
+
+  useEffect(() => {
+    if (linkedBills.length > 0 && isEditMode) {
+      setSelectedBillIds(linkedBills.map(b => b.billId));
+    }
+  }, [linkedBills, isEditMode]);
 
   const addCustomLine = () => {
     setCustomLines([
