@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { type Task } from "@shared/schema";
-import { Plus, ArrowUpDown } from "lucide-react";
+import { Plus } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
@@ -209,71 +209,20 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   return (
     <>
       <div className="flex flex-col h-full">
-        {/* Header with filters and sort */}
-        <div className="space-y-2 mb-3">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold">
-              {filteredAndSortedTasks.length} task{filteredAndSortedTasks.length !== 1 ? 's' : ''}
-            </div>
-            <Button 
-              size="sm" 
-              variant="ghost" 
-              onClick={() => setLocation("/tasks")}
-              data-testid="tasks-widget-add"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Add
-            </Button>
+        {/* Header row only */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold">
+            {filteredAndSortedTasks.length} task{filteredAndSortedTasks.length !== 1 ? 's' : ''}
           </div>
-          
-          {/* Filter and Sort Controls */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={filterStatus} onValueChange={(value) => setFilterStatus(value as FilterStatus)}>
-              <SelectTrigger className="h-8 w-[110px]" data-testid="select-filter-status">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="todo">To Do</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="done">Done</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            <Select value={filterPriority} onValueChange={(value) => setFilterPriority(value as FilterPriority)}>
-              <SelectTrigger className="h-8 w-[110px]" data-testid="select-filter-priority">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Priority</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-              <SelectTrigger className="h-8 w-[110px]" data-testid="select-sort-by">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dueDate">Due Date</SelectItem>
-                <SelectItem value="priority">Priority</SelectItem>
-                <SelectItem value="title">Title</SelectItem>
-                <SelectItem value="status">Status</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              data-testid="button-toggle-sort-order"
-            >
-              <ArrowUpDown className={`h-3 w-3 ${sortOrder === "desc" ? "rotate-180" : ""}`} />
-            </Button>
-          </div>
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            onClick={() => setLocation("/tasks")}
+            data-testid="tasks-widget-add"
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            Add
+          </Button>
         </div>
         
         {/* Task List */}

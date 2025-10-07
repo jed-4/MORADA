@@ -1113,3 +1113,29 @@ export const insertInvoiceTimesheetSchema = createInsertSchema(invoiceTimesheets
 
 export type InsertInvoiceTimesheet = z.infer<typeof insertInvoiceTimesheetSchema>;
 export type InvoiceTimesheet = typeof invoiceTimesheets.$inferSelect;
+
+// Activity feed table
+export const activities = pgTable("activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id),
+  userName: text("user_name"),
+  activityType: text("activity_type").notNull(), // "task", "estimate", "bill", "variation", "invoice", etc.
+  action: text("action").notNull(), // "created", "updated", "deleted", "status_changed", "approved", etc.
+  description: text("description").notNull(),
+  entityId: varchar("entity_id"), // ID of the related entity (task, estimate, etc.)
+  entityName: text("entity_name"), // Name/title of the entity
+  metadata: json("metadata"), // Additional data about the activity (e.g., old/new values)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertActivitySchema = createInsertSchema(activities).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "project", "other"]),
+  action: z.enum(["created", "updated", "deleted", "status_changed", "approved", "rejected", "submitted", "paid"]),
+});
+
+export type InsertActivity = z.infer<typeof insertActivitySchema>;
+export type Activity = typeof activities.$inferSelect;

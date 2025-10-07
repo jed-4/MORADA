@@ -309,6 +309,10 @@ export interface IStorage {
   getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]>;
   createInvoiceBill(data: InsertInvoiceBill): Promise<InvoiceBill>;
   deleteInvoiceBill(id: string): Promise<boolean>;
+
+  // Activity Feed CRUD
+  getActivities(projectId: string, limit?: number): Promise<schema.Activity[]>;
+  createActivity(activity: schema.InsertActivity): Promise<schema.Activity>;
 }
 
 export class MemStorage implements IStorage {
@@ -2926,6 +2930,15 @@ export class MemStorage implements IStorage {
   async deleteClientSelection(id: string): Promise<boolean> {
     return this.clientSelections.delete(id);
   }
+
+  // Activity Feed CRUD
+  async getActivities(projectId: string, limit?: number): Promise<schema.Activity[]> {
+    return [];
+  }
+
+  async createActivity(activity: schema.InsertActivity): Promise<schema.Activity> {
+    throw new Error("Activities not supported in memory storage");
+  }
 }
 
 // Database-backed storage implementation
@@ -4811,6 +4824,32 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteInvoiceBill:", error);
       return false;
+    }
+  }
+
+  // Activity Feed CRUD
+  async getActivities(projectId: string, limit: number = 50): Promise<schema.Activity[]> {
+    try {
+      return await db.select()
+        .from(schema.activities)
+        .where(eq(schema.activities.projectId, projectId))
+        .orderBy(desc(schema.activities.createdAt))
+        .limit(limit);
+    } catch (error) {
+      console.error("Database error in getActivities:", error);
+      throw error;
+    }
+  }
+
+  async createActivity(activity: schema.InsertActivity): Promise<schema.Activity> {
+    try {
+      const result = await db.insert(schema.activities)
+        .values(activity)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createActivity:", error);
+      throw error;
     }
   }
 }

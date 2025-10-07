@@ -2746,6 +2746,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Activity Feed routes
+  app.get("/api/activities", async (req, res) => {
+    try {
+      const projectId = req.query.projectId as string;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+
+      const activities = await storage.getActivities(projectId, limit);
+      res.json(activities);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/activities", async (req, res) => {
+    try {
+      const activityData = schema.insertActivitySchema.parse(req.body);
+      const activity = await storage.createActivity(activityData);
+      res.json(activity);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid activity data", details: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

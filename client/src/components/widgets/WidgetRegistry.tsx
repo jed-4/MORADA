@@ -1,9 +1,10 @@
-import { CheckSquare, BarChart3, FileText, Calendar } from "lucide-react";
+import { CheckSquare, BarChart3, FileText, Calendar, Activity } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import TasksWidget from "./TasksWidget";
 import MetricsWidget from "./MetricsWidget";
 import NotesWidget from "./NotesWidget";
 import ScheduleWidget from "./ScheduleWidget";
+import ActivityWidget from "./ActivityWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
   tasks: {
@@ -41,6 +42,15 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     component: ScheduleWidget,
     defaultSize: "md",
     configurable: true,
+  },
+  activity: {
+    type: "activity",
+    name: "Activity Feed",
+    description: "Recent project activity and updates",
+    icon: Activity,
+    component: ActivityWidget,
+    defaultSize: "md",
+    configurable: false,
   },
 };
 
