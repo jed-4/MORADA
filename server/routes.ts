@@ -37,7 +37,9 @@ import {
   insertClientInvoicePaymentSchema,
   insertInvoiceEstimateSchema,
   insertInvoiceVariationSchema,
-  insertInvoiceBillSchema
+  insertInvoiceBillSchema,
+  insertSiteDiaryTemplateSchema,
+  insertSiteDiaryEntrySchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -78,8 +80,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
-    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills')) {
+    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, site diary, and other core operations for development
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills') || path.startsWith('/site-diary-templates') || path.startsWith('/site-diary-entries')) {
       return next();
     }
     
@@ -2829,6 +2831,206 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid activity data", details: error.errors });
       }
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Site Diary Template routes
+  app.get("/api/site-diary-templates", async (req, res) => {
+    try {
+      const templates = await storage.getSiteDiaryTemplates();
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch site diary templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/site-diary-templates/:id", async (req, res) => {
+    try {
+      const template = await storage.getSiteDiaryTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/site-diary-templates", async (req, res) => {
+    try {
+      const validationResult = insertSiteDiaryTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const template = await storage.createSiteDiaryTemplate(validationResult.data);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/site-diary-templates/:id", async (req, res) => {
+    try {
+      const validationResult = insertSiteDiaryTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const template = await storage.updateSiteDiaryTemplate(req.params.id, validationResult.data);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/site-diary-templates/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteSiteDiaryTemplate(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Site Diary Entry routes
+  app.get("/api/projects/:projectId/site-diary-entries", async (req, res) => {
+    try {
+      const entries = await storage.getSiteDiaryEntries(req.params.projectId);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch site diary entries",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/site-diary-entries/:id", async (req, res) => {
+    try {
+      const entry = await storage.getSiteDiaryEntry(req.params.id);
+      if (!entry) {
+        return res.status(404).json({ error: "Entry not found" });
+      }
+      res.json(entry);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch entry",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/site-diary-entries", async (req, res) => {
+    try {
+      const validationResult = insertSiteDiaryEntrySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Verify template exists
+      const template = await storage.getSiteDiaryTemplate(validationResult.data.templateId);
+      if (!template) {
+        return res.status(400).json({ error: "Template not found" });
+      }
+
+      // Verify project exists
+      const project = await storage.getProject(validationResult.data.projectId);
+      if (!project) {
+        return res.status(400).json({ error: "Project not found" });
+      }
+
+      const entry = await storage.createSiteDiaryEntry(validationResult.data);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create entry",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/site-diary-entries/:id", async (req, res) => {
+    try {
+      const validationResult = insertSiteDiaryEntrySchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Verify template exists if being updated
+      if (validationResult.data.templateId) {
+        const template = await storage.getSiteDiaryTemplate(validationResult.data.templateId);
+        if (!template) {
+          return res.status(400).json({ error: "Template not found" });
+        }
+      }
+
+      // Verify project exists if being updated
+      if (validationResult.data.projectId) {
+        const project = await storage.getProject(validationResult.data.projectId);
+        if (!project) {
+          return res.status(400).json({ error: "Project not found" });
+        }
+      }
+
+      const entry = await storage.updateSiteDiaryEntry(req.params.id, validationResult.data);
+      if (!entry) {
+        return res.status(404).json({ error: "Entry not found" });
+      }
+      res.json(entry);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update entry",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/site-diary-entries/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteSiteDiaryEntry(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Entry not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete entry",
+        details: error.message 
+      });
     }
   });
 
