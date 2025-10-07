@@ -121,10 +121,10 @@ export default function WidgetContainer({
   }, [widget.dimensions]);
 
   const sizeClasses = {
-    sm: "col-span-2",
-    md: "col-span-4", 
-    lg: "col-span-6",
-    xl: "col-span-8",
+    sm: "col-span-2 md:col-span-2 lg:col-span-2",  // 100% mobile, 50% tablet, 25% desktop
+    md: "col-span-2 md:col-span-4 lg:col-span-4",  // 100% mobile, 100% tablet, 50% desktop
+    lg: "col-span-2 md:col-span-4 lg:col-span-6",  // 100% mobile, 100% tablet, 75% desktop
+    xl: "col-span-2 md:col-span-4 lg:col-span-8",  // 100% mobile, 100% tablet, 100% desktop
   };
 
   const {
