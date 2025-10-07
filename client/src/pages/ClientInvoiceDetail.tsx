@@ -703,32 +703,32 @@ export default function ClientInvoiceDetail() {
             <div className="flex gap-6 p-6">
               {/* Left Column - Form Fields */}
               <div className="flex-1 space-y-6">
-                {/* Row 1: Invoice Number + Name */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Invoice Number */}
+                {/* Row 1: Invoice Name + Invoice Number */}
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Invoice Name */}
                   <FormField
                     control={form.control}
-                    name="invoiceNumber"
+                    name="name"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Invoice Number</FormLabel>
+                      <FormItem className="col-span-2">
+                        <FormLabel>Invoice Name*</FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-invoice-number" />
+                          <Input {...field} data-testid="input-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
 
-                  {/* Name */}
+                  {/* Invoice Number */}
                   <FormField
                     control={form.control}
-                    name="name"
+                    name="invoiceNumber"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Invoice Name*</FormLabel>
+                      <FormItem className="col-span-1">
+                        <FormLabel>Invoice Number</FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-name" />
+                          <Input {...field} data-testid="input-invoice-number" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
