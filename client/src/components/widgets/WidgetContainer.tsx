@@ -43,7 +43,21 @@ function ResizeHandle({
     const parentCard = (e.target as HTMLElement).closest('[data-testid^="widget-"]') as HTMLElement;
     if (!parentCard) return;
 
+    // Find the grid container to calculate column widths
+    const gridContainer = parentCard.closest('.grid') as HTMLElement;
+    if (!gridContainer) {
+      console.warn('No grid container found - resize disabled');
+      return;
+    }
+
     const rect = parentCard.getBoundingClientRect();
+    const containerRect = gridContainer.getBoundingClientRect();
+    const gap = 16; // gap-4 = 1rem = 16px
+    
+    // Calculate column width based on 8-column grid
+    // Container width minus gaps between 8 columns (7 gaps)
+    const columnWidth = (containerRect.width - (7 * gap)) / 8;
+    
     setIsResizing(true);
     onResizeStart();
     
@@ -60,25 +74,38 @@ function ResizeHandle({
       const deltaX = e.clientX - startPosRef.current.x;
       const deltaY = e.clientY - startPosRef.current.y;
       
-      const newWidth = Math.max(200, startPosRef.current.width + deltaX);
+      // Calculate target width
+      const targetWidth = startPosRef.current.width + deltaX;
+      
+      // Snap to column boundaries (1-8 columns)
+      // Calculate how many columns this width represents
+      const columns = Math.round((targetWidth + gap) / (columnWidth + gap));
+      const snappedColumns = Math.max(1, Math.min(8, columns));
+      
+      // Calculate snapped width: (columns * columnWidth) + ((columns - 1) * gap)
+      const snappedWidth = (snappedColumns * columnWidth) + ((snappedColumns - 1) * gap);
+      
       const newHeight = Math.max(150, startPosRef.current.height + deltaY);
       
-      onResize(newWidth, newHeight);
+      onResize(snappedWidth, newHeight);
     };
 
     const handleMouseUp = (e: MouseEvent) => {
       setIsResizing(false);
       
-      // Calculate final dimensions at mouseup to avoid stale closure
+      // Calculate final snapped dimensions at mouseup
       if (startPosRef.current) {
-        const parentCard = (e.target as HTMLElement).closest('[data-testid^="widget-"]') as HTMLElement;
-        if (parentCard) {
-          const rect = parentCard.getBoundingClientRect();
-          console.log(`ResizeHandle mouseup - final dimensions: ${rect.width}x${rect.height}`);
-          onResizeEnd(rect.width, rect.height);
-        } else {
-          console.log('ResizeHandle mouseup - no parent card found');
-        }
+        const deltaX = e.clientX - startPosRef.current.x;
+        const deltaY = e.clientY - startPosRef.current.y;
+        
+        const targetWidth = startPosRef.current.width + deltaX;
+        const columns = Math.round((targetWidth + gap) / (columnWidth + gap));
+        const snappedColumns = Math.max(1, Math.min(8, columns));
+        const snappedWidth = (snappedColumns * columnWidth) + ((snappedColumns - 1) * gap);
+        const finalHeight = Math.max(150, startPosRef.current.height + deltaY);
+        
+        console.log(`Resize complete - snapped to ${snappedColumns} columns (${snappedWidth}px wide)`);
+        onResizeEnd(snappedColumns, finalHeight);
       }
       
       startPosRef.current = null;
@@ -147,11 +174,11 @@ export default function WidgetContainer({
     setIsResizing(true);
   }, []);
 
-  const handleResizeEnd = useCallback((width: number, height: number) => {
+  const handleResizeEnd = useCallback((columns: number, height: number) => {
     setIsResizing(false);
-    console.log(`Widget ${widget.id} resize ended. Final dimensions:`, { width, height });
-    if (width && height && onUpdate) {
-      const finalDimensions = { width, height };
+    console.log(`Widget ${widget.id} resize ended. Snapped to ${columns} columns, height: ${height}px`);
+    if (columns && height && onUpdate) {
+      const finalDimensions = { columns, height };
       setCurrentDimensions(finalDimensions);
       const updatedWidget = {
         ...widget,
@@ -160,14 +187,50 @@ export default function WidgetContainer({
       console.log(`Calling onUpdate for widget ${widget.id} with dimensions:`, updatedWidget.dimensions);
       onUpdate(updatedWidget);
     } else {
-      console.log(`No update - width: ${width}, height: ${height}, onUpdate: ${!!onUpdate}`);
+      console.log(`No update - columns: ${columns}, height: ${height}, onUpdate: ${!!onUpdate}`);
     }
   }, [onUpdate, widget]);
+
+  // Calculate column span class or pixel width based on dimensions
+  const getWidthStyle = () => {
+    if (!currentDimensions) return undefined;
+    
+    // If we have a column count, let the grid handle it via class
+    if (currentDimensions.columns) {
+      return undefined; // Grid col-span will handle it
+    }
+    
+    // Otherwise use pixel width if available
+    if (currentDimensions.width) {
+      return `${currentDimensions.width}px`;
+    }
+    
+    return undefined;
+  };
+
+  const getColSpanClass = () => {
+    if (!currentDimensions?.columns) return '';
+    
+    // Map columns (1-8) to Tailwind col-span classes
+    // All responsive to maintain grid alignment
+    const colSpanMap: Record<number, string> = {
+      1: 'col-span-1',
+      2: 'col-span-2', 
+      3: 'col-span-3',
+      4: 'col-span-4',
+      5: 'col-span-5',
+      6: 'col-span-6',
+      7: 'col-span-7',
+      8: 'col-span-8',
+    };
+    
+    return colSpanMap[currentDimensions.columns] || '';
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition: isResizing ? 'none' : transition,
-    width: currentDimensions?.width ? `${currentDimensions.width}px` : undefined,
+    width: getWidthStyle(),
     height: currentDimensions?.height ? `${currentDimensions.height}px` : undefined,
   };
 
@@ -175,7 +238,13 @@ export default function WidgetContainer({
     <Card 
       ref={setNodeRef}
       style={style}
-      className={`relative flex h-full flex-col ${currentDimensions ? '' : sizeClasses[widget.size]} ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
+      className={`relative flex h-full flex-col ${
+        currentDimensions?.columns 
+          ? getColSpanClass() // Use column-based span if available
+          : currentDimensions?.width 
+            ? '' // No grid class if using pixel width
+            : sizeClasses[widget.size] // Default size class
+      } ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
         isDragging ? 'opacity-50 z-50' : ''
       } ${isResizing ? 'select-none' : ''}`}
       data-testid={`widget-${widget.type}-${widget.id}`}

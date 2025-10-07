@@ -95,6 +95,23 @@ export default function CustomizableProjectOverview() {
     }
   };
 
+  // Migrate old pixel-based dimensions to column-based (one-time migration)
+  const migrateWidgetDimensions = (widgets: Widget[]): Widget[] => {
+    return widgets.map(widget => {
+      if (widget.dimensions && widget.dimensions.width && !widget.dimensions.columns) {
+        // Clear old pixel width, keep height if present
+        console.log(`Migrating widget ${widget.id} from pixel to grid-based layout`);
+        return {
+          ...widget,
+          dimensions: widget.dimensions.height 
+            ? { height: widget.dimensions.height } 
+            : undefined
+        };
+      }
+      return widget;
+    });
+  };
+
   // Load widgets from localStorage on component mount and project change
   useEffect(() => {
     if (!currentProject) {
@@ -109,12 +126,22 @@ export default function CustomizableProjectOverview() {
       try {
         const parsedWidgets = JSON.parse(savedWidgets) as Widget[];
         console.log(`Loading ${parsedWidgets.length} widgets for project ${currentProject.id}`);
+        
+        // Migrate old dimensions format
+        const migratedWidgets = migrateWidgetDimensions(parsedWidgets);
+        
         // Debug: Log loaded widgets with dimensions
-        const withDimensions = parsedWidgets.filter(w => w.dimensions);
+        const withDimensions = migratedWidgets.filter(w => w.dimensions);
         if (withDimensions.length > 0) {
           console.log(`Loaded widgets with custom dimensions:`, withDimensions.map(w => ({ id: w.id, type: w.type, dimensions: w.dimensions })));
         }
-        setWidgets(parsedWidgets);
+        
+        setWidgets(migratedWidgets);
+        
+        // Save migrated widgets if migration occurred
+        if (JSON.stringify(parsedWidgets) !== JSON.stringify(migratedWidgets)) {
+          saveWidgets(migratedWidgets);
+        }
       } catch (error) {
         console.error('Failed to parse saved widgets:', error);
         // Fallback to default widgets
@@ -333,11 +360,7 @@ export default function CustomizableProjectOverview() {
           items={widgets.map(w => w.id)}
           strategy={rectSortingStrategy}
         >
-          <div className={
-            widgets.some(w => w.dimensions) 
-              ? "flex flex-wrap gap-4" // Freeform layout for custom dimensions
-              : "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4" // Responsive: 2 cols mobile, 4 tablet, 8 desktop
-          }>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             {widgets.map((widget) => renderWidget(widget))}
             
             {widgets.length === 0 && (

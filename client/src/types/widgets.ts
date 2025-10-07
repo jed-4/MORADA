@@ -9,8 +9,9 @@ export interface Widget {
     col: number;
   };
   dimensions?: {
-    width: number;
-    height: number;
+    columns?: number; // 1-8 columns for grid snapping
+    width?: number;   // Keep for backwards compatibility and height-only custom sizing
+    height?: number;
   };
 }
 
