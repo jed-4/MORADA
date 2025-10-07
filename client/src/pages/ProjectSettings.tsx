@@ -8,10 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Save, Settings, Palette, Info, Archive, Users, Plus, Code, Trash2, Pencil } from "lucide-react";
+import { Save, Settings, Palette, Info, Archive, Users, Plus, Code, Trash2, Pencil, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS } from "@shared/schema";
@@ -36,6 +37,7 @@ export default function ProjectSettings() {
     icon: currentProject?.icon || "Building2",
     isActive: currentProject?.isActive ?? true,
     isBusiness: currentProject?.isBusiness ?? false,
+    invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
   });
 
   // Load custom project types from localStorage
@@ -62,6 +64,7 @@ export default function ProjectSettings() {
         icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
         isBusiness: currentProject.isBusiness,
+        invoicingMethod: currentProject.invoicingMethod || "progress_payments",
       });
     }
   }, [currentProject]);
@@ -108,6 +111,7 @@ export default function ProjectSettings() {
         icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
         isBusiness: currentProject.isBusiness,
+        invoicingMethod: currentProject.invoicingMethod || "progress_payments",
       });
     }
     setIsEditing(false);
@@ -301,6 +305,74 @@ export default function ProjectSettings() {
             ) : (
               <div className="p-2 bg-muted rounded-md min-h-[80px]" data-testid="text-project-description">
                 {currentProject.description || "No description provided"}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Invoicing Method */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Invoicing Method
+          </CardTitle>
+          <CardDescription>
+            Choose how you want to invoice for this project
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-4">
+            {isEditing ? (
+              <RadioGroup
+                value={formData.invoicingMethod}
+                onValueChange={(value) => setFormData({ ...formData, invoicingMethod: value })}
+                className="space-y-4"
+              >
+                <div className="flex items-start space-x-3">
+                  <RadioGroupItem 
+                    value="progress_payments" 
+                    id="progress_payments"
+                    data-testid="radio-progress-payments"
+                  />
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="progress_payments" className="font-medium cursor-pointer">
+                      Progress Payments
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Invoice based on contract price, variations, and allowances
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <RadioGroupItem 
+                    value="cost_plus" 
+                    id="cost_plus"
+                    data-testid="radio-cost-plus"
+                  />
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="cost_plus" className="font-medium cursor-pointer">
+                      Cost Plus
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Invoice based on actual costs (bills, timesheets) plus builder's margin
+                    </p>
+                  </div>
+                </div>
+              </RadioGroup>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" data-testid="badge-invoicing-method">
+                    {currentProject.invoicingMethod === "progress_payments" ? "Progress Payments" : "Cost Plus"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground" data-testid="text-invoicing-description">
+                  {currentProject.invoicingMethod === "progress_payments"
+                    ? "Invoice based on contract price, variations, and allowances"
+                    : "Invoice based on actual costs (bills, timesheets) plus builder's margin"}
+                </p>
               </div>
             )}
           </div>

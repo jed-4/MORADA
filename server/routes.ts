@@ -31,7 +31,13 @@ import {
   insertBillLineItemSchema,
   insertBillApprovalSchema,
   insertVariationSchema,
-  insertVariationItemSchema
+  insertVariationItemSchema,
+  insertClientInvoiceSchema,
+  insertClientInvoiceItemSchema,
+  insertClientInvoicePaymentSchema,
+  insertInvoiceEstimateSchema,
+  insertInvoiceVariationSchema,
+  insertInvoiceBillSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -72,8 +78,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
-    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items')) {
+    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, and other core operations for development
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills')) {
       return next();
     }
     
@@ -2304,6 +2310,311 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete variation item" });
+    }
+  });
+
+  // Client Invoices API Routes
+  app.get("/api/client-invoices", async (req, res) => {
+    try {
+      const { projectId, status } = req.query;
+      const invoices = await storage.getClientInvoices(
+        projectId as string | undefined,
+        status as string | undefined
+      );
+      res.json(invoices);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch client invoices" });
+    }
+  });
+
+  app.get("/api/client-invoices/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ error: "Client invoice not found" });
+      }
+      res.json(invoice);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch client invoice" });
+    }
+  });
+
+  app.post("/api/client-invoices", async (req, res) => {
+    try {
+      const validationResult = insertClientInvoiceSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const invoice = await storage.createClientInvoice(validationResult.data);
+      res.status(201).json(invoice);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create client invoice" });
+    }
+  });
+
+  app.patch("/api/client-invoices/:id", async (req, res) => {
+    try {
+      const validationResult = insertClientInvoiceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const invoice = await storage.updateClientInvoice(req.params.id, validationResult.data);
+      if (!invoice) {
+        return res.status(404).json({ error: "Client invoice not found" });
+      }
+      res.json(invoice);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update client invoice" });
+    }
+  });
+
+  app.delete("/api/client-invoices/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteClientInvoice(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Client invoice not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete client invoice" });
+    }
+  });
+
+  // Client Invoice Items API Routes
+  app.get("/api/client-invoices/:id/items", async (req, res) => {
+    try {
+      const items = await storage.getClientInvoiceItems(req.params.id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch client invoice items" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/items", async (req, res) => {
+    try {
+      const validationResult = insertClientInvoiceItemSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createClientInvoiceItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create client invoice item" });
+    }
+  });
+
+  app.patch("/api/client-invoice-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertClientInvoiceItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateClientInvoiceItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Client invoice item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update client invoice item" });
+    }
+  });
+
+  app.delete("/api/client-invoice-items/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteClientInvoiceItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Client invoice item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete client invoice item" });
+    }
+  });
+
+  // Client Invoice Payments API Routes
+  app.get("/api/client-invoices/:id/payments", async (req, res) => {
+    try {
+      const payments = await storage.getClientInvoicePayments(req.params.id);
+      res.json(payments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch client invoice payments" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/payments", async (req, res) => {
+    try {
+      const validationResult = insertClientInvoicePaymentSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const payment = await storage.createClientInvoicePayment(validationResult.data);
+      res.status(201).json(payment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create client invoice payment" });
+    }
+  });
+
+  app.delete("/api/client-invoice-payments/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteClientInvoicePayment(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Client invoice payment not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete client invoice payment" });
+    }
+  });
+
+  // Invoice-Estimate Junction Routes
+  app.get("/api/client-invoices/:id/estimates", async (req, res) => {
+    try {
+      const estimates = await storage.getInvoiceEstimates(req.params.id);
+      res.json(estimates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice estimates" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/estimates", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceEstimateSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const invoiceEstimate = await storage.createInvoiceEstimate(validationResult.data);
+      res.status(201).json(invoiceEstimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invoice estimate" });
+    }
+  });
+
+  app.delete("/api/invoice-estimates/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoiceEstimate(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice estimate not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice estimate" });
+    }
+  });
+
+  // Invoice-Variation Junction Routes
+  app.get("/api/client-invoices/:id/variations", async (req, res) => {
+    try {
+      const variations = await storage.getInvoiceVariations(req.params.id);
+      res.json(variations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice variations" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/variations", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceVariationSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const invoiceVariation = await storage.createInvoiceVariation(validationResult.data);
+      res.status(201).json(invoiceVariation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invoice variation" });
+    }
+  });
+
+  app.delete("/api/invoice-variations/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoiceVariation(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice variation not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice variation" });
+    }
+  });
+
+  // Invoice-Bill Junction Routes
+  app.get("/api/client-invoices/:id/bills", async (req, res) => {
+    try {
+      const bills = await storage.getInvoiceBills(req.params.id);
+      res.json(bills);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice bills" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/bills", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceBillSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const invoiceBill = await storage.createInvoiceBill(validationResult.data);
+      res.status(201).json(invoiceBill);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invoice bill" });
+    }
+  });
+
+  app.delete("/api/invoice-bills/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoiceBill(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice bill not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice bill" });
     }
   });
 

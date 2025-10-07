@@ -348,6 +348,7 @@ export const projects = pgTable("projects", {
   icon: text("icon").default("Building2"), // Lucide icon name
   isActive: boolean("is_active").notNull().default(true),
   isBusiness: boolean("is_business").notNull().default(false), // Business project flag
+  invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
   ownerId: varchar("owner_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -357,6 +358,8 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
 });
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;
@@ -924,3 +927,183 @@ export const insertVariationItemSchema = createInsertSchema(variationItems).omit
 
 export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;
 export type VariationItem = typeof variationItems.$inferSelect;
+
+// Client Invoices
+export const clientInvoices = pgTable("client_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: text("invoice_number").notNull().unique(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => users.id),
+  invoiceDate: timestamp("invoice_date").notNull(),
+  dueDate: timestamp("due_date"),
+  invoicingMethod: text("invoicing_method").notNull().default("progress_payments"),
+  markupPercent: integer("markup_percent"),
+  introductionText: text("introduction_text"),
+  closingText: text("closing_text"),
+  subtotal: integer("subtotal").notNull().default(0),
+  markupAmount: integer("markup_amount").notNull().default(0),
+  gstAmount: integer("gst_amount").notNull().default(0),
+  totalAmount: integer("total_amount").notNull().default(0),
+  paidAmount: integer("paid_amount").notNull().default(0),
+  balanceAmount: integer("balance_amount").notNull().default(0),
+  status: text("status").notNull().default("draft"),
+  sentDate: timestamp("sent_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
+  status: z.enum(["draft", "sent", "partial", "paid", "overdue"]).default("draft"),
+  invoiceDate: z.coerce.date(),
+  dueDate: z.coerce.date().optional(),
+  sentDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  markupAmount: z.number().default(0),
+  gstAmount: z.number().default(0),
+  totalAmount: z.number().default(0),
+  paidAmount: z.number().default(0),
+  balanceAmount: z.number().default(0),
+});
+
+export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;
+export type ClientInvoice = typeof clientInvoices.$inferSelect;
+
+// Client Invoice Items (custom line items)
+export const clientInvoiceItems = pgTable("client_invoice_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: integer("unit_price").notNull().default(0),
+  totalPrice: integer("total_price").notNull().default(0),
+  taxable: boolean("taxable").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertClientInvoiceItemSchema = createInsertSchema(clientInvoiceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertClientInvoiceItem = z.infer<typeof insertClientInvoiceItemSchema>;
+export type ClientInvoiceItem = typeof clientInvoiceItems.$inferSelect;
+
+// Client Invoice Payments (payment history)
+export const clientInvoicePayments = pgTable("client_invoice_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  paymentDate: timestamp("payment_date").notNull(),
+  paymentMethod: text("payment_method"),
+  reference: text("reference"),
+  notes: text("notes"),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertClientInvoicePaymentSchema = createInsertSchema(clientInvoicePayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  amount: z.number(),
+  paymentDate: z.coerce.date(),
+});
+
+export type InsertClientInvoicePayment = z.infer<typeof insertClientInvoicePaymentSchema>;
+export type ClientInvoicePayment = typeof clientInvoicePayments.$inferSelect;
+
+// Junction table: Invoice to Estimates (for Progress Payments mode)
+export const invoiceEstimates = pgTable("invoice_estimates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceEstimateSchema = createInsertSchema(invoiceEstimates).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceEstimate = z.infer<typeof insertInvoiceEstimateSchema>;
+export type InvoiceEstimate = typeof invoiceEstimates.$inferSelect;
+
+// Junction table: Invoice to Variations (for Progress Payments mode)
+export const invoiceVariations = pgTable("invoice_variations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceVariationSchema = createInsertSchema(invoiceVariations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceVariation = z.infer<typeof insertInvoiceVariationSchema>;
+export type InvoiceVariation = typeof invoiceVariations.$inferSelect;
+
+// Junction table: Invoice to Allowances (for future use - Progress Payments mode)
+export const invoiceAllowances = pgTable("invoice_allowances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  allowanceId: varchar("allowance_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceAllowanceSchema = createInsertSchema(invoiceAllowances).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceAllowance = z.infer<typeof insertInvoiceAllowanceSchema>;
+export type InvoiceAllowance = typeof invoiceAllowances.$inferSelect;
+
+// Junction table: Invoice to Bills (for Cost Plus mode)
+export const invoiceBills = pgTable("invoice_bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceBillSchema = createInsertSchema(invoiceBills).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceBill = z.infer<typeof insertInvoiceBillSchema>;
+export type InvoiceBill = typeof invoiceBills.$inferSelect;
+
+// Junction table: Invoice to Timesheets (for future use - Cost Plus mode)
+export const invoiceTimesheets = pgTable("invoice_timesheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  timesheetId: varchar("timesheet_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceTimesheetSchema = createInsertSchema(invoiceTimesheets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceTimesheet = z.infer<typeof insertInvoiceTimesheetSchema>;
+export type InvoiceTimesheet = typeof invoiceTimesheets.$inferSelect;
