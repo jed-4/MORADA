@@ -941,6 +941,7 @@ export const clientInvoices = pgTable("client_invoices", {
   markupPercent: integer("markup_percent"),
   introductionText: text("introduction_text"),
   closingText: text("closing_text"),
+  termsAndConditions: text("terms_and_conditions"),
   subtotal: integer("subtotal").notNull().default(0),
   markupAmount: integer("markup_amount").notNull().default(0),
   gstAmount: integer("gst_amount").notNull().default(0),

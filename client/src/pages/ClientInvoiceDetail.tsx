@@ -80,6 +80,7 @@ const invoiceFormSchema = z.object({
   dueDate: z.date().optional(),
   introductionText: z.string().optional(),
   closingText: z.string().optional(),
+  termsAndConditions: z.string().optional(),
   markupPercent: z.number().optional(),
 });
 
@@ -190,6 +191,7 @@ export default function ClientInvoiceDetail() {
       dueDate: undefined,
       introductionText: "",
       closingText: "",
+      termsAndConditions: "",
       markupPercent: undefined,
     },
   });
@@ -215,6 +217,7 @@ export default function ClientInvoiceDetail() {
         dueDate: invoice.dueDate ? new Date(invoice.dueDate) : undefined,
         introductionText: invoice.introductionText || "",
         closingText: invoice.closingText || "",
+        termsAndConditions: invoice.termsAndConditions || "",
         markupPercent: invoice.markupPercent || undefined,
       });
     }
@@ -393,6 +396,7 @@ export default function ClientInvoiceDetail() {
         markupPercent: data.markupPercent,
         introductionText: data.introductionText,
         closingText: data.closingText,
+        termsAndConditions: data.termsAndConditions,
         subtotal: Math.round(calculateSubtotal() * 100),
         markupAmount: Math.round(calculateMarkup() * 100),
         gstAmount: Math.round(calculateGST() * 100),
@@ -475,6 +479,7 @@ export default function ClientInvoiceDetail() {
         markupPercent: data.markupPercent,
         introductionText: data.introductionText,
         closingText: data.closingText,
+        termsAndConditions: data.termsAndConditions,
         subtotal: Math.round(calculateSubtotal() * 100),
         markupAmount: Math.round(calculateMarkup() * 100),
         gstAmount: Math.round(calculateGST() * 100),
@@ -1352,6 +1357,31 @@ export default function ClientInvoiceDetail() {
                           data-testid="editor-closing"
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Terms & Conditions */}
+                <FormField
+                  control={form.control}
+                  name="termsAndConditions"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Terms & Conditions</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-terms-conditions">
+                            <SelectValue placeholder="Select terms and conditions" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="standard">Standard Terms</SelectItem>
+                          <SelectItem value="residential">Residential Building Terms</SelectItem>
+                          <SelectItem value="commercial">Commercial Building Terms</SelectItem>
+                          <SelectItem value="custom">Custom</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
