@@ -3677,7 +3677,25 @@ export class DbStorage implements IStorage {
       return undefined;
     }
   }
-  async createProject(project: InsertProject): Promise<Project> { throw new Error("Not implemented"); }
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const id = randomUUID();
+    const now = new Date();
+    const project: Project = {
+      ...insertProject,
+      id,
+      description: insertProject.description ?? null,
+      color: insertProject.color ?? null,
+      ownerId: insertProject.ownerId ?? null,
+      isActive: insertProject.isActive ?? true,
+      isBusiness: insertProject.isBusiness ?? false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.insert(schema.projects).values(project);
+    console.log(`createProject: Successfully saved project ${project.name} to database`);
+    return project;
+  }
   async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> { return undefined; }
   async deleteProject(id: string): Promise<boolean> { return false; }
   async getTaskViews(ownerId?: string): Promise<TaskView[]> { return []; }
