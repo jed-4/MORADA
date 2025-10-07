@@ -30,12 +30,22 @@
 
 ### B. Typography
 **Font Families:** Inter (primary), JetBrains Mono (code/data)
-**Hierarchy (enhanced for stronger contrast):**
+**Hierarchy (enhanced for stronger contrast and better readability):**
 - H1/H2: 700 weight (bold), 1.5rem to 2.25rem
 - H3/H4: 600 weight (semibold), 1.125rem to 1.25rem  
-- Body: 400-500 weight, 0.875rem to 1rem
+- Labels: 600 weight (semibold) - all form labels are bolder for clarity
+- Buttons: 600 weight (semibold) - enhanced from medium for better emphasis
+- Table Headers: 600 weight (semibold) - improved from medium weight
+- Card Titles: 700 weight (bold) - stronger emphasis for section headers
+- Dialog Titles: 700 weight (bold) - clear modal hierarchy
+- Body Text: 400-500 weight, 0.875rem to 1rem
 - Captions: 400 weight, 0.75rem
-- Key principle: Bold headings create clear visual hierarchy against body text
+
+**Text Hierarchy Classes:**
+- `.text-primary-emphasis`: 600 weight, full foreground color (important content)
+- `.text-secondary-emphasis`: 500 weight, full foreground color (regular content)
+- `.text-tertiary`: 400 weight, muted foreground color (supporting content)
+- Key principle: Bold headings and labels create clear visual hierarchy with strong contrast against body text
 
 ### C. Layout System
 **Spacing Units:** Tailwind units with minimalist approach
@@ -45,9 +55,18 @@
 
 **Visual Hierarchy:**
 - Rely on typography weight, size, and generous whitespace
-- Use subtle borders (1px) instead of heavy shadows
+- **Stronger borders (2px)** for better visual definition and clarity
 - Minimal elevation changes - content speaks for itself
 - Intentional use of color for CTAs and status only
+
+**Border System (Enhanced for Better Visibility):**
+- Cards: 2px borders for clear separation
+- Form Inputs: 2px borders (Input, Select, Textarea) for better focus
+- Buttons: 2px borders for stronger definition
+- Badges: 2px borders for visual prominence
+- Tables: 2px borders for clearer data separation
+- Popovers/Dialogs: 2px borders for modal emphasis
+- Principle: Thicker borders improve visual hierarchy without adding visual weight
 
 ### D. Component Library
 

@@ -275,11 +275,32 @@
     font-weight: 600;
   }
   
-  /* Minimalist card styling with subtle shadows */
+  /* Bolder labels and form elements */
+  label {
+    font-weight: 600;
+  }
+  
+  /* Text hierarchy for better visual contrast */
+  .text-primary-emphasis {
+    font-weight: 600;
+    color: hsl(var(--foreground));
+  }
+  
+  .text-secondary-emphasis {
+    font-weight: 500;
+    color: hsl(var(--foreground));
+  }
+  
+  .text-tertiary {
+    font-weight: 400;
+    color: hsl(var(--muted-foreground));
+  }
+  
+  /* Stronger borders for better visual definition */
   .card-enhanced {
     box-shadow: var(--shadow-card);
     transition: box-shadow 0.2s ease-out, border-color 0.2s ease-out;
-    border: 1px solid hsl(var(--border));
+    border: 2px solid hsl(var(--border));
     background: hsl(var(--card));
   }
   
