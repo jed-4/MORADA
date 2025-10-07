@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type InsertTask, type FieldCategoryWithOptions } from "@shared/schema";
 import { z } from "zod";
 import { useProject } from "@/contexts/ProjectContext";
+import { logActivity } from "@/lib/activityLogger";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -201,9 +202,22 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       };
       return await apiRequest("POST", `/api/tasks`, payload);
     },
-    onSuccess: () => {
+    onSuccess: (createdTask: Task) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       toast({ title: "Task created successfully" });
+      
+      const userName = createdTask.author || "User";
+      logActivity({
+        projectId: createdTask.projectId || projectId,
+        userId: "current-user",
+        activityType: "task",
+        action: "created",
+        description: `${userName} created task '${createdTask.title}'`,
+        entityId: createdTask.id,
+        entityName: createdTask.title,
+        metadata: {},
+      });
+      
       onOpenChange(false);
       form.reset();
     },
@@ -245,9 +259,28 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       };
       return await apiRequest("PATCH", `/api/tasks/${task.id}`, payload);
     },
-    onSuccess: () => {
+    onSuccess: (updatedTask: Task) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       toast({ title: "Task updated successfully" });
+      
+      const oldStatus = task?.status;
+      const newStatus = updatedTask.status;
+      const isCompletion = newStatus === "done" && oldStatus !== "done";
+      const action = isCompletion ? "completed" : "updated";
+      const actionText = isCompletion ? "completed" : "updated";
+      const userName = updatedTask.author || "User";
+      
+      logActivity({
+        projectId: updatedTask.projectId || projectId,
+        userId: "current-user",
+        activityType: "task",
+        action,
+        description: `${userName} ${actionText} task '${updatedTask.title}'`,
+        entityId: updatedTask.id,
+        entityName: updatedTask.title,
+        metadata: {},
+      });
+      
       onOpenChange(false);
     },
     onError: (error) => {

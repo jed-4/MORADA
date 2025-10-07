@@ -33,6 +33,7 @@ import { type Estimate, type EstimateItem, type EstimateSummary, type Project, t
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { logActivity } from "@/lib/activityLogger";
 import {
   Table,
   TableBody,
@@ -206,12 +207,24 @@ export default function EstimateDetail() {
       const response = await apiRequest("POST", `/api/estimates`, data);
       return response.json();
     },
-    onSuccess: (newEstimate) => {
+    onSuccess: async (newEstimate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
         title: "Success",
         description: "New estimate created successfully.",
       });
+
+      logActivity({
+        projectId: newEstimate.projectId,
+        userId: "current-user",
+        activityType: "estimate",
+        action: "created",
+        description: `User created estimate '${newEstimate.name}'`,
+        entityId: newEstimate.id,
+        entityName: newEstimate.name,
+        metadata: {}
+      });
+
       // Redirect to the newly created estimate
       setLocation(`/estimates/${newEstimate.id}`);
     },
@@ -294,13 +307,26 @@ export default function EstimateDetail() {
       const response = await apiRequest("PATCH", `/api/estimates/${effectiveEstimateId}`, data);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async (updatedEstimate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
         title: "Success",
         description: "Estimate name updated successfully.",
       });
+
+      if (updatedEstimate.projectId) {
+        logActivity({
+          projectId: updatedEstimate.projectId,
+          userId: "current-user",
+          activityType: "estimate",
+          action: "updated",
+          description: `User updated estimate '${updatedEstimate.name}'`,
+          entityId: updatedEstimate.id,
+          entityName: updatedEstimate.name,
+          metadata: {}
+        });
+      }
     },
     onError: (error: any) => {
       toast({

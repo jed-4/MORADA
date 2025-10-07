@@ -2122,6 +2122,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "awaiting_payment" 
       });
 
+      // Log activity if comments were added
+      if (req.body.comments && req.body.comments.trim()) {
+        try {
+          const bill = await storage.getBillById(req.params.id);
+          if (bill) {
+            const userName = req.user.firstName && req.user.lastName 
+              ? `${req.user.firstName} ${req.user.lastName}`
+              : req.user.username || "User";
+            
+            const billName = bill.billNumber || `Bill #${bill.id.slice(0, 8)}`;
+            
+            await storage.createActivity({
+              projectId: bill.projectId,
+              userId: req.user.id,
+              userName: userName,
+              activityType: "bill",
+              action: "updated",
+              description: `${userName} added comment to bill '${billName}'`,
+              entityId: req.params.id,
+              entityName: billName,
+              metadata: {}
+            });
+          }
+        } catch (error) {
+          console.error("Failed to log bill comment activity:", error);
+        }
+      }
+
       res.status(201).json(approval);
     } catch (error) {
       res.status(500).json({ error: "Failed to approve bill" });
@@ -2158,6 +2186,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateBill(req.params.id, { 
         status: "draft" 
       });
+
+      // Log activity if comments were added
+      if (req.body.comments && req.body.comments.trim()) {
+        try {
+          const bill = await storage.getBillById(req.params.id);
+          if (bill) {
+            const userName = req.user.firstName && req.user.lastName 
+              ? `${req.user.firstName} ${req.user.lastName}`
+              : req.user.username || "User";
+            
+            const billName = bill.billNumber || `Bill #${bill.id.slice(0, 8)}`;
+            
+            await storage.createActivity({
+              projectId: bill.projectId,
+              userId: req.user.id,
+              userName: userName,
+              activityType: "bill",
+              action: "updated",
+              description: `${userName} added comment to bill '${billName}'`,
+              entityId: req.params.id,
+              entityName: billName,
+              metadata: {}
+            });
+          }
+        } catch (error) {
+          console.error("Failed to log bill comment activity:", error);
+        }
+      }
 
       res.status(201).json(approval);
     } catch (error) {

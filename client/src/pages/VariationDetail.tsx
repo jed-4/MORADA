@@ -58,6 +58,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { logActivity } from "@/lib/activityLogger";
 import type { Variation, VariationItem, Project } from "@shared/schema";
 
 const variationFormSchema = z.object({
@@ -258,12 +259,24 @@ export default function VariationDetail() {
 
       return newVariation;
     },
-    onSuccess: () => {
+    onSuccess: (newVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       toast({
         title: "Success",
         description: "Variation created successfully",
       });
+      
+      logActivity({
+        projectId: newVariation.projectId,
+        userId: "current-user",
+        activityType: "variation",
+        action: "created",
+        description: `User created variation '${newVariation.name}'`,
+        entityId: newVariation.id,
+        entityName: newVariation.name,
+        metadata: {}
+      });
+      
       handleCancel();
     },
     onError: (error: Error) => {
@@ -320,13 +333,25 @@ export default function VariationDetail() {
 
       return updatedVariation;
     },
-    onSuccess: () => {
+    onSuccess: (updatedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       toast({
         title: "Success",
         description: "Variation updated successfully",
       });
+      
+      logActivity({
+        projectId: updatedVariation.projectId,
+        userId: "current-user",
+        activityType: "variation",
+        action: "updated",
+        description: `User updated variation '${updatedVariation.name}'`,
+        entityId: updatedVariation.id,
+        entityName: updatedVariation.name,
+        metadata: {}
+      });
+      
       handleCancel();
     },
     onError: (error: Error) => {
@@ -395,13 +420,24 @@ export default function VariationDetail() {
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (approvedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       setApproveDialogOpen(false);
       toast({
         title: "Success",
         description: "Variation approved successfully",
+      });
+      
+      logActivity({
+        projectId: approvedVariation.projectId,
+        userId: "current-user",
+        activityType: "variation",
+        action: "approved",
+        description: `User approved variation '${approvedVariation.name}'`,
+        entityId: approvedVariation.id,
+        entityName: approvedVariation.name,
+        metadata: {}
       });
     },
     onError: (error: Error) => {
@@ -421,7 +457,7 @@ export default function VariationDetail() {
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (rejectedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       setRejectDialogOpen(false);
@@ -429,6 +465,17 @@ export default function VariationDetail() {
       toast({
         title: "Success",
         description: "Variation rejected",
+      });
+      
+      logActivity({
+        projectId: rejectedVariation.projectId,
+        userId: "current-user",
+        activityType: "variation",
+        action: "rejected",
+        description: `User rejected variation '${rejectedVariation.name}'`,
+        entityId: rejectedVariation.id,
+        entityName: rejectedVariation.name,
+        metadata: {}
       });
     },
     onError: (error: Error) => {

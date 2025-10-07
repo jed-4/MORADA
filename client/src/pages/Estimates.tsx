@@ -46,6 +46,7 @@ import { type Estimate, type EstimateSummary, type Project, type FieldCategoryWi
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { logActivity } from "@/lib/activityLogger";
 
 export default function Estimates() {
   const [, setLocation] = useLocation();
@@ -111,12 +112,43 @@ export default function Estimates() {
     mutationFn: async ({ estimateId, status }: { estimateId: string; status: string }) => {
       return await apiRequest(`/api/estimates/${estimateId}`, 'PATCH', { status });
     },
-    onSuccess: () => {
+    onSuccess: async (updatedEstimate, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
         title: "Status Updated",
         description: "Estimate status has been updated successfully.",
       });
+
+      const estimate = estimates.find(e => e.id === variables.estimateId);
+      if (estimate) {
+        const statusOption = estimateStatuses.find(s => s.key === variables.status);
+        const statusName = statusOption?.name || variables.status;
+        
+        let action: "approved" | "rejected" | "updated" = "updated";
+        let description = `User updated estimate status to '${statusName}' for estimate '${estimate.name}'`;
+
+        if (variables.status === "approved") {
+          action = "approved";
+          description = `User approved estimate '${estimate.name}'`;
+        } else if (variables.status === "rejected") {
+          action = "rejected";
+          description = `User rejected estimate '${estimate.name}'`;
+        }
+
+        logActivity({
+          projectId: estimate.projectId,
+          userId: "current-user",
+          activityType: "estimate",
+          action,
+          description,
+          entityId: estimate.id,
+          entityName: estimate.name,
+          metadata: {
+            oldStatus: estimate.status,
+            newStatus: variables.status
+          }
+        });
+      }
     },
     onError: () => {
       toast({

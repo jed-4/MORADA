@@ -77,11 +77,12 @@ export default function SubtaskList({ parentTask, compact = false }: SubtaskList
     }
   };
 
-  const handleDeleteSubtask = async (subtaskId: string) => {
+  const handleDeleteSubtask = async (subtask: Task) => {
     try {
       await deleteSubtaskMutation.mutateAsync({ 
-        taskId: subtaskId, 
-        parentTaskId: parentTask.id 
+        taskId: subtask.id, 
+        parentTaskId: parentTask.id,
+        task: subtask
       });
       toast({ title: "Subtask deleted successfully" });
     } catch (error) {
@@ -174,7 +175,7 @@ export default function SubtaskList({ parentTask, compact = false }: SubtaskList
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      onClick={() => handleDeleteSubtask(subtask.id)}
+                      onClick={() => handleDeleteSubtask(subtask)}
                       className="text-destructive"
                       data-testid={`button-delete-subtask-${subtask.id}`}
                     >

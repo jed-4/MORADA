@@ -142,7 +142,8 @@ export default function TaskCard({
     try {
       await deleteTaskMutation.mutateAsync({ 
         taskId: task.id, 
-        parentTaskId: task.parentTaskId || undefined 
+        parentTaskId: task.parentTaskId || undefined,
+        task: task
       });
       toast({ title: "Task deleted successfully" });
       setShowDeleteDialog(false);

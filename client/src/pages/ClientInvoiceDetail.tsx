@@ -62,6 +62,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { logActivity } from "@/lib/activityLogger";
 import type { 
   ClientInvoice, 
   ClientInvoiceItem,
@@ -472,8 +473,21 @@ export default function ClientInvoiceDetail() {
 
       return newInvoice;
     },
-    onSuccess: () => {
+    onSuccess: (invoice) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      
+      // Log activity
+      logActivity({
+        projectId: invoice.projectId,
+        userId: "current-user",
+        activityType: "invoice",
+        action: "created",
+        description: `User created invoice '${invoice.invoiceNumber}'`,
+        entityId: invoice.id,
+        entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
+        metadata: {},
+      });
+      
       toast({
         title: "Success",
         description: "Invoice created successfully",
@@ -541,9 +555,22 @@ export default function ClientInvoiceDetail() {
 
       return updatedInvoice;
     },
-    onSuccess: () => {
+    onSuccess: (invoice) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      
+      // Log activity
+      logActivity({
+        projectId: invoice.projectId,
+        userId: "current-user",
+        activityType: "invoice",
+        action: "updated",
+        description: `User updated invoice '${invoice.invoiceNumber}'`,
+        entityId: invoice.id,
+        entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
+        metadata: {},
+      });
+      
       toast({
         title: "Success",
         description: "Invoice updated successfully",
@@ -597,6 +624,28 @@ export default function ClientInvoiceDetail() {
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      
+      // Log activity when invoice is fully paid
+      if (invoice) {
+        const currentPaidAmount = invoice.paidAmount || 0;
+        const newPaidAmount = currentPaidAmount + Math.round(paymentForm.getValues().amount * 100);
+        const totalAmount = invoice.totalAmount || 0;
+        const newBalanceAmount = totalAmount - newPaidAmount;
+        
+        if (newBalanceAmount <= 0) {
+          logActivity({
+            projectId: invoice.projectId,
+            userId: "current-user",
+            activityType: "invoice",
+            action: "paid",
+            description: `User marked invoice '${invoice.invoiceNumber}' as paid`,
+            entityId: invoice.id,
+            entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
+            metadata: {},
+          });
+        }
+      }
+      
       toast({
         title: "Success",
         description: "Payment recorded successfully",
@@ -622,6 +671,21 @@ export default function ClientInvoiceDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      
+      // Log activity
+      if (invoice) {
+        logActivity({
+          projectId: invoice.projectId,
+          userId: "current-user",
+          activityType: "invoice",
+          action: "submitted",
+          description: `User sent invoice '${invoice.invoiceNumber}'`,
+          entityId: invoice.id,
+          entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
+          metadata: {},
+        });
+      }
+      
       toast({
         title: "Success",
         description: "Invoice sent successfully",

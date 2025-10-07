@@ -1134,7 +1134,7 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
   createdAt: true,
 }).extend({
   activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "project", "other"]),
-  action: z.enum(["created", "updated", "deleted", "status_changed", "approved", "rejected", "submitted", "paid"]),
+  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "submitted", "paid"]),
 });
 
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
