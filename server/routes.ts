@@ -721,6 +721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertProjectSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.error("Project validation failed:", fromZodError(validationResult.error).toString());
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
@@ -730,6 +731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const project = await storage.createProject(validationResult.data);
       res.status(201).json(project);
     } catch (error) {
+      console.error("Error creating project:", error);
       res.status(500).json({ error: "Failed to create project" });
     }
   });

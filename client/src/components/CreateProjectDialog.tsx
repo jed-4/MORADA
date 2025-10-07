@@ -29,6 +29,7 @@ type FormData = {
   color: string;
   isActive: boolean;
   isBusiness: boolean;
+  invoicingMethod: "progress_payments" | "cost_plus";
 };
 
 export default function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
@@ -43,6 +44,7 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
       color: "#3b82f6",
       isActive: true,
       isBusiness: false,
+      invoicingMethod: "progress_payments",
     },
   });
 
