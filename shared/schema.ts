@@ -854,3 +854,73 @@ export const insertXeroConnectionSchema = createInsertSchema(xeroConnections).om
 
 export type InsertXeroConnection = z.infer<typeof insertXeroConnectionSchema>;
 export type XeroConnection = typeof xeroConnections.$inferSelect;
+
+// Variations (change orders/variations to projects)
+export const variations = pgTable("variations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationNumber: text("variation_number").notNull(), // Auto-generated format like "4501-VO-017"
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  introductionText: text("introduction_text"),
+  closingText: text("closing_text"),
+  approvalDeadline: timestamp("approval_deadline"),
+  daysChanged: integer("days_changed"),
+  subtotal: integer("subtotal").notNull().default(0), // Amount in cents
+  gstAmount: integer("gst_amount").notNull().default(0), // GST amount in cents
+  totalAmount: integer("total_amount").notNull().default(0), // Total amount in cents
+  paidAmount: integer("paid_amount").notNull().default(0), // Paid amount in cents
+  balanceAmount: integer("balance_amount").notNull().default(0), // Balance amount in cents
+  status: text("status").notNull().default("draft"), // "draft" | "action" | "pending" | "approved" | "rejected"
+  relatedTo: text("related_to"), // Reference to related item
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedDate: timestamp("approved_date"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertVariationSchema = createInsertSchema(variations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["draft", "action", "pending", "approved", "rejected"]).default("draft"),
+  approvalDeadline: z.coerce.date().optional(),
+  approvedDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  gstAmount: z.number().default(0),
+  totalAmount: z.number().default(0),
+  paidAmount: z.number().default(0),
+  balanceAmount: z.number().default(0),
+});
+
+export type InsertVariation = z.infer<typeof insertVariationSchema>;
+export type Variation = typeof variations.$inferSelect;
+
+// Variation Items (line items for variations)
+export const variationItems = pgTable("variation_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
+  totalPrice: integer("total_price").notNull().default(0), // Total price in cents
+  taxable: boolean("taxable").notNull().default(true), // For GST calculation
+  sortOrder: integer("sort_order").notNull().default(0), // For ordering
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertVariationItemSchema = createInsertSchema(variationItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;
+export type VariationItem = typeof variationItems.$inferSelect;

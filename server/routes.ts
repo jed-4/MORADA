@@ -29,7 +29,9 @@ import {
   insertSupplierSchema,
   insertBillSchema,
   insertBillLineItemSchema,
-  insertBillApprovalSchema
+  insertBillApprovalSchema,
+  insertVariationSchema,
+  insertVariationItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -70,8 +72,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
-    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills')) {
+    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, and other core operations for development
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items')) {
       return next();
     }
     
@@ -2152,6 +2154,156 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(approval);
     } catch (error) {
       res.status(500).json({ error: "Failed to reject bill" });
+    }
+  });
+
+  // Variations API Routes
+  app.get("/api/variations", async (req, res) => {
+    try {
+      const { projectId, status } = req.query;
+      const variations = await storage.getVariations(
+        projectId as string | undefined,
+        status as string | undefined
+      );
+      res.json(variations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variations" });
+    }
+  });
+
+  app.get("/api/variations/:id", async (req, res) => {
+    try {
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      res.json(variation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation" });
+    }
+  });
+
+  app.post("/api/variations", async (req, res) => {
+    try {
+      const validationResult = insertVariationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Generate variation number if not provided
+      let variationNumber = validationResult.data.variationNumber;
+      if (!variationNumber || variationNumber === "Auto-generated") {
+        const projectId = validationResult.data.projectId;
+        const existingVariations = await storage.getVariations(projectId);
+        const projectPrefix = Math.floor(1000 + Math.random() * 9000); // Random 4-digit number
+        const variationCount = existingVariations.length + 1;
+        variationNumber = `${projectPrefix}-VO-${String(variationCount).padStart(3, '0')}`;
+      }
+
+      const variation = await storage.createVariation({
+        ...validationResult.data,
+        variationNumber
+      });
+      res.status(201).json(variation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create variation" });
+    }
+  });
+
+  app.patch("/api/variations/:id", async (req, res) => {
+    try {
+      const validationResult = insertVariationSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const variation = await storage.updateVariation(req.params.id, validationResult.data);
+      if (!variation) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      res.json(variation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update variation" });
+    }
+  });
+
+  app.delete("/api/variations/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteVariation(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Variation not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete variation" });
+    }
+  });
+
+  // Variation Items API Routes
+  app.get("/api/variations/:id/items", async (req, res) => {
+    try {
+      const items = await storage.getVariationItems(req.params.id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation items" });
+    }
+  });
+
+  app.post("/api/variations/:id/items", async (req, res) => {
+    try {
+      const validationResult = insertVariationItemSchema.safeParse({
+        ...req.body,
+        variationId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createVariationItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create variation item" });
+    }
+  });
+
+  app.patch("/api/variation-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertVariationItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateVariationItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Variation item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update variation item" });
+    }
+  });
+
+  app.delete("/api/variation-items/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteVariationItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Variation item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete variation item" });
     }
   });
 

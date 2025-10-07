@@ -62,7 +62,7 @@ import { ProjectIcon } from "./ProjectIcon";
 const comingSoonItems = new Set([
   "Messages", "Schedule", "Take off", 
   "Request For Quotes", "Request For Information", "Proposal", 
-  "Allowances", "Purchase Orders", "Variations", 
+  "Allowances", "Purchase Orders", 
   "Client Invoices", "Site Diary", "Timesheets", 
   "Budget", "Files", "Team"
 ]);

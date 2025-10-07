@@ -25,6 +25,8 @@ import SelectionDetail from "@/pages/SelectionDetail";
 import Suppliers from "@/pages/Suppliers";
 import Bills from "@/pages/Bills";
 import BillDetail from "@/pages/BillDetail";
+import Variations from "@/pages/Variations";
+import VariationDetail from "@/pages/VariationDetail";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -64,7 +66,9 @@ function Router() {
       <Route path="/projects/:projectId/proposal" component={() => <ComingSoonPage section="proposal" />} />
       <Route path="/projects/:projectId/allowances" component={() => <ComingSoonPage section="allowances" />} />
       <Route path="/projects/:projectId/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
-      <Route path="/projects/:projectId/variations" component={() => <ComingSoonPage section="variations" />} />
+      <Route path="/projects/:projectId/variations" component={Variations} />
+      <Route path="/projects/:projectId/variations/new" component={VariationDetail} />
+      <Route path="/projects/:projectId/variations/:variationId" component={VariationDetail} />
       <Route path="/projects/:projectId/bills" component={Bills} />
       <Route path="/projects/:projectId/bills/:id" component={BillDetail} />
       <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
@@ -89,7 +93,9 @@ function Router() {
       <Route path="/selections/:id" component={SelectionDetail} />
       <Route path="/allowances" component={() => <ComingSoonPage section="allowances" />} />
       <Route path="/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
-      <Route path="/variations" component={() => <ComingSoonPage section="variations" />} />
+      <Route path="/variations" component={Variations} />
+      <Route path="/variations/new" component={VariationDetail} />
+      <Route path="/variations/:id" component={VariationDetail} />
       <Route path="/bills" component={Bills} />
       <Route path="/bills/new" component={BillDetail} />
       <Route path="/bills/:id" component={BillDetail} />

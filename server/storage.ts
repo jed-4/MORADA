@@ -29,7 +29,9 @@ import {
   type Supplier, type InsertSupplier,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
-  type BillApproval, type InsertBillApproval
+  type BillApproval, type InsertBillApproval,
+  type Variation, type InsertVariation,
+  type VariationItem, type InsertVariationItem
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -255,6 +257,19 @@ export interface IStorage {
   getBillApprovals(billId: string): Promise<BillApproval[]>;
   createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
   canUserApproveBills(userId: string): Promise<boolean>;
+
+  // Variations CRUD
+  getVariations(projectId?: string, status?: string): Promise<Variation[]>;
+  getVariation(id: string): Promise<Variation | undefined>;
+  createVariation(variation: InsertVariation): Promise<Variation>;
+  updateVariation(id: string, variation: Partial<InsertVariation>): Promise<Variation | undefined>;
+  deleteVariation(id: string): Promise<boolean>;
+
+  // Variation Items CRUD
+  getVariationItems(variationId: string): Promise<VariationItem[]>;
+  createVariationItem(item: InsertVariationItem): Promise<VariationItem>;
+  updateVariationItem(id: string, item: Partial<InsertVariationItem>): Promise<VariationItem | undefined>;
+  deleteVariationItem(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -4353,6 +4368,128 @@ export class DbStorage implements IStorage {
       return allowedActions && allowedActions.includes('approve');
     } catch (error) {
       console.error("Database error in canUserApproveBills:", error);
+      return false;
+    }
+  }
+
+  // Variations CRUD operations
+  async getVariations(projectId?: string, status?: string): Promise<Variation[]> {
+    try {
+      let query = db.select().from(schema.variations);
+      const conditions = [];
+      
+      if (projectId) {
+        conditions.push(eq(schema.variations.projectId, projectId));
+      }
+      if (status) {
+        conditions.push(eq(schema.variations.status, status as any));
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+      
+      return await query.orderBy(desc(schema.variations.createdAt));
+    } catch (error) {
+      console.error("Database error in getVariations:", error);
+      throw error;
+    }
+  }
+
+  async getVariation(id: string): Promise<Variation | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.variations)
+        .where(eq(schema.variations.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getVariation:", error);
+      return undefined;
+    }
+  }
+
+  async createVariation(variation: InsertVariation): Promise<Variation> {
+    try {
+      const result = await db.insert(schema.variations)
+        .values(variation)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createVariation:", error);
+      throw error;
+    }
+  }
+
+  async updateVariation(id: string, variation: Partial<InsertVariation>): Promise<Variation | undefined> {
+    try {
+      const result = await db.update(schema.variations)
+        .set({ ...variation, updatedAt: new Date() })
+        .where(eq(schema.variations.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateVariation:", error);
+      throw error;
+    }
+  }
+
+  async deleteVariation(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.variations)
+        .where(eq(schema.variations.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteVariation:", error);
+      return false;
+    }
+  }
+
+  // Variation Items CRUD operations
+  async getVariationItems(variationId: string): Promise<VariationItem[]> {
+    try {
+      return await db.select()
+        .from(schema.variationItems)
+        .where(eq(schema.variationItems.variationId, variationId))
+        .orderBy(schema.variationItems.sortOrder);
+    } catch (error) {
+      console.error("Database error in getVariationItems:", error);
+      throw error;
+    }
+  }
+
+  async createVariationItem(item: InsertVariationItem): Promise<VariationItem> {
+    try {
+      const result = await db.insert(schema.variationItems)
+        .values(item)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createVariationItem:", error);
+      throw error;
+    }
+  }
+
+  async updateVariationItem(id: string, item: Partial<InsertVariationItem>): Promise<VariationItem | undefined> {
+    try {
+      const result = await db.update(schema.variationItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.variationItems.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateVariationItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteVariationItem(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.variationItems)
+        .where(eq(schema.variationItems.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteVariationItem:", error);
       return false;
     }
   }
