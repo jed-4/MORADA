@@ -1133,9 +1133,101 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
   id: true,
   createdAt: true,
 }).extend({
-  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "project", "other"]),
+  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "project", "site_diary", "other"]),
   action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "submitted", "paid"]),
 });
 
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activities.$inferSelect;
+
+// Site Diary Templates (company-wide, reusable across projects)
+export const siteDiaryTemplates = pgTable("site_diary_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  fields: json("fields").notNull().default([]), // Array of field definitions: [{id, title, type, required, options, order}]
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Field definition type for template fields
+export type TemplateFieldDefinition = {
+  id: string;
+  title: string;
+  type: "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "file" | "photo-gallery";
+  required?: boolean;
+  options?: { label: string; value: string }[]; // For select type
+  order: number;
+  maxPhotos?: number; // For photo-gallery type (default 3)
+};
+
+export const insertSiteDiaryTemplateSchema = createInsertSchema(siteDiaryTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  fields: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    type: z.enum(["text", "textarea", "number", "date", "select", "checkbox", "file", "photo-gallery"]),
+    required: z.boolean().optional(),
+    options: z.array(z.object({
+      label: z.string(),
+      value: z.string(),
+    })).optional(),
+    order: z.number(),
+    maxPhotos: z.number().optional(),
+  })),
+});
+
+export type InsertSiteDiaryTemplate = z.infer<typeof insertSiteDiaryTemplateSchema>;
+export type SiteDiaryTemplate = typeof siteDiaryTemplates.$inferSelect;
+
+// Site Diary Entries (project-specific diary entries based on templates)
+export const siteDiaryEntries = pgTable("site_diary_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => siteDiaryTemplates.id),
+  templateName: text("template_name"), // Cached for display
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  entryDateTime: timestamp("entry_date_time").notNull(),
+  groupId: varchar("group_id"), // Optional grouping/category
+  notifyUserIds: json("notify_user_ids").default([]), // Array of user IDs to notify
+  fieldValues: json("field_values").notNull().default({}), // Object keyed by fieldId with values
+  attachments: json("attachments").default([]), // Array of attachment URLs for field items
+  overallPhotos: json("overall_photos").default([]), // Unlimited photos at bottom
+  weather: json("weather"), // Weather data: {temp, condition, humidity, wind, etc}
+  labels: json("labels").default([]), // Array of label strings
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  shareWithClient: boolean("share_with_client").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSiteDiaryEntrySchema = createInsertSchema(siteDiaryEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  entryDateTime: z.coerce.date(),
+  notifyUserIds: z.array(z.string()).optional(),
+  fieldValues: z.record(z.any()),
+  attachments: z.array(z.any()).optional(),
+  overallPhotos: z.array(z.string()).optional(),
+  weather: z.object({
+    temp: z.number().optional(),
+    condition: z.string().optional(),
+    humidity: z.number().optional(),
+    wind: z.number().optional(),
+    precipitation: z.number().optional(),
+    icon: z.string().optional(),
+  }).optional(),
+  labels: z.array(z.string()).optional(),
+});
+
+export type InsertSiteDiaryEntry = z.infer<typeof insertSiteDiaryEntrySchema>;
+export type SiteDiaryEntry = typeof siteDiaryEntries.$inferSelect;

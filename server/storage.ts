@@ -37,7 +37,9 @@ import {
   type ClientInvoicePayment, type InsertClientInvoicePayment,
   type InvoiceEstimate, type InsertInvoiceEstimate,
   type InvoiceVariation, type InsertInvoiceVariation,
-  type InvoiceBill, type InsertInvoiceBill
+  type InvoiceBill, type InsertInvoiceBill,
+  type SiteDiaryTemplate, type InsertSiteDiaryTemplate,
+  type SiteDiaryEntry, type InsertSiteDiaryEntry
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -313,6 +315,20 @@ export interface IStorage {
   // Activity Feed CRUD
   getActivities(projectId: string, limit?: number): Promise<schema.Activity[]>;
   createActivity(activity: schema.InsertActivity): Promise<schema.Activity>;
+
+  // Site Diary Templates CRUD (company-wide)
+  getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]>;
+  getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined>;
+  createSiteDiaryTemplate(template: schema.InsertSiteDiaryTemplate): Promise<schema.SiteDiaryTemplate>;
+  updateSiteDiaryTemplate(id: string, template: Partial<schema.InsertSiteDiaryTemplate>): Promise<schema.SiteDiaryTemplate | undefined>;
+  deleteSiteDiaryTemplate(id: string): Promise<boolean>;
+
+  // Site Diary Entries CRUD (project-specific)
+  getSiteDiaryEntries(projectId: string): Promise<schema.SiteDiaryEntry[]>;
+  getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined>;
+  createSiteDiaryEntry(entry: schema.InsertSiteDiaryEntry): Promise<schema.SiteDiaryEntry>;
+  updateSiteDiaryEntry(id: string, entry: Partial<schema.InsertSiteDiaryEntry>): Promise<schema.SiteDiaryEntry | undefined>;
+  deleteSiteDiaryEntry(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -339,6 +355,8 @@ export class MemStorage implements IStorage {
   private selectionOptions: Map<string, SelectionOption>;
   private optionAttachments: Map<string, OptionAttachment>;
   private clientSelections: Map<string, ClientSelection>;
+  private siteDiaryTemplates: Map<string, SiteDiaryTemplate>;
+  private siteDiaryEntries: Map<string, SiteDiaryEntry>;
 
   constructor() {
     this.users = new Map();
@@ -363,6 +381,8 @@ export class MemStorage implements IStorage {
     this.selectionOptions = new Map();
     this.optionAttachments = new Map();
     this.clientSelections = new Map();
+    this.siteDiaryTemplates = new Map();
+    this.siteDiaryEntries = new Map();
     this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
     this.initializeDefaultFieldCategories();
@@ -2939,6 +2959,107 @@ export class MemStorage implements IStorage {
   async createActivity(activity: schema.InsertActivity): Promise<schema.Activity> {
     throw new Error("Activities not supported in memory storage");
   }
+
+  // Site Diary Templates CRUD
+  async getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]> {
+    return Array.from(this.siteDiaryTemplates.values())
+      .filter(t => !t.isArchived)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .map(t => structuredClone(t)); // Return clones to prevent mutation
+  }
+
+  async getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined> {
+    const template = this.siteDiaryTemplates.get(id);
+    return template ? structuredClone(template) : undefined;
+  }
+
+  async createSiteDiaryTemplate(template: schema.InsertSiteDiaryTemplate): Promise<schema.SiteDiaryTemplate> {
+    const id = randomUUID();
+    const now = new Date();
+    const newTemplate: schema.SiteDiaryTemplate = {
+      id,
+      ...structuredClone(template), // Deep clone to prevent mutation (preserves Dates)
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+    } as schema.SiteDiaryTemplate;
+    this.siteDiaryTemplates.set(id, structuredClone(newTemplate));
+    return structuredClone(newTemplate);
+  }
+
+  async updateSiteDiaryTemplate(id: string, template: Partial<schema.InsertSiteDiaryTemplate>): Promise<schema.SiteDiaryTemplate | undefined> {
+    const existing = this.siteDiaryTemplates.get(id);
+    if (!existing) return undefined;
+    
+    const updated: schema.SiteDiaryTemplate = {
+      ...existing,
+      ...structuredClone(template), // Deep clone input to prevent mutation (preserves Dates)
+      id,
+      updatedAt: new Date(),
+    } as schema.SiteDiaryTemplate;
+    const stored = structuredClone(updated); // Clone the updated object (preserves Dates)
+    this.siteDiaryTemplates.set(id, stored);
+    return structuredClone(stored); // Return a clone of the stored (updated) object
+  }
+
+  async deleteSiteDiaryTemplate(id: string): Promise<boolean> {
+    const existing = this.siteDiaryTemplates.get(id);
+    if (!existing) return false;
+    
+    // Soft delete by archiving
+    const updated: schema.SiteDiaryTemplate = {
+      ...existing,
+      isArchived: true,
+      updatedAt: new Date(),
+    };
+    this.siteDiaryTemplates.set(id, updated);
+    return true;
+  }
+
+  // Site Diary Entries CRUD
+  async getSiteDiaryEntries(projectId: string): Promise<schema.SiteDiaryEntry[]> {
+    return Array.from(this.siteDiaryEntries.values())
+      .filter(e => e.projectId === projectId)
+      .sort((a, b) => b.entryDateTime.getTime() - a.entryDateTime.getTime())
+      .map(e => structuredClone(e)); // Return clones to prevent mutation
+  }
+
+  async getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined> {
+    const entry = this.siteDiaryEntries.get(id);
+    return entry ? structuredClone(entry) : undefined;
+  }
+
+  async createSiteDiaryEntry(entry: schema.InsertSiteDiaryEntry): Promise<schema.SiteDiaryEntry> {
+    const id = randomUUID();
+    const now = new Date();
+    const newEntry: schema.SiteDiaryEntry = {
+      id,
+      ...structuredClone(entry), // Deep clone to prevent mutation (preserves Dates)
+      createdAt: now,
+      updatedAt: now,
+    } as schema.SiteDiaryEntry;
+    this.siteDiaryEntries.set(id, structuredClone(newEntry));
+    return structuredClone(newEntry);
+  }
+
+  async updateSiteDiaryEntry(id: string, entry: Partial<schema.InsertSiteDiaryEntry>): Promise<schema.SiteDiaryEntry | undefined> {
+    const existing = this.siteDiaryEntries.get(id);
+    if (!existing) return undefined;
+    
+    const updated: schema.SiteDiaryEntry = {
+      ...existing,
+      ...structuredClone(entry), // Deep clone input to prevent mutation (preserves Dates)
+      id,
+      updatedAt: new Date(),
+    } as schema.SiteDiaryEntry;
+    const stored = structuredClone(updated); // Clone the updated object (preserves Dates)
+    this.siteDiaryEntries.set(id, stored);
+    return structuredClone(stored); // Return a clone of the stored (updated) object
+  }
+
+  async deleteSiteDiaryEntry(id: string): Promise<boolean> {
+    return this.siteDiaryEntries.delete(id);
+  }
 }
 
 // Database-backed storage implementation
@@ -4849,6 +4970,134 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createActivity:", error);
+      throw error;
+    }
+  }
+
+  // Site Diary Templates CRUD
+  async getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]> {
+    try {
+      return await db.select()
+        .from(schema.siteDiaryTemplates)
+        .where(eq(schema.siteDiaryTemplates.isArchived, false))
+        .orderBy(desc(schema.siteDiaryTemplates.updatedAt));
+    } catch (error) {
+      console.error("Database error in getSiteDiaryTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.siteDiaryTemplates)
+        .where(eq(schema.siteDiaryTemplates.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getSiteDiaryTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createSiteDiaryTemplate(template: schema.InsertSiteDiaryTemplate): Promise<schema.SiteDiaryTemplate> {
+    try {
+      const result = await db.insert(schema.siteDiaryTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createSiteDiaryTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateSiteDiaryTemplate(id: string, template: Partial<schema.InsertSiteDiaryTemplate>): Promise<schema.SiteDiaryTemplate | undefined> {
+    try {
+      const result = await db.update(schema.siteDiaryTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(eq(schema.siteDiaryTemplates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateSiteDiaryTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteSiteDiaryTemplate(id: string): Promise<boolean> {
+    try {
+      // Soft delete by archiving
+      const result = await db.update(schema.siteDiaryTemplates)
+        .set({ isArchived: true, updatedAt: new Date() })
+        .where(eq(schema.siteDiaryTemplates.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteSiteDiaryTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Site Diary Entries CRUD
+  async getSiteDiaryEntries(projectId: string): Promise<schema.SiteDiaryEntry[]> {
+    try {
+      return await db.select()
+        .from(schema.siteDiaryEntries)
+        .where(eq(schema.siteDiaryEntries.projectId, projectId))
+        .orderBy(desc(schema.siteDiaryEntries.entryDateTime));
+    } catch (error) {
+      console.error("Database error in getSiteDiaryEntries:", error);
+      throw error;
+    }
+  }
+
+  async getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.siteDiaryEntries)
+        .where(eq(schema.siteDiaryEntries.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getSiteDiaryEntry:", error);
+      throw error;
+    }
+  }
+
+  async createSiteDiaryEntry(entry: schema.InsertSiteDiaryEntry): Promise<schema.SiteDiaryEntry> {
+    try {
+      const result = await db.insert(schema.siteDiaryEntries)
+        .values(entry)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createSiteDiaryEntry:", error);
+      throw error;
+    }
+  }
+
+  async updateSiteDiaryEntry(id: string, entry: Partial<schema.InsertSiteDiaryEntry>): Promise<schema.SiteDiaryEntry | undefined> {
+    try {
+      const result = await db.update(schema.siteDiaryEntries)
+        .set({ ...entry, updatedAt: new Date() })
+        .where(eq(schema.siteDiaryEntries.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateSiteDiaryEntry:", error);
+      throw error;
+    }
+  }
+
+  async deleteSiteDiaryEntry(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.siteDiaryEntries)
+        .where(eq(schema.siteDiaryEntries.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteSiteDiaryEntry:", error);
       throw error;
     }
   }
