@@ -68,6 +68,7 @@ import type {
   ClientInvoicePayment,
   Project,
   Estimate,
+  EstimateItem,
   Variation,
   Bill
 } from "@shared/schema";
@@ -120,6 +121,7 @@ export default function ClientInvoiceDetail() {
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [progressPercent, setProgressPercent] = useState<number | undefined>(undefined);
+  const [isCustomProgress, setIsCustomProgress] = useState(false);
   const [customProgressPercent, setCustomProgressPercent] = useState<string>("");
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
@@ -179,6 +181,11 @@ export default function ClientInvoiceDetail() {
   const { data: bills = [] } = useQuery<Bill[]>({
     queryKey: [`/api/bills?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
+  });
+
+  const { data: estimateItems = [] } = useQuery<EstimateItem[]>({
+    queryKey: [`/api/estimates/${selectedEstimateId}/items`],
+    enabled: !!selectedEstimateId,
   });
 
   const form = useForm<InvoiceFormData>({
@@ -316,8 +323,8 @@ export default function ClientInvoiceDetail() {
     const estimate = getSelectedEstimate();
     if (!estimate) return 0;
     
-    // TODO: Replace with actual estimate total from items
-    const estimateTotal = 0; // Placeholder - would need estimate total from items
+    // Calculate total from estimate items (prices are stored in cents, priceIncTax includes GST)
+    const estimateTotal = estimateItems.reduce((sum, item) => sum + item.priceIncTax, 0);
     
     if (progressPercent !== undefined) {
       return Math.round(estimateTotal * (progressPercent / 100));
@@ -857,6 +864,7 @@ export default function ClientInvoiceDetail() {
                             onValueChange={(value) => {
                               setSelectedEstimateId(value);
                               setProgressPercent(undefined);
+                              setIsCustomProgress(false);
                               setCustomProgressPercent("");
                             }}
                           >
@@ -878,11 +886,14 @@ export default function ClientInvoiceDetail() {
 
                           {selectedEstimateId && (
                             <Select
-                              value={progressPercent?.toString() || "custom"}
+                              value={isCustomProgress ? "custom" : progressPercent?.toString() || ""}
                               onValueChange={(value) => {
                                 if (value === "custom") {
+                                  setIsCustomProgress(true);
                                   setProgressPercent(undefined);
+                                  setCustomProgressPercent("");
                                 } else {
+                                  setIsCustomProgress(false);
                                   setProgressPercent(parseInt(value));
                                   setCustomProgressPercent("");
                                 }
@@ -904,7 +915,7 @@ export default function ClientInvoiceDetail() {
                         </div>
 
                         {/* Custom Progress Input */}
-                        {selectedEstimateId && progressPercent === undefined && (
+                        {selectedEstimateId && isCustomProgress && (
                           <Input
                             type="number"
                             placeholder="Enter custom %"
