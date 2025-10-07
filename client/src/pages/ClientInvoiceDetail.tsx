@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Form,
   FormControl,
@@ -762,10 +763,11 @@ export default function ClientInvoiceDetail() {
                     <FormItem>
                       <FormLabel>Introduction Text</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          {...field} 
-                          rows={3} 
-                          data-testid="textarea-introduction"
+                        <RichTextEditor
+                          content={field.value || ""}
+                          onChange={(html) => field.onChange(html)}
+                          placeholder="Enter introduction text..."
+                          data-testid="editor-introduction"
                         />
                       </FormControl>
                       <FormMessage />
@@ -1205,10 +1207,11 @@ export default function ClientInvoiceDetail() {
                     <FormItem>
                       <FormLabel>Closing Text</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          {...field} 
-                          rows={3} 
-                          data-testid="textarea-closing"
+                        <RichTextEditor
+                          content={field.value || ""}
+                          onChange={(html) => field.onChange(html)}
+                          placeholder="Enter closing text..."
+                          data-testid="editor-closing"
                         />
                       </FormControl>
                       <FormMessage />
