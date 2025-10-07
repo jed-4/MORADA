@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { type Task } from "@shared/schema";
-import { Plus } from "lucide-react";
+import { Plus, ArrowUpDown } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
@@ -15,24 +15,57 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { useState, useEffect } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useState, useEffect, useMemo } from "react";
+
+type FilterStatus = "all" | "todo" | "in_progress" | "done";
+type FilterPriority = "all" | "low" | "medium" | "high";
+type SortBy = "dueDate" | "priority" | "title" | "status";
+type SortOrder = "asc" | "desc";
 
 export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
-  const maxTasks = widget.config?.maxTasks || 3;
-  const showCompleted = widget.config?.showCompleted || false;
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
   
+  // Widget config with defaults
+  const defaultFilterStatus = (widget.config?.defaultFilterStatus as FilterStatus) || "all";
+  const defaultFilterPriority = (widget.config?.defaultFilterPriority as FilterPriority) || "all";
+  const defaultSortBy = (widget.config?.defaultSortBy as SortBy) || "dueDate";
+  const defaultSortOrder = (widget.config?.defaultSortOrder as SortOrder) || "asc";
+  
+  // Active filters and sort
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>(defaultFilterStatus);
+  const [filterPriority, setFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
+  const [sortBy, setSortBy] = useState<SortBy>(defaultSortBy);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(defaultSortOrder);
+  
   // Configuration state
-  const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
-  const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
+  const [configFilterStatus, setConfigFilterStatus] = useState<FilterStatus>(defaultFilterStatus);
+  const [configFilterPriority, setConfigFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
+  const [configSortBy, setConfigSortBy] = useState<SortBy>(defaultSortBy);
+  const [configSortOrder, setConfigSortOrder] = useState<SortOrder>(defaultSortOrder);
   
   // Sync config state when widget config changes
   useEffect(() => {
-    setConfigMaxTasks(widget.config?.maxTasks || 3);
-    setConfigShowCompleted(widget.config?.showCompleted || false);
+    const newFilterStatus = (widget.config?.defaultFilterStatus as FilterStatus) || "all";
+    const newFilterPriority = (widget.config?.defaultFilterPriority as FilterPriority) || "all";
+    const newSortBy = (widget.config?.defaultSortBy as SortBy) || "dueDate";
+    const newSortOrder = (widget.config?.defaultSortOrder as SortOrder) || "asc";
+    
+    setFilterStatus(newFilterStatus);
+    setFilterPriority(newFilterPriority);
+    setSortBy(newSortBy);
+    setSortOrder(newSortOrder);
+    setConfigFilterStatus(newFilterStatus);
+    setConfigFilterPriority(newFilterPriority);
+    setConfigSortBy(newSortBy);
+    setConfigSortOrder(newSortOrder);
   }, [widget.config]);
   
   const handleSaveConfig = () => {
@@ -41,14 +74,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
         ...widget,
         config: {
           ...widget.config,
-          maxTasks: configMaxTasks,
-          showCompleted: configShowCompleted,
+          defaultFilterStatus: configFilterStatus,
+          defaultFilterPriority: configFilterPriority,
+          defaultSortBy: configSortBy,
+          defaultSortOrder: configSortOrder,
         },
       });
     }
   };
   
-  // Fetch real tasks from the API filtered by current project
+  // Fetch all tasks from the API filtered by current project
   const { data: allTasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks", currentProject?.id],
     queryFn: async () => {
@@ -64,10 +99,49 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     enabled: !!currentProject?.id,
   });
 
-  // Filter and limit tasks based on widget configuration
-  const filteredTasks = allTasks
-    .filter(task => showCompleted || task.status !== 'done')
-    .slice(0, maxTasks);
+  // Filter and sort tasks
+  const filteredAndSortedTasks = useMemo(() => {
+    let filtered = [...allTasks];
+    
+    // Apply status filter
+    if (filterStatus !== "all") {
+      filtered = filtered.filter(task => task.status === filterStatus);
+    }
+    
+    // Apply priority filter
+    if (filterPriority !== "all") {
+      filtered = filtered.filter(task => task.priority === filterPriority);
+    }
+    
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case "dueDate":
+          // Handle null dates: always place them at the end regardless of sort order
+          const dateA = a.dueDate ? new Date(a.dueDate).getTime() : (sortOrder === "asc" ? Infinity : -Infinity);
+          const dateB = b.dueDate ? new Date(b.dueDate).getTime() : (sortOrder === "asc" ? Infinity : -Infinity);
+          comparison = dateA - dateB;
+          break;
+        case "priority":
+          const priorityOrder = { high: 0, medium: 1, low: 2 };
+          comparison = priorityOrder[a.priority as keyof typeof priorityOrder] - priorityOrder[b.priority as keyof typeof priorityOrder];
+          break;
+        case "title":
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case "status":
+          const statusOrder = { todo: 0, in_progress: 1, done: 2 };
+          comparison = statusOrder[a.status as keyof typeof statusOrder] - statusOrder[b.status as keyof typeof statusOrder];
+          break;
+      }
+      
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+    
+    return filtered;
+  }, [allTasks, filterStatus, filterPriority, sortBy, sortOrder]);
   
   const formatDueDate = (dueDate: Date | string | null) => {
     if (!dueDate) return "No due date";
@@ -101,24 +175,21 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     high: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   };
 
+  const statusLabels = {
+    todo: "To Do",
+    in_progress: "In Progress",
+    done: "Done",
+  };
+
   if (isLoading) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between mb-3">
           <div className="text-sm text-muted-foreground">
             Loading tasks...
           </div>
-          <Button 
-            size="sm" 
-            variant="ghost" 
-            onClick={() => setLocation("/tasks")}
-            data-testid="tasks-widget-add"
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            Add
-          </Button>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 flex-1 overflow-auto">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse">
               <div className="flex items-center justify-between p-2 rounded border">
@@ -137,41 +208,98 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
 
   return (
     <>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            {filteredTasks.length} active task{filteredTasks.length !== 1 ? 's' : ''}
+      <div className="flex flex-col h-full">
+        {/* Header with filters and sort */}
+        <div className="space-y-2 mb-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold">
+              {filteredAndSortedTasks.length} task{filteredAndSortedTasks.length !== 1 ? 's' : ''}
+            </div>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              onClick={() => setLocation("/tasks")}
+              data-testid="tasks-widget-add"
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Add
+            </Button>
           </div>
-          <Button 
-            size="sm" 
-            variant="ghost" 
-            onClick={() => setLocation("/tasks")}
-            data-testid="tasks-widget-add"
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            Add
-          </Button>
+          
+          {/* Filter and Sort Controls */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={filterStatus} onValueChange={(value) => setFilterStatus(value as FilterStatus)}>
+              <SelectTrigger className="h-8 w-[110px]" data-testid="select-filter-status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="todo">To Do</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={filterPriority} onValueChange={(value) => setFilterPriority(value as FilterPriority)}>
+              <SelectTrigger className="h-8 w-[110px]" data-testid="select-filter-priority">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priority</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+              <SelectTrigger className="h-8 w-[110px]" data-testid="select-sort-by">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dueDate">Due Date</SelectItem>
+                <SelectItem value="priority">Priority</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="status">Status</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              data-testid="button-toggle-sort-order"
+            >
+              <ArrowUpDown className={`h-3 w-3 ${sortOrder === "desc" ? "rotate-180" : ""}`} />
+            </Button>
+          </div>
         </div>
         
-        <div className="space-y-2">
-          {filteredTasks.map((task) => (
+        {/* Task List */}
+        <div className="space-y-2 flex-1 overflow-auto">
+          {filteredAndSortedTasks.map((task) => (
             <div 
               key={task.id} 
               className="flex items-center justify-between p-2 rounded border hover-elevate cursor-pointer"
               data-testid={`task-widget-item-${task.id}`}
+              onClick={() => setLocation("/tasks")}
             >
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium truncate">{task.title}</span>
                   <Badge className={`text-xs ${priorityColors[task.priority as "low" | "medium" | "high"]}`}>
                     {task.priority}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    {statusLabels[task.status as keyof typeof statusLabels]}
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground">{formatDueDate(task.dueDate)}</div>
               </div>
               
               {task.assigneeName && (
-                <Avatar className="h-6 w-6">
+                <Avatar className="h-6 w-6 ml-2">
                   <AvatarFallback className="text-xs">{getAssigneeInitials(task.assigneeName)}</AvatarFallback>
                 </Avatar>
               )}
@@ -179,9 +307,9 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           ))}
         </div>
         
-        {filteredTasks.length === 0 && (
-          <div className="text-center py-4 text-sm text-muted-foreground">
-            {showCompleted ? "No tasks found" : "No active tasks"}
+        {filteredAndSortedTasks.length === 0 && (
+          <div className="text-center py-8 text-sm text-muted-foreground">
+            No tasks match the current filters
           </div>
         )}
       </div>
@@ -192,37 +320,67 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           <DialogHeader>
             <DialogTitle>Configure Tasks Widget</DialogTitle>
             <DialogDescription>
-              Customize how tasks are displayed in this widget
+              Set default filters and sorting for this widget
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="max-tasks">Maximum Tasks to Display</Label>
-              <Input
-                id="max-tasks"
-                type="number"
-                min="1"
-                max="10"
-                value={configMaxTasks}
-                onChange={(e) => setConfigMaxTasks(parseInt(e.target.value) || 1)}
-                data-testid="input-max-tasks"
-              />
+              <Label>Default Status Filter</Label>
+              <Select value={configFilterStatus} onValueChange={(value) => setConfigFilterStatus(value as FilterStatus)}>
+                <SelectTrigger data-testid="config-select-filter-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="todo">To Do</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="show-completed">Show Completed Tasks</Label>
-                <p className="text-sm text-muted-foreground">
-                  Include completed tasks in the widget
-                </p>
-              </div>
-              <Switch
-                id="show-completed"
-                checked={configShowCompleted}
-                onCheckedChange={setConfigShowCompleted}
-                data-testid="switch-show-completed"
-              />
+            <div className="space-y-2">
+              <Label>Default Priority Filter</Label>
+              <Select value={configFilterPriority} onValueChange={(value) => setConfigFilterPriority(value as FilterPriority)}>
+                <SelectTrigger data-testid="config-select-filter-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priority</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Default Sort By</Label>
+              <Select value={configSortBy} onValueChange={(value) => setConfigSortBy(value as SortBy)}>
+                <SelectTrigger data-testid="config-select-sort-by">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dueDate">Due Date</SelectItem>
+                  <SelectItem value="priority">Priority</SelectItem>
+                  <SelectItem value="title">Title</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Default Sort Order</Label>
+              <Select value={configSortOrder} onValueChange={(value) => setConfigSortOrder(value as SortOrder)}>
+                <SelectTrigger data-testid="config-select-sort-order">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           
@@ -230,8 +388,10 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
             <Button
               variant="outline"
               onClick={() => {
-                setConfigMaxTasks(widget.config?.maxTasks || 3);
-                setConfigShowCompleted(widget.config?.showCompleted || false);
+                setConfigFilterStatus(defaultFilterStatus);
+                setConfigFilterPriority(defaultFilterPriority);
+                setConfigSortBy(defaultSortBy);
+                setConfigSortOrder(defaultSortOrder);
                 onCloseConfig?.();
               }}
               data-testid="button-cancel-config"
