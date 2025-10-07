@@ -336,7 +336,7 @@ export default function CustomizableProjectOverview() {
           <div className={
             widgets.some(w => w.dimensions) 
               ? "flex flex-wrap gap-4" // Freeform layout for custom dimensions
-              : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" // Grid layout for default sizes
+              : "grid grid-cols-8 gap-4" // 8-column grid for consistent widget sizing
           }>
             {widgets.map((widget) => renderWidget(widget))}
             
