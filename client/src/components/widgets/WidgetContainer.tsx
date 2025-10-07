@@ -246,7 +246,7 @@ export default function WidgetContainer({
             : sizeClasses[widget.size] // Default size class
       } ${isConfiguring ? 'ring-2 ring-primary' : ''} ${
         isDragging ? 'opacity-50 z-50' : ''
-      } ${isResizing ? 'select-none' : ''}`}
+      } ${isResizing ? 'select-none z-50' : ''}`}
       data-testid={`widget-${widget.type}-${widget.id}`}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
