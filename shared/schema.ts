@@ -932,6 +932,7 @@ export type VariationItem = typeof variationItems.$inferSelect;
 export const clientInvoices = pgTable("client_invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceNumber: text("invoice_number").notNull().unique(),
+  name: text("name").notNull(),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   clientId: varchar("client_id").references(() => users.id),
   invoiceDate: timestamp("invoice_date").notNull(),
@@ -958,6 +959,7 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
+  name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
   status: z.enum(["draft", "sent", "partial", "paid", "overdue"]).default("draft"),
   invoiceDate: z.coerce.date(),

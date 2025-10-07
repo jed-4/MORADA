@@ -63,7 +63,7 @@ const comingSoonItems = new Set([
   "Messages", "Schedule", "Take off", 
   "Request For Quotes", "Request For Information", "Proposal", 
   "Allowances", "Purchase Orders", 
-  "Client Invoices", "Site Diary", "Timesheets", 
+  "Site Diary", "Timesheets", 
   "Budget", "Files", "Team"
 ]);
 
@@ -85,7 +85,7 @@ const projectItemsBase = [
   { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
   { title: "Variations", baseUrl: "/variations", icon: FileText },
   { title: "Bills", baseUrl: "/bills", icon: Receipt },
-  { title: "Client Invoices", baseUrl: "/invoices", icon: Receipt },
+  { title: "Client Invoices", baseUrl: "/client-invoices", icon: Receipt },
   { title: "Site Diary", baseUrl: "/site-diary", icon: BookOpen },
   { title: "Timesheets", baseUrl: "/timesheets", icon: Timer },
   { title: "Budget", baseUrl: "/budget", icon: PiggyBank },

@@ -27,6 +27,8 @@ import Bills from "@/pages/Bills";
 import BillDetail from "@/pages/BillDetail";
 import Variations from "@/pages/Variations";
 import VariationDetail from "@/pages/VariationDetail";
+import ClientInvoices from "@/pages/ClientInvoices";
+import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -71,6 +73,9 @@ function Router() {
       <Route path="/projects/:projectId/variations/:variationId" component={VariationDetail} />
       <Route path="/projects/:projectId/bills" component={Bills} />
       <Route path="/projects/:projectId/bills/:id" component={BillDetail} />
+      <Route path="/projects/:projectId/client-invoices" component={ClientInvoices} />
+      <Route path="/projects/:projectId/client-invoices/new" component={ClientInvoiceDetail} />
+      <Route path="/projects/:projectId/client-invoices/:invoiceId" component={ClientInvoiceDetail} />
       <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/projects/:projectId/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
       <Route path="/projects/:projectId/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
@@ -99,6 +104,9 @@ function Router() {
       <Route path="/bills" component={Bills} />
       <Route path="/bills/new" component={BillDetail} />
       <Route path="/bills/:id" component={BillDetail} />
+      <Route path="/client-invoices" component={ClientInvoices} />
+      <Route path="/client-invoices/new" component={ClientInvoiceDetail} />
+      <Route path="/client-invoices/:id" component={ClientInvoiceDetail} />
       <Route path="/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
       <Route path="/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
