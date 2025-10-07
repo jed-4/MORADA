@@ -207,6 +207,10 @@ export default function CustomizableProjectOverview() {
     setWidgets(updatedWidgets);
     saveWidgets(updatedWidgets);
     console.log(`Updated widget: ${updatedWidget.id}`);
+    // Close configuration dialog after update
+    if (configuringWidget === updatedWidget.id) {
+      setConfiguringWidget(null);
+    }
   };
 
   // Handle drag end event for reordering widgets
@@ -255,6 +259,7 @@ export default function CustomizableProjectOverview() {
           onUpdate={updateWidget}
           onRemove={removeWidget}
           isConfiguring={configuringWidget === widget.id}
+          onCloseConfig={() => setConfiguringWidget(null)}
         />
       </WidgetContainer>
     );

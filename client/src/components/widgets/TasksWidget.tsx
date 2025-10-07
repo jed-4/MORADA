@@ -7,12 +7,46 @@ import { Plus } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { useState, useEffect } from "react";
 
-export default function TasksWidget({ widget }: WidgetProps) {
+export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const maxTasks = widget.config?.maxTasks || 3;
   const showCompleted = widget.config?.showCompleted || false;
   const [, setLocation] = useLocation();
   const { currentProject } = useProject();
+  
+  // Configuration state
+  const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
+  const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
+  
+  // Sync config state when widget config changes
+  useEffect(() => {
+    setConfigMaxTasks(widget.config?.maxTasks || 3);
+    setConfigShowCompleted(widget.config?.showCompleted || false);
+  }, [widget.config]);
+  
+  const handleSaveConfig = () => {
+    if (onUpdate) {
+      onUpdate({
+        ...widget,
+        config: {
+          ...widget.config,
+          maxTasks: configMaxTasks,
+          showCompleted: configShowCompleted,
+        },
+      });
+    }
+  };
   
   // Fetch real tasks from the API filtered by current project
   const { data: allTasks = [], isLoading } = useQuery<Task[]>({
@@ -102,53 +136,117 @@ export default function TasksWidget({ widget }: WidgetProps) {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          {filteredTasks.length} active task{filteredTasks.length !== 1 ? 's' : ''}
-        </div>
-        <Button 
-          size="sm" 
-          variant="ghost" 
-          onClick={() => setLocation("/tasks")}
-          data-testid="tasks-widget-add"
-        >
-          <Plus className="h-3 w-3 mr-1" />
-          Add
-        </Button>
-      </div>
-      
-      <div className="space-y-2">
-        {filteredTasks.map((task) => (
-          <div 
-            key={task.id} 
-            className="flex items-center justify-between p-2 rounded border hover-elevate cursor-pointer"
-            data-testid={`task-widget-item-${task.id}`}
+    <>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            {filteredTasks.length} active task{filteredTasks.length !== 1 ? 's' : ''}
+          </div>
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            onClick={() => setLocation("/tasks")}
+            data-testid="tasks-widget-add"
           >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium truncate">{task.title}</span>
-                <Badge className={`text-xs ${priorityColors[task.priority as "low" | "medium" | "high"]}`}>
-                  {task.priority}
-                </Badge>
+            <Plus className="h-3 w-3 mr-1" />
+            Add
+          </Button>
+        </div>
+        
+        <div className="space-y-2">
+          {filteredTasks.map((task) => (
+            <div 
+              key={task.id} 
+              className="flex items-center justify-between p-2 rounded border hover-elevate cursor-pointer"
+              data-testid={`task-widget-item-${task.id}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium truncate">{task.title}</span>
+                  <Badge className={`text-xs ${priorityColors[task.priority as "low" | "medium" | "high"]}`}>
+                    {task.priority}
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground">{formatDueDate(task.dueDate)}</div>
               </div>
-              <div className="text-xs text-muted-foreground">{formatDueDate(task.dueDate)}</div>
+              
+              {task.assigneeName && (
+                <Avatar className="h-6 w-6">
+                  <AvatarFallback className="text-xs">{getAssigneeInitials(task.assigneeName)}</AvatarFallback>
+                </Avatar>
+              )}
+            </div>
+          ))}
+        </div>
+        
+        {filteredTasks.length === 0 && (
+          <div className="text-center py-4 text-sm text-muted-foreground">
+            {showCompleted ? "No tasks found" : "No active tasks"}
+          </div>
+        )}
+      </div>
+
+      {/* Configuration Dialog */}
+      <Dialog open={isConfiguring} onOpenChange={(open) => !open && onCloseConfig?.()}>
+        <DialogContent data-testid="tasks-widget-config-dialog">
+          <DialogHeader>
+            <DialogTitle>Configure Tasks Widget</DialogTitle>
+            <DialogDescription>
+              Customize how tasks are displayed in this widget
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="max-tasks">Maximum Tasks to Display</Label>
+              <Input
+                id="max-tasks"
+                type="number"
+                min="1"
+                max="10"
+                value={configMaxTasks}
+                onChange={(e) => setConfigMaxTasks(parseInt(e.target.value) || 1)}
+                data-testid="input-max-tasks"
+              />
             </div>
             
-            {task.assigneeName && (
-              <Avatar className="h-6 w-6">
-                <AvatarFallback className="text-xs">{getAssigneeInitials(task.assigneeName)}</AvatarFallback>
-              </Avatar>
-            )}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="show-completed">Show Completed Tasks</Label>
+                <p className="text-sm text-muted-foreground">
+                  Include completed tasks in the widget
+                </p>
+              </div>
+              <Switch
+                id="show-completed"
+                checked={configShowCompleted}
+                onCheckedChange={setConfigShowCompleted}
+                data-testid="switch-show-completed"
+              />
+            </div>
           </div>
-        ))}
-      </div>
-      
-      {filteredTasks.length === 0 && (
-        <div className="text-center py-4 text-sm text-muted-foreground">
-          {showCompleted ? "No tasks found" : "No active tasks"}
-        </div>
-      )}
-    </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConfigMaxTasks(widget.config?.maxTasks || 3);
+                setConfigShowCompleted(widget.config?.showCompleted || false);
+                onCloseConfig?.();
+              }}
+              data-testid="button-cancel-config"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveConfig}
+              data-testid="button-save-config"
+            >
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
