@@ -28,7 +28,6 @@ type FormData = {
   description?: string;
   color: string;
   isActive: boolean;
-  isBusiness: boolean;
   invoicingMethod: "progress_payments" | "cost_plus";
 };
 
@@ -43,7 +42,6 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
       description: "",
       color: "#3b82f6",
       isActive: true,
-      isBusiness: false,
       invoicingMethod: "progress_payments",
     },
   });
@@ -79,7 +77,10 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
   });
 
   const onSubmit = (data: FormData) => {
-    createProjectMutation.mutate(data);
+    createProjectMutation.mutate({
+      ...data,
+      isBusiness: false, // All user-created projects are not business projects
+    });
   };
 
   const handleClose = () => {
@@ -160,30 +161,6 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
                         {...field}
                       />
                     </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Business Project Toggle */}
-            <FormField
-              control={form.control}
-              name="isBusiness"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between">
-                  <div>
-                    <FormLabel>Business Project</FormLabel>
-                    <p className="text-sm text-muted-foreground">
-                      Enable if this is a business/internal project
-                    </p>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      data-testid="switch-is-business"
-                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
