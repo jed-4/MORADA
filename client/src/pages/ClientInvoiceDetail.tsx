@@ -118,6 +118,8 @@ export default function ClientInvoiceDetail() {
 
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
+  const [progressPercent, setProgressPercent] = useState<number | undefined>(undefined);
+  const [customProgressPercent, setCustomProgressPercent] = useState<string>("");
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -274,7 +276,16 @@ export default function ClientInvoiceDetail() {
 
   const calculateContractPrice = () => {
     const estimate = getSelectedEstimate();
-    return estimate ? estimate.notes ? 0 : 0 : 0; // Placeholder - would need estimate total from items
+    if (!estimate) return 0;
+    
+    // TODO: Replace with actual estimate total from items
+    const estimateTotal = 0; // Placeholder - would need estimate total from items
+    
+    if (progressPercent !== undefined) {
+      return Math.round(estimateTotal * (progressPercent / 100));
+    }
+    
+    return estimateTotal;
   };
 
   const calculateVariationsTotal = () => {
@@ -378,6 +389,7 @@ export default function ClientInvoiceDetail() {
         await apiRequest("POST", `/api/client-invoices/${newInvoice.id}/estimates`, {
           invoiceId: newInvoice.id,
           estimateId: selectedEstimateId,
+          progressPercent: progressPercent,
         });
       }
 
@@ -798,13 +810,17 @@ export default function ClientInvoiceDetail() {
                         <CardTitle className="text-base">Contract Price</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div>
-                          <FormLabel>Select Estimate</FormLabel>
+                        {/* Estimate and Progress Selector Row */}
+                        <div className="grid grid-cols-2 gap-4">
                           <Select
                             value={selectedEstimateId}
-                            onValueChange={setSelectedEstimateId}
+                            onValueChange={(value) => {
+                              setSelectedEstimateId(value);
+                              setProgressPercent(undefined);
+                              setCustomProgressPercent("");
+                            }}
                           >
-                            <SelectTrigger className="mt-2" data-testid="select-estimate">
+                            <SelectTrigger data-testid="select-estimate">
                               <SelectValue placeholder="Select estimate" />
                             </SelectTrigger>
                             <SelectContent>
@@ -819,24 +835,79 @@ export default function ClientInvoiceDetail() {
                               ))}
                             </SelectContent>
                           </Select>
+
+                          {selectedEstimateId && (
+                            <Select
+                              value={progressPercent?.toString() || "custom"}
+                              onValueChange={(value) => {
+                                if (value === "custom") {
+                                  setProgressPercent(undefined);
+                                } else {
+                                  setProgressPercent(parseInt(value));
+                                  setCustomProgressPercent("");
+                                }
+                              }}
+                            >
+                              <SelectTrigger data-testid="select-progress-percent">
+                                <SelectValue placeholder="Select progress %" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="10">10%</SelectItem>
+                                <SelectItem value="25">25%</SelectItem>
+                                <SelectItem value="50">50%</SelectItem>
+                                <SelectItem value="75">75%</SelectItem>
+                                <SelectItem value="100">100%</SelectItem>
+                                <SelectItem value="custom">Custom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Contract Price:</span>
-                          <span className="font-medium" data-testid="text-contract-price">
-                            {formatCurrency(calculateContractPrice() / 100)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Paid:</span>
-                          <span className="font-medium" data-testid="text-contract-paid">
-                            {formatCurrency(0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Remaining:</span>
-                          <span className="font-medium" data-testid="text-contract-remaining">
-                            {formatCurrency(calculateContractPrice() / 100)}
-                          </span>
+
+                        {/* Custom Progress Input */}
+                        {selectedEstimateId && progressPercent === undefined && (
+                          <Input
+                            type="number"
+                            placeholder="Enter custom %"
+                            value={customProgressPercent}
+                            onChange={(e) => {
+                              setCustomProgressPercent(e.target.value);
+                              const val = parseInt(e.target.value);
+                              if (!isNaN(val) && val >= 0 && val <= 100) {
+                                setProgressPercent(val);
+                              }
+                            }}
+                            min="0"
+                            max="100"
+                            data-testid="input-custom-progress"
+                          />
+                        )}
+
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Total</div>
+                              <div className="text-sm font-semibold" data-testid="text-contract-price">
+                                {formatCurrency(calculateContractPrice() / 100)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Paid</div>
+                              <div className="text-sm font-semibold" data-testid="text-contract-paid">
+                                {formatCurrency(0)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Remaining</div>
+                              <div className="text-sm font-semibold" data-testid="text-contract-remaining">
+                                {formatCurrency(calculateContractPrice() / 100)}
+                              </div>
+                            </CardContent>
+                          </Card>
                         </div>
                       </CardContent>
                     </Card>
@@ -847,32 +918,32 @@ export default function ClientInvoiceDetail() {
                         <CardTitle className="text-base">Variations</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div>
-                          <FormLabel>Select Variations</FormLabel>
-                          <Select
-                            value={selectedVariationIds[0] || ""}
-                            onValueChange={(value) => {
-                              if (value && !selectedVariationIds.includes(value)) {
-                                setSelectedVariationIds([...selectedVariationIds, value]);
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="mt-2" data-testid="select-variations">
-                              <SelectValue placeholder="Select variations" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {variations.map((variation) => (
-                                <SelectItem 
-                                  key={variation.id} 
-                                  value={variation.id}
-                                  data-testid={`select-variation-${variation.id}`}
-                                >
-                                  {variation.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        {/* Variations Selector */}
+                        <Select
+                          value={selectedVariationIds[0] || ""}
+                          onValueChange={(value) => {
+                            if (value && !selectedVariationIds.includes(value)) {
+                              setSelectedVariationIds([...selectedVariationIds, value]);
+                            }
+                          }}
+                        >
+                          <SelectTrigger data-testid="select-variations">
+                            <SelectValue placeholder="Select variations" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {variations.map((variation) => (
+                              <SelectItem 
+                                key={variation.id} 
+                                value={variation.id}
+                                data-testid={`select-variation-${variation.id}`}
+                              >
+                                {variation.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        {/* Selected Variations */}
                         {selectedVariationIds.length > 0 && (
                           <div className="space-y-2">
                             {getSelectedVariations().map((v) => (
@@ -891,23 +962,33 @@ export default function ClientInvoiceDetail() {
                             ))}
                           </div>
                         )}
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Variations:</span>
-                          <span className="font-medium" data-testid="text-variations-total">
-                            {formatCurrency(calculateVariationsTotal() / 100)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Paid:</span>
-                          <span className="font-medium" data-testid="text-variations-paid">
-                            {formatCurrency(0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Remaining:</span>
-                          <span className="font-medium" data-testid="text-variations-remaining">
-                            {formatCurrency(calculateVariationsTotal() / 100)}
-                          </span>
+
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Total</div>
+                              <div className="text-sm font-semibold" data-testid="text-variations-total">
+                                {formatCurrency(calculateVariationsTotal() / 100)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Paid</div>
+                              <div className="text-sm font-semibold" data-testid="text-variations-paid">
+                                {formatCurrency(0)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Remaining</div>
+                              <div className="text-sm font-semibold" data-testid="text-variations-remaining">
+                                {formatCurrency(calculateVariationsTotal() / 100)}
+                              </div>
+                            </CardContent>
+                          </Card>
                         </div>
                       </CardContent>
                     </Card>
@@ -918,34 +999,42 @@ export default function ClientInvoiceDetail() {
                         <CardTitle className="text-base">Allowances</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div>
-                          <FormLabel>Select Allowances</FormLabel>
-                          <Select disabled>
-                            <SelectTrigger className="mt-2" data-testid="select-allowances">
-                              <SelectValue placeholder="Coming soon" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="placeholder">No allowances</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Allowances diff:</span>
-                          <span className="font-medium" data-testid="text-allowances-diff">
-                            {formatCurrency(0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Paid:</span>
-                          <span className="font-medium" data-testid="text-allowances-paid">
-                            {formatCurrency(0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Remaining:</span>
-                          <span className="font-medium" data-testid="text-allowances-remaining">
-                            {formatCurrency(0)}
-                          </span>
+                        {/* Allowances Selector */}
+                        <Select disabled>
+                          <SelectTrigger data-testid="select-allowances">
+                            <SelectValue placeholder="Coming soon" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="placeholder">No allowances</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Total</div>
+                              <div className="text-sm font-semibold" data-testid="text-allowances-diff">
+                                {formatCurrency(0)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Paid</div>
+                              <div className="text-sm font-semibold" data-testid="text-allowances-paid">
+                                {formatCurrency(0)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="p-3">
+                              <div className="text-xs text-muted-foreground mb-1">Remaining</div>
+                              <div className="text-sm font-semibold" data-testid="text-allowances-remaining">
+                                {formatCurrency(0)}
+                              </div>
+                            </CardContent>
+                          </Card>
                         </div>
                       </CardContent>
                     </Card>

@@ -1035,12 +1035,15 @@ export const invoiceEstimates = pgTable("invoice_estimates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  progressPercent: integer("progress_percent"), // Progress percentage 0-100
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertInvoiceEstimateSchema = createInsertSchema(invoiceEstimates).omit({
   id: true,
   createdAt: true,
+}).extend({
+  progressPercent: z.number().int().min(0).max(100).optional(),
 });
 
 export type InsertInvoiceEstimate = z.infer<typeof insertInvoiceEstimateSchema>;
