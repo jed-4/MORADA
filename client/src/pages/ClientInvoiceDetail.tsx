@@ -276,6 +276,19 @@ export default function ClientInvoiceDetail() {
     }
   }, [linkedBills, isEditMode]);
 
+  useEffect(() => {
+    if (isCustomProgress) {
+      if (customProgressPercent === "") {
+        setProgressPercent(undefined);
+      } else {
+        const val = parseInt(customProgressPercent);
+        if (!isNaN(val) && val >= 0 && val <= 100) {
+          setProgressPercent(val);
+        }
+      }
+    }
+  }, [customProgressPercent, isCustomProgress]);
+
   const addCustomLine = () => {
     setCustomLines([
       ...customLines,
@@ -323,8 +336,8 @@ export default function ClientInvoiceDetail() {
     const estimate = getSelectedEstimate();
     if (!estimate) return 0;
     
-    // Calculate total from estimate items (prices are stored in cents, priceIncTax includes GST)
-    const estimateTotal = estimateItems.reduce((sum, item) => sum + item.priceIncTax, 0);
+    // Calculate total from estimate items (prices are per-unit in cents, multiply by quantity for line totals)
+    const estimateTotal = estimateItems.reduce((sum, item) => sum + (item.priceIncTax * item.quantity), 0);
     
     if (progressPercent !== undefined) {
       return Math.round(estimateTotal * (progressPercent / 100));
@@ -893,9 +906,9 @@ export default function ClientInvoiceDetail() {
                                   setProgressPercent(undefined);
                                   setCustomProgressPercent("");
                                 } else {
+                                  setCustomProgressPercent("");
                                   setIsCustomProgress(false);
                                   setProgressPercent(parseInt(value));
-                                  setCustomProgressPercent("");
                                 }
                               }}
                             >
@@ -920,13 +933,7 @@ export default function ClientInvoiceDetail() {
                             type="number"
                             placeholder="Enter custom %"
                             value={customProgressPercent}
-                            onChange={(e) => {
-                              setCustomProgressPercent(e.target.value);
-                              const val = parseInt(e.target.value);
-                              if (!isNaN(val) && val >= 0 && val <= 100) {
-                                setProgressPercent(val);
-                              }
-                            }}
+                            onChange={(e) => setCustomProgressPercent(e.target.value)}
                             min="0"
                             max="100"
                             data-testid="input-custom-progress"
