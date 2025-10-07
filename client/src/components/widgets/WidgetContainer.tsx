@@ -121,10 +121,10 @@ export default function WidgetContainer({
   }, [widget.dimensions]);
 
   const sizeClasses = {
-    sm: "col-span-1",
-    md: "col-span-2", 
-    lg: "col-span-3",
-    xl: "col-span-4",
+    sm: "col-span-2",
+    md: "col-span-4", 
+    lg: "col-span-6",
+    xl: "col-span-8",
   };
 
   const {
