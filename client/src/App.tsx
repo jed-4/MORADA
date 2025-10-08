@@ -29,6 +29,7 @@ import Variations from "@/pages/Variations";
 import VariationDetail from "@/pages/VariationDetail";
 import ClientInvoices from "@/pages/ClientInvoices";
 import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
+import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -116,6 +117,7 @@ function Router() {
 
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
+      <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
       <Route path="/settings" component={Settings} />
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/checklists" component={() => <ComingSoonPage section="checklists" />} />
