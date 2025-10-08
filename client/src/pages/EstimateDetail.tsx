@@ -57,11 +57,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Form,
@@ -89,7 +93,7 @@ interface EstimateDetailParams {
 
 // Notes cell component (defined outside main component to avoid hook issues)
 const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem; isLocked: boolean | undefined; updateItemMutation: any }) => {
-  const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false);
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [notesValue, setNotesValue] = useState(item.notes || '');
 
   // Update notes value when item changes
@@ -99,11 +103,11 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
 
   return (
     <TableCell className="py-0.5 text-center" data-testid={`cell-notes-${item.id}`}>
-      <Dialog open={isNotesDialogOpen} onOpenChange={setIsNotesDialogOpen}>
+      <Popover open={isNotesOpen} onOpenChange={setIsNotesOpen}>
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <DialogTrigger asChild>
+              <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -113,7 +117,7 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
                 >
                   <FileText className="w-4 h-4" />
                 </Button>
-              </DialogTrigger>
+              </PopoverTrigger>
             </TooltipTrigger>
             {item.notes && (
               <TooltipContent>
@@ -122,11 +126,9 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
             )}
           </Tooltip>
         </TooltipProvider>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Notes - {item.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
+        <PopoverContent className="w-96" align="start">
+          <div className="space-y-3">
+            <h4 className="font-medium text-sm">Notes - {item.name}</h4>
             <Textarea
               value={notesValue}
               onChange={(e) => setNotesValue(e.target.value)}
@@ -137,21 +139,23 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
             <div className="flex justify-end space-x-2">
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => {
                   setNotesValue(item.notes || '');
-                  setIsNotesDialogOpen(false);
+                  setIsNotesOpen(false);
                 }}
                 data-testid={`button-cancel-notes-${item.id}`}
               >
                 Cancel
               </Button>
               <Button
+                size="sm"
                 onClick={() => {
                   updateItemMutation.mutate({
                     itemId: item.id,
                     data: { notes: notesValue }
                   });
-                  setIsNotesDialogOpen(false);
+                  setIsNotesOpen(false);
                 }}
                 data-testid={`button-save-notes-${item.id}`}
               >
@@ -159,8 +163,8 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </PopoverContent>
+      </Popover>
     </TableCell>
   );
 };
@@ -1637,40 +1641,24 @@ export default function EstimateDetail() {
         );
       
       case 'allowance':
-        if (isEditing) {
-          return (
-            <TableCell className="py-0.5">
-              <Select 
-                value={editingValue} 
-                onValueChange={(value) => {
-                  setEditingValue(value);
-                  // Immediately save the selection
-                  updateItemMutation.mutate({
-                    itemId: item.id,
-                    data: { allowance: value }
-                  });
-                  setEditingCell(null);
-                }}
-              >
-                <SelectTrigger className="h-7 text-sm border-primary w-full" data-testid={`select-edit-allowance-${item.id}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="None">Off</SelectItem>
-                  <SelectItem value="Prime Cost">Prime Cost</SelectItem>
-                  <SelectItem value="Provisional Sum">Provisional Sum</SelectItem>
-                </SelectContent>
-              </Select>
-            </TableCell>
-          );
-        }
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'allowance')}
-            data-testid={`cell-allowance-${item.id}`}
-          >
-            <Badge variant="outline" className="text-xs">
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-allowance-${item.id}`}>
+            <Badge 
+              variant="outline" 
+              className={`text-xs ${!isLocked ? 'cursor-pointer hover-elevate' : ''}`}
+              onClick={() => {
+                if (isLocked) return;
+                // Cycle through: None -> Prime Cost -> Provisional Sum -> None
+                const nextAllowance = 
+                  item.allowance === 'None' ? 'Prime Cost' :
+                  item.allowance === 'Prime Cost' ? 'Provisional Sum' : 'None';
+                updateItemMutation.mutate({
+                  itemId: item.id,
+                  data: { allowance: nextAllowance }
+                });
+              }}
+              data-testid={`badge-toggle-allowance-${item.id}`}
+            >
               {item.allowance === 'Prime Cost' ? 'PC' : item.allowance === 'Provisional Sum' ? 'PS' : 'Off'}
             </Badge>
           </TableCell>
