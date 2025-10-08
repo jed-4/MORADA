@@ -2606,7 +2606,11 @@ export default function EstimateDetail() {
                           min="0.01"
                           placeholder="1"
                           {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => {
+                            const qty = parseFloat(e.target.value) || 0;
+                            const rounded = Math.round(qty * 100) / 100;
+                            field.onChange(rounded);
+                          }}
                           data-testid="input-item-quantity"
                         />
                       </FormControl>
@@ -2660,11 +2664,13 @@ export default function EstimateDetail() {
                           {...field}
                           onChange={(e) => {
                             const exTax = parseFloat(e.target.value) || 0;
-                            field.onChange(exTax);
+                            const rounded = Math.round(exTax * 100) / 100;
+                            field.onChange(rounded);
                             // Auto-calculate price inc tax using tax rate from estimate
                             const taxRate = (estimate?.taxRate || 10) / 100;
-                            const incTax = exTax * (1 + taxRate);
-                            form.setValue('priceIncTax', incTax);
+                            const incTax = rounded * (1 + taxRate);
+                            const roundedIncTax = Math.round(incTax * 100) / 100;
+                            form.setValue('priceIncTax', roundedIncTax);
                           }}
                           data-testid="input-item-price-ex-tax"
                         />
@@ -2690,11 +2696,13 @@ export default function EstimateDetail() {
                           {...field}
                           onChange={(e) => {
                             const incTax = parseFloat(e.target.value) || 0;
-                            field.onChange(incTax);
+                            const rounded = Math.round(incTax * 100) / 100;
+                            field.onChange(rounded);
                             // Auto-calculate price ex tax using tax rate from estimate
                             const taxRate = (estimate?.taxRate || 10) / 100;
-                            const exTax = incTax / (1 + taxRate);
-                            form.setValue('unitCostExTax', exTax);
+                            const exTax = rounded / (1 + taxRate);
+                            const roundedExTax = Math.round(exTax * 100) / 100;
+                            form.setValue('unitCostExTax', roundedExTax);
                           }}
                           data-testid="input-item-price-inc-tax"
                         />
