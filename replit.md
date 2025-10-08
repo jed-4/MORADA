@@ -10,6 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 8, 2025
+- **Templates Hub Implementation**: Transformed Templates page into a central hub with cards for all template types: Notes, Site Diary, Schedule, Tasks, Take-offs, Estimates, RFQ, RFI, Proposal, Selections, Purchase Orders
+- **Phased Rollout UX**: Implemented "Coming Soon" badges for unimplemented template types with visual indicators (reduced opacity, cursor-not-allowed) to prevent navigation to non-existent pages
+- **Site Diary Templates Integration**: Only Site Diary templates are currently implemented and clickable, serving as the first fully-functional template management system
+- **Navigation Cleanup**: Removed "Site Diary Templates" from sidebar since it's now accessed through the Templates hub
+
 ### October 3, 2025
 - **White & Minimalist Theme Implementation**: Transformed entire UI to white & minimalist aesthetic with near-white backgrounds (HSL 0 0% 99%/98%/100%), muted blue primary color (HSL 215 35% 45%), reduced shadow intensity (50% less blur/opacity), and removed scale/translate animations for cleaner interactions
 - **Accessibility Compliance**: Fixed primary button contrast ratio from 3.7:1 to 5.4:1 (WCAG AA compliant) by darkening primary color while maintaining minimalist look
