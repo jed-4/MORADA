@@ -150,6 +150,7 @@ const companyInfoSchema = z.object({
   phone: z.string().optional(),
   website: z.string().url("Invalid website URL").optional().or(z.literal("")),
   address: z.string().optional(),
+  taxRate: z.coerce.number().min(0).max(100).default(10),
   facebook: z.string().optional(),
   linkedin: z.string().optional(), 
   twitter: z.string().optional(),
@@ -172,6 +173,7 @@ export default function Settings() {
       phone: "",
       website: "",
       address: "",
+      taxRate: 10,
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -195,6 +197,7 @@ export default function Settings() {
         phone: companySettings.phone || "",
         website: companySettings.website || "",
         address: companySettings.address || "",
+        taxRate: companySettings.taxRate ? parseFloat(companySettings.taxRate as string) : 10,
         facebook: companySettings.facebook || "",
         linkedin: companySettings.linkedin || "",
         twitter: companySettings.twitter || "",
@@ -663,6 +666,29 @@ export default function Settings() {
                         {...field}
                         disabled={!isEditing}
                         data-testid="company-address-input"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={companyForm.control}
+                name="taxRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tax Rate (%)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="10"
+                        {...field}
+                        disabled={!isEditing}
+                        data-testid="tax-rate-input"
+                        min="0"
+                        max="100"
+                        step="0.1"
                       />
                     </FormControl>
                     <FormMessage />
