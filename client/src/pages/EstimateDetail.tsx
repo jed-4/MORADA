@@ -241,7 +241,24 @@ export default function EstimateDetail() {
       const savedColumns = localStorage.getItem(`estimateTable_${effectiveEstimateId}_columns`);
       if (savedColumns) {
         try {
-          setColumns(JSON.parse(savedColumns));
+          const parsed = JSON.parse(savedColumns);
+          // Merge with defaultColumns to add any new columns that didn't exist before
+          const savedColumnIds = new Set(parsed.map((col: ColumnConfig) => col.id));
+          const newColumns = defaultColumns.filter(col => !savedColumnIds.has(col.id));
+          
+          if (newColumns.length > 0) {
+            // Add new columns at their default positions
+            const mergedColumns = [...defaultColumns];
+            parsed.forEach((savedCol: ColumnConfig) => {
+              const index = mergedColumns.findIndex(col => col.id === savedCol.id);
+              if (index !== -1) {
+                mergedColumns[index] = savedCol;
+              }
+            });
+            setColumns(mergedColumns);
+          } else {
+            setColumns(parsed);
+          }
         } catch (e) {
           console.error('Failed to parse saved column config:', e);
         }
