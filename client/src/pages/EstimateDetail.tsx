@@ -653,9 +653,10 @@ export default function EstimateDetail() {
         setEditingValue(item.unitType || '');
         break;
       case 'unitCostIncTax':
-        // Calculate inc tax from ex tax and display in dollars
-        const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
-        setEditingValue((taxValues.unitCostIncTax / 100).toFixed(2));
+        // Calculate per-unit inc tax from ex tax and display in dollars
+        const effectiveTaxRate = taxRate ?? 10;
+        const unitCostIncTaxCents = Math.round(item.unitCostExTax * (1 + effectiveTaxRate / 100));
+        setEditingValue((unitCostIncTaxCents / 100).toFixed(2));
         break;
       default:
         setEditingValue('');
@@ -678,8 +679,9 @@ export default function EstimateDetail() {
         if (field === 'unitCostExTax') {
           setEditingValue(((item as any)[field] / 100).toFixed(2));
         } else if (field === 'unitCostIncTax') {
-          const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
-          setEditingValue((taxValues.unitCostIncTax / 100).toFixed(2));
+          const effectiveTaxRate = taxRate ?? 10;
+          const unitCostIncTaxCents = Math.round(item.unitCostExTax * (1 + effectiveTaxRate / 100));
+          setEditingValue((unitCostIncTaxCents / 100).toFixed(2));
         } else {
           setEditingValue((item as any)[field]);
         }
@@ -713,10 +715,24 @@ export default function EstimateDetail() {
     } else if (field === 'unitCostIncTax') {
       // Reverse calculate: convert inc tax to ex tax
       const incTaxDollars = parseFloat(editingValue);
+      
+      // Validate the parsed value
+      if (isNaN(incTaxDollars)) {
+        toast({
+          title: "Invalid Value",
+          description: "Please enter a valid number.",
+          variant: "destructive",
+        });
+        setEditingCell(null);
+        return;
+      }
+      
       const incTaxCents = Math.round(incTaxDollars * 100);
       
       // Calculate ex tax from inc tax: exTax = incTax / (1 + taxRate/100)
-      const exTaxCents = Math.round(incTaxCents / (1 + taxRate / 100));
+      // Use effective tax rate with fallback (use ?? to allow 0% tax)
+      const effectiveTaxRate = taxRate ?? 10;
+      const exTaxCents = Math.round(incTaxCents / (1 + effectiveTaxRate / 100));
       
       // Check if the calculated ex tax is different from current
       if (exTaxCents === item.unitCostExTax) {
