@@ -102,7 +102,6 @@ const comingSoonBusinessItems = new Set([
 // Business sections
 const businessItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
-  { title: "Site Diary Templates", url: "/site-diary-templates", icon: BookOpen },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Bills", url: "/bills", icon: Receipt },
