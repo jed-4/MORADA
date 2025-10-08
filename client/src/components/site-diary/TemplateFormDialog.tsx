@@ -26,22 +26,17 @@ interface TemplateFormDialogProps {
   onSuccess?: () => void;
 }
 
-// Temporary hardcoded company ID
-const TEMP_COMPANY_ID = "company-1";
-
 export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: TemplateFormDialogProps) {
   const { toast } = useToast();
   const templateFields = (template?.fields as TemplateFieldDefinition[]) || [];
   const [fields, setFields] = useState<TemplateFieldDefinition[]>(templateFields);
 
-  type FormData = {
-    name: string;
-    description?: string | null;
+  type FormData = Omit<InsertSiteDiaryTemplate, 'fields'> & {
     fields: TemplateFieldDefinition[];
   };
 
   const form = useForm<FormData>({
-    resolver: zodResolver(insertSiteDiaryTemplateSchema.omit({ companyId: true })),
+    resolver: zodResolver(insertSiteDiaryTemplateSchema),
     defaultValues: {
       name: template?.name || "",
       description: template?.description || "",
@@ -63,7 +58,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: InsertSiteDiaryTemplate) => {
-      return await apiRequest("/api/site-diary-templates", 'POST', data);
+      return await apiRequest('POST', "/api/site-diary-templates", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
@@ -87,7 +82,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<InsertSiteDiaryTemplate>) => {
-      return await apiRequest(`/api/site-diary-templates/${template?.id}`, 'PATCH', data);
+      return await apiRequest('PATCH', `/api/site-diary-templates/${template?.id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
@@ -118,7 +113,6 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
     const payload: InsertSiteDiaryTemplate = {
       name: data.name,
       description: data.description || undefined,
-      companyId: TEMP_COMPANY_ID,
       fields: fieldsWithOrder,
     };
 
