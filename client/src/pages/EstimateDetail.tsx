@@ -101,31 +101,32 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
     setNotesValue(item.notes || '');
   }, [item.notes]);
 
+  const hasNotes = Boolean(item.notes);
+  const notePreview = hasNotes ? `${item.notes!.substring(0, 100)}${item.notes!.length > 100 ? '...' : ''}` : '';
+
   return (
     <TableCell className="py-0.5 text-center" data-testid={`cell-notes-${item.id}`}>
       <Popover open={isNotesOpen} onOpenChange={setIsNotesOpen}>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-6 w-6 ${item.notes ? 'text-primary' : 'text-muted-foreground'}`}
-                  disabled={isLocked}
-                  data-testid={`button-notes-${item.id}`}
-                >
-                  <FileText className="w-4 h-4" />
-                </Button>
-              </PopoverTrigger>
-            </TooltipTrigger>
-            {item.notes && (
-              <TooltipContent>
-                <p className="max-w-xs">{item.notes.substring(0, 100)}{item.notes.length > 100 ? '...' : ''}</p>
-              </TooltipContent>
-            )}
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-6 w-6 ${hasNotes ? 'text-primary' : 'text-muted-foreground'}`}
+                disabled={isLocked}
+                data-testid={`button-notes-${item.id}`}
+              >
+                <FileText className="w-4 h-4" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {hasNotes && (
+            <TooltipContent>
+              <p className="max-w-xs">{notePreview}</p>
+            </TooltipContent>
+          )}
+        </Tooltip>
         <PopoverContent className="w-96" align="start">
           <div className="space-y-3">
             <h4 className="font-medium text-sm">Notes - {item.name}</h4>
