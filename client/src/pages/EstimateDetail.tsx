@@ -652,6 +652,11 @@ export default function EstimateDetail() {
       case 'unitType':
         setEditingValue(item.unitType || '');
         break;
+      case 'unitCostIncTax':
+        // Calculate inc tax from ex tax and display in dollars
+        const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
+        setEditingValue((taxValues.unitCostIncTax / 100).toFixed(2));
+        break;
       default:
         setEditingValue('');
     }
@@ -661,7 +666,7 @@ export default function EstimateDetail() {
     if (!editingCell) return;
     
     // Validate based on field type
-    if (field === 'quantity' || field === 'unitCostExTax') {
+    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax') {
       const numValue = parseFloat(editingValue);
       if (isNaN(numValue) || numValue < 0) {
         toast({
@@ -672,6 +677,9 @@ export default function EstimateDetail() {
         // Reset to original value in dollars for price fields
         if (field === 'unitCostExTax') {
           setEditingValue(((item as any)[field] / 100).toFixed(2));
+        } else if (field === 'unitCostIncTax') {
+          const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
+          setEditingValue((taxValues.unitCostIncTax / 100).toFixed(2));
         } else {
           setEditingValue((item as any)[field]);
         }
@@ -691,6 +699,8 @@ export default function EstimateDetail() {
     
     // Prepare update data
     let valueToSave: any;
+    let fieldToUpdate = field;
+    
     if (field === 'unitCostExTax') {
       // Convert dollars to cents
       valueToSave = Math.round(parseFloat(editingValue) * 100);
@@ -700,6 +710,23 @@ export default function EstimateDetail() {
         setEditingCell(null);
         return;
       }
+    } else if (field === 'unitCostIncTax') {
+      // Reverse calculate: convert inc tax to ex tax
+      const incTaxDollars = parseFloat(editingValue);
+      const incTaxCents = Math.round(incTaxDollars * 100);
+      
+      // Calculate ex tax from inc tax: exTax = incTax / (1 + taxRate/100)
+      const exTaxCents = Math.round(incTaxCents / (1 + taxRate / 100));
+      
+      // Check if the calculated ex tax is different from current
+      if (exTaxCents === item.unitCostExTax) {
+        setEditingCell(null);
+        return;
+      }
+      
+      // Update the unitCostExTax field instead
+      fieldToUpdate = 'unitCostExTax';
+      valueToSave = exTaxCents;
     } else if (field === 'quantity') {
       valueToSave = parseFloat(editingValue);
       if (valueToSave === item.quantity) {
@@ -715,7 +742,7 @@ export default function EstimateDetail() {
     }
     
     const updateData: Partial<InsertEstimateItem> = {
-      [field]: valueToSave
+      [fieldToUpdate]: valueToSave
     };
     
     // Clear editing state first (optimistic update)
@@ -1500,7 +1527,7 @@ export default function EstimateDetail() {
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
-                step="0.01"
+                step="0.001"
                 data-testid={`input-edit-quantity-${item.id}`}
               />
             </TableCell>
@@ -1555,7 +1582,7 @@ export default function EstimateDetail() {
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
-                step="0.01"
+                step="0.001"
                 data-testid={`input-edit-unitCostExTax-${item.id}`}
               />
             </TableCell>
@@ -1572,8 +1599,30 @@ export default function EstimateDetail() {
         );
       
       case 'unitCostIncTax':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
+                onBlur={() => handleCellSave(item, 'unitCostIncTax')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                min="0"
+                step="0.001"
+                data-testid={`input-edit-unitCostIncTax-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-unitCostIncTax-${item.id}`}>
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'unitCostIncTax')}
+            data-testid={`cell-unitCostIncTax-${item.id}`}
+          >
             {formatCurrency(taxValues.unitCostIncTax)}
           </TableCell>
         );
@@ -2399,8 +2448,8 @@ export default function EstimateDetail() {
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.01" 
-                          min="0.01"
+                          step="0.001" 
+                          min="0.001"
                           placeholder="1"
                           {...field}
                           onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
@@ -2450,7 +2499,7 @@ export default function EstimateDetail() {
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.01" 
+                          step="0.001" 
                           min="0"
                           placeholder="0.00"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -2480,7 +2529,7 @@ export default function EstimateDetail() {
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.01" 
+                          step="0.001" 
                           min="0"
                           placeholder="0.00"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
