@@ -164,6 +164,7 @@ export interface IStorage {
   getEstimateItems(estimateId: string): Promise<EstimateItem[]>;
   getEstimateItem(id: string): Promise<EstimateItem | undefined>;
   createEstimateItem(item: InsertEstimateItem): Promise<EstimateItem>;
+  bulkCreateEstimateItems(items: InsertEstimateItem[]): Promise<EstimateItem[]>;
   updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined>;
   deleteEstimateItem(id: string): Promise<boolean>;
 
@@ -2210,6 +2211,61 @@ export class MemStorage implements IStorage {
     }
   }
 
+  async bulkCreateEstimateItems(insertItems: InsertEstimateItem[]): Promise<EstimateItem[]> {
+    if (insertItems.length === 0) {
+      return [];
+    }
+
+    // Check if parent estimate is locked (use first item's estimateId)
+    const firstEstimateId = insertItems[0].estimateId;
+    const estimate = await this.getEstimate(firstEstimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot create items in locked estimate. Unlock the estimate first.");
+    }
+
+    const taxRate = estimate?.taxRate || 10; // Default 10% GST
+    
+    // Prepare all items with calculated tax
+    const preparedItems = insertItems.map(insertItem => {
+      const priceExTax = insertItem.priceExTax || 0;
+      const taxAmount = Math.round(priceExTax * taxRate / 100);
+      const priceIncTax = priceExTax + taxAmount;
+      
+      return {
+        ...insertItem,
+        taxAmount,
+        priceIncTax,
+        type: insertItem.type || "Material",
+        status: insertItem.status || "incomplete",
+        order: insertItem.order || 0,
+      };
+    });
+
+    try {
+      const result = await db.insert(schema.estimateItems).values(preparedItems).returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in bulkCreateEstimateItems:", error);
+      // Fallback to memory
+      const createdItems: EstimateItem[] = [];
+      const now = new Date();
+      
+      for (const item of preparedItems) {
+        const id = randomUUID();
+        const memItem: EstimateItem = {
+          ...item,
+          id,
+          createdAt: now,
+          updatedAt: now,
+        };
+        this.estimateItems.set(id, memItem);
+        createdItems.push(memItem);
+      }
+      
+      return createdItems;
+    }
+  }
+
   async updateEstimateItem(id: string, updateItem: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> {
     const item = this.estimateItems.get(id);
     if (!item) {
@@ -3977,6 +4033,44 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
+
+  async bulkCreateEstimateItems(insertItems: InsertEstimateItem[]): Promise<EstimateItem[]> {
+    if (insertItems.length === 0) {
+      return [];
+    }
+
+    try {
+      const firstEstimateId = insertItems[0].estimateId;
+      const estimate = await this.getEstimate(firstEstimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot create items in locked estimate. Unlock the estimate first.");
+      }
+
+      const taxRate = estimate?.taxRate || 10;
+      
+      const preparedItems = insertItems.map(insertItem => {
+        const priceExTax = insertItem.priceExTax || 0;
+        const taxAmount = Math.round(priceExTax * taxRate / 100);
+        const priceIncTax = priceExTax + taxAmount;
+        
+        return {
+          ...insertItem,
+          taxAmount,
+          priceIncTax,
+          type: insertItem.type || "Material",
+          status: insertItem.status || "incomplete",
+          order: insertItem.order || 0,
+        };
+      });
+
+      const result = await db.insert(schema.estimateItems).values(preparedItems).returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in bulkCreateEstimateItems:", error);
+      throw error;
+    }
+  }
+
   async updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> { return undefined; }
   async deleteEstimateItem(id: string): Promise<boolean> { return false; }
   async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {

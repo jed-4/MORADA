@@ -997,6 +997,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/estimates/:id/items/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      const estimateId = req.params.id;
+      
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "Items array is required and must not be empty" });
+      }
+
+      // Validate all items
+      const validatedItems: any[] = [];
+      const errors: Array<{ row: number; errors: string[] }> = [];
+      
+      items.forEach((item, index) => {
+        const validationResult = insertEstimateItemSchema.safeParse({
+          ...item,
+          estimateId
+        });
+        
+        if (!validationResult.success) {
+          errors.push({
+            row: index + 1,
+            errors: validationResult.error.errors.map(e => `${e.path.join(".")}: ${e.message}`)
+          });
+        } else {
+          // Ensure the validated item's estimateId matches the route parameter
+          if (validationResult.data.estimateId !== estimateId) {
+            errors.push({
+              row: index + 1,
+              errors: ["Estimate ID mismatch"]
+            });
+          } else {
+            validatedItems.push(validationResult.data);
+          }
+        }
+      });
+      
+      // If there are validation errors, return them
+      if (errors.length > 0) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors,
+          validCount: validatedItems.length,
+          errorCount: errors.length
+        });
+      }
+
+      const createdItems = await storage.bulkCreateEstimateItems(validatedItems);
+      res.status(201).json({
+        success: true,
+        count: createdItems.length,
+        items: createdItems
+      });
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message || "Failed to import estimate items" });
+    }
+  });
+
   app.patch("/api/estimate-items/:id", async (req, res) => {
     try {
       const updateSchema = insertEstimateItemSchema.partial();
