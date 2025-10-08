@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import {
   FileText,
@@ -22,6 +23,7 @@ const templateTypes = [
     icon: FileText,
     url: "/note-templates",
     color: "text-blue-500",
+    implemented: false,
   },
   {
     id: "site-diary",
@@ -30,6 +32,7 @@ const templateTypes = [
     icon: BookOpen,
     url: "/site-diary-templates",
     color: "text-purple-500",
+    implemented: true,
   },
   {
     id: "schedule",
@@ -38,6 +41,7 @@ const templateTypes = [
     icon: Clock,
     url: "/schedule-templates",
     color: "text-green-500",
+    implemented: false,
   },
   {
     id: "tasks",
@@ -46,6 +50,7 @@ const templateTypes = [
     icon: CheckSquare,
     url: "/task-templates",
     color: "text-orange-500",
+    implemented: false,
   },
   {
     id: "takeoffs",
@@ -54,6 +59,7 @@ const templateTypes = [
     icon: Calculator,
     url: "/takeoff-templates",
     color: "text-cyan-500",
+    implemented: false,
   },
   {
     id: "estimates",
@@ -62,6 +68,7 @@ const templateTypes = [
     icon: FileBarChart,
     url: "/estimate-templates",
     color: "text-indigo-500",
+    implemented: false,
   },
   {
     id: "rfq",
@@ -70,6 +77,7 @@ const templateTypes = [
     icon: FileSearch,
     url: "/rfq-templates",
     color: "text-pink-500",
+    implemented: false,
   },
   {
     id: "rfi",
@@ -78,6 +86,7 @@ const templateTypes = [
     icon: HelpCircle,
     url: "/rfi-templates",
     color: "text-yellow-500",
+    implemented: false,
   },
   {
     id: "proposal",
@@ -86,6 +95,7 @@ const templateTypes = [
     icon: File,
     url: "/proposal-templates",
     color: "text-teal-500",
+    implemented: false,
   },
   {
     id: "selections",
@@ -94,6 +104,7 @@ const templateTypes = [
     icon: CheckCircle,
     url: "/selection-templates",
     color: "text-emerald-500",
+    implemented: false,
   },
   {
     id: "purchase-orders",
@@ -102,6 +113,7 @@ const templateTypes = [
     icon: Receipt,
     url: "/po-templates",
     color: "text-rose-500",
+    implemented: false,
   },
 ];
 
@@ -125,21 +137,28 @@ export default function Templates() {
           return (
             <Card
               key={template.id}
-              className="hover-elevate cursor-pointer transition-all"
-              onClick={() => navigate(template.url)}
+              className={template.implemented ? "hover-elevate cursor-pointer transition-all" : "opacity-60 cursor-not-allowed"}
+              onClick={() => template.implemented && navigate(template.url)}
               data-testid={`card-template-type-${template.id}`}
             >
               <CardHeader className="pb-3">
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-md bg-muted ${template.color}`}>
-                    <Icon className="h-5 w-5" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className={`p-2 rounded-md bg-muted ${template.color}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-lg">{template.title}</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {template.description}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg">{template.title}</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {template.description}
-                    </p>
-                  </div>
+                  {!template.implemented && (
+                    <Badge variant="secondary" className="shrink-0" data-testid={`badge-coming-soon-${template.id}`}>
+                      Coming Soon
+                    </Badge>
+                  )}
                 </div>
               </CardHeader>
             </Card>
