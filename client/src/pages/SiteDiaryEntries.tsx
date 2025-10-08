@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useParams } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,9 +39,19 @@ import { z } from "zod";
 
 export default function SiteDiaryEntries() {
   const { toast } = useToast();
+  const params = useParams();
+  const projectIdFromUrl = params.projectId;
+  
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [isCreating, setIsCreating] = useState(false);
+
+  // If we have a projectId from the URL, use it automatically
+  useEffect(() => {
+    if (projectIdFromUrl) {
+      setSelectedProjectId(projectIdFromUrl);
+    }
+  }, [projectIdFromUrl]);
 
   // Fetch projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -60,6 +71,7 @@ export default function SiteDiaryEntries() {
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const isProjectFromUrl = !!projectIdFromUrl;
 
   return (
     <div className="h-full flex flex-col p-6 space-y-6">
@@ -81,22 +93,25 @@ export default function SiteDiaryEntries() {
 
       {/* Project & Template Selection */}
       {!isCreating && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Select Project</Label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-              <SelectTrigger data-testid="select-project">
-                <SelectValue placeholder="Choose a project" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className={isProjectFromUrl ? "max-w-md" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
+          {/* Only show project selector if not in a project context */}
+          {!isProjectFromUrl && (
+            <div className="space-y-2">
+              <Label>Select Project</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger data-testid="select-project">
+                  <SelectValue placeholder="Choose a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Select Template</Label>
@@ -139,6 +154,7 @@ export default function SiteDiaryEntries() {
           entries={entries} 
           selectedProjectId={selectedProjectId}
           selectedTemplateId={selectedTemplateId}
+          isProjectFromUrl={isProjectFromUrl}
         />
       )}
     </div>
@@ -422,20 +438,27 @@ function EntryForm({
 function EntriesList({ 
   entries, 
   selectedProjectId,
-  selectedTemplateId 
+  selectedTemplateId,
+  isProjectFromUrl 
 }: { 
   entries: SiteDiaryEntry[]; 
   selectedProjectId: string;
   selectedTemplateId: string;
+  isProjectFromUrl: boolean;
 }) {
   if (!selectedProjectId || !selectedTemplateId) {
     return (
       <Card>
         <CardContent className="p-12 text-center">
           <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">Select Project and Template</h3>
+          <h3 className="text-lg font-medium mb-2">
+            {isProjectFromUrl ? "Select a Template" : "Select Project and Template"}
+          </h3>
           <p className="text-muted-foreground">
-            Choose a project and template to view or create site diary entries
+            {isProjectFromUrl 
+              ? "Choose a template to view or create site diary entries"
+              : "Choose a project and template to view or create site diary entries"
+            }
           </p>
         </CardContent>
       </Card>
