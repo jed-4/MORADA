@@ -134,7 +134,7 @@ export default function EstimateDetail() {
     { id: 'item', label: 'Item', visible: true, widthPx: 180 },
     { id: 'type', label: 'Type', visible: true, widthPx: 100 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
-    { id: 'priceExTax', label: 'Price Ex-Tax', visible: true, widthPx: 120 },
+    { id: 'unitCostExTax', label: 'Price Ex-Tax', visible: true, widthPx: 120 },
     { id: 'tax', label: 'Tax', visible: true, widthPx: 100 },
     { id: 'totalIncTax', label: 'Total Inc-Tax', visible: true, widthPx: 120 },
     { id: 'status', label: 'Status', visible: true, widthPx: 120 },
@@ -632,9 +632,9 @@ export default function EstimateDetail() {
       case 'quantity':
         setEditingValue(item.quantity);
         break;
-      case 'priceExTax':
+      case 'unitCostExTax':
         // Convert cents to dollars for display
-        setEditingValue((item.priceExTax / 100).toFixed(2));
+        setEditingValue((item.unitCostExTax / 100).toFixed(2));
         break;
       case 'priceIncTax':
         // Convert cents to dollars for display
@@ -658,7 +658,7 @@ export default function EstimateDetail() {
     if (!editingCell) return;
     
     // Validate based on field type
-    if (field === 'quantity' || field === 'priceExTax' || field === 'priceIncTax') {
+    if (field === 'quantity' || field === 'unitCostExTax' || field === 'priceIncTax') {
       const numValue = parseFloat(editingValue);
       if (isNaN(numValue) || numValue < 0) {
         toast({
@@ -667,7 +667,7 @@ export default function EstimateDetail() {
           variant: "destructive",
         });
         // Reset to original value in dollars for price fields
-        if (field === 'priceExTax' || field === 'priceIncTax') {
+        if (field === 'unitCostExTax' || field === 'priceIncTax') {
           setEditingValue(((item as any)[field] / 100).toFixed(2));
         } else {
           setEditingValue((item as any)[field]);
@@ -688,7 +688,7 @@ export default function EstimateDetail() {
     
     // Prepare update data
     let valueToSave: any;
-    if (field === 'priceExTax' || field === 'priceIncTax') {
+    if (field === 'unitCostExTax' || field === 'priceIncTax') {
       // Convert dollars to cents
       valueToSave = Math.round(parseFloat(editingValue) * 100);
       
@@ -716,10 +716,10 @@ export default function EstimateDetail() {
     };
     
     // If updating prices, recalculate tax
-    if (field === 'priceExTax' || field === 'priceIncTax') {
-      const priceExTax = field === 'priceExTax' ? valueToSave : item.priceExTax;
+    if (field === 'unitCostExTax' || field === 'priceIncTax') {
+      const unitCostExTax = field === 'unitCostExTax' ? valueToSave : item.unitCostExTax;
       const priceIncTax = field === 'priceIncTax' ? valueToSave : item.priceIncTax;
-      updateData.taxAmount = priceIncTax - priceExTax;
+      updateData.taxAmount = priceIncTax - unitCostExTax;
     }
     
     // Clear editing state first (optimistic update)
@@ -749,7 +749,7 @@ export default function EstimateDetail() {
     estimateId: true,
     taxAmount: true, // Calculated field
   }).extend({
-    priceExTax: z.number().min(0, "Price must be positive"),
+    unitCostExTax: z.number().min(0, "Price must be positive"),
     priceIncTax: z.number().min(0, "Price must be positive"),
     quantity: z.number().min(0.01, "Quantity must be greater than 0"),
   });
@@ -763,7 +763,7 @@ export default function EstimateDetail() {
       type: "material",
       quantity: 1,
       unitType: "each",
-      priceExTax: 0,
+      unitCostExTax: 0,
       priceIncTax: 0,
       status: "pending",
       groupId: undefined,
@@ -772,8 +772,8 @@ export default function EstimateDetail() {
       attachmentUrl: "",
       requestForQuote: false,
       isSelection: false,
-      visibleInProposal: true,
-      showAsInProposal: "price",
+      proposalVisible: true,
+      shownAs: "price",
       order: 0,
     },
   });
@@ -810,7 +810,7 @@ export default function EstimateDetail() {
     if (!estimate) return;
     
     // Calculate tax amount from the difference
-    const taxAmount = data.priceIncTax - data.priceExTax;
+    const taxAmount = data.priceIncTax - data.unitCostExTax;
     
     const itemData: InsertEstimateItem = {
       ...data,
@@ -873,14 +873,14 @@ export default function EstimateDetail() {
           case 'quantity':
             row.push(item.quantity?.toString() || '0');
             break;
-          case 'priceExTax':
-            row.push(item.priceExTax ? (item.priceExTax / 100).toFixed(2) : '0.00');
+          case 'unitCostExTax':
+            row.push(item.unitCostExTax ? (item.unitCostExTax / 100).toFixed(2) : '0.00');
             break;
           case 'tax':
-            row.push(item.tax ? (item.tax / 100).toFixed(2) : '0.00');
+            row.push(item.taxAmount ? (item.taxAmount / 100).toFixed(2) : '0.00');
             break;
           case 'totalIncTax':
-            row.push(item.totalIncTax ? (item.totalIncTax / 100).toFixed(2) : '0.00');
+            row.push(item.priceIncTax ? (item.priceIncTax / 100).toFixed(2) : '0.00');
             break;
           case 'status':
             row.push(escapeCsvField(item.status || ''));
@@ -1172,7 +1172,7 @@ export default function EstimateDetail() {
                     name: '',
                     type: 'Material',
                     quantity: 1,
-                    priceExTax: 0,
+                    unitCostExTax: 0,
                     priceIncTax: 0,
                     groupId: item.groupId || undefined,
                     parentItemId: item.id,
@@ -1183,8 +1183,8 @@ export default function EstimateDetail() {
                     attachmentUrl: '',
                     requestForQuote: false,
                     isSelection: false,
-                    visibleInProposal: true,
-                    showAsInProposal: 'price',
+                    proposalVisible: true,
+                    shownAs: 'price',
                     order: 0,
                   });
                   setIsAddItemOpen(true);
@@ -1440,7 +1440,7 @@ export default function EstimateDetail() {
             {formatQuantity(item.quantity, item.unitType)}
           </TableCell>
         );
-      case 'priceExTax':
+      case 'unitCostExTax':
         if (isEditing) {
           return (
             <TableCell className="py-0.5">
@@ -1448,13 +1448,13 @@ export default function EstimateDetail() {
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'priceExTax')}
-                onBlur={() => handleCellSave(item, 'priceExTax')}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
+                onBlur={() => handleCellSave(item, 'unitCostExTax')}
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
                 step="0.01"
-                data-testid={`input-edit-priceExTax-${item.id}`}
+                data-testid={`input-edit-unitCostExTax-${item.id}`}
               />
             </TableCell>
           );
@@ -1462,10 +1462,10 @@ export default function EstimateDetail() {
         return (
           <TableCell 
             className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'priceExTax')}
-            data-testid={`cell-priceExTax-${item.id}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'unitCostExTax')}
+            data-testid={`cell-unitCostExTax-${item.id}`}
           >
-            {formatCurrency(item.priceExTax)}
+            {formatCurrency(item.unitCostExTax)}
           </TableCell>
         );
       case 'tax':
@@ -2395,7 +2395,7 @@ export default function EstimateDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="priceExTax"
+                  name="unitCostExTax"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Price Ex Tax</FormLabel>
@@ -2443,7 +2443,7 @@ export default function EstimateDetail() {
                             // Auto-calculate price ex tax using tax rate from estimate
                             const taxRate = (estimate?.taxRate || 10) / 100;
                             const exTax = incTax / (1 + taxRate);
-                            form.setValue('priceExTax', exTax);
+                            form.setValue('unitCostExTax', exTax);
                           }}
                           data-testid="input-item-price-inc-tax"
                         />
@@ -2558,7 +2558,7 @@ export default function EstimateDetail() {
                 
                 <FormField
                   control={form.control}
-                  name="visibleInProposal"
+                  name="proposalVisible"
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                       <FormControl>
@@ -2579,7 +2579,7 @@ export default function EstimateDetail() {
 
                 <FormField
                   control={form.control}
-                  name="showAsInProposal"
+                  name="shownAs"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Show as in proposal</FormLabel>

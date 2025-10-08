@@ -50,7 +50,7 @@ const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   description: "Description",
   quantity: "Quantity",
   unitType: "Unit",
-  priceExTax: "Price (Ex Tax)",
+  unitCostExTax: "Price (Ex Tax)",
   allowance: "Allowance",
   notes: "Notes",
   costCode: "Cost Code",
@@ -136,7 +136,7 @@ export function ImportEstimateItemsDialog({
         .map(row => ({
           ...row.data!,
           estimateId,
-          // priceExTax is already in dollars (backend expects dollars)
+          // unitCostExTax is already in dollars (backend expects dollars)
         }));
 
       const response = await fetch(`/api/estimates/${estimateId}/items/import`, {
@@ -343,7 +343,7 @@ export function ImportEstimateItemsDialog({
                           <TableCell>{row.data?.type}</TableCell>
                           <TableCell>{row.data?.quantity}</TableCell>
                           <TableCell>{row.data?.unitType}</TableCell>
-                          <TableCell>${row.data?.priceExTax.toFixed(2)}</TableCell>
+                          <TableCell>${row.data?.unitCostExTax.toFixed(2)}</TableCell>
                           <TableCell>
                             <Badge variant="secondary">{row.data?.status}</Badge>
                           </TableCell>

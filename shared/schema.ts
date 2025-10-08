@@ -426,7 +426,7 @@ export const estimateItems = pgTable("estimate_items", {
   quantity: integer("quantity").notNull().default(1),
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
-  priceExTax: integer("price_ex_tax").notNull().default(0), // Price in cents
+  unitCostExTax: integer("unit_cost_ex_tax").notNull().default(0), // Unit price in cents (renamed from priceExTax)
   taxAmount: integer("tax_amount").notNull().default(0), // Calculated tax amount in cents
   priceIncTax: integer("price_inc_tax").notNull().default(0), // Total price in cents
   description: text("description"),
@@ -434,8 +434,8 @@ export const estimateItems = pgTable("estimate_items", {
   attachmentUrl: text("attachment_url"), // File attachment path/URL
   requestForQuote: boolean("request_for_quote").notNull().default(false),
   isSelection: boolean("is_selection").notNull().default(false), // Can link to Selections section
-  visibleInProposal: boolean("visible_in_proposal").notNull().default(true),
-  showAsInProposal: text("show_as_in_proposal").notNull().default("price"), // "empty" | "price" | "included" | "excluded"
+  proposalVisible: boolean("proposal_visible").notNull().default(true), // Show/hide in proposal (renamed from visibleInProposal)
+  shownAs: text("shown_as"), // Custom text to display in proposal instead of item name
   order: integer("order").notNull().default(0), // For sorting within groups
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -447,9 +447,10 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   updatedAt: true,
 }).extend({
   // Convert price fields to numbers for easier handling
-  priceExTax: z.number().default(0),
+  unitCostExTax: z.number().default(0),
   taxAmount: z.number().default(0), 
   priceIncTax: z.number().default(0),
+  shownAs: z.string().optional().nullable(),
 });
 
 export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;

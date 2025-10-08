@@ -8,7 +8,7 @@ export const importEstimateItemSchema = z.object({
   description: z.string().optional(),
   quantity: z.number().min(0, "Quantity must be 0 or greater").default(1),
   unitType: z.string().default("each"),
-  priceExTax: z.number().min(0, "Price must be 0 or greater").default(0),
+  unitCostExTax: z.number().min(0, "Price must be 0 or greater").default(0),
   allowance: z.enum(["None", "Prime Cost", "Provisional Sum"]).default("None"),
   notes: z.string().optional(),
   costCode: z.string().optional(),
@@ -64,12 +64,12 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "uom": "unitType",
   
   // Price variations
-  "price": "priceExTax",
-  "price ex tax": "priceExTax",
-  "price ex gst": "priceExTax",
-  "unit price": "priceExTax",
-  "rate": "priceExTax",
-  "cost": "priceExTax",
+  "price": "unitCostExTax",
+  "price ex tax": "unitCostExTax",
+  "price ex gst": "unitCostExTax",
+  "unit price": "unitCostExTax",
+  "rate": "unitCostExTax",
+  "cost": "unitCostExTax",
   
   // Allowance variations
   "allowance": "allowance",
@@ -148,7 +148,7 @@ export function parseImportRow(
         const value = row[columnKey];
         
         // Handle special field types
-        if (fieldKey === "priceExTax") {
+        if (fieldKey === "unitCostExTax") {
           data[fieldKey] = typeof value === "string" ? parseCurrency(value) : (value || 0);
         } else if (fieldKey === "quantity") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 1 : (value || 1);

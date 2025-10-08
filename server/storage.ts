@@ -998,7 +998,7 @@ export class MemStorage implements IStorage {
         status: "confirmed",
         quantity: 1,
         unitType: "set",
-        priceExTax: 850000, // $8500 in cents
+        unitCostExTax: 850000, // $8500 in cents
         taxAmount: 85000,   // $850 in cents
         priceIncTax: 935000, // $9350 in cents
       },
@@ -1011,7 +1011,7 @@ export class MemStorage implements IStorage {
         status: "confirmed",
         quantity: 40,
         unitType: "hours",
-        priceExTax: 340000, // $3400 in cents (40 * $85)
+        unitCostExTax: 340000, // $3400 in cents (40 * $85)
         taxAmount: 34000,   // $340 in cents
         priceIncTax: 374000, // $3740 in cents
       }
@@ -1028,8 +1028,8 @@ export class MemStorage implements IStorage {
         attachmentUrl: null,
         requestForQuote: false,
         isSelection: false,
-        visibleInProposal: true,
-        showAsInProposal: "price",
+        proposalVisible: true,
+        shownAs: "price",
         order: 0,
         createdAt: now,
         updatedAt: now,
@@ -2176,10 +2176,10 @@ export class MemStorage implements IStorage {
     }
     
     // Calculate tax amount and price inc tax if not provided
-    const priceExTax = insertItem.priceExTax || 0;
+    const unitCostExTax = insertItem.unitCostExTax || 0;
     const taxRate = estimate?.taxRate || 10; // Default 10% GST
-    const taxAmount = Math.round(priceExTax * taxRate / 100);
-    const priceIncTax = priceExTax + taxAmount;
+    const taxAmount = Math.round(unitCostExTax * taxRate / 100);
+    const priceIncTax = unitCostExTax + taxAmount;
     
     try {
       const estimateItem = {
@@ -2227,9 +2227,9 @@ export class MemStorage implements IStorage {
     
     // Prepare all items with calculated tax
     const preparedItems = insertItems.map(insertItem => {
-      const priceExTax = insertItem.priceExTax || 0;
-      const taxAmount = Math.round(priceExTax * taxRate / 100);
-      const priceIncTax = priceExTax + taxAmount;
+      const unitCostExTax = insertItem.unitCostExTax || 0;
+      const taxAmount = Math.round(unitCostExTax * taxRate / 100);
+      const priceIncTax = unitCostExTax + taxAmount;
       
       return {
         ...insertItem,
@@ -2285,10 +2285,10 @@ export class MemStorage implements IStorage {
     };
     
     // Recalculate tax if price changed
-    if (updateItem.priceExTax !== undefined) {
+    if (updateItem.unitCostExTax !== undefined) {
       const taxRate = estimate?.taxRate || 10;
-      updatedItem.taxAmount = Math.round(updatedItem.priceExTax * taxRate / 100);
-      updatedItem.priceIncTax = updatedItem.priceExTax + updatedItem.taxAmount;
+      updatedItem.taxAmount = Math.round(updatedItem.unitCostExTax * taxRate / 100);
+      updatedItem.priceIncTax = updatedItem.unitCostExTax + updatedItem.taxAmount;
     }
     
     this.estimateItems.set(id, updatedItem);
@@ -2591,7 +2591,7 @@ export class MemStorage implements IStorage {
     const estimate = await this.getEstimate(estimateId);
     const items = await this.getEstimateItems(estimateId);
 
-    const subtotal = items.reduce((sum, item) => sum + (item.priceExTax * item.quantity), 0);
+    const subtotal = items.reduce((sum, item) => sum + (item.unitCostExTax * item.quantity), 0);
     const markupPercent = estimate?.projectMarkupPercent || 0;
     const markup = Math.round(subtotal * markupPercent / 100);
     const subtotalWithMarkup = subtotal + markup;
@@ -4012,10 +4012,10 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
       }
       
-      const priceExTax = insertItem.priceExTax || 0;
+      const unitCostExTax = insertItem.unitCostExTax || 0;
       const taxRate = estimate?.taxRate || 10;
-      const taxAmount = Math.round(priceExTax * taxRate / 100);
-      const priceIncTax = priceExTax + taxAmount;
+      const taxAmount = Math.round(unitCostExTax * taxRate / 100);
+      const priceIncTax = unitCostExTax + taxAmount;
       
       const estimateItem = {
         ...insertItem,
@@ -4049,9 +4049,9 @@ export class DbStorage implements IStorage {
       const taxRate = estimate?.taxRate || 10;
       
       const preparedItems = insertItems.map(insertItem => {
-        const priceExTax = insertItem.priceExTax || 0;
-        const taxAmount = Math.round(priceExTax * taxRate / 100);
-        const priceIncTax = priceExTax + taxAmount;
+        const unitCostExTax = insertItem.unitCostExTax || 0;
+        const taxAmount = Math.round(unitCostExTax * taxRate / 100);
+        const priceIncTax = unitCostExTax + taxAmount;
         
         return {
           ...insertItem,
@@ -4264,7 +4264,7 @@ export class DbStorage implements IStorage {
       const estimate = await this.getEstimate(estimateId);
       const items = await this.getEstimateItems(estimateId);
 
-      const subtotal = items.reduce((sum, item) => sum + (item.priceExTax * item.quantity), 0);
+      const subtotal = items.reduce((sum, item) => sum + (item.unitCostExTax * item.quantity), 0);
       const markupPercent = estimate?.projectMarkupPercent || 0;
       const markup = Math.round(subtotal * markupPercent / 100);
       const subtotalWithMarkup = subtotal + markup;
