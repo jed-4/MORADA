@@ -87,6 +87,84 @@ interface EstimateDetailParams {
   projectId?: string;
 }
 
+// Notes cell component (defined outside main component to avoid hook issues)
+const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem; isLocked: boolean | undefined; updateItemMutation: any }) => {
+  const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false);
+  const [notesValue, setNotesValue] = useState(item.notes || '');
+
+  // Update notes value when item changes
+  React.useEffect(() => {
+    setNotesValue(item.notes || '');
+  }, [item.notes]);
+
+  return (
+    <TableCell className="py-0.5 text-center" data-testid={`cell-notes-${item.id}`}>
+      <Dialog open={isNotesDialogOpen} onOpenChange={setIsNotesDialogOpen}>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-6 w-6 ${item.notes ? 'text-primary' : 'text-muted-foreground'}`}
+                  disabled={isLocked}
+                  data-testid={`button-notes-${item.id}`}
+                >
+                  <FileText className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+            </TooltipTrigger>
+            {item.notes && (
+              <TooltipContent>
+                <p className="max-w-xs">{item.notes.substring(0, 100)}{item.notes.length > 100 ? '...' : ''}</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Notes - {item.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={notesValue}
+              onChange={(e) => setNotesValue(e.target.value)}
+              placeholder="Enter notes..."
+              rows={6}
+              data-testid={`textarea-notes-${item.id}`}
+            />
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNotesValue(item.notes || '');
+                  setIsNotesDialogOpen(false);
+                }}
+                data-testid={`button-cancel-notes-${item.id}`}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  updateItemMutation.mutate({
+                    itemId: item.id,
+                    data: { notes: notesValue }
+                  });
+                  setIsNotesDialogOpen(false);
+                }}
+                data-testid={`button-save-notes-${item.id}`}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </TableCell>
+  );
+};
+
 export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
   const [location, setLocation] = useLocation();
@@ -135,6 +213,7 @@ export default function EstimateDetail() {
     { id: 'item', label: 'Description', visible: true, widthPx: 200 },
     { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
     { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 180 },
+    { id: 'allowance', label: 'Allowance', visible: true, widthPx: 140 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
     { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
     { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
@@ -142,6 +221,7 @@ export default function EstimateDetail() {
     { id: 'amountExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
     { id: 'amountTax', label: 'Amount Tax', visible: true, widthPx: 110 },
     { id: 'amountIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
+    { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
   ];
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
 
@@ -652,6 +732,9 @@ export default function EstimateDetail() {
       case 'unitType':
         setEditingValue(item.unitType || '');
         break;
+      case 'allowance':
+        setEditingValue(item.allowance || 'None');
+        break;
       case 'unitCostIncTax':
         // Calculate per-unit inc tax from ex tax and display in dollars
         const effectiveTaxRate = taxRate ?? 10;
@@ -919,6 +1002,9 @@ export default function EstimateDetail() {
           case 'quantity':
             row.push(item.quantity?.toString() || '0');
             break;
+          case 'allowance':
+            row.push(escapeCsvField(item.allowance || 'None'));
+            break;
           case 'unitType':
             row.push(escapeCsvField(item.unitType || ''));
             break;
@@ -936,6 +1022,9 @@ export default function EstimateDetail() {
             break;
           case 'amountIncTax':
             row.push((taxValues.amountIncTax / 100).toFixed(2));
+            break;
+          case 'notes':
+            row.push(escapeCsvField(item.notes || ''));
             break;
           default:
             row.push('');
@@ -1530,6 +1619,46 @@ export default function EstimateDetail() {
           </TableCell>
         );
       
+      case 'allowance':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Select 
+                value={editingValue} 
+                onValueChange={(value) => {
+                  setEditingValue(value);
+                  // Immediately save the selection
+                  updateItemMutation.mutate({
+                    itemId: item.id,
+                    data: { allowance: value }
+                  });
+                  setEditingCell(null);
+                }}
+              >
+                <SelectTrigger className="h-7 text-sm border-primary w-full" data-testid={`select-edit-allowance-${item.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="None">Off</SelectItem>
+                  <SelectItem value="Prime Cost">Prime Cost</SelectItem>
+                  <SelectItem value="Provisional Sum">Provisional Sum</SelectItem>
+                </SelectContent>
+              </Select>
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'allowance')}
+            data-testid={`cell-allowance-${item.id}`}
+          >
+            <Badge variant="outline" className="text-xs">
+              {item.allowance === 'Prime Cost' ? 'PC' : item.allowance === 'Provisional Sum' ? 'PS' : 'Off'}
+            </Badge>
+          </TableCell>
+        );
+      
       case 'quantity':
         if (isEditing) {
           return (
@@ -1543,7 +1672,7 @@ export default function EstimateDetail() {
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
-                step="0.001"
+                step="0.01"
                 data-testid={`input-edit-quantity-${item.id}`}
               />
             </TableCell>
@@ -1598,7 +1727,7 @@ export default function EstimateDetail() {
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
-                step="0.001"
+                step="0.01"
                 data-testid={`input-edit-unitCostExTax-${item.id}`}
               />
             </TableCell>
@@ -1627,7 +1756,7 @@ export default function EstimateDetail() {
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
-                step="0.001"
+                step="0.01"
                 data-testid={`input-edit-unitCostIncTax-${item.id}`}
               />
             </TableCell>
@@ -1663,6 +1792,9 @@ export default function EstimateDetail() {
             {formatCurrency(taxValues.amountIncTax)}
           </TableCell>
         );
+      
+      case 'notes':
+        return <NotesCell item={item} isLocked={isLocked} updateItemMutation={updateItemMutation} />;
       
       default:
         return <TableCell className="py-0.5"></TableCell>;
@@ -2464,8 +2596,8 @@ export default function EstimateDetail() {
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.001" 
-                          min="0.001"
+                          step="0.01" 
+                          min="0.01"
                           placeholder="1"
                           {...field}
                           onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
@@ -2515,7 +2647,7 @@ export default function EstimateDetail() {
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.001" 
+                          step="0.01" 
                           min="0"
                           placeholder="0.00"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -2545,7 +2677,7 @@ export default function EstimateDetail() {
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.001" 
+                          step="0.01" 
                           min="0"
                           placeholder="0.00"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
