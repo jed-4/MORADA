@@ -41,7 +41,8 @@ import {
   CheckSquare,
   Type,
   List,
-  GripVertical
+  GripVertical,
+  Bell
 } from "lucide-react";
 import {
   DndContext,
@@ -133,6 +134,12 @@ const SETTINGS_CATEGORIES = [
     label: "Field Settings",
     icon: Sliders,
     description: "Custom fields for notes, tasks, and other forms"
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    icon: Bell,
+    description: "Control what notifications you receive"
   }
 ];
 
@@ -232,6 +239,302 @@ export default function Settings() {
   };
 
   const activeCategory = SETTINGS_CATEGORIES.find(cat => cat.id === activeSection);
+
+  // Notifications Section Component
+  const NotificationsSection = () => {
+    const [notifications, setNotifications] = useState(() => {
+      const saved = localStorage.getItem('notificationPreferences');
+      return saved ? JSON.parse(saved) : {
+        // Project notifications
+        projectCreated: true,
+        projectUpdated: true,
+        projectCompleted: true,
+        
+        // Task notifications
+        taskAssigned: true,
+        taskDueDate: true,
+        taskCompleted: true,
+        taskComments: true,
+        
+        // Team notifications
+        teamMemberAdded: true,
+        teamMemberRemoved: false,
+        
+        // Site Diary notifications
+        siteDiaryCreated: true,
+        siteDiaryUpdated: false,
+        
+        // Estimate & Invoice notifications
+        estimateCreated: true,
+        estimateApproved: true,
+        invoiceCreated: true,
+        invoicePaid: true,
+        
+        // Email notifications
+        emailNotifications: true,
+        emailDigest: false,
+      };
+    });
+
+    const handleToggle = (key: string) => {
+      const updated = { ...notifications, [key]: !notifications[key] };
+      setNotifications(updated);
+      localStorage.setItem('notificationPreferences', JSON.stringify(updated));
+      toast({ title: "Notification preferences updated" });
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-semibold">Notification Preferences</h2>
+          <p className="text-muted-foreground">
+            Choose what notifications you want to receive
+          </p>
+        </div>
+
+        {/* Project Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Notifications</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Project Created</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a new project is created</p>
+              </div>
+              <Checkbox
+                checked={notifications.projectCreated}
+                onCheckedChange={() => handleToggle('projectCreated')}
+                data-testid="notification-project-created"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Project Updated</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a project is updated</p>
+              </div>
+              <Checkbox
+                checked={notifications.projectUpdated}
+                onCheckedChange={() => handleToggle('projectUpdated')}
+                data-testid="notification-project-updated"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Project Completed</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a project is completed</p>
+              </div>
+              <Checkbox
+                checked={notifications.projectCompleted}
+                onCheckedChange={() => handleToggle('projectCompleted')}
+                data-testid="notification-project-completed"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Task Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Task Notifications</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Task Assigned</Label>
+                <p className="text-sm text-muted-foreground">Get notified when you're assigned to a task</p>
+              </div>
+              <Checkbox
+                checked={notifications.taskAssigned}
+                onCheckedChange={() => handleToggle('taskAssigned')}
+                data-testid="notification-task-assigned"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Task Due Date</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a task is due soon</p>
+              </div>
+              <Checkbox
+                checked={notifications.taskDueDate}
+                onCheckedChange={() => handleToggle('taskDueDate')}
+                data-testid="notification-task-due"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Task Completed</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a task is completed</p>
+              </div>
+              <Checkbox
+                checked={notifications.taskCompleted}
+                onCheckedChange={() => handleToggle('taskCompleted')}
+                data-testid="notification-task-completed"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Task Comments</Label>
+                <p className="text-sm text-muted-foreground">Get notified when someone comments on your tasks</p>
+              </div>
+              <Checkbox
+                checked={notifications.taskComments}
+                onCheckedChange={() => handleToggle('taskComments')}
+                data-testid="notification-task-comments"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Team Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Team Notifications</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Team Member Added</Label>
+                <p className="text-sm text-muted-foreground">Get notified when someone joins your team</p>
+              </div>
+              <Checkbox
+                checked={notifications.teamMemberAdded}
+                onCheckedChange={() => handleToggle('teamMemberAdded')}
+                data-testid="notification-team-added"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Team Member Removed</Label>
+                <p className="text-sm text-muted-foreground">Get notified when someone leaves your team</p>
+              </div>
+              <Checkbox
+                checked={notifications.teamMemberRemoved}
+                onCheckedChange={() => handleToggle('teamMemberRemoved')}
+                data-testid="notification-team-removed"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Site Diary Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Site Diary Notifications</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Site Diary Created</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a new site diary entry is created</p>
+              </div>
+              <Checkbox
+                checked={notifications.siteDiaryCreated}
+                onCheckedChange={() => handleToggle('siteDiaryCreated')}
+                data-testid="notification-diary-created"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Site Diary Updated</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a site diary entry is updated</p>
+              </div>
+              <Checkbox
+                checked={notifications.siteDiaryUpdated}
+                onCheckedChange={() => handleToggle('siteDiaryUpdated')}
+                data-testid="notification-diary-updated"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Financial Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Financial Notifications</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Estimate Created</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a new estimate is created</p>
+              </div>
+              <Checkbox
+                checked={notifications.estimateCreated}
+                onCheckedChange={() => handleToggle('estimateCreated')}
+                data-testid="notification-estimate-created"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Estimate Approved</Label>
+                <p className="text-sm text-muted-foreground">Get notified when an estimate is approved</p>
+              </div>
+              <Checkbox
+                checked={notifications.estimateApproved}
+                onCheckedChange={() => handleToggle('estimateApproved')}
+                data-testid="notification-estimate-approved"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Invoice Created</Label>
+                <p className="text-sm text-muted-foreground">Get notified when a new invoice is created</p>
+              </div>
+              <Checkbox
+                checked={notifications.invoiceCreated}
+                onCheckedChange={() => handleToggle('invoiceCreated')}
+                data-testid="notification-invoice-created"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Invoice Paid</Label>
+                <p className="text-sm text-muted-foreground">Get notified when an invoice is paid</p>
+              </div>
+              <Checkbox
+                checked={notifications.invoicePaid}
+                onCheckedChange={() => handleToggle('invoicePaid')}
+                data-testid="notification-invoice-paid"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Email Preferences */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Email Preferences</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Email Notifications</Label>
+                <p className="text-sm text-muted-foreground">Receive notifications via email</p>
+              </div>
+              <Checkbox
+                checked={notifications.emailNotifications}
+                onCheckedChange={() => handleToggle('emailNotifications')}
+                data-testid="notification-email"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Daily Digest</Label>
+                <p className="text-sm text-muted-foreground">Receive a daily summary of all notifications</p>
+              </div>
+              <Checkbox
+                checked={notifications.emailDigest}
+                onCheckedChange={() => handleToggle('emailDigest')}
+                data-testid="notification-digest"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
 
   // Company Info Section Component
   const CompanyInfoSection = () => (
@@ -577,8 +880,9 @@ export default function Settings() {
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
             {activeSection === "field-settings" && <FieldCategoriesSection />}
+            {activeSection === "notifications" && <NotificationsSection />}
             
-            {activeSection !== "branding" && activeSection !== "field-settings" && (
+            {activeSection !== "branding" && activeSection !== "field-settings" && activeSection !== "notifications" && (
               <div className="text-center py-12">
                 <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
                   {activeCategory && <activeCategory.icon className="h-8 w-8 text-muted-foreground" />}
