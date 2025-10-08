@@ -30,7 +30,7 @@ import {
   Download,
   Upload
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type CompanySettings } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -131,13 +131,17 @@ export default function EstimateDetail() {
   // Column configuration state
   type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
   const defaultColumns: ColumnConfig[] = [
-    { id: 'item', label: 'Item', visible: true, widthPx: 180 },
-    { id: 'type', label: 'Type', visible: true, widthPx: 100 },
+    { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 120 },
+    { id: 'item', label: 'Description', visible: true, widthPx: 200 },
+    { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
+    { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 180 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
-    { id: 'unitCostExTax', label: 'Price Ex-Tax', visible: true, widthPx: 120 },
-    { id: 'tax', label: 'Tax', visible: true, widthPx: 100 },
-    { id: 'totalIncTax', label: 'Total Inc-Tax', visible: true, widthPx: 120 },
-    { id: 'status', label: 'Status', visible: true, widthPx: 120 },
+    { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
+    { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
+    { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
+    { id: 'amountExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
+    { id: 'amountTax', label: 'Amount Tax', visible: true, widthPx: 110 },
+    { id: 'amountIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
   ];
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
 
@@ -636,18 +640,17 @@ export default function EstimateDetail() {
         // Convert cents to dollars for display
         setEditingValue((item.unitCostExTax / 100).toFixed(2));
         break;
-      case 'priceIncTax':
-        // Convert cents to dollars for display
-        setEditingValue((item.priceIncTax / 100).toFixed(2));
-        break;
-      case 'type':
-        setEditingValue(item.type);
-        break;
-      case 'status':
-        setEditingValue(item.status);
-        break;
       case 'name':
         setEditingValue(item.name);
+        break;
+      case 'costCode':
+        setEditingValue(item.costCode || '');
+        break;
+      case 'shownAs':
+        setEditingValue(item.shownAs || '');
+        break;
+      case 'unitType':
+        setEditingValue(item.unitType || '');
         break;
       default:
         setEditingValue('');
@@ -658,7 +661,7 @@ export default function EstimateDetail() {
     if (!editingCell) return;
     
     // Validate based on field type
-    if (field === 'quantity' || field === 'unitCostExTax' || field === 'priceIncTax') {
+    if (field === 'quantity' || field === 'unitCostExTax') {
       const numValue = parseFloat(editingValue);
       if (isNaN(numValue) || numValue < 0) {
         toast({
@@ -667,7 +670,7 @@ export default function EstimateDetail() {
           variant: "destructive",
         });
         // Reset to original value in dollars for price fields
-        if (field === 'unitCostExTax' || field === 'priceIncTax') {
+        if (field === 'unitCostExTax') {
           setEditingValue(((item as any)[field] / 100).toFixed(2));
         } else {
           setEditingValue((item as any)[field]);
@@ -688,7 +691,7 @@ export default function EstimateDetail() {
     
     // Prepare update data
     let valueToSave: any;
-    if (field === 'unitCostExTax' || field === 'priceIncTax') {
+    if (field === 'unitCostExTax') {
       // Convert dollars to cents
       valueToSave = Math.round(parseFloat(editingValue) * 100);
       
@@ -714,13 +717,6 @@ export default function EstimateDetail() {
     const updateData: Partial<InsertEstimateItem> = {
       [field]: valueToSave
     };
-    
-    // If updating prices, recalculate tax
-    if (field === 'unitCostExTax' || field === 'priceIncTax') {
-      const unitCostExTax = field === 'unitCostExTax' ? valueToSave : item.unitCostExTax;
-      const priceIncTax = field === 'priceIncTax' ? valueToSave : item.priceIncTax;
-      updateData.taxAmount = priceIncTax - unitCostExTax;
-    }
     
     // Clear editing state first (optimistic update)
     setEditingCell(null);
@@ -861,29 +857,42 @@ export default function EstimateDetail() {
     // Add data rows for items
     items.forEach((item) => {
       const row: string[] = [];
+      const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
       
       columns.forEach(col => {
         switch (col.id) {
+          case 'costCode':
+            row.push(escapeCsvField(item.costCode || ''));
+            break;
           case 'item':
             row.push(escapeCsvField(item.name || ''));
             break;
-          case 'type':
-            row.push(escapeCsvField(item.type || ''));
+          case 'proposalVisible':
+            row.push(item.proposalVisible ? 'Shown' : 'Hidden');
+            break;
+          case 'shownAs':
+            row.push(escapeCsvField(item.shownAs || ''));
             break;
           case 'quantity':
             row.push(item.quantity?.toString() || '0');
             break;
+          case 'unitType':
+            row.push(escapeCsvField(item.unitType || ''));
+            break;
           case 'unitCostExTax':
-            row.push(item.unitCostExTax ? (item.unitCostExTax / 100).toFixed(2) : '0.00');
+            row.push((item.unitCostExTax / 100).toFixed(2));
             break;
-          case 'tax':
-            row.push(item.taxAmount ? (item.taxAmount / 100).toFixed(2) : '0.00');
+          case 'unitCostIncTax':
+            row.push((taxValues.unitCostIncTax / 100).toFixed(2));
             break;
-          case 'totalIncTax':
-            row.push(item.priceIncTax ? (item.priceIncTax / 100).toFixed(2) : '0.00');
+          case 'amountExTax':
+            row.push((taxValues.amountExTax / 100).toFixed(2));
             break;
-          case 'status':
-            row.push(escapeCsvField(item.status || ''));
+          case 'amountTax':
+            row.push((taxValues.amountTax / 100).toFixed(2));
+            break;
+          case 'amountIncTax':
+            row.push((taxValues.amountIncTax / 100).toFixed(2));
             break;
           default:
             row.push('');
@@ -1057,11 +1066,34 @@ export default function EstimateDetail() {
     queryKey: ["/api/field-categories/by-key/estimate_item.status"],
   });
 
+  // Fetch company settings for tax rate
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Get tax rate from company settings (default to 10% if not set)
+  const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD'
-    }).format(amount);
+    }).format(amount / 100); // Convert cents to dollars
+  };
+
+  // Helper function to calculate tax values
+  const calculateTaxValues = (unitCostExTax: number, quantity: number, taxRatePercent: number) => {
+    const amountExTax = unitCostExTax * quantity;
+    const amountTax = Math.round((amountExTax * taxRatePercent) / 100);
+    const amountIncTax = amountExTax + amountTax;
+    const unitCostIncTax = Math.round(unitCostExTax + (unitCostExTax * taxRatePercent) / 100);
+    
+    return {
+      unitCostIncTax,
+      amountExTax,
+      amountTax,
+      amountIncTax
+    };
   };
 
   const formatQuantity = (quantity: number, unitType: string | null) => {
@@ -1303,8 +1335,35 @@ export default function EstimateDetail() {
   const renderCell = (item: EstimateItem, columnId: string) => {
     const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
     const isLocked = estimate?.isLocked;
+    const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
 
     switch (columnId) {
+      case 'costCode':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'costCode')}
+                onBlur={() => handleCellSave(item, 'costCode')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                data-testid={`input-edit-costCode-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'costCode')}
+            data-testid={`cell-costCode-${item.id}`}
+          >
+            {item.costCode || '-'}
+          </TableCell>
+        );
+      
       case 'item':
         const subItems = getSubItems(item.id);
         const hasSubItems = subItems.length > 0;
@@ -1372,46 +1431,62 @@ export default function EstimateDetail() {
             </div>
           </TableCell>
         );
-      case 'type':
+      
+      case 'proposalVisible':
+        return (
+          <TableCell className="py-0.5" data-testid={`cell-proposalVisible-${item.id}`}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                if (isLocked) {
+                  toast({
+                    title: "Cannot Edit",
+                    description: "This estimate is locked and cannot be modified.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                updateItemMutation.mutate({
+                  itemId: item.id,
+                  data: { proposalVisible: !item.proposalVisible }
+                });
+              }}
+              disabled={isLocked}
+              data-testid={`button-toggle-proposalVisible-${item.id}`}
+            >
+              {item.proposalVisible ? 'Shown' : 'Hidden'}
+            </Button>
+          </TableCell>
+        );
+      
+      case 'shownAs':
         if (isEditing) {
           return (
             <TableCell className="py-0.5">
-              <Select 
-                value={editingValue} 
-                onValueChange={(value) => {
-                  setEditingValue(value);
-                  // Auto-save on selection change
-                  setTimeout(() => {
-                    updateItemMutation.mutate({ 
-                      itemId: item.id, 
-                      data: { type: value } 
-                    });
-                    setEditingCell(null);
-                  }, 0);
-                }}
-              >
-                <SelectTrigger className="h-7 text-xs border-primary" data-testid={`select-edit-type-${item.id}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="material">Material</SelectItem>
-                  <SelectItem value="labour">Labour</SelectItem>
-                  <SelectItem value="subcontractor">Subcontractor</SelectItem>
-                  <SelectItem value="fee">Fee</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'shownAs')}
+                onBlur={() => handleCellSave(item, 'shownAs')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                data-testid={`input-edit-shownAs-${item.id}`}
+              />
             </TableCell>
           );
         }
         return (
           <TableCell 
-            className={`py-0.5 ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'type')}
-            data-testid={`cell-type-${item.id}`}
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'shownAs')}
+            data-testid={`cell-shownAs-${item.id}`}
           >
-            <Badge variant="outline" className="text-xs h-5">{item.type}</Badge>
+            {item.shownAs || '-'}
           </TableCell>
         );
+      
       case 'quantity':
         if (isEditing) {
           return (
@@ -1437,9 +1512,36 @@ export default function EstimateDetail() {
             onClick={() => !isLocked && handleCellEdit(item, 'quantity')}
             data-testid={`cell-quantity-${item.id}`}
           >
-            {formatQuantity(item.quantity, item.unitType)}
+            {item.quantity}
           </TableCell>
         );
+      
+      case 'unitType':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitType')}
+                onBlur={() => handleCellSave(item, 'unitType')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                data-testid={`input-edit-unitType-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'unitType')}
+            data-testid={`cell-unitType-${item.id}`}
+          >
+            {item.unitType || '-'}
+          </TableCell>
+        );
+      
       case 'unitCostExTax':
         if (isEditing) {
           return (
@@ -1468,89 +1570,35 @@ export default function EstimateDetail() {
             {formatCurrency(item.unitCostExTax)}
           </TableCell>
         );
-      case 'tax':
+      
+      case 'unitCostIncTax':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-tax-${item.id}`}>
-            {formatCurrency(item.taxAmount)}
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-unitCostIncTax-${item.id}`}>
+            {formatCurrency(taxValues.unitCostIncTax)}
           </TableCell>
         );
-      case 'totalIncTax':
-        if (isEditing) {
-          return (
-            <TableCell className="py-0.5">
-              <Input
-                type="number"
-                value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'priceIncTax')}
-                onBlur={() => handleCellSave(item, 'priceIncTax')}
-                className="h-7 text-sm border-primary font-medium"
-                autoFocus
-                min="0"
-                step="0.01"
-                data-testid={`input-edit-priceIncTax-${item.id}`}
-              />
-            </TableCell>
-          );
-        }
+      
+      case 'amountExTax':
         return (
-          <TableCell 
-            className={`py-0.5 text-sm font-medium ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'priceIncTax')}
-            data-testid={`cell-priceIncTax-${item.id}`}
-          >
-            {formatCurrency(item.priceIncTax)}
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-amountExTax-${item.id}`}>
+            {formatCurrency(taxValues.amountExTax)}
           </TableCell>
         );
-      case 'status':
-        if (isEditing) {
-          return (
-            <TableCell className="py-0.5">
-              <Select 
-                value={editingValue} 
-                onValueChange={(value) => {
-                  setEditingValue(value);
-                  // Auto-save on selection change
-                  setTimeout(() => {
-                    updateItemMutation.mutate({ 
-                      itemId: item.id, 
-                      data: { status: value } 
-                    });
-                    setEditingCell(null);
-                  }, 0);
-                }}
-              >
-                <SelectTrigger className="h-7 text-xs border-primary" data-testid={`select-edit-status-${item.id}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((opt: any) => (
-                    <SelectItem key={opt.key} value={opt.key}>{opt.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </TableCell>
-          );
-        }
+      
+      case 'amountTax':
         return (
-          <TableCell 
-            className={`py-0.5 ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'status')}
-            data-testid={`cell-status-${item.id}`}
-          >
-            <Badge 
-              variant="outline"
-              className="text-xs h-5"
-              style={{
-                backgroundColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280',
-                color: '#FFFFFF',
-                borderColor: estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.color || '#6B7280'
-              }}
-            >
-              {estimateItemStatusCategory?.options?.find((opt: any) => opt.key === item.status)?.name || item.status}
-            </Badge>
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-amountTax-${item.id}`}>
+            {formatCurrency(taxValues.amountTax)}
           </TableCell>
         );
+      
+      case 'amountIncTax':
+        return (
+          <TableCell className="py-0.5 text-sm font-medium" data-testid={`cell-amountIncTax-${item.id}`}>
+            {formatCurrency(taxValues.amountIncTax)}
+          </TableCell>
+        );
+      
       default:
         return <TableCell className="py-0.5"></TableCell>;
     }
@@ -2583,7 +2631,7 @@ export default function EstimateDetail() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Show as in proposal</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} defaultValue={field.value || undefined}>
                         <FormControl>
                           <SelectTrigger data-testid="select-show-as-in-proposal">
                             <SelectValue placeholder="Select display format" />
