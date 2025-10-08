@@ -27,13 +27,15 @@ import {
   Eye,
   GripVertical,
   Filter,
-  Download
+  Download,
+  Upload
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { logActivity } from "@/lib/activityLogger";
+import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimateItemsDialog";
 import {
   Table,
   TableBody,
@@ -115,6 +117,9 @@ export default function EstimateDetail() {
   
   // Add group modal state
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  
+  // Import items modal state
+  const [isImportOpen, setIsImportOpen] = useState(false);
   
   // New estimate creation state
   const [newEstimateName, setNewEstimateName] = useState("");
@@ -2067,6 +2072,15 @@ export default function EstimateDetail() {
                       <Plus className="w-4 h-4 mr-2" />
                       Add Item
                     </Button>
+                    <Button 
+                      data-testid="button-import-items" 
+                      onClick={() => setIsImportOpen(true)}
+                      disabled={estimate?.isLocked}
+                      variant={estimate?.isLocked ? "secondary" : "outline"}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import Items
+                    </Button>
                   </div>
                 </div>
               ) : (
@@ -2670,6 +2684,19 @@ export default function EstimateDetail() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Import Items Dialog */}
+      {effectiveEstimateId && !isNewEstimate && (
+        <ImportEstimateItemsDialog
+          open={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
+          estimateId={effectiveEstimateId}
+          onImportComplete={() => {
+            queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/items`] });
+            queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/summary`] });
+          }}
+        />
+      )}
     </div>
   );
 }

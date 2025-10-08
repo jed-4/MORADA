@@ -100,10 +100,10 @@ export function centsToDollars(cents: number): number {
   return cents / 100;
 }
 
-// Utility: Parse currency string to cents
+// Utility: Parse currency string to dollars (not cents)
 export function parseCurrency(value: string | number): number {
   if (typeof value === "number") {
-    return dollarsToCents(value);
+    return value;
   }
   
   // Remove currency symbols and whitespace
@@ -114,7 +114,7 @@ export function parseCurrency(value: string | number): number {
     return 0;
   }
   
-  return dollarsToCents(parsed);
+  return parsed; // Return dollars, not cents
 }
 
 // Utility: Auto-detect column mappings from headers
