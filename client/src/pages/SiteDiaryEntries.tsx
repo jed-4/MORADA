@@ -452,11 +452,11 @@ function EntriesList({
         <CardContent className="p-12 text-center">
           <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">
-            {isProjectFromUrl ? "Select a Template" : "Select Project and Template"}
+            {isProjectFromUrl ? "No Site Diaries" : "Select Project and Template"}
           </h3>
           <p className="text-muted-foreground">
             {isProjectFromUrl 
-              ? "Choose a template to view or create site diary entries"
+              ? "Select a template above to create your first site diary entry"
               : "Choose a project and template to view or create site diary entries"
             }
           </p>
