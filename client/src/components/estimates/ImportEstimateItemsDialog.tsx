@@ -55,6 +55,8 @@ const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   notes: "Notes",
   costCode: "Cost Code",
   status: "Status",
+  proposalVisible: "Proposal Visible",
+  shownAs: "Shown As",
 };
 
 const ITEM_TYPES = ["Material", "Labour", "Subcontractor", "Fee"];

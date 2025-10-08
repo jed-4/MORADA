@@ -13,6 +13,8 @@ export const importEstimateItemSchema = z.object({
   notes: z.string().optional(),
   costCode: z.string().optional(),
   status: z.string().default("incomplete"),
+  proposalVisible: z.boolean().default(true),
+  shownAs: z.string().optional(),
 });
 
 export type ImportEstimateItem = z.infer<typeof importEstimateItemSchema>;
@@ -88,6 +90,17 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   
   // Status variations
   "status": "status",
+  
+  // Proposal visibility variations
+  "proposal visible": "proposalVisible",
+  "proposal": "proposalVisible",
+  "visible in proposal": "proposalVisible",
+  "show in proposal": "proposalVisible",
+  
+  // Shown as variations
+  "shown as": "shownAs",
+  "show as": "shownAs",
+  "display as": "shownAs",
 };
 
 // Utility: Convert dollars to cents
@@ -152,6 +165,21 @@ export function parseImportRow(
           data[fieldKey] = typeof value === "string" ? parseCurrency(value) : (value || 0);
         } else if (fieldKey === "quantity") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 1 : (value || 1);
+        } else if (fieldKey === "proposalVisible") {
+          // Parse boolean values from various formats
+          if (value === undefined || value === null || value === "") {
+            // Leave undefined so Zod default (true) is used
+            data[fieldKey] = undefined;
+          } else if (typeof value === "boolean") {
+            data[fieldKey] = value;
+          } else if (typeof value === "string") {
+            const normalized = value.toLowerCase().trim();
+            data[fieldKey] = normalized === "true" || normalized === "yes" || normalized === "1" || normalized === "shown";
+          } else if (typeof value === "number") {
+            data[fieldKey] = value === 1;
+          } else {
+            data[fieldKey] = undefined; // Leave undefined so Zod default (true) is used
+          }
         } else {
           data[fieldKey] = value || undefined;
         }
