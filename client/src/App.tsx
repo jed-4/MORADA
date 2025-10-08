@@ -30,6 +30,7 @@ import VariationDetail from "@/pages/VariationDetail";
 import ClientInvoices from "@/pages/ClientInvoices";
 import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
 import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
+import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -78,7 +79,7 @@ function Router() {
       <Route path="/projects/:projectId/client-invoices/new" component={ClientInvoiceDetail} />
       <Route path="/projects/:projectId/client-invoices/:invoiceId" component={ClientInvoiceDetail} />
       <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
-      <Route path="/projects/:projectId/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
+      <Route path="/projects/:projectId/site-diary" component={SiteDiaryEntries} />
       <Route path="/projects/:projectId/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
       <Route path="/projects/:projectId/budget" component={() => <ComingSoonPage section="budget" />} />
       <Route path="/projects/:projectId/files" component={() => <ComingSoonPage section="files" />} />
@@ -109,7 +110,7 @@ function Router() {
       <Route path="/client-invoices/new" component={ClientInvoiceDetail} />
       <Route path="/client-invoices/:id" component={ClientInvoiceDetail} />
       <Route path="/invoices" component={() => <ComingSoonPage section="invoices" />} />
-      <Route path="/site-diary" component={() => <ComingSoonPage section="site-diary" />} />
+      <Route path="/site-diary" component={SiteDiaryEntries} />
       <Route path="/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
       <Route path="/budget" component={() => <ComingSoonPage section="budget" />} />
       <Route path="/files" component={() => <ComingSoonPage section="files" />} />
