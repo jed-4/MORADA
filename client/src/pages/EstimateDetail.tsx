@@ -2153,7 +2153,7 @@ export default function EstimateDetail() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-950 border-b border-border p-4">
+      <div className="border-b border-border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")} data-testid="button-back-to-estimates">
