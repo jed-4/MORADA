@@ -1597,20 +1597,21 @@ export default function EstimateDetail() {
         );
       
       case 'shownAs':
-        const shownAsOptions = ['Item', 'Short', 'Code'];
-        const currentShownAs = item.shownAs || 'Item';
+        const shownAsOptions = ['empty', 'price', 'included', 'excluded'];
+        const currentShownAs = item.shownAs || 'price';
         const currentIndex = shownAsOptions.indexOf(currentShownAs);
+        const validIndex = currentIndex >= 0 ? currentIndex : 1; // Default to 'price' if invalid
         
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-shownAs-${item.id}`}>
+          <TableCell className="py-0.5 text-sm" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
             <Button
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-xs"
+              className="h-6 px-2 text-xs capitalize"
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through options
-                const nextIndex = (currentIndex + 1) % shownAsOptions.length;
+                const nextIndex = (validIndex + 1) % shownAsOptions.length;
                 const nextShownAs = shownAsOptions[nextIndex];
                 updateItemMutation.mutate({
                   itemId: item.id,
@@ -1628,14 +1629,14 @@ export default function EstimateDetail() {
       case 'allowance':
         const allowanceType = item.allowance || 'None';
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-allowance-${item.id}`}>
+          <TableCell className="py-0.5 text-sm" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <Button
-              variant={allowanceType === 'None' ? 'ghost' : 'default'}
+              variant={allowanceType === 'None' ? 'outline' : 'default'}
               size="sm"
               className={`h-6 px-2 text-xs ${
-                allowanceType === 'Prime Cost' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
-                allowanceType === 'Provisional Sum' ? 'bg-amber-500 hover:bg-amber-600 text-white' :
-                'opacity-50'
+                allowanceType === 'Prime Cost' ? 'bg-blue-500 hover:bg-blue-600 text-white border-blue-500' :
+                allowanceType === 'Provisional Sum' ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500' :
+                'text-muted-foreground'
               } ${!isLocked ? 'cursor-pointer' : 'cursor-not-allowed'}`}
               onClick={() => {
                 if (isLocked) return;
