@@ -70,7 +70,7 @@ export default function Header() {
   };
   
   return (
-    <header className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-50">
+    <header className="flex items-center justify-between p-4 border-b bg-white dark:bg-gray-950 sticky top-0 z-50">
       <div className="flex items-center gap-4">
         {/* Logo */}
         <div className="flex items-center justify-center w-8 h-8 bg-primary rounded" data-testid="company-logo">
