@@ -1121,6 +1121,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reorder estimate items
+  app.patch("/api/estimate-items/reorder", async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "Items must be an array" });
+      }
+
+      // Validate input
+      for (const item of items) {
+        if (!item.id || typeof item.order !== 'number') {
+          return res.status(400).json({ error: "Each item must have id and order" });
+        }
+      }
+
+      // Update each item's order and verify success
+      const results = await Promise.all(
+        items.map(async ({ id, order }) => {
+          const updated = await storage.updateEstimateItem(id, { order });
+          if (!updated) {
+            throw new Error(`Failed to update item ${id}`);
+          }
+          return updated;
+        })
+      );
+
+      res.json({ success: true, count: results.length });
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      if (error.message?.includes("Failed to update")) {
+        return res.status(404).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to reorder items" });
+    }
+  });
+
   // Estimate Groups API Routes
   app.get("/api/estimates/:id/groups", async (req, res) => {
     try {
@@ -1190,6 +1228,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to delete estimate group" });
+    }
+  });
+
+  // Reorder estimate groups
+  app.patch("/api/estimate-groups/reorder", async (req, res) => {
+    try {
+      const { groups } = req.body;
+      if (!Array.isArray(groups)) {
+        return res.status(400).json({ error: "Groups must be an array" });
+      }
+
+      // Validate input
+      for (const group of groups) {
+        if (!group.id || typeof group.order !== 'number') {
+          return res.status(400).json({ error: "Each group must have id and order" });
+        }
+      }
+
+      // Update each group's order and verify success
+      const results = await Promise.all(
+        groups.map(async ({ id, order }) => {
+          const updated = await storage.updateEstimateGroup(id, { order });
+          if (!updated) {
+            throw new Error(`Failed to update group ${id}`);
+          }
+          return updated;
+        })
+      );
+
+      res.json({ success: true, count: results.length });
+    } catch (error: any) {
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      if (error.message?.includes("Failed to update")) {
+        return res.status(404).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to reorder groups" });
     }
   });
 

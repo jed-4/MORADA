@@ -5,6 +5,23 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -155,6 +172,34 @@ export default function EstimateDetail() {
   // Filter state
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Mutation for reordering items
+  const reorderItemsMutation = useMutation({
+    mutationFn: async ({ items }: { items: { id: string; order: number }[] }) => {
+      return apiRequest("PATCH", "/api/estimate-items/reorder", { items });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/items`] });
+    },
+  });
+
+  // Mutation for reordering groups
+  const reorderGroupsMutation = useMutation({
+    mutationFn: async ({ groups }: { groups: { id: string; order: number }[] }) => {
+      return apiRequest("PATCH", "/api/estimate-groups/reorder", { groups });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/groups`] });
+    },
+  });
   const [filterGroup, setFilterGroup] = useState<string>('all');
 
   // Resizing state
@@ -1552,37 +1597,46 @@ export default function EstimateDetail() {
         );
       
       case 'shownAs':
-        if (isEditing) {
-          return (
-            <TableCell className="py-0.5">
-              <Input
-                value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'shownAs')}
-                onBlur={() => handleCellSave(item, 'shownAs')}
-                className="h-7 text-sm border-primary"
-                autoFocus
-                data-testid={`input-edit-shownAs-${item.id}`}
-              />
-            </TableCell>
-          );
-        }
+        const shownAsOptions = ['Item', 'Short', 'Code'];
+        const currentShownAs = item.shownAs || 'Item';
+        const currentIndex = shownAsOptions.indexOf(currentShownAs);
+        
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'shownAs')}
-            data-testid={`cell-shownAs-${item.id}`}
-          >
-            {item.shownAs || '-'}
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-shownAs-${item.id}`}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => {
+                if (isLocked) return;
+                // Cycle through options
+                const nextIndex = (currentIndex + 1) % shownAsOptions.length;
+                const nextShownAs = shownAsOptions[nextIndex];
+                updateItemMutation.mutate({
+                  itemId: item.id,
+                  data: { shownAs: nextShownAs }
+                });
+              }}
+              disabled={isLocked}
+              data-testid={`button-toggle-shownAs-${item.id}`}
+            >
+              {currentShownAs}
+            </Button>
           </TableCell>
         );
       
       case 'allowance':
+        const allowanceType = item.allowance || 'None';
         return (
           <TableCell className="py-0.5 text-sm" data-testid={`cell-allowance-${item.id}`}>
-            <Badge 
-              variant="outline" 
-              className={`text-xs ${!isLocked ? 'cursor-pointer hover-elevate' : ''}`}
+            <Button
+              variant={allowanceType === 'None' ? 'ghost' : 'default'}
+              size="sm"
+              className={`h-6 px-2 text-xs ${
+                allowanceType === 'Prime Cost' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
+                allowanceType === 'Provisional Sum' ? 'bg-amber-500 hover:bg-amber-600 text-white' :
+                'opacity-50'
+              } ${!isLocked ? 'cursor-pointer' : 'cursor-not-allowed'}`}
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through: None -> Prime Cost -> Provisional Sum -> None
@@ -1594,10 +1648,11 @@ export default function EstimateDetail() {
                   data: { allowance: nextAllowance }
                 });
               }}
-              data-testid={`badge-toggle-allowance-${item.id}`}
+              disabled={isLocked}
+              data-testid={`button-toggle-allowance-${item.id}`}
             >
-              {item.allowance === 'Prime Cost' ? 'PC' : item.allowance === 'Provisional Sum' ? 'PS' : 'Off'}
-            </Badge>
+              {allowanceType === 'Prime Cost' ? 'PC' : allowanceType === 'Provisional Sum' ? 'PS' : ''}
+            </Button>
           </TableCell>
         );
       
