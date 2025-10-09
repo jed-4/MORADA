@@ -108,6 +108,52 @@ interface EstimateDetailParams {
   projectId?: string;
 }
 
+// Sortable Row Component for drag & drop
+interface SortableRowProps {
+  id: string;
+  children: React.ReactNode;
+  className?: string;
+  isDraggable?: boolean;
+}
+
+function SortableRow({ id, children, className, isDraggable = true }: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled: !isDraggable });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={`${className} group`}
+      data-testid={`row-item-${id}`}
+    >
+      {isDraggable && (
+        <TableCell className="py-0.5 w-8 px-1">
+          <div
+            {...attributes}
+            {...listeners}
+            className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </TableCell>
+      )}
+      {children}
+    </TableRow>
+  );
+}
 
 export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
@@ -187,7 +233,8 @@ export default function EstimateDetail() {
       return apiRequest("PATCH", "/api/estimate-items/reorder", { items });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/items`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
     },
   });
 
@@ -197,9 +244,40 @@ export default function EstimateDetail() {
       return apiRequest("PATCH", "/api/estimate-groups/reorder", { groups });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/groups`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
+
+  // Handle drag end for reordering items
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (!over || active.id === over.id) return;
+    
+    // Get all visible items in current order
+    const { ungroupedItems, groupedItems } = organizeItemsByGroups();
+    const allItems = [...ungroupedItems];
+    Object.values(groupedItems).forEach(groupItems => {
+      allItems.push(...groupItems);
+    });
+    
+    const oldIndex = allItems.findIndex(item => item.id === active.id);
+    const newIndex = allItems.findIndex(item => item.id === over.id);
+    
+    if (oldIndex === -1 || newIndex === -1) return;
+    
+    // Reorder items
+    const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
+    
+    // Update order values
+    const updates = reorderedItems.map((item, index) => ({
+      id: item.id,
+      order: index
+    }));
+    
+    reorderItemsMutation.mutate({ items: updates });
+  };
+
   const [filterGroup, setFilterGroup] = useState<string>('all');
 
   // Resizing state
@@ -548,16 +626,32 @@ export default function EstimateDetail() {
       const response = await apiRequest("PATCH", `/api/estimate-items/${itemId}`, data);
       return response.json();
     },
+    onMutate: async ({ itemId, data }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      
+      // Snapshot the previous value
+      const previousItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData<EstimateItem[]>(
+        ["/api/estimates", effectiveEstimateId, "items"],
+        (old) => old?.map(item => item.id === itemId ? { ...item, ...data } : item)
+      );
+      
+      // Return context with the previous value
+      return { previousItems };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      toast({
-        title: "Success",
-        description: "Item updated successfully.",
-      });
     },
-    onError: (error: any) => {
+    onError: (error: any, _variables, context) => {
+      // Rollback to previous value on error
+      if (context?.previousItems) {
+        queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], context.previousItems);
+      }
       toast({
         title: "Error",
         description: error.message || "Failed to update item.",
@@ -1309,10 +1403,11 @@ export default function EstimateDetail() {
   const renderItemWithSubItems = (item: EstimateItem) => {
     const subItems = getSubItems(item.id);
     const isCollapsed = collapsedItems.has(item.id);
+    const isLocked = estimate?.isLocked;
     
     const rows = [
       // Parent item row
-      <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
+      <SortableRow key={item.id} id={item.id} className="min-h-8" isDraggable={!isLocked}>
         {columns.filter(col => col.visible).map(column => (
           <React.Fragment key={column.id}>
             {renderCell(item, column.id)}
@@ -1380,14 +1475,14 @@ export default function EstimateDetail() {
             </DropdownMenuContent>
           </DropdownMenu>
         </TableCell>
-      </TableRow>
+      </SortableRow>
     ];
     
     // Add sub-items if not collapsed
     if (!isCollapsed) {
       subItems.forEach(subItem => {
         rows.push(
-          <TableRow key={subItem.id} data-testid={`row-subitem-${subItem.id}`} className="min-h-8 bg-muted/20">
+          <SortableRow key={subItem.id} id={subItem.id} className="min-h-8 bg-muted/20" isDraggable={!isLocked}>
             {columns.filter(col => col.visible).map(column => (
               <React.Fragment key={column.id}>
                 {renderCell(subItem, column.id)}
@@ -1425,7 +1520,7 @@ export default function EstimateDetail() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </TableCell>
-          </TableRow>
+          </SortableRow>
         );
       });
     }
@@ -2397,20 +2492,23 @@ export default function EstimateDetail() {
                   </div>
                 </div>
               ) : (
-                  <Table style={{ 
-                    display: 'table',
-                    tableLayout: 'fixed',
-                    width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`,
-                    minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80}px`
-                  }}>
-                    <colgroup>
-                      {columns.filter(col => col.visible).map(column => (
-                        <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                      ))}
-                      <col style={{ width: '80px' }} />
-                    </colgroup>
-                  <TableHeader>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <Table style={{ 
+                      display: 'table',
+                      tableLayout: 'fixed',
+                      width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
+                      minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
+                    }}>
+                      <colgroup>
+                        <col style={{ width: '40px' }} />
+                        {columns.filter(col => col.visible).map(column => (
+                          <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                        ))}
+                        <col style={{ width: '80px' }} />
+                      </colgroup>
+                    <TableHeader>
                     <TableRow className="h-8">
+                      <TableHead className="py-1 text-xs font-medium w-8"></TableHead>
                       {columns.filter(col => col.visible).map(column => (
                         <TableHead 
                           key={column.id}
@@ -2435,15 +2533,19 @@ export default function EstimateDetail() {
                   <TableBody>
 {(() => {
                       const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+                      const allItemIds = [...ungroupedItems.map(i => i.id)];
+                      Object.values(groupedItems).forEach(groupItems => {
+                        allItemIds.push(...groupItems.map(i => i.id));
+                      });
                       
                       return (
-                        <>
+                        <SortableContext items={allItemIds} strategy={verticalListSortingStrategy}>
                           {/* Render grouped items */}
                           {sortedGroups.map((group) => (
                             <React.Fragment key={`group-${group.id}`}>
                               {/* Group header row */}
                               <TableRow className="bg-muted/50 hover:bg-muted/50" data-testid={`row-group-${group.id}`}>
-                                <TableCell colSpan={8} className="py-3">
+                                <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-2">
                                       <Button
@@ -2485,7 +2587,7 @@ export default function EstimateDetail() {
                             <>
                               {sortedGroups.length > 0 && (
                                 <TableRow className="bg-muted/30 hover:bg-muted/30">
-                                  <TableCell colSpan={8} className="py-2">
+                                  <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-2">
                                     <div className="flex items-center space-x-2">
                                       <Badge variant="outline" className="text-xs">
                                         Ungrouped Items
@@ -2505,11 +2607,12 @@ export default function EstimateDetail() {
                               ))}
                             </>
                           )}
-                        </>
+                        </SortableContext>
                       );
                     })()}
                   </TableBody>
                 </Table>
+              </DndContext>
               )}
             </CardContent>
           </Card>
