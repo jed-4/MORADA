@@ -14,23 +14,23 @@
   --elevate-1: rgba(0,0,0, .02);
   --elevate-2: rgba(0,0,0, .05);
 
-  --background: 0 0% 99%;
+  --background: 220 6% 97%; /* Soft grey background */
 
   --foreground: 0 0% 0%;
 
-  --border: 220 6% 90%;
+  --border: 220 6% 88%;
 
-  --card: 0 0% 100%;
+  --card: 0 0% 100%; /* Pure white cards */
 
   --card-foreground: 0 0% 0%;
 
-  --card-border: 220 6% 92%;
+  --card-border: 220 6% 90%;
 
-  --sidebar: 0 0% 98%;
+  --sidebar: 0 0% 100%; /* Pure white sidebar */
 
   --sidebar-foreground: 0 0% 0%;
 
-  --sidebar-border: 220 6% 92%;
+  --sidebar-border: 220 6% 90%;
 
   --sidebar-primary: 240 50% 65%; /* Purple - matches primary */
 
@@ -148,19 +148,19 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 220 15% 12%;
+  --background: 220 15% 9%; /* Dark grey background */
 
   --foreground: 220 5% 90%;
 
-  --border: 220 15% 18%;
+  --border: 220 15% 16%;
 
-  --card: 220 25% 16%;
+  --card: 220 20% 14%; /* Slightly lighter than background */
 
   --card-foreground: 220 5% 90%;
 
-  --card-border: 220 15% 22%;
+  --card-border: 220 15% 20%;
 
-  --sidebar: 220 20% 14%;
+  --sidebar: 220 20% 14%; /* Same as card */
 
   --sidebar-foreground: 220 5% 90%;
 

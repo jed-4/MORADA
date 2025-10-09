@@ -91,84 +91,6 @@ interface EstimateDetailParams {
   projectId?: string;
 }
 
-// Notes cell component (defined outside main component to avoid hook issues)
-const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem; isLocked: boolean | undefined; updateItemMutation: any }) => {
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const [notesValue, setNotesValue] = useState(item.notes || '');
-
-  // Update notes value when item changes
-  React.useEffect(() => {
-    setNotesValue(item.notes || '');
-  }, [item.notes]);
-
-  const hasNotes = Boolean(item.notes);
-  const notePreview = hasNotes ? `${item.notes!.substring(0, 100)}${item.notes!.length > 100 ? '...' : ''}` : '';
-
-  return (
-    <TableCell className="py-0.5 text-center" data-testid={`cell-notes-${item.id}`}>
-      <Popover open={isNotesOpen} onOpenChange={setIsNotesOpen}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-6 w-6 ${hasNotes ? 'text-primary' : 'text-muted-foreground/30'}`}
-                disabled={isLocked}
-                data-testid={`button-notes-${item.id}`}
-              >
-                <FileText className="w-4 h-4" />
-              </Button>
-            </PopoverTrigger>
-          </TooltipTrigger>
-          {hasNotes && (
-            <TooltipContent>
-              <p className="max-w-xs">{notePreview}</p>
-            </TooltipContent>
-          )}
-        </Tooltip>
-        <PopoverContent className="w-96" align="start">
-          <div className="space-y-3">
-            <h4 className="font-medium text-sm">Notes - {item.name}</h4>
-            <Textarea
-              value={notesValue}
-              onChange={(e) => setNotesValue(e.target.value)}
-              placeholder="Enter notes..."
-              rows={6}
-              data-testid={`textarea-notes-${item.id}`}
-            />
-            <div className="flex justify-end space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setNotesValue(item.notes || '');
-                  setIsNotesOpen(false);
-                }}
-                data-testid={`button-cancel-notes-${item.id}`}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  updateItemMutation.mutate({
-                    itemId: item.id,
-                    data: { notes: notesValue }
-                  });
-                  setIsNotesOpen(false);
-                }}
-                data-testid={`button-save-notes-${item.id}`}
-              >
-                Save
-              </Button>
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </TableCell>
-  );
-};
 
 export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
@@ -1594,11 +1516,11 @@ export default function EstimateDetail() {
       
       case 'proposalVisible':
         return (
-          <TableCell className="py-0.5" data-testid={`cell-proposalVisible-${item.id}`}>
+          <TableCell className="py-0.5 text-center" data-testid={`cell-proposalVisible-${item.id}`}>
             <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
               onClick={() => {
                 if (isLocked) {
                   toast({
@@ -1616,7 +1538,7 @@ export default function EstimateDetail() {
               disabled={isLocked}
               data-testid={`button-toggle-proposalVisible-${item.id}`}
             >
-              {item.proposalVisible ? 'Shown' : 'Hidden'}
+              {item.proposalVisible ? <Eye className="w-4 h-4" /> : <Eye className="w-4 h-4 opacity-30" />}
             </Button>
           </TableCell>
         );
@@ -1806,7 +1728,63 @@ export default function EstimateDetail() {
         );
       
       case 'notes':
-        return <NotesCell item={item} isLocked={isLocked} updateItemMutation={updateItemMutation} />;
+        return (
+          <TableCell className="py-0.5 text-center" data-testid={`cell-notes-${item.id}`}>
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-6 w-6 ${item.notes ? 'text-primary' : 'text-muted-foreground/30'}`}
+                      disabled={isLocked}
+                      data-testid={`button-notes-${item.id}`}
+                    >
+                      <FileText className="w-4 h-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                {item.notes && (
+                  <TooltipContent>
+                    <p className="max-w-xs">{`${item.notes.substring(0, 100)}${item.notes.length > 100 ? '...' : ''}`}</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+              <PopoverContent className="w-96" align="start">
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm">Notes - {item.name}</h4>
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.currentTarget);
+                    const notes = formData.get('notes') as string;
+                    updateItemMutation.mutate({
+                      itemId: item.id,
+                      data: { notes }
+                    });
+                  }}>
+                    <Textarea
+                      name="notes"
+                      defaultValue={item.notes || ''}
+                      placeholder="Enter notes..."
+                      rows={6}
+                      data-testid={`textarea-notes-${item.id}`}
+                    />
+                    <div className="flex justify-end space-x-2 mt-3">
+                      <Button
+                        type="submit"
+                        size="sm"
+                        data-testid={`button-save-notes-${item.id}`}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </TableCell>
+        );
       
       default:
         return <TableCell className="py-0.5"></TableCell>;
