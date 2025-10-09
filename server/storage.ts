@@ -4071,7 +4071,57 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> { return undefined; }
+  async updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined> {
+    try {
+      // Get the existing item to check if it exists and get the estimateId
+      const existingItem = await db.query.estimateItems.findFirst({
+        where: eq(schema.estimateItems.id, id),
+      });
+
+      if (!existingItem) {
+        return undefined;
+      }
+
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(existingItem.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot update item in locked estimate. Unlock the estimate first.");
+      }
+
+      // Prepare update data with tax recalculation if needed
+      const updateData: any = { ...item };
+      
+      if (item.unitCostExTax !== undefined || item.quantity !== undefined) {
+        const taxRate = estimate?.taxRate || 10;
+        const unitCostExTax = item.unitCostExTax !== undefined ? item.unitCostExTax : existingItem.unitCostExTax;
+        const quantity = item.quantity !== undefined ? item.quantity : existingItem.quantity;
+        
+        // Recalculate all amounts based on line total (all values in cents)
+        const amountExTax = Math.round(unitCostExTax * quantity / 100); // Convert from quantity with 2 decimals
+        const taxAmount = Math.round(amountExTax * taxRate / 100);
+        const amountIncTax = amountExTax + taxAmount;
+        const priceIncTax = unitCostExTax + Math.round(unitCostExTax * taxRate / 100);
+        
+        updateData.taxAmount = taxAmount;
+        updateData.priceIncTax = priceIncTax;
+        updateData.amountExTax = amountExTax;
+        updateData.amountIncTax = amountIncTax;
+      }
+
+      updateData.updatedAt = new Date();
+
+      const result = await db
+        .update(schema.estimateItems)
+        .set(updateData)
+        .where(eq(schema.estimateItems.id, id))
+        .returning();
+
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateEstimateItem:", error);
+      throw error;
+    }
+  }
   async deleteEstimateItem(id: string): Promise<boolean> { return false; }
   async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {
     try {
