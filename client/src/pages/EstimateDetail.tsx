@@ -113,7 +113,7 @@ const NotesCell = ({ item, isLocked, updateItemMutation }: { item: EstimateItem;
               <Button
                 variant="ghost"
                 size="icon"
-                className={`h-6 w-6 ${hasNotes ? 'text-primary' : 'text-muted-foreground'}`}
+                className={`h-6 w-6 ${hasNotes ? 'text-primary' : 'text-muted-foreground/30'}`}
                 disabled={isLocked}
                 data-testid={`button-notes-${item.id}`}
               >
@@ -736,7 +736,8 @@ export default function EstimateDetail() {
     // Set initial value based on field type
     switch (field) {
       case 'quantity':
-        setEditingValue(item.quantity);
+        // Convert from stored precision (cents) to actual value
+        setEditingValue((item.quantity / 100).toFixed(2));
         break;
       case 'unitCostExTax':
         // Convert cents to dollars for display
@@ -1237,10 +1238,14 @@ export default function EstimateDetail() {
 
   // Helper function to calculate tax values
   const calculateTaxValues = (unitCostExTax: number, quantity: number, taxRatePercent: number) => {
-    const amountExTax = unitCostExTax * quantity;
-    const amountTax = Math.round((amountExTax * taxRatePercent) / 100);
+    // Values are stored in cents (multiplied by 100), so convert to dollars for calculation
+    const unitCostDollars = unitCostExTax / 100;
+    const quantityActual = quantity / 100;
+    
+    const amountExTax = unitCostDollars * quantityActual;
+    const amountTax = (amountExTax * taxRatePercent) / 100;
     const amountIncTax = amountExTax + amountTax;
-    const unitCostIncTax = Math.round(unitCostExTax + (unitCostExTax * taxRatePercent) / 100);
+    const unitCostIncTax = unitCostDollars + (unitCostDollars * taxRatePercent) / 100;
     
     return {
       unitCostIncTax,
@@ -1251,7 +1256,8 @@ export default function EstimateDetail() {
   };
 
   const formatQuantity = (quantity: number, unitType: string | null) => {
-    return `${quantity}${unitType ? ` ${unitType}` : ''}`;
+    const actualQty = (quantity / 100).toFixed(2).replace(/\.?0+$/, '');
+    return `${actualQty}${unitType ? ` ${unitType}` : ''}`;
   };
 
   // Filter items based on current filter state
@@ -1690,7 +1696,7 @@ export default function EstimateDetail() {
             onClick={() => !isLocked && handleCellEdit(item, 'quantity')}
             data-testid={`cell-quantity-${item.id}`}
           >
-            {item.quantity}
+            {(item.quantity / 100).toFixed(2).replace(/\.?0+$/, '')}
           </TableCell>
         );
       
@@ -1745,7 +1751,7 @@ export default function EstimateDetail() {
             onClick={() => !isLocked && handleCellEdit(item, 'unitCostExTax')}
             data-testid={`cell-unitCostExTax-${item.id}`}
           >
-            {formatCurrency(item.unitCostExTax)}
+            {formatCurrency(item.unitCostExTax / 100)}
           </TableCell>
         );
       

@@ -976,10 +976,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/items", async (req, res) => {
     try {
-      const validationResult = insertEstimateItemSchema.safeParse({
+      // Convert dollar amounts to cents with proper rounding to avoid floating point issues
+      const itemData = {
         ...req.body,
-        estimateId: req.params.id
-      });
+        estimateId: req.params.id,
+        unitCostExTax: req.body.unitCostExTax ? Math.round(req.body.unitCostExTax * 100) : 0,
+        priceIncTax: req.body.priceIncTax ? Math.round(req.body.priceIncTax * 100) : 0,
+        quantity: req.body.quantity ? Math.round(req.body.quantity * 100) : 100, // Store quantity with 2 decimal precision (1.5 -> 150)
+      };
+      
+      const validationResult = insertEstimateItemSchema.safeParse(itemData);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -1011,10 +1017,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const errors: Array<{ row: number; errors: string[] }> = [];
       
       items.forEach((item, index) => {
-        const validationResult = insertEstimateItemSchema.safeParse({
+        // Convert dollar amounts to cents with proper rounding
+        const itemData = {
           ...item,
-          estimateId
-        });
+          estimateId,
+          unitCostExTax: item.unitCostExTax ? Math.round(item.unitCostExTax * 100) : 0,
+          priceIncTax: item.priceIncTax ? Math.round(item.priceIncTax * 100) : 0,
+          quantity: item.quantity ? Math.round(item.quantity * 100) : 100,
+        };
+        
+        const validationResult = insertEstimateItemSchema.safeParse(itemData);
         
         if (!validationResult.success) {
           errors.push({
@@ -1060,8 +1072,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/estimate-items/:id", async (req, res) => {
     try {
+      // Convert dollar amounts to cents with proper rounding to avoid floating point issues
+      const updateData: any = { ...req.body };
+      if (updateData.unitCostExTax !== undefined) {
+        updateData.unitCostExTax = Math.round(updateData.unitCostExTax * 100);
+      }
+      if (updateData.priceIncTax !== undefined) {
+        updateData.priceIncTax = Math.round(updateData.priceIncTax * 100);
+      }
+      if (updateData.quantity !== undefined) {
+        updateData.quantity = Math.round(updateData.quantity * 100); // Store quantity with 2 decimal precision
+      }
+      
       const updateSchema = insertEstimateItemSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
+      const validationResult = updateSchema.safeParse(updateData);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
