@@ -1252,7 +1252,11 @@ export default function EstimateDetail() {
   // Helper function to get sub-items for a parent item
   const getSubItems = (parentItemId: string): EstimateItem[] => {
     const subItems = items.filter(item => item.parentItemId === parentItemId);
-    return subItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+    return subItems.sort((a, b) => {
+      const orderDiff = (a.order || 0) - (b.order || 0);
+      if (orderDiff !== 0) return orderDiff;
+      return a.id.localeCompare(b.id); // Stable sort by ID when order is same
+    });
   };
 
   // Toggle parent item collapse
@@ -1455,13 +1459,21 @@ export default function EstimateDetail() {
       }
     });
 
-    // Sort items within each group by order
+    // Sort items within each group by order, then by ID for stability
     Object.keys(groupedItems).forEach(groupId => {
-      groupedItems[groupId].sort((a, b) => (a.order || 0) - (b.order || 0));
+      groupedItems[groupId].sort((a, b) => {
+        const orderDiff = (a.order || 0) - (b.order || 0);
+        if (orderDiff !== 0) return orderDiff;
+        return a.id.localeCompare(b.id); // Stable sort by ID when order is same
+      });
     });
 
-    // Sort ungrouped items by order
-    ungroupedItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Sort ungrouped items by order, then by ID for stability
+    ungroupedItems.sort((a, b) => {
+      const orderDiff = (a.order || 0) - (b.order || 0);
+      if (orderDiff !== 0) return orderDiff;
+      return a.id.localeCompare(b.id); // Stable sort by ID when order is same
+    });
 
     return { sortedGroups, groupedItems, ungroupedItems };
   };
@@ -1523,8 +1535,7 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 ${indentClass} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'name')}
+            className={`py-0.5 ${indentClass}`}
             data-testid={`cell-name-${item.id}`}
           >
             <div className="flex items-center gap-2">
@@ -1549,7 +1560,10 @@ export default function EstimateDetail() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="font-medium text-sm truncate max-w-[180px] block">
+                    <span 
+                      className={`font-medium text-sm truncate max-w-[180px] block ${!isLocked ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1' : ''}`}
+                      onClick={() => !isLocked && handleCellEdit(item, 'name')}
+                    >
                       {item.name}
                     </span>
                   </TooltipTrigger>
