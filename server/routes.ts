@@ -1125,6 +1125,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/estimate-items/reorder", async (req, res) => {
     try {
       const { items } = req.body;
+      console.log('[REORDER] Received reorder request with items:', JSON.stringify(items, null, 2));
+      
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: "Items must be an array" });
       }
@@ -1139,20 +1141,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update each item's order and verify success
       const results = await Promise.all(
         items.map(async ({ id, order }) => {
+          console.log(`[REORDER] Updating item ${id} to order ${order}`);
           const updated = await storage.updateEstimateItem(id, { order });
           if (!updated) {
-            throw new Error(`Failed to update item ${id}`);
+            console.error(`[REORDER] Failed to update item ${id} - item not found`);
+            throw new Error(`Estimate item not found: ${id}`);
           }
+          console.log(`[REORDER] Successfully updated item ${id}`);
           return updated;
         })
       );
 
+      console.log(`[REORDER] Successfully reordered ${results.length} items`);
       res.json({ success: true, count: results.length });
     } catch (error: any) {
+      console.error('[REORDER] Error:', error.message);
       if (error.message?.includes("locked estimate")) {
         return res.status(409).json({ error: error.message });
       }
-      if (error.message?.includes("Failed to update")) {
+      if (error.message?.includes("Estimate item not found")) {
         return res.status(404).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to reorder items" });
