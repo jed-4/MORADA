@@ -1264,7 +1264,11 @@ export default function EstimateDetail() {
     const rows = [
       // Parent item row
       <TableRow key={item.id} data-testid={`row-item-${item.id}`} className="min-h-8">
-        {columns.filter(col => col.visible).map(column => renderCell(item, column.id))}
+        {columns.filter(col => col.visible).map(column => (
+          <React.Fragment key={column.id}>
+            {renderCell(item, column.id)}
+          </React.Fragment>
+        ))}
         <TableCell className="py-0.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1335,7 +1339,11 @@ export default function EstimateDetail() {
       subItems.forEach(subItem => {
         rows.push(
           <TableRow key={subItem.id} data-testid={`row-subitem-${subItem.id}`} className="min-h-8 bg-muted/20">
-            {columns.filter(col => col.visible).map(column => renderCell(subItem, column.id))}
+            {columns.filter(col => col.visible).map(column => (
+              <React.Fragment key={column.id}>
+                {renderCell(subItem, column.id)}
+              </React.Fragment>
+            ))}
             <TableCell className="py-0.5">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -2394,7 +2402,11 @@ export default function EstimateDetail() {
                               </TableRow>
                               
                               {/* Render items in this group - only if not collapsed */}
-                              {!group.isCollapsed && groupedItems[group.id]?.map((item) => renderItemWithSubItems(item))}
+                              {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
+                                <React.Fragment key={`item-wrapper-${item.id}`}>
+                                  {renderItemWithSubItems(item)}
+                                </React.Fragment>
+                              ))}
                             </React.Fragment>
                           ))}
                           
@@ -2416,7 +2428,11 @@ export default function EstimateDetail() {
                                 </TableRow>
                               )}
                               
-                              {ungroupedItems.map((item) => renderItemWithSubItems(item))}
+                              {ungroupedItems.map((item) => (
+                                <React.Fragment key={`item-wrapper-${item.id}`}>
+                                  {renderItemWithSubItems(item)}
+                                </React.Fragment>
+                              ))}
                             </>
                           )}
                         </>
