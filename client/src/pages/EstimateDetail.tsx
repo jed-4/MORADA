@@ -984,6 +984,31 @@ export default function EstimateDetail() {
     },
   });
 
+  // Separate form for editing items
+  const editForm = useForm<z.infer<typeof addItemFormSchema>>({
+    resolver: zodResolver(addItemFormSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      notes: "",
+      type: "material",
+      quantity: 1,
+      unitType: "each",
+      unitCostExTax: 0,
+      priceIncTax: 0,
+      status: "pending",
+      groupId: undefined,
+      costCode: undefined,
+      allowance: "None",
+      attachmentUrl: "",
+      requestForQuote: false,
+      isSelection: false,
+      proposalVisible: true,
+      shownAs: "price",
+      order: 0,
+    },
+  });
+
   // Form setup for adding groups
   const addGroupFormSchema = insertEstimateGroupSchema.omit({ 
     estimateId: true 
@@ -1343,6 +1368,39 @@ export default function EstimateDetail() {
   // State to track collapsed parent items
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
+  // Edit item dialog state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  // Populate edit form when editing item changes
+  React.useEffect(() => {
+    if (editingItemId && items) {
+      const item = items.find(i => i.id === editingItemId);
+      if (item) {
+        editForm.reset({
+          name: item.name,
+          description: item.description || '',
+          type: item.type,
+          quantity: item.quantity,
+          unitType: item.unitType || 'each',
+          unitCostExTax: item.unitCostExTax,
+          priceIncTax: item.priceIncTax,
+          groupId: item.groupId || undefined,
+          costCode: item.costCode || '',
+          status: item.status || 'pending',
+          notes: item.notes || '',
+          attachmentUrl: item.attachmentUrl || '',
+          requestForQuote: item.requestForQuote || false,
+          isSelection: item.isSelection || false,
+          proposalVisible: item.proposalVisible ?? true,
+          shownAs: item.shownAs || 'price',
+          allowance: item.allowance || 'None',
+          order: item.order || 0,
+        });
+      }
+    }
+  }, [editingItemId, items, editForm]);
+
   // Helper function to get sub-items for a parent item
   const getSubItems = (parentItemId: string): EstimateItem[] => {
     const subItems = items.filter(item => item.parentItemId === parentItemId);
@@ -1458,6 +1516,10 @@ export default function EstimateDetail() {
                 Add Sub-Item
               </DropdownMenuItem>
               <DropdownMenuItem 
+                onClick={() => {
+                  setEditingItemId(item.id);
+                  setIsEditDialogOpen(true);
+                }}
                 data-testid={`button-edit-item-${item.id}`}
                 disabled={estimate?.isLocked}
               >
@@ -1503,6 +1565,10 @@ export default function EstimateDetail() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem 
+                    onClick={() => {
+                      setEditingItemId(subItem.id);
+                      setIsEditDialogOpen(true);
+                    }}
                     data-testid={`button-edit-item-${subItem.id}`}
                     disabled={estimate?.isLocked}
                   >
@@ -3046,6 +3112,197 @@ export default function EstimateDetail() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Item Dialog */}
+      {(() => {
+        const editingItem = items.find(item => item.id === editingItemId);
+        if (!editingItem) return null;
+        
+        return (
+          <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+            setIsEditDialogOpen(open);
+            if (!open) {
+              setEditingItemId(null);
+            }
+          }}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Estimate Item</DialogTitle>
+              </DialogHeader>
+              <Form {...editForm}>
+                <form onSubmit={editForm.handleSubmit((data) => {
+                  updateItemMutation.mutate(
+                    { itemId: editingItem.id, data },
+                    {
+                      onSuccess: () => {
+                        setIsEditDialogOpen(false);
+                        setEditingItemId(null);
+                      }
+                    }
+                  );
+                })} className="space-y-4">
+                  <FormField
+                    control={editForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Item Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. Premium Kitchen Cabinets" {...field} data-testid="input-edit-item-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={editForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Additional details about this item..." {...field} value={field.value || ""} data-testid="input-edit-item-description" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={editForm.control}
+                      name="groupId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Group (Optional)</FormLabel>
+                          <Select 
+                            onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                            value={field.value || "none"}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-item-group">
+                                <SelectValue placeholder="None" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None (ungrouped)</SelectItem>
+                              {groups.map((group) => (
+                                <SelectItem key={group.id} value={group.id}>
+                                  {group.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={editForm.control}
+                      name="type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-item-type">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="material">Material</SelectItem>
+                              <SelectItem value="labour">Labour</SelectItem>
+                              <SelectItem value="equipment">Equipment</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={editForm.control}
+                      name="quantity"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Quantity</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01" 
+                              min="0.01"
+                              placeholder="1"
+                              {...field}
+                              onChange={(e) => {
+                                const qty = parseFloat(e.target.value) || 0;
+                                const rounded = Math.round(qty * 100) / 100;
+                                field.onChange(rounded);
+                              }}
+                              data-testid="input-edit-item-quantity"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={editForm.control}
+                      name="unitCostExTax"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Price Ex Tax</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01" 
+                              min="0"
+                              placeholder="0.00"
+                              {...field}
+                              onChange={(e) => {
+                                const exTax = parseFloat(e.target.value) || 0;
+                                const rounded = Math.round(exTax * 100) / 100;
+                                field.onChange(rounded);
+                                const taxRate = (estimate?.taxRate || 10) / 100;
+                                const incTax = rounded * (1 + taxRate);
+                                const roundedIncTax = Math.round(incTax * 100) / 100;
+                                editForm.setValue('priceIncTax', roundedIncTax);
+                              }}
+                              data-testid="input-edit-item-price-ex-tax"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setIsEditDialogOpen(false);
+                        setEditingItemId(null);
+                      }}
+                      data-testid="button-cancel-edit-item"
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={updateItemMutation.isPending} data-testid="button-submit-edit-item">
+                      {updateItemMutation.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* Add Group Dialog */}
       <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
