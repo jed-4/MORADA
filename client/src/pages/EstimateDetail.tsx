@@ -140,7 +140,7 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
       data-testid={`row-item-${id}`}
     >
       {isDraggable && (
-        <TableCell className="py-0.5 w-8 px-1">
+        <TableCell className="py-0.5 px-1" style={{ width: '40px' }}>
           <div
             {...attributes}
             {...listeners}
@@ -1471,7 +1471,7 @@ export default function EstimateDetail() {
             {renderCell(item, column.id)}
           </React.Fragment>
         ))}
-        <TableCell className="py-0.5">
+        <TableCell className="py-0.5" style={{ width: '80px' }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
@@ -1550,7 +1550,7 @@ export default function EstimateDetail() {
                 {renderCell(subItem, column.id)}
               </React.Fragment>
             ))}
-            <TableCell className="py-0.5">
+            <TableCell className="py-0.5" style={{ width: '80px' }}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
@@ -2574,7 +2574,7 @@ export default function EstimateDetail() {
                       </colgroup>
                     <TableHeader>
                     <TableRow className="h-8">
-                      <TableHead className="py-1 text-xs font-medium w-8"></TableHead>
+                      <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
                       {columns.filter(col => col.visible).map(column => (
                         <TableHead 
                           key={column.id}
@@ -2593,7 +2593,7 @@ export default function EstimateDetail() {
                           />
                         </TableHead>
                       ))}
-                      <TableHead className="py-1 text-xs font-medium">Actions</TableHead>
+                      <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
