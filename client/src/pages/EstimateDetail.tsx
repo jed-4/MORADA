@@ -960,11 +960,12 @@ export default function EstimateDetail() {
   // Form setup for adding items
   const addItemFormSchema = insertEstimateItemSchema.omit({ 
     estimateId: true,
-    taxAmount: true, // Calculated field
+    taxAmount: true, // Calculated by backend
+    priceIncTax: true, // Calculated by backend
   }).extend({
-    unitCostExTax: z.number().min(0, "Price must be positive"),
-    priceIncTax: z.number().min(0, "Price must be positive"),
+    unitCostExTax: z.number().min(0, "Cost must be positive"),
     quantity: z.number().min(0.01, "Quantity must be greater than 0"),
+    markupPercent: z.number().min(0).optional().nullable(),
   });
 
   const form = useForm<z.infer<typeof addItemFormSchema>>({
@@ -977,7 +978,7 @@ export default function EstimateDetail() {
       quantity: 1,
       unitType: "each",
       unitCostExTax: 0,
-      priceIncTax: 0,
+      markupPercent: undefined,
       status: "pending",
       groupId: undefined,
       costCode: undefined,
@@ -1002,7 +1003,7 @@ export default function EstimateDetail() {
       quantity: 1,
       unitType: "each",
       unitCostExTax: 0,
-      priceIncTax: 0,
+      markupPercent: undefined,
       status: "pending",
       groupId: undefined,
       costCode: undefined,
@@ -1047,13 +1048,12 @@ export default function EstimateDetail() {
   const handleSubmitItem = (data: z.infer<typeof addItemFormSchema>) => {
     if (!estimate) return;
     
-    // Calculate tax amount from the difference
-    const taxAmount = data.priceIncTax - data.unitCostExTax;
-    
+    // Backend will recalculate taxAmount and priceIncTax based on markup
     const itemData: InsertEstimateItem = {
       ...data,
       estimateId: estimate.id,
-      taxAmount,
+      taxAmount: 0, // Backend will recalculate
+      priceIncTax: 0, // Backend will recalculate
     };
     
     addItemMutation.mutate(itemData);
@@ -1398,7 +1398,7 @@ export default function EstimateDetail() {
           quantity: item.quantity,
           unitType: item.unitType || 'each',
           unitCostExTax: item.unitCostExTax,
-          priceIncTax: item.priceIncTax,
+          markupPercent: item.markupPercent || undefined,
           groupId: item.groupId || undefined,
           costCode: item.costCode || '',
           status: item.status || 'pending',
@@ -1507,7 +1507,7 @@ export default function EstimateDetail() {
                     type: 'Material',
                     quantity: 1,
                     unitCostExTax: 0,
-                    priceIncTax: 0,
+                    markupPercent: undefined,
                     groupId: item.groupId || undefined,
                     parentItemId: item.id,
                     status: 'pending',
@@ -2866,7 +2866,7 @@ export default function EstimateDetail() {
                   name="unitCostExTax"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price Ex Tax</FormLabel>
+                      <FormLabel>Builder's Cost (Ex Tax)</FormLabel>
                       <FormControl>
                         <Input 
                           type="number" 
@@ -2876,16 +2876,11 @@ export default function EstimateDetail() {
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
                           onChange={(e) => {
-                            const exTax = parseFloat(e.target.value) || 0;
-                            const rounded = Math.round(exTax * 100) / 100;
+                            const cost = parseFloat(e.target.value) || 0;
+                            const rounded = Math.round(cost * 100) / 100;
                             field.onChange(rounded);
-                            // Auto-calculate price inc tax using tax rate from estimate
-                            const taxRate = (estimate?.taxRate || 10) / 100;
-                            const incTax = rounded * (1 + taxRate);
-                            const roundedIncTax = Math.round(incTax * 100) / 100;
-                            form.setValue('priceIncTax', roundedIncTax);
                           }}
-                          data-testid="input-item-price-ex-tax"
+                          data-testid="input-item-builder-cost"
                         />
                       </FormControl>
                       <FormMessage />
@@ -2895,29 +2890,24 @@ export default function EstimateDetail() {
 
                 <FormField
                   control={form.control}
-                  name="priceIncTax"
+                  name="markupPercent"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price Inc Tax</FormLabel>
+                      <FormLabel>Markup % (Optional)</FormLabel>
                       <FormControl>
                         <Input 
                           type="number" 
-                          step="0.01" 
+                          step="0.1" 
                           min="0"
-                          placeholder="0.00"
+                          placeholder={`${estimate?.projectMarkupPercent || 0}% (project default)`}
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
+                          value={field.value ?? ''}
                           onChange={(e) => {
-                            const incTax = parseFloat(e.target.value) || 0;
-                            const rounded = Math.round(incTax * 100) / 100;
-                            field.onChange(rounded);
-                            // Auto-calculate price ex tax using tax rate from estimate
-                            const taxRate = (estimate?.taxRate || 10) / 100;
-                            const exTax = rounded / (1 + taxRate);
-                            const roundedExTax = Math.round(exTax * 100) / 100;
-                            form.setValue('unitCostExTax', roundedExTax);
+                            const value = e.target.value;
+                            field.onChange(value === '' ? undefined : parseFloat(value) || 0);
                           }}
-                          data-testid="input-item-price-inc-tax"
+                          data-testid="input-item-markup"
                         />
                       </FormControl>
                       <FormMessage />
@@ -3314,7 +3304,7 @@ export default function EstimateDetail() {
                       name="unitCostExTax"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Price Ex Tax</FormLabel>
+                          <FormLabel>Builder's Cost (Ex Tax)</FormLabel>
                           <FormControl>
                             <Input 
                               type="number" 
@@ -3324,15 +3314,11 @@ export default function EstimateDetail() {
                               className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               {...field}
                               onChange={(e) => {
-                                const exTax = parseFloat(e.target.value) || 0;
-                                const rounded = Math.round(exTax * 100) / 100;
+                                const cost = parseFloat(e.target.value) || 0;
+                                const rounded = Math.round(cost * 100) / 100;
                                 field.onChange(rounded);
-                                const taxRate = (estimate?.taxRate || 10) / 100;
-                                const incTax = rounded * (1 + taxRate);
-                                const roundedIncTax = Math.round(incTax * 100) / 100;
-                                editForm.setValue('priceIncTax', roundedIncTax);
                               }}
-                              data-testid="input-edit-item-price-ex-tax"
+                              data-testid="input-edit-item-builder-cost"
                             />
                           </FormControl>
                           <FormMessage />
@@ -3342,28 +3328,24 @@ export default function EstimateDetail() {
 
                     <FormField
                       control={editForm.control}
-                      name="priceIncTax"
+                      name="markupPercent"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Price Inc Tax</FormLabel>
+                          <FormLabel>Markup % (Optional)</FormLabel>
                           <FormControl>
                             <Input 
                               type="number" 
-                              step="0.01" 
+                              step="0.1" 
                               min="0"
-                              placeholder="0.00"
+                              placeholder={`${estimate?.projectMarkupPercent || 0}% (project default)`}
                               className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               {...field}
+                              value={field.value ?? ''}
                               onChange={(e) => {
-                                const incTax = parseFloat(e.target.value) || 0;
-                                const rounded = Math.round(incTax * 100) / 100;
-                                field.onChange(rounded);
-                                const taxRate = (estimate?.taxRate || 10) / 100;
-                                const exTax = rounded / (1 + taxRate);
-                                const roundedExTax = Math.round(exTax * 100) / 100;
-                                editForm.setValue('unitCostExTax', roundedExTax);
+                                const value = e.target.value;
+                                field.onChange(value === '' ? undefined : parseFloat(value) || 0);
                               }}
-                              data-testid="input-edit-item-price-inc-tax"
+                              data-testid="input-edit-item-markup"
                             />
                           </FormControl>
                           <FormMessage />
