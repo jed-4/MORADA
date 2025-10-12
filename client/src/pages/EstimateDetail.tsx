@@ -206,11 +206,11 @@ export default function EstimateDetail() {
     { id: 'allowance', label: 'Allowance', visible: true, widthPx: 140 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
     { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
-    { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
-    { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
-    { id: 'amountExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
-    { id: 'amountTax', label: 'Amount Tax', visible: true, widthPx: 110 },
-    { id: 'amountIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
+    { id: 'builderCost', label: "Builder's Cost", visible: true, widthPx: 130 },
+    { id: 'markup', label: 'Markup %', visible: true, widthPx: 100 },
+    { id: 'clientPriceExTax', label: 'Client Price ex Tax', visible: true, widthPx: 150 },
+    { id: 'clientTax', label: 'Client Tax', visible: true, widthPx: 110 },
+    { id: 'clientPriceIncTax', label: 'Client Price inc Tax', visible: true, widthPx: 150 },
     { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
   ];
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
@@ -836,6 +836,10 @@ export default function EstimateDetail() {
         // Convert cents to dollars for display
         setEditingValue((item.unitCostExTax / 100).toFixed(2));
         break;
+      case 'markupPercent':
+        // Show markup percentage (10 = 10%)
+        setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
+        break;
       case 'name':
         setEditingValue(item.name);
         break;
@@ -851,12 +855,6 @@ export default function EstimateDetail() {
       case 'allowance':
         setEditingValue(item.allowance || 'None');
         break;
-      case 'unitCostIncTax':
-        // Calculate per-unit inc tax from ex tax and display in dollars
-        const effectiveTaxRate = taxRate ?? 10;
-        const unitCostIncTaxCents = Math.round(item.unitCostExTax * (1 + effectiveTaxRate / 100));
-        setEditingValue((unitCostIncTaxCents / 100).toFixed(2));
-        break;
       default:
         setEditingValue('');
     }
@@ -866,7 +864,7 @@ export default function EstimateDetail() {
     if (!editingCell) return;
     
     // Validate based on field type
-    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax') {
+    if (field === 'quantity' || field === 'unitCostExTax' || field === 'markupPercent') {
       const numValue = parseFloat(editingValue);
       if (isNaN(numValue) || numValue < 0) {
         toast({
@@ -874,13 +872,11 @@ export default function EstimateDetail() {
           description: "Please enter a valid positive number.",
           variant: "destructive",
         });
-        // Reset to original value in dollars for price fields
+        // Reset to original value
         if (field === 'unitCostExTax') {
           setEditingValue(((item as any)[field] / 100).toFixed(2));
-        } else if (field === 'unitCostIncTax') {
-          const effectiveTaxRate = taxRate ?? 10;
-          const unitCostIncTaxCents = Math.round(item.unitCostExTax * (1 + effectiveTaxRate / 100));
-          setEditingValue((unitCostIncTaxCents / 100).toFixed(2));
+        } else if (field === 'markupPercent') {
+          setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
         } else {
           setEditingValue((item as any)[field]);
         }
@@ -911,37 +907,16 @@ export default function EstimateDetail() {
         setEditingCell(null);
         return;
       }
-    } else if (field === 'unitCostIncTax') {
-      // Reverse calculate: convert inc tax to ex tax
-      const incTaxDollars = parseFloat(editingValue);
+    } else if (field === 'markupPercent') {
+      // Save markup as number (supports decimals like 12.5%)
+      const markup = parseFloat(editingValue);
+      valueToSave = Number.isNaN(markup) ? null : markup;
       
-      // Validate the parsed value
-      if (isNaN(incTaxDollars)) {
-        toast({
-          title: "Invalid Value",
-          description: "Please enter a valid number.",
-          variant: "destructive",
-        });
+      // Check if value actually changed
+      if (valueToSave === (item.markupPercent ?? null)) {
         setEditingCell(null);
         return;
       }
-      
-      const incTaxCents = Math.round(incTaxDollars * 100);
-      
-      // Calculate ex tax from inc tax: exTax = incTax / (1 + taxRate/100)
-      // Use effective tax rate with fallback (use ?? to allow 0% tax)
-      const effectiveTaxRate = taxRate ?? 10;
-      const exTaxCents = Math.round(incTaxCents / (1 + effectiveTaxRate / 100));
-      
-      // Check if the calculated ex tax is different from current
-      if (exTaxCents === item.unitCostExTax) {
-        setEditingCell(null);
-        return;
-      }
-      
-      // Update the unitCostExTax field instead
-      fieldToUpdate = 'unitCostExTax';
-      valueToSave = exTaxCents;
     } else if (field === 'quantity') {
       valueToSave = parseFloat(editingValue);
       if (valueToSave === item.quantity) {
@@ -1124,7 +1099,6 @@ export default function EstimateDetail() {
     // Add data rows for items
     items.forEach((item) => {
       const row: string[] = [];
-      const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
       
       columns.forEach(col => {
         switch (col.id) {
@@ -1149,20 +1123,25 @@ export default function EstimateDetail() {
           case 'unitType':
             row.push(escapeCsvField(item.unitType || ''));
             break;
-          case 'unitCostExTax':
-            row.push((item.unitCostExTax / 100).toFixed(2));
+          case 'builderCost':
+            const pricingVals = calculatePricingValues(item);
+            row.push((pricingVals.builderCost / 100).toFixed(2));
             break;
-          case 'unitCostIncTax':
-            row.push((taxValues.unitCostIncTax / 100).toFixed(2));
+          case 'markup':
+            const pricingValues = calculatePricingValues(item);
+            row.push(pricingValues.markupPercent?.toString() ?? '');
             break;
-          case 'amountExTax':
-            row.push((taxValues.amountExTax / 100).toFixed(2));
+          case 'clientPriceExTax':
+            const pricing1 = calculatePricingValues(item);
+            row.push((pricing1.clientPriceExTax / 100).toFixed(2));
             break;
-          case 'amountTax':
-            row.push((taxValues.amountTax / 100).toFixed(2));
+          case 'clientTax':
+            const pricing2 = calculatePricingValues(item);
+            row.push((pricing2.clientTax / 100).toFixed(2));
             break;
-          case 'amountIncTax':
-            row.push((taxValues.amountIncTax / 100).toFixed(2));
+          case 'clientPriceIncTax':
+            const pricing3 = calculatePricingValues(item);
+            row.push((pricing3.clientPriceIncTax / 100).toFixed(2));
             break;
           case 'notes':
             row.push(escapeCsvField(item.notes || ''));
@@ -1354,22 +1333,25 @@ export default function EstimateDetail() {
     }).format(amount / 100); // Convert cents to dollars
   };
 
-  // Helper function to calculate tax values
-  const calculateTaxValues = (unitCostExTax: number, quantity: number, taxRatePercent: number) => {
-    // Values are stored in cents (multiplied by 100), so convert to dollars for calculation
-    const unitCostDollars = unitCostExTax / 100;
-    const quantityActual = quantity / 100;
+  // Helper function to calculate two-tier pricing values
+  const calculatePricingValues = (item: EstimateItem) => {
+    // Builder's cost (what builder pays)
+    const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100); // in cents
     
-    const amountExTax = unitCostDollars * quantityActual;
-    const amountTax = (amountExTax * taxRatePercent) / 100;
-    const amountIncTax = amountExTax + amountTax;
-    const unitCostIncTax = unitCostDollars + (unitCostDollars * taxRatePercent) / 100;
+    // Markup percentage (item level or project level)
+    const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
+    
+    // Client pricing (calculated by backend, or fallback for legacy items)
+    const clientTax = item.taxAmount ?? 0; // in cents
+    const clientPriceIncTax = item.priceIncTax ?? 0; // in cents
+    const clientPriceExTax = clientPriceIncTax - clientTax; // in cents
     
     return {
-      unitCostIncTax,
-      amountExTax,
-      amountTax,
-      amountIncTax
+      builderCost, // in cents
+      markupPercent, // percentage (10 = 10%)
+      clientPriceExTax, // in cents
+      clientTax, // in cents
+      clientPriceIncTax // in cents
     };
   };
 
@@ -1675,7 +1657,7 @@ export default function EstimateDetail() {
   const renderCell = (item: EstimateItem, columnId: string) => {
     const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
     const isLocked = estimate?.isLocked;
-    const taxValues = calculateTaxValues(item.unitCostExTax, item.quantity, taxRate);
+    const pricingValues = calculatePricingValues(item);
 
     switch (columnId) {
       case 'costCode':
@@ -1919,7 +1901,14 @@ export default function EstimateDetail() {
           </TableCell>
         );
       
-      case 'unitCostExTax':
+      case 'builderCost':
+        return (
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-builderCost-${item.id}`}>
+            {formatCurrency(pricingValues.builderCost)}
+          </TableCell>
+        );
+      
+      case 'markup':
         if (isEditing) {
           return (
             <TableCell className="py-0.5">
@@ -1927,13 +1916,13 @@ export default function EstimateDetail() {
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
-                onBlur={() => handleCellSave(item, 'unitCostExTax')}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'markupPercent')}
+                onBlur={() => handleCellSave(item, 'markupPercent')}
                 className="h-7 text-sm border-primary"
                 autoFocus
                 min="0"
-                step="0.01"
-                data-testid={`input-edit-unitCostExTax-${item.id}`}
+                step="1"
+                data-testid={`input-edit-markup-${item.id}`}
               />
             </TableCell>
           );
@@ -1941,60 +1930,32 @@ export default function EstimateDetail() {
         return (
           <TableCell 
             className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'unitCostExTax')}
-            data-testid={`cell-unitCostExTax-${item.id}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'markupPercent')}
+            data-testid={`cell-markup-${item.id}`}
           >
-            {formatCurrency(item.unitCostExTax / 100)}
+            {pricingValues.markupPercent != null ? `${pricingValues.markupPercent}%` : 
+             (estimate?.projectMarkupPercent != null ? `${estimate.projectMarkupPercent}% (project)` : '-')}
           </TableCell>
         );
       
-      case 'unitCostIncTax':
-        if (isEditing) {
-          return (
-            <TableCell className="py-0.5">
-              <Input
-                type="number"
-                value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
-                onBlur={() => handleCellSave(item, 'unitCostIncTax')}
-                className="h-7 text-sm border-primary"
-                autoFocus
-                min="0"
-                step="0.01"
-                data-testid={`input-edit-unitCostIncTax-${item.id}`}
-              />
-            </TableCell>
-          );
-        }
+      case 'clientPriceExTax':
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'unitCostIncTax')}
-            data-testid={`cell-unitCostIncTax-${item.id}`}
-          >
-            {formatCurrency(taxValues.unitCostIncTax)}
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-clientPriceExTax-${item.id}`}>
+            {formatCurrency(pricingValues.clientPriceExTax)}
           </TableCell>
         );
       
-      case 'amountExTax':
+      case 'clientTax':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-amountExTax-${item.id}`}>
-            {formatCurrency(taxValues.amountExTax)}
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-clientTax-${item.id}`}>
+            {formatCurrency(pricingValues.clientTax)}
           </TableCell>
         );
       
-      case 'amountTax':
+      case 'clientPriceIncTax':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-amountTax-${item.id}`}>
-            {formatCurrency(taxValues.amountTax)}
-          </TableCell>
-        );
-      
-      case 'amountIncTax':
-        return (
-          <TableCell className="py-0.5 text-sm font-medium" data-testid={`cell-amountIncTax-${item.id}`}>
-            {formatCurrency(taxValues.amountIncTax)}
+          <TableCell className="py-0.5 text-sm font-medium" data-testid={`cell-clientPriceIncTax-${item.id}`}>
+            {formatCurrency(pricingValues.clientPriceIncTax)}
           </TableCell>
         );
       
