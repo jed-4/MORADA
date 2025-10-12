@@ -2639,8 +2639,7 @@ export default function EstimateDetail() {
                   </div>
                 ) : (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                    <div className="space-y-4">
-{(() => {
+                    {(() => {
                       const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
                       const allItemIds = [...ungroupedItems.map(i => i.id)];
                       Object.values(groupedItems).forEach(groupItems => {
@@ -2649,155 +2648,105 @@ export default function EstimateDetail() {
                       
                       return (
                         <SortableContext items={allItemIds} strategy={verticalListSortingStrategy}>
-                          {/* Render each group as a card bubble */}
-                          {sortedGroups.map((group) => (
-                            <Card key={`group-${group.id}`} className="border" data-testid={`card-group-${group.id}`}>
-                              {/* Group header */}
-                              <CardHeader className="py-3 px-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 w-6 p-0"
-                                      onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                                      data-testid={`button-toggle-group-${group.id}`}
-                                    >
-                                      {group.isCollapsed ? (
-                                        <ChevronRight className="h-4 w-4" />
-                                      ) : (
-                                        <ChevronDown className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                    <span className="font-medium text-sm">{group.name}</span>
-                                    {group.description && (
-                                      <span className="text-xs text-muted-foreground">- {group.description}</span>
-                                    )}
-                                  </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    {groupedItems[group.id]?.length || 0} items
-                                  </span>
-                                </div>
-                              </CardHeader>
-                              
-                              {/* Group items table - only if not collapsed */}
-                              {!group.isCollapsed && groupedItems[group.id] && groupedItems[group.id].length > 0 && (
-                                <CardContent className="p-0">
-                                  <Table style={{ 
-                                    display: 'table',
-                                    tableLayout: 'fixed',
-                                    width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
-                                    minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
-                                  }}>
-                                    <colgroup>
-                                      <col style={{ width: '40px' }} />
-                                      {columns.filter(col => col.visible).map(column => (
-                                        <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                                      ))}
-                                      <col style={{ width: '80px' }} />
-                                    </colgroup>
-                                    <TableHeader>
-                                      <TableRow className="h-8">
-                                        <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
-                                        {columns.filter(col => col.visible).map(column => (
-                                          <TableHead 
-                                            key={column.id}
-                                            className="py-1 text-xs font-medium relative group"
-                                            style={{ width: `${column.widthPx}px` }}
+                          <Table style={{ 
+                            display: 'table',
+                            tableLayout: 'fixed',
+                            width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
+                            minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
+                          }}>
+                            <colgroup>
+                              <col style={{ width: '40px' }} />
+                              {columns.filter(col => col.visible).map(column => (
+                                <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                              ))}
+                              <col style={{ width: '80px' }} />
+                            </colgroup>
+                            
+                            {/* Single table header */}
+                            <TableHeader>
+                              <TableRow className="h-8">
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
+                                {columns.filter(col => col.visible).map(column => (
+                                  <TableHead 
+                                    key={column.id}
+                                    className="py-1 text-xs font-medium relative group"
+                                    style={{ width: `${column.widthPx}px` }}
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      <span>{column.label}</span>
+                                    </div>
+                                    {/* Resize handle */}
+                                    <div
+                                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                      style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                                      onMouseDown={(e) => handleResizeStart(e, column.id)}
+                                      data-testid={`resize-handle-${column.id}`}
+                                    />
+                                  </TableHead>
+                                ))}
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            
+                            {/* Render ungrouped items first (if any) */}
+                            {ungroupedItems.length > 0 && (
+                              <TableBody data-testid="tbody-ungrouped-items">
+                                {ungroupedItems.map((item) => (
+                                  <React.Fragment key={`item-wrapper-${item.id}`}>
+                                    {renderItemWithSubItems(item)}
+                                  </React.Fragment>
+                                ))}
+                              </TableBody>
+                            )}
+                            
+                            {/* Render each group as a tbody with card styling */}
+                            {sortedGroups.map((group) => (
+                              <React.Fragment key={`group-${group.id}`}>
+                                {/* Group header row */}
+                                <TableBody className="border-t-4 border-transparent" data-testid={`tbody-group-${group.id}`}>
+                                  <TableRow className="bg-card border rounded-t-lg">
+                                    <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-3 px-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 w-6 p-0"
+                                            onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                                            data-testid={`button-toggle-group-${group.id}`}
                                           >
-                                            <div className="flex items-center gap-1">
-                                              <span>{column.label}</span>
-                                            </div>
-                                            {/* Resize handle */}
-                                            <div
-                                              className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                              style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                              onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                              data-testid={`resize-handle-${column.id}`}
-                                            />
-                                          </TableHead>
-                                        ))}
-                                        <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {groupedItems[group.id].map((item) => (
-                                        <React.Fragment key={`item-wrapper-${item.id}`}>
-                                          {renderItemWithSubItems(item)}
-                                        </React.Fragment>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </CardContent>
-                              )}
-                            </Card>
-                          ))}
-                          
-                          {/* Render ungrouped items as a separate card */}
-                          {ungroupedItems.length > 0 && (
-                            <Card className="border" data-testid="card-ungrouped-items">
-                              <CardHeader className="py-3 px-4">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-medium text-sm text-muted-foreground">Ungrouped Items</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {ungroupedItems.length} items
-                                  </span>
-                                </div>
-                              </CardHeader>
-                              <CardContent className="p-0">
-                                <Table style={{ 
-                                  display: 'table',
-                                  tableLayout: 'fixed',
-                                  width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
-                                  minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
-                                }}>
-                                  <colgroup>
-                                    <col style={{ width: '40px' }} />
-                                    {columns.filter(col => col.visible).map(column => (
-                                      <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                                    ))}
-                                    <col style={{ width: '80px' }} />
-                                  </colgroup>
-                                  <TableHeader>
-                                    <TableRow className="h-8">
-                                      <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
-                                      {columns.filter(col => col.visible).map(column => (
-                                        <TableHead 
-                                          key={column.id}
-                                          className="py-1 text-xs font-medium relative group"
-                                          style={{ width: `${column.widthPx}px` }}
-                                        >
-                                          <div className="flex items-center gap-1">
-                                            <span>{column.label}</span>
-                                          </div>
-                                          {/* Resize handle */}
-                                          <div
-                                            className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                            style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                            onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                            data-testid={`resize-handle-${column.id}`}
-                                          />
-                                        </TableHead>
-                                      ))}
-                                      <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {ungroupedItems.map((item) => (
-                                      <React.Fragment key={`item-wrapper-${item.id}`}>
-                                        {renderItemWithSubItems(item)}
-                                      </React.Fragment>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              </CardContent>
-                            </Card>
-                          )}
+                                            {group.isCollapsed ? (
+                                              <ChevronRight className="h-4 w-4" />
+                                            ) : (
+                                              <ChevronDown className="h-4 w-4" />
+                                            )}
+                                          </Button>
+                                          <span className="font-medium text-sm">{group.name}</span>
+                                          {group.description && (
+                                            <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                          )}
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">
+                                          {groupedItems[group.id]?.length || 0} items
+                                        </span>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  
+                                  {/* Group items - only if not collapsed */}
+                                  {!group.isCollapsed && groupedItems[group.id] && groupedItems[group.id].map((item) => (
+                                    <React.Fragment key={`item-wrapper-${item.id}`}>
+                                      {renderItemWithSubItems(item)}
+                                    </React.Fragment>
+                                  ))}
+                                </TableBody>
+                              </React.Fragment>
+                            ))}
+                          </Table>
                         </SortableContext>
                       );
                     })()}
-                  </div>
-                </DndContext>
+                  </DndContext>
               )}
               </div>
             </CardContent>
