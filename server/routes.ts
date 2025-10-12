@@ -977,13 +977,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/items", async (req, res) => {
     try {
+      const estimateId = req.params.id;
+      
+      // Get estimate for project markup and tax rate
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
       // Convert dollar amounts to cents with proper rounding to avoid floating point issues
+      const unitCostExTaxCents = req.body.unitCostExTax ? Math.round(req.body.unitCostExTax * 100) : 0;
+      const quantityCents = req.body.quantity ? Math.round(req.body.quantity * 100) : 100;
+      const markupPercent = req.body.markupPercent ?? null;
+      
+      // Calculate pricing
+      // 1. Builder cost = unitCost × quantity
+      const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
+      
+      // 2. Apply markup (item-specific or project-level)
+      const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
+      const markupAmount = Math.round((builderCostExTax * effectiveMarkupPercent) / 100);
+      
+      // 3. Client price = builder cost + markup
+      const clientPriceExTax = builderCostExTax + markupAmount;
+      
+      // 4. Calculate tax on client price
+      const taxRate = estimate.taxRate ?? 10;
+      const taxAmount = Math.round((clientPriceExTax * taxRate) / 100);
+      
+      // 5. Client price inc tax
+      const clientPriceIncTax = clientPriceExTax + taxAmount;
+      
       const itemData = {
         ...req.body,
-        estimateId: req.params.id,
-        unitCostExTax: req.body.unitCostExTax ? Math.round(req.body.unitCostExTax * 100) : 0,
-        priceIncTax: req.body.priceIncTax ? Math.round(req.body.priceIncTax * 100) : 0,
-        quantity: req.body.quantity ? Math.round(req.body.quantity * 100) : 100, // Store quantity with 2 decimal precision (1.5 -> 150)
+        estimateId,
+        unitCostExTax: unitCostExTaxCents,
+        quantity: quantityCents,
+        markupPercent,
+        taxAmount,
+        priceIncTax: clientPriceIncTax,
       };
       
       const validationResult = insertEstimateItemSchema.safeParse(itemData);
@@ -1013,18 +1045,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Items array is required and must not be empty" });
       }
 
+      // Get estimate for project markup and tax rate
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
       // Validate all items
       const validatedItems: any[] = [];
       const errors: Array<{ row: number; errors: string[] }> = [];
       
       items.forEach((item, index) => {
         // Convert dollar amounts to cents with proper rounding
+        const unitCostExTaxCents = item.unitCostExTax ? Math.round(item.unitCostExTax * 100) : 0;
+        const quantityCents = item.quantity ? Math.round(item.quantity * 100) : 100;
+        const markupPercent = item.markupPercent ?? null;
+        
+        // Calculate pricing
+        // 1. Builder cost = unitCost × quantity
+        const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
+        
+        // 2. Apply markup (item-specific or project-level)
+        const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
+        const markupAmount = Math.round((builderCostExTax * effectiveMarkupPercent) / 100);
+        
+        // 3. Client price = builder cost + markup
+        const clientPriceExTax = builderCostExTax + markupAmount;
+        
+        // 4. Calculate tax on client price
+        const taxRate = estimate.taxRate ?? 10;
+        const taxAmount = Math.round((clientPriceExTax * taxRate) / 100);
+        
+        // 5. Client price inc tax
+        const clientPriceIncTax = clientPriceExTax + taxAmount;
+        
         const itemData = {
           ...item,
           estimateId,
-          unitCostExTax: item.unitCostExTax ? Math.round(item.unitCostExTax * 100) : 0,
-          priceIncTax: item.priceIncTax ? Math.round(item.priceIncTax * 100) : 0,
-          quantity: item.quantity ? Math.round(item.quantity * 100) : 100,
+          unitCostExTax: unitCostExTaxCents,
+          quantity: quantityCents,
+          markupPercent,
+          taxAmount,
+          priceIncTax: clientPriceIncTax,
         };
         
         const validationResult = insertEstimateItemSchema.safeParse(itemData);
@@ -1073,17 +1135,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/estimate-items/:id", async (req, res) => {
     try {
+      // Get existing item to access estimate
+      const existingItem = await storage.getEstimateItem(req.params.id);
+      if (!existingItem) {
+        return res.status(404).json({ error: "Estimate item not found" });
+      }
+      
+      // Get estimate for project markup and tax rate
+      const estimate = await storage.getEstimate(existingItem.estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      
       // Convert dollar amounts to cents with proper rounding to avoid floating point issues
       const updateData: any = { ...req.body };
-      if (updateData.unitCostExTax !== undefined) {
-        updateData.unitCostExTax = Math.round(updateData.unitCostExTax * 100);
-      }
-      if (updateData.priceIncTax !== undefined) {
-        updateData.priceIncTax = Math.round(updateData.priceIncTax * 100);
-      }
+      
+      // Determine values for calculation (use existing if not updating)
+      const unitCostExTaxCents = updateData.unitCostExTax !== undefined 
+        ? Math.round(updateData.unitCostExTax * 100)
+        : existingItem.unitCostExTax;
+      
+      const quantityCents = updateData.quantity !== undefined
+        ? Math.round(updateData.quantity * 100)
+        : existingItem.quantity;
+      
+      const markupPercent = updateData.markupPercent !== undefined
+        ? updateData.markupPercent
+        : existingItem.markupPercent;
+      
+      // Calculate pricing
+      // 1. Builder cost = unitCost × quantity
+      const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
+      
+      // 2. Apply markup (item-specific or project-level)
+      const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
+      const markupAmount = Math.round((builderCostExTax * effectiveMarkupPercent) / 100);
+      
+      // 3. Client price = builder cost + markup
+      const clientPriceExTax = builderCostExTax + markupAmount;
+      
+      // 4. Calculate tax on client price
+      const taxRate = estimate.taxRate ?? 10;
+      const taxAmount = Math.round((clientPriceExTax * taxRate) / 100);
+      
+      // 5. Client price inc tax
+      const clientPriceIncTax = clientPriceExTax + taxAmount;
+      
+      // Update the data object with calculated values
+      updateData.unitCostExTax = unitCostExTaxCents;
       if (updateData.quantity !== undefined) {
-        updateData.quantity = Math.round(updateData.quantity * 100); // Store quantity with 2 decimal precision
+        updateData.quantity = quantityCents;
       }
+      if (updateData.markupPercent !== undefined) {
+        updateData.markupPercent = markupPercent;
+      }
+      updateData.taxAmount = taxAmount;
+      updateData.priceIncTax = clientPriceIncTax;
       
       const updateSchema = insertEstimateItemSchema.partial();
       const validationResult = updateSchema.safeParse(updateData);
