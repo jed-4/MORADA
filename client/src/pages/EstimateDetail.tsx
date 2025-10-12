@@ -2376,7 +2376,6 @@ export default function EstimateDetail() {
                         key={column.id}
                         onClick={(e) => {
                           e.preventDefault();
-                          toggleColumn(column.id);
                         }}
                       >
                         <Checkbox
