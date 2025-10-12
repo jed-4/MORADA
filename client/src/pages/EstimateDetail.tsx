@@ -200,7 +200,8 @@ export default function EstimateDetail() {
   type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
   const defaultColumns: ColumnConfig[] = [
     { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 120 },
-    { id: 'item', label: 'Description', visible: true, widthPx: 200 },
+    { id: 'item', label: 'Item', visible: true, widthPx: 180 },
+    { id: 'description', label: 'Description', visible: true, widthPx: 220 },
     { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
     { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 180 },
     { id: 'allowance', label: 'Allowance', visible: true, widthPx: 140 },
@@ -844,6 +845,9 @@ export default function EstimateDetail() {
       case 'name':
         setEditingValue(item.name);
         break;
+      case 'description':
+        setEditingValue(item.description || '');
+        break;
       case 'costCode':
         setEditingValue(item.costCode || '');
         break;
@@ -1111,6 +1115,9 @@ export default function EstimateDetail() {
             break;
           case 'item':
             row.push(escapeCsvField(item.name || ''));
+            break;
+          case 'description':
+            row.push(escapeCsvField(item.description || ''));
             break;
           case 'proposalVisible':
             row.push(item.proposalVisible ? 'Shown' : 'Hidden');
@@ -1772,6 +1779,34 @@ export default function EstimateDetail() {
                 </Tooltip>
               </TooltipProvider>
             </div>
+          </TableCell>
+        );
+      
+      case 'description':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'description')}
+                onBlur={() => handleCellSave(item, 'description')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                data-testid={`input-edit-description-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={() => !isLocked && handleCellEdit(item, 'description')}
+            data-testid={`cell-description-${item.id}`}
+          >
+            <span className="truncate block max-w-[200px]">
+              {item.description || '-'}
+            </span>
           </TableCell>
         );
       
