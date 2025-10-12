@@ -919,8 +919,11 @@ export default function EstimateDetail() {
         return;
       }
     } else if (field === 'quantity') {
+      // Send actual value to backend (backend will multiply by 100)
       valueToSave = parseFloat(editingValue);
-      if (valueToSave === item.quantity) {
+      
+      // Check if value actually changed (compare actual to stored cents)
+      if (Math.round(valueToSave * 100) === item.quantity) {
         setEditingCell(null);
         return;
       }
