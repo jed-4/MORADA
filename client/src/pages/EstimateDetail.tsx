@@ -2593,89 +2593,53 @@ export default function EstimateDetail() {
             </div>
             
             <CardContent className="p-0 overflow-x-auto">
-              {itemsLoading || groupsLoading ? (
-                <div className="animate-pulse space-y-2 p-6">
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="h-12 bg-gray-300 rounded"></div>
-                  ))}
-                </div>
-              ) : items.length === 0 && groups.length === 0 ? (
-                <div className="text-center py-8 px-6">
-                  <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No items or groups added yet</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Add a group to organize items, or add items directly.
-                  </p>
-                  <div className="flex items-center justify-center gap-2">
-                    <Button 
-                      data-testid="button-add-first-group" 
-                      onClick={handleAddGroup}
-                      disabled={estimate?.isLocked}
-                      variant={estimate?.isLocked ? "secondary" : "outline"}
-                    >
-                      <FolderPlus className="w-4 h-4 mr-2" />
-                      Add Group
-                    </Button>
-                    <Button 
-                      data-testid="button-add-first-item" 
-                      onClick={handleAddItem}
-                      disabled={estimate?.isLocked}
-                      variant={estimate?.isLocked ? "secondary" : "default"}
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Item
-                    </Button>
-                    <Button 
-                      data-testid="button-import-items" 
-                      onClick={() => setIsImportOpen(true)}
-                      disabled={estimate?.isLocked}
-                      variant={estimate?.isLocked ? "secondary" : "outline"}
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      Import Items
-                    </Button>
+              <div className="p-6">
+                {itemsLoading || groupsLoading ? (
+                  <div className="animate-pulse space-y-3">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-32 bg-gray-300 rounded-lg"></div>
+                    ))}
                   </div>
-                </div>
-              ) : (
+                ) : items.length === 0 && groups.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">No items or groups added yet</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Add a group to organize items, or add items directly.
+                    </p>
+                    <div className="flex items-center justify-center gap-2">
+                      <Button 
+                        data-testid="button-add-first-group" 
+                        onClick={handleAddGroup}
+                        disabled={estimate?.isLocked}
+                        variant={estimate?.isLocked ? "secondary" : "outline"}
+                      >
+                        <FolderPlus className="w-4 h-4 mr-2" />
+                        Add Group
+                      </Button>
+                      <Button 
+                        data-testid="button-add-first-item" 
+                        onClick={handleAddItem}
+                        disabled={estimate?.isLocked}
+                        variant={estimate?.isLocked ? "secondary" : "default"}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Item
+                      </Button>
+                      <Button 
+                        data-testid="button-import-items" 
+                        onClick={() => setIsImportOpen(true)}
+                        disabled={estimate?.isLocked}
+                        variant={estimate?.isLocked ? "secondary" : "outline"}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Import Items
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                    <Table style={{ 
-                      display: 'table',
-                      tableLayout: 'fixed',
-                      width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
-                      minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
-                    }}>
-                      <colgroup>
-                        <col style={{ width: '40px' }} />
-                        {columns.filter(col => col.visible).map(column => (
-                          <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                        ))}
-                        <col style={{ width: '80px' }} />
-                      </colgroup>
-                    <TableHeader>
-                    <TableRow className="h-8">
-                      <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
-                      {columns.filter(col => col.visible).map(column => (
-                        <TableHead 
-                          key={column.id}
-                          className="py-1 text-xs font-medium relative group"
-                          style={{ width: `${column.widthPx}px` }}
-                        >
-                          <div className="flex items-center gap-1">
-                            <span>{column.label}</span>
-                          </div>
-                          {/* Resize handle */}
-                          <div
-                            className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                            style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                            onMouseDown={(e) => handleResizeStart(e, column.id)}
-                            data-testid={`resize-handle-${column.id}`}
-                          />
-                        </TableHead>
-                      ))}
-                      <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    <div className="space-y-4">
 {(() => {
                       const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
                       const allItemIds = [...ungroupedItems.map(i => i.id)];
@@ -2685,61 +2649,157 @@ export default function EstimateDetail() {
                       
                       return (
                         <SortableContext items={allItemIds} strategy={verticalListSortingStrategy}>
-                          {/* Render grouped items */}
+                          {/* Render each group as a card bubble */}
                           {sortedGroups.map((group) => (
-                            <React.Fragment key={`group-${group.id}`}>
-                              {/* Group header row */}
-                              <TableRow className="bg-muted/50 hover:bg-muted/50" data-testid={`row-group-${group.id}`}>
-                                <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-3">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-2">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0"
-                                        onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                                        data-testid={`button-toggle-group-${group.id}`}
-                                      >
-                                        {group.isCollapsed ? (
-                                          <ChevronRight className="h-4 w-4" />
-                                        ) : (
-                                          <ChevronDown className="h-4 w-4" />
-                                        )}
-                                      </Button>
-                                      <span className="font-medium text-sm">{group.name}</span>
-                                      {group.description && (
-                                        <span className="text-xs text-muted-foreground">- {group.description}</span>
+                            <Card key={`group-${group.id}`} className="border" data-testid={`card-group-${group.id}`}>
+                              {/* Group header */}
+                              <CardHeader className="py-3 px-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0"
+                                      onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                                      data-testid={`button-toggle-group-${group.id}`}
+                                    >
+                                      {group.isCollapsed ? (
+                                        <ChevronRight className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronDown className="h-4 w-4" />
                                       )}
-                                    </div>
-                                    <span className="text-xs text-muted-foreground">
-                                      {groupedItems[group.id]?.length || 0} items
-                                    </span>
+                                    </Button>
+                                    <span className="font-medium text-sm">{group.name}</span>
+                                    {group.description && (
+                                      <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                    )}
                                   </div>
-                                </TableCell>
-                              </TableRow>
+                                  <span className="text-xs text-muted-foreground">
+                                    {groupedItems[group.id]?.length || 0} items
+                                  </span>
+                                </div>
+                              </CardHeader>
                               
-                              {/* Render items in this group - only if not collapsed */}
-                              {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
-                                <React.Fragment key={`item-wrapper-${item.id}`}>
-                                  {renderItemWithSubItems(item)}
-                                </React.Fragment>
-                              ))}
-                            </React.Fragment>
+                              {/* Group items table - only if not collapsed */}
+                              {!group.isCollapsed && groupedItems[group.id] && groupedItems[group.id].length > 0 && (
+                                <CardContent className="p-0">
+                                  <Table style={{ 
+                                    display: 'table',
+                                    tableLayout: 'fixed',
+                                    width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
+                                    minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
+                                  }}>
+                                    <colgroup>
+                                      <col style={{ width: '40px' }} />
+                                      {columns.filter(col => col.visible).map(column => (
+                                        <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                                      ))}
+                                      <col style={{ width: '80px' }} />
+                                    </colgroup>
+                                    <TableHeader>
+                                      <TableRow className="h-8">
+                                        <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
+                                        {columns.filter(col => col.visible).map(column => (
+                                          <TableHead 
+                                            key={column.id}
+                                            className="py-1 text-xs font-medium relative group"
+                                            style={{ width: `${column.widthPx}px` }}
+                                          >
+                                            <div className="flex items-center gap-1">
+                                              <span>{column.label}</span>
+                                            </div>
+                                            {/* Resize handle */}
+                                            <div
+                                              className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                              style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                                              onMouseDown={(e) => handleResizeStart(e, column.id)}
+                                              data-testid={`resize-handle-${column.id}`}
+                                            />
+                                          </TableHead>
+                                        ))}
+                                        <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {groupedItems[group.id].map((item) => (
+                                        <React.Fragment key={`item-wrapper-${item.id}`}>
+                                          {renderItemWithSubItems(item)}
+                                        </React.Fragment>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </CardContent>
+                              )}
+                            </Card>
                           ))}
                           
-                          {/* Render ungrouped items without section header */}
-                          {ungroupedItems.map((item) => (
-                            <React.Fragment key={`item-wrapper-${item.id}`}>
-                              {renderItemWithSubItems(item)}
-                            </React.Fragment>
-                          ))}
+                          {/* Render ungrouped items as a separate card */}
+                          {ungroupedItems.length > 0 && (
+                            <Card className="border" data-testid="card-ungrouped-items">
+                              <CardHeader className="py-3 px-4">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium text-sm text-muted-foreground">Ungrouped Items</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {ungroupedItems.length} items
+                                  </span>
+                                </div>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                <Table style={{ 
+                                  display: 'table',
+                                  tableLayout: 'fixed',
+                                  width: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`,
+                                  minWidth: `${columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40}px`
+                                }}>
+                                  <colgroup>
+                                    <col style={{ width: '40px' }} />
+                                    {columns.filter(col => col.visible).map(column => (
+                                      <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                                    ))}
+                                    <col style={{ width: '80px' }} />
+                                  </colgroup>
+                                  <TableHeader>
+                                    <TableRow className="h-8">
+                                      <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
+                                      {columns.filter(col => col.visible).map(column => (
+                                        <TableHead 
+                                          key={column.id}
+                                          className="py-1 text-xs font-medium relative group"
+                                          style={{ width: `${column.widthPx}px` }}
+                                        >
+                                          <div className="flex items-center gap-1">
+                                            <span>{column.label}</span>
+                                          </div>
+                                          {/* Resize handle */}
+                                          <div
+                                            className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                            style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                                            onMouseDown={(e) => handleResizeStart(e, column.id)}
+                                            data-testid={`resize-handle-${column.id}`}
+                                          />
+                                        </TableHead>
+                                      ))}
+                                      <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {ungroupedItems.map((item) => (
+                                      <React.Fragment key={`item-wrapper-${item.id}`}>
+                                        {renderItemWithSubItems(item)}
+                                      </React.Fragment>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </CardContent>
+                            </Card>
+                          )}
                         </SortableContext>
                       );
                     })()}
-                  </TableBody>
-                </Table>
-              </DndContext>
+                  </div>
+                </DndContext>
               )}
+              </div>
             </CardContent>
           </Card>
         </div>
