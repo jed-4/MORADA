@@ -427,6 +427,7 @@ export const estimateItems = pgTable("estimate_items", {
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
   unitCostExTax: integer("unit_cost_ex_tax").notNull().default(0), // Unit price in cents (renamed from priceExTax)
+  markupPercent: integer("markup_percent"), // Optional item-specific markup percentage (10 = 10%). Falls back to project markup if null
   taxAmount: integer("tax_amount").notNull().default(0), // Calculated tax amount in cents
   priceIncTax: integer("price_inc_tax").notNull().default(0), // Total price in cents
   description: text("description"),
@@ -450,6 +451,7 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   unitCostExTax: z.number().default(0),
   taxAmount: z.number().default(0), 
   priceIncTax: z.number().default(0),
+  markupPercent: z.number().optional().nullable(),
   shownAs: z.string().optional().nullable(),
 });
 
