@@ -980,7 +980,7 @@ export default function EstimateDetail() {
       notes: "",
       type: "material",
       quantity: 1,
-      unitType: "each",
+      unitType: "ea",
       unitCostExTax: 0,
       markupPercent: 0,
       status: "pending",
@@ -1005,7 +1005,7 @@ export default function EstimateDetail() {
       notes: "",
       type: "material",
       quantity: 1,
-      unitType: "each",
+      unitType: "ea",
       unitCostExTax: 0,
       markupPercent: 0,
       status: "pending",
@@ -1326,6 +1326,11 @@ export default function EstimateDetail() {
     queryKey: ["/api/field-categories/by-key/estimate_item.status"],
   });
 
+  // Fetch estimate item unit field category options
+  const { data: estimateItemUnitCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate_item.unit"],
+  });
+
   // Fetch company settings for tax rate
   const { data: companySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
@@ -1410,7 +1415,7 @@ export default function EstimateDetail() {
           description: item.description || '',
           type: item.type,
           quantity: item.quantity,
-          unitType: item.unitType || 'each',
+          unitType: item.unitType || 'ea',
           unitCostExTax: item.unitCostExTax,
           markupPercent: item.markupPercent || undefined,
           groupId: item.groupId || undefined,
@@ -1893,15 +1898,33 @@ export default function EstimateDetail() {
         if (isEditing) {
           return (
             <TableCell className="py-0.5">
-              <Input
+              <Select
                 value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitType')}
-                onBlur={() => handleCellSave(item, 'unitType')}
-                className="h-7 text-sm border-primary"
-                autoFocus
-                data-testid={`input-edit-unitType-${item.id}`}
-              />
+                onValueChange={(value) => {
+                  setEditingValue(value);
+                  // Auto-save on selection
+                  updateItemMutation.mutate({
+                    itemId: item.id,
+                    data: { unitType: value }
+                  });
+                  setEditingCell(null);
+                }}
+                data-testid={`select-edit-unitType-${item.id}`}
+              >
+                <SelectTrigger className="h-7 text-sm border-primary">
+                  <SelectValue placeholder="Unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  {estimateItemUnitCategory?.options
+                    ?.filter(opt => opt.isActive)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map(option => (
+                      <SelectItem key={option.id} value={option.name}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </TableCell>
           );
         }
@@ -2873,13 +2896,14 @@ export default function EstimateDetail() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="each">each</SelectItem>
-                          <SelectItem value="set">set</SelectItem>
-                          <SelectItem value="m">m</SelectItem>
-                          <SelectItem value="m²">m²</SelectItem>
-                          <SelectItem value="hours">hours</SelectItem>
-                          <SelectItem value="days">days</SelectItem>
-                          <SelectItem value="kg">kg</SelectItem>
+                          {estimateItemUnitCategory?.options
+                            ?.filter(opt => opt.isActive)
+                            .sort((a, b) => a.sortOrder - b.sortOrder)
+                            .map(option => (
+                              <SelectItem key={option.id} value={option.name}>
+                                {option.name}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -3311,13 +3335,14 @@ export default function EstimateDetail() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="each">each</SelectItem>
-                              <SelectItem value="set">set</SelectItem>
-                              <SelectItem value="m">m</SelectItem>
-                              <SelectItem value="m²">m²</SelectItem>
-                              <SelectItem value="hours">hours</SelectItem>
-                              <SelectItem value="days">days</SelectItem>
-                              <SelectItem value="kg">kg</SelectItem>
+                              {estimateItemUnitCategory?.options
+                                ?.filter(opt => opt.isActive)
+                                .sort((a, b) => a.sortOrder - b.sortOrder)
+                                .map(option => (
+                                  <SelectItem key={option.id} value={option.name}>
+                                    {option.name}
+                                  </SelectItem>
+                                ))}
                             </SelectContent>
                           </Select>
                           <FormMessage />
