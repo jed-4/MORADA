@@ -206,11 +206,12 @@ export default function EstimateDetail() {
     { id: 'allowance', label: 'Allowance', visible: true, widthPx: 140 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
     { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
-    { id: 'builderCost', label: "Builder's Cost", visible: true, widthPx: 130 },
+    { id: 'builderCost', label: "Builder's Cost ex Tax", visible: true, widthPx: 150 },
+    { id: 'builderCostIncTax', label: "Builder's Cost inc Tax", visible: true, widthPx: 150 },
     { id: 'markup', label: 'Markup %', visible: true, widthPx: 100 },
-    { id: 'clientPriceExTax', label: 'Client Price ex Tax', visible: true, widthPx: 150 },
-    { id: 'clientTax', label: 'Client Tax', visible: true, widthPx: 110 },
-    { id: 'clientPriceIncTax', label: 'Client Price inc Tax', visible: true, widthPx: 150 },
+    { id: 'clientPriceExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
+    { id: 'clientTax', label: 'Tax', visible: true, widthPx: 100 },
+    { id: 'clientPriceIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
     { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
   ];
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
@@ -1127,6 +1128,10 @@ export default function EstimateDetail() {
             const pricingVals = calculatePricingValues(item);
             row.push((pricingVals.builderCost / 100).toFixed(2));
             break;
+          case 'builderCostIncTax':
+            const pricingValsIncTax = calculatePricingValues(item);
+            row.push((pricingValsIncTax.builderCostIncTax / 100).toFixed(2));
+            break;
           case 'markup':
             const pricingValues = calculatePricingValues(item);
             row.push(pricingValues.markupPercent?.toString() ?? '');
@@ -1338,6 +1343,11 @@ export default function EstimateDetail() {
     // Builder's cost (what builder pays)
     const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100); // in cents
     
+    // Builder's cost with tax
+    const taxRate = estimate?.taxRate ?? 10;
+    const builderCostTax = Math.round((builderCost * taxRate) / 100); // in cents
+    const builderCostIncTax = builderCost + builderCostTax; // in cents
+    
     // Markup percentage (item level or project level)
     const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
     
@@ -1348,6 +1358,7 @@ export default function EstimateDetail() {
     
     return {
       builderCost, // in cents
+      builderCostIncTax, // in cents
       markupPercent, // percentage (10 = 10%)
       clientPriceExTax, // in cents
       clientTax, // in cents
@@ -1908,6 +1919,13 @@ export default function EstimateDetail() {
           </TableCell>
         );
       
+      case 'builderCostIncTax':
+        return (
+          <TableCell className="py-0.5 text-sm" data-testid={`cell-builderCostIncTax-${item.id}`}>
+            {formatCurrency(pricingValues.builderCostIncTax)}
+          </TableCell>
+        );
+      
       case 'markup':
         if (isEditing) {
           return (
@@ -2302,9 +2320,9 @@ export default function EstimateDetail() {
                     </span>
                   </div>
 
-                  {/* Client Price Ex Tax */}
+                  {/* Amount Ex Tax */}
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Client Price (ex-tax)</span>
+                    <span className="text-muted-foreground">Amount (ex-tax)</span>
                     <span className="font-semibold" data-testid="text-client-price-ex-tax">
                       {formatCurrency(summary.subtotalWithMarkup)}
                     </span>
@@ -2320,9 +2338,9 @@ export default function EstimateDetail() {
 
                   <Separator className="my-2" />
 
-                  {/* Total Line (Client Price Inc Tax) */}
+                  {/* Total Line (Amount Inc Tax) */}
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-sm font-medium">Client Price (inc. GST)</span>
+                    <span className="text-sm font-medium">Amount (inc. GST)</span>
                     <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
                       {formatCurrency(summary.total)}
                     </span>
