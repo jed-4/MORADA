@@ -978,7 +978,7 @@ export default function EstimateDetail() {
       quantity: 1,
       unitType: "each",
       unitCostExTax: 0,
-      markupPercent: undefined,
+      markupPercent: 0,
       status: "pending",
       groupId: undefined,
       costCode: undefined,
@@ -1003,7 +1003,7 @@ export default function EstimateDetail() {
       quantity: 1,
       unitType: "each",
       unitCostExTax: 0,
-      markupPercent: undefined,
+      markupPercent: 0,
       status: "pending",
       groupId: undefined,
       costCode: undefined,
@@ -1507,7 +1507,7 @@ export default function EstimateDetail() {
                     type: 'Material',
                     quantity: 1,
                     unitCostExTax: 0,
-                    markupPercent: undefined,
+                    markupPercent: 0,
                     groupId: item.groupId || undefined,
                     parentItemId: item.id,
                     status: 'pending',
@@ -2907,7 +2907,7 @@ export default function EstimateDetail() {
                           type="number" 
                           step="0.1" 
                           min="0"
-                          placeholder={`${estimate?.projectMarkupPercent || 0}% (project default)`}
+                          placeholder="0% (default)"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
                           value={field.value ?? ''}
@@ -3345,7 +3345,7 @@ export default function EstimateDetail() {
                               type="number" 
                               step="0.1" 
                               min="0"
-                              placeholder={`${estimate?.projectMarkupPercent || 0}% (project default)`}
+                              placeholder="0% (default)"
                               className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               {...field}
                               value={field.value ?? ''}

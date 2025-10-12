@@ -2584,6 +2584,7 @@ export class MemStorage implements IStorage {
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
     markupAmount: number;
+    subtotalWithMarkup: number;
     taxAmount: number;
     total: number;
     itemCount: number;
@@ -2605,7 +2606,7 @@ export class MemStorage implements IStorage {
         taxTotal += item.taxAmount;
         clientPriceTotal += item.priceIncTax;
       } else {
-        // Legacy item: calculate using project defaults
+        // Legacy item: calculate using defaults (0% markup if not specified)
         const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
         const markupAmount = Math.round((builderCost * markupPercent) / 100);
         const clientPriceExTax = builderCost + markupAmount;
@@ -2620,10 +2621,12 @@ export class MemStorage implements IStorage {
     
     // Markup = (client price - tax) - builder cost
     const markupTotal = (clientPriceTotal - taxTotal) - builderCostTotal;
+    const subtotalWithMarkup = builderCostTotal + markupTotal;
 
     return {
       subtotal: builderCostTotal,
       markupAmount: markupTotal,
+      subtotalWithMarkup: subtotalWithMarkup,
       taxAmount: taxTotal,
       total: clientPriceTotal,
       itemCount: items.length,
@@ -4328,6 +4331,7 @@ export class DbStorage implements IStorage {
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
     markupAmount: number;
+    subtotalWithMarkup: number;
     taxAmount: number;
     total: number;
     itemCount: number;
@@ -4365,17 +4369,19 @@ export class DbStorage implements IStorage {
       
       // Markup = (client price - tax) - builder cost
       const markupTotal = (clientPriceTotal - taxTotal) - builderCostTotal;
+      const subtotalWithMarkup = builderCostTotal + markupTotal;
 
       return {
         subtotal: builderCostTotal,
         markupAmount: markupTotal,
+        subtotalWithMarkup: subtotalWithMarkup,
         taxAmount: taxTotal,
         total: clientPriceTotal,
         itemCount: items.length,
       };
     } catch (error) {
       console.error("Database error in getEstimateSummary:", error);
-      return { subtotal: 0, markupAmount: 0, taxAmount: 0, total: 0, itemCount: 0 };
+      return { subtotal: 0, markupAmount: 0, subtotalWithMarkup: 0, taxAmount: 0, total: 0, itemCount: 0 };
     }
   }
   async getCompanySettings(): Promise<CompanySettings | undefined> { return undefined; }

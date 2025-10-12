@@ -483,6 +483,7 @@ export type EstimateGroup = typeof estimateGroups.$inferSelect;
 export type EstimateSummary = {
   subtotal: number;
   markupAmount: number;
+  subtotalWithMarkup: number;
   taxAmount: number;
   total: number;
   itemCount: number;

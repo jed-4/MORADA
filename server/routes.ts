@@ -994,8 +994,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 1. Builder cost = unitCost × quantity
       const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
       
-      // 2. Apply markup (item-specific or project-level)
-      const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
+      // 2. Apply markup (defaults to 0% if not specified)
+      const effectiveMarkupPercent = markupPercent ?? 0;
       const markupAmount = Math.round((builderCostExTax * effectiveMarkupPercent) / 100);
       
       // 3. Client price = builder cost + markup
@@ -1167,8 +1167,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 1. Builder cost = unitCost × quantity
       const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
       
-      // 2. Apply markup (item-specific or project-level)
-      const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
+      // 2. Apply markup (defaults to 0% if not specified)
+      const effectiveMarkupPercent = markupPercent ?? 0;
       const markupAmount = Math.round((builderCostExTax * effectiveMarkupPercent) / 100);
       
       // 3. Client price = builder cost + markup
