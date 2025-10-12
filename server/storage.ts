@@ -771,6 +771,53 @@ export class MemStorage implements IStorage {
       this.fieldOptions.set(option.id, option);
     });
 
+    // Estimate Item Unit Category
+    const estimateItemUnitCategory: FieldCategory = {
+      id: "cat-estimate-item-unit",
+      key: "estimate_item.unit",
+      label: "Estimate Units",
+      entity: "estimate_item",
+      description: "Unit of measurement options for estimate items",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 6,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(estimateItemUnitCategory.id, estimateItemUnitCategory);
+
+    // Add default options for Estimate Item Units (Australian construction units)
+    const estimateItemUnitOptions = [
+      { key: "ea", name: "ea", color: "#6B7280", isDefault: true },
+      { key: "m", name: "m", color: "#6B7280", isDefault: false },
+      { key: "m²", name: "m²", color: "#6B7280", isDefault: false },
+      { key: "m³", name: "m³", color: "#6B7280", isDefault: false },
+      { key: "item", name: "item", color: "#6B7280", isDefault: false },
+      { key: "hr", name: "hr", color: "#6B7280", isDefault: false },
+      { key: "day", name: "day", color: "#6B7280", isDefault: false },
+      { key: "load", name: "load", color: "#6B7280", isDefault: false },
+      { key: "tonne", name: "tonne", color: "#6B7280", isDefault: false },
+      { key: "kg", name: "kg", color: "#6B7280", isDefault: false },
+      { key: "set", name: "set", color: "#6B7280", isDefault: false },
+    ];
+
+    estimateItemUnitOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-estimate-item-unit-${opt.key}`,
+        categoryId: estimateItemUnitCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        isCompleted: false,
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
+
     // Selection Categories
     const selectionCategoriesCategory: FieldCategory = {
       id: "cat-selection-categories",
@@ -3248,6 +3295,16 @@ export class DbStorage implements IStorage {
         sortOrder: 7,
       },
       {
+        id: 'cat-estimate-item-unit',
+        key: 'estimate_item.unit',
+        label: 'Estimate Units',
+        entity: 'estimate_item',
+        description: 'Unit of measurement options for estimate items',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 8,
+      },
+      {
         id: 'cat-estimate-status',
         key: 'estimate.status',
         label: 'Estimate Statuses',
@@ -3365,6 +3422,20 @@ export class DbStorage implements IStorage {
           { id: 'opt-estimate-item-status-ordered', categoryId, key: 'ordered', name: 'Ordered', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 3 },
           { id: 'opt-estimate-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 4 },
         ];
+      case 'estimate_item.unit':
+        return [
+          { id: 'opt-estimate-item-unit-ea', categoryId, key: 'ea', name: 'ea', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-estimate-item-unit-m', categoryId, key: 'm', name: 'm', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-estimate-item-unit-m2', categoryId, key: 'm²', name: 'm²', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 2 },
+          { id: 'opt-estimate-item-unit-m3', categoryId, key: 'm³', name: 'm³', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-estimate-item-unit-item', categoryId, key: 'item', name: 'item', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 4 },
+          { id: 'opt-estimate-item-unit-hr', categoryId, key: 'hr', name: 'hr', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 5 },
+          { id: 'opt-estimate-item-unit-day', categoryId, key: 'day', name: 'day', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 6 },
+          { id: 'opt-estimate-item-unit-load', categoryId, key: 'load', name: 'load', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 7 },
+          { id: 'opt-estimate-item-unit-tonne', categoryId, key: 'tonne', name: 'tonne', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 8 },
+          { id: 'opt-estimate-item-unit-kg', categoryId, key: 'kg', name: 'kg', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 9 },
+          { id: 'opt-estimate-item-unit-set', categoryId, key: 'set', name: 'set', color: '#6B7280', isDefault: false, isCompleted: false, sortOrder: 10 },
+        ];
       case 'estimate.status':
         return [
           { id: 'opt-estimate-status-draft', categoryId, key: 'draft', name: 'Draft', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
@@ -3444,6 +3515,21 @@ export class DbStorage implements IStorage {
           { id: 'opt-room-bathroom', categoryId: category.id, key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
           { id: 'opt-room-ensuite', categoryId: category.id, key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
           { id: 'opt-room-laundry', categoryId: category.id, key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+        ];
+        break;
+      case 'estimate_item.unit':
+        optionsToInsert = [
+          { id: 'opt-estimate-item-unit-ea', categoryId: category.id, key: 'ea', name: 'ea', color: '#6B7280', isDefault: true, sortOrder: 0 },
+          { id: 'opt-estimate-item-unit-m', categoryId: category.id, key: 'm', name: 'm', color: '#6B7280', isDefault: false, sortOrder: 1 },
+          { id: 'opt-estimate-item-unit-m2', categoryId: category.id, key: 'm²', name: 'm²', color: '#6B7280', isDefault: false, sortOrder: 2 },
+          { id: 'opt-estimate-item-unit-m3', categoryId: category.id, key: 'm³', name: 'm³', color: '#6B7280', isDefault: false, sortOrder: 3 },
+          { id: 'opt-estimate-item-unit-item', categoryId: category.id, key: 'item', name: 'item', color: '#6B7280', isDefault: false, sortOrder: 4 },
+          { id: 'opt-estimate-item-unit-hr', categoryId: category.id, key: 'hr', name: 'hr', color: '#6B7280', isDefault: false, sortOrder: 5 },
+          { id: 'opt-estimate-item-unit-day', categoryId: category.id, key: 'day', name: 'day', color: '#6B7280', isDefault: false, sortOrder: 6 },
+          { id: 'opt-estimate-item-unit-load', categoryId: category.id, key: 'load', name: 'load', color: '#6B7280', isDefault: false, sortOrder: 7 },
+          { id: 'opt-estimate-item-unit-tonne', categoryId: category.id, key: 'tonne', name: 'tonne', color: '#6B7280', isDefault: false, sortOrder: 8 },
+          { id: 'opt-estimate-item-unit-kg', categoryId: category.id, key: 'kg', name: 'kg', color: '#6B7280', isDefault: false, sortOrder: 9 },
+          { id: 'opt-estimate-item-unit-set', categoryId: category.id, key: 'set', name: 'set', color: '#6B7280', isDefault: false, sortOrder: 10 },
         ];
         break;
     }
