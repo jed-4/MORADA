@@ -2256,10 +2256,10 @@ export default function EstimateDetail() {
                 <CardContent className="pt-0 pb-3 space-y-2">
                   <Separator />
                   
-                  {/* Subtotal Line */}
+                  {/* Builder Cost Subtotal */}
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal (ex-tax)</span>
-                    <span className="font-semibold" data-testid="text-subtotal">
+                    <span className="text-muted-foreground">Builder Cost Subtotal</span>
+                    <span className="font-semibold" data-testid="text-builder-cost-subtotal">
                       {formatCurrency(summary.subtotal)}
                     </span>
                   </div>
@@ -2302,6 +2302,14 @@ export default function EstimateDetail() {
                     </span>
                   </div>
 
+                  {/* Client Price Ex Tax */}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Client Price (ex-tax)</span>
+                    <span className="font-semibold" data-testid="text-client-price-ex-tax">
+                      {formatCurrency(summary.subtotalWithMarkup)}
+                    </span>
+                  </div>
+
                   {/* GST Line */}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
@@ -2312,10 +2320,10 @@ export default function EstimateDetail() {
 
                   <Separator className="my-2" />
 
-                  {/* Total Line (expanded view) */}
+                  {/* Total Line (Client Price Inc Tax) */}
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-sm font-medium">Total (inc. GST)</span>
-                    <span className="text-lg font-bold text-primary">
+                    <span className="text-sm font-medium">Client Price (inc. GST)</span>
+                    <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
                       {formatCurrency(summary.total)}
                     </span>
                   </div>
