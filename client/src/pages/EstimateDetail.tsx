@@ -236,6 +236,9 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
     },
+    onError: (error) => {
+      console.error('[DRAG] Reorder mutation failed:', error);
+    },
   });
 
   // Mutation for reordering groups
@@ -252,6 +255,8 @@ export default function EstimateDetail() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
+    console.log('[DRAG] Drag end - active:', active.id, 'over:', over?.id);
+    
     if (!over || active.id === over.id) return;
     
     // Get all visible items in current order
@@ -261,8 +266,13 @@ export default function EstimateDetail() {
       allItems.push(...groupItems);
     });
     
+    console.log('[DRAG] All items count:', allItems.length);
+    console.log('[DRAG] All item IDs:', allItems.map(i => i.id));
+    
     const oldIndex = allItems.findIndex(item => item.id === active.id);
     const newIndex = allItems.findIndex(item => item.id === over.id);
+    
+    console.log('[DRAG] Old index:', oldIndex, 'New index:', newIndex);
     
     if (oldIndex === -1 || newIndex === -1) return;
     
@@ -272,6 +282,8 @@ export default function EstimateDetail() {
     // Check if item is being moved to a different group
     const newGroupId = targetItem.groupId;
     const oldGroupId = draggedItem.groupId;
+    
+    console.log('[DRAG] Moving item', draggedItem.id, 'from group', oldGroupId, 'to group', newGroupId);
     
     // Reorder items
     const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
@@ -286,10 +298,14 @@ export default function EstimateDetail() {
       // If this is the dragged item and group changed, update groupId
       if (item.id === draggedItem.id && newGroupId !== oldGroupId) {
         update.groupId = newGroupId || null;
+        console.log('[DRAG] Item', item.id, 'will update groupId to', update.groupId);
       }
       
       return update;
     });
+    
+    console.log('[DRAG] Sending reorder mutation with', updates.length, 'items');
+    console.log('[DRAG] Updates:', JSON.stringify(updates, null, 2));
     
     reorderItemsMutation.mutate({ items: updates });
   };
