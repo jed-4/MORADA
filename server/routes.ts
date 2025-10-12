@@ -39,7 +39,8 @@ import {
   insertInvoiceVariationSchema,
   insertInvoiceBillSchema,
   insertSiteDiaryTemplateSchema,
-  insertSiteDiaryEntrySchema
+  insertSiteDiaryEntrySchema,
+  insertActivitySchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -1138,11 +1139,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Update each item's order and verify success
+      // Update each item's order and optionally groupId
       const results = await Promise.all(
-        items.map(async ({ id, order }) => {
-          console.log(`[REORDER] Updating item ${id} to order ${order}`);
-          const updated = await storage.updateEstimateItem(id, { order });
+        items.map(async ({ id, order, groupId }) => {
+          const updateData: any = { order };
+          if (groupId !== undefined) {
+            updateData.groupId = groupId;
+            console.log(`[REORDER] Updating item ${id} to order ${order} and groupId ${groupId}`);
+          } else {
+            console.log(`[REORDER] Updating item ${id} to order ${order}`);
+          }
+          const updated = await storage.updateEstimateItem(id, updateData);
           if (!updated) {
             console.error(`[REORDER] Failed to update item ${id} - item not found`);
             throw new Error(`Estimate item not found: ${id}`);
@@ -2991,7 +2998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/activities", async (req, res) => {
     try {
-      const activityData = schema.insertActivitySchema.parse(req.body);
+      const activityData = insertActivitySchema.parse(req.body);
       const activity = await storage.createActivity(activityData);
       res.json(activity);
     } catch (error: any) {

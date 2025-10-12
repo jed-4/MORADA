@@ -248,7 +248,7 @@ export default function EstimateDetail() {
     },
   });
 
-  // Handle drag end for reordering items
+  // Handle drag end for reordering items and cross-group moves
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -266,14 +266,30 @@ export default function EstimateDetail() {
     
     if (oldIndex === -1 || newIndex === -1) return;
     
+    const draggedItem = allItems[oldIndex];
+    const targetItem = allItems[newIndex];
+    
+    // Check if item is being moved to a different group
+    const newGroupId = targetItem.groupId;
+    const oldGroupId = draggedItem.groupId;
+    
     // Reorder items
     const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
     
-    // Update order values
-    const updates = reorderedItems.map((item, index) => ({
-      id: item.id,
-      order: index
-    }));
+    // Build updates array with order and potentially groupId
+    const updates = reorderedItems.map((item, index) => {
+      const update: any = {
+        id: item.id,
+        order: index
+      };
+      
+      // If this is the dragged item and group changed, update groupId
+      if (item.id === draggedItem.id && newGroupId !== oldGroupId) {
+        update.groupId = newGroupId || null;
+      }
+      
+      return update;
+    });
     
     reorderItemsMutation.mutate({ items: updates });
   };
@@ -2153,7 +2169,7 @@ export default function EstimateDetail() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="border-b border-border p-4">
+      <div className="bg-white dark:bg-gray-950 border-b border-border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")} data-testid="button-back-to-estimates">
@@ -2648,31 +2664,12 @@ export default function EstimateDetail() {
                             </React.Fragment>
                           ))}
                           
-                          {/* Render ungrouped items */}
-                          {ungroupedItems.length > 0 && (
-                            <>
-                              {sortedGroups.length > 0 && (
-                                <TableRow className="bg-muted/30 hover:bg-muted/30">
-                                  <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-2">
-                                    <div className="flex items-center space-x-2">
-                                      <Badge variant="outline" className="text-xs">
-                                        Ungrouped Items
-                                      </Badge>
-                                      <span className="text-xs text-muted-foreground">
-                                        {ungroupedItems.length} items
-                                      </span>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                              
-                              {ungroupedItems.map((item) => (
-                                <React.Fragment key={`item-wrapper-${item.id}`}>
-                                  {renderItemWithSubItems(item)}
-                                </React.Fragment>
-                              ))}
-                            </>
-                          )}
+                          {/* Render ungrouped items without section header */}
+                          {ungroupedItems.map((item) => (
+                            <React.Fragment key={`item-wrapper-${item.id}`}>
+                              {renderItemWithSubItems(item)}
+                            </React.Fragment>
+                          ))}
                         </SortableContext>
                       );
                     })()}
@@ -3201,6 +3198,29 @@ export default function EstimateDetail() {
 
                     <FormField
                       control={editForm.control}
+                      name="costCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Cost Code (Optional)</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || undefined} disabled>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-item-costcode">
+                                <SelectValue placeholder="Not configured" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={editForm.control}
                       name="type"
                       render={({ field }) => (
                         <FormItem>
@@ -3221,7 +3241,40 @@ export default function EstimateDetail() {
                         </FormItem>
                       )}
                     />
+
+                    <FormField
+                      control={editForm.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-item-status">
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                                <SelectItem key={option.key} value={option.key}>
+                                  {option.name}
+                                </SelectItem>
+                              )) || (
+                                <>
+                                  <SelectItem value="pending">Pending</SelectItem>
+                                  <SelectItem value="quoted">Quoted</SelectItem>
+                                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
+
+                  <Separator className="my-4" />
 
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
@@ -3252,6 +3305,35 @@ export default function EstimateDetail() {
 
                     <FormField
                       control={editForm.control}
+                      name="unitType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Unit</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-item-unit">
+                                <SelectValue placeholder="Unit" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="each">each</SelectItem>
+                              <SelectItem value="set">set</SelectItem>
+                              <SelectItem value="m">m</SelectItem>
+                              <SelectItem value="m²">m²</SelectItem>
+                              <SelectItem value="hours">hours</SelectItem>
+                              <SelectItem value="days">days</SelectItem>
+                              <SelectItem value="kg">kg</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={editForm.control}
                       name="unitCostExTax"
                       render={({ field }) => (
                         <FormItem>
@@ -3262,6 +3344,7 @@ export default function EstimateDetail() {
                               step="0.01" 
                               min="0"
                               placeholder="0.00"
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               {...field}
                               onChange={(e) => {
                                 const exTax = parseFloat(e.target.value) || 0;
@@ -3275,6 +3358,185 @@ export default function EstimateDetail() {
                               data-testid="input-edit-item-price-ex-tax"
                             />
                           </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={editForm.control}
+                      name="priceIncTax"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Price Inc Tax</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01" 
+                              min="0"
+                              placeholder="0.00"
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              {...field}
+                              onChange={(e) => {
+                                const incTax = parseFloat(e.target.value) || 0;
+                                const rounded = Math.round(incTax * 100) / 100;
+                                field.onChange(rounded);
+                                const taxRate = (estimate?.taxRate || 10) / 100;
+                                const exTax = rounded / (1 + taxRate);
+                                const roundedExTax = Math.round(exTax * 100) / 100;
+                                editForm.setValue('unitCostExTax', roundedExTax);
+                              }}
+                              data-testid="input-edit-item-price-inc-tax"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <Separator className="my-4" />
+
+                  <FormField
+                    control={editForm.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Internal Notes (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Internal notes for the team..." {...field} value={field.value || ""} data-testid="input-edit-item-notes" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={editForm.control}
+                    name="allowance"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Allowance</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-item-allowance">
+                              <SelectValue placeholder="Select allowance type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="None">None</SelectItem>
+                            <SelectItem value="Prime Cost">Prime Cost</SelectItem>
+                            <SelectItem value="Provisional Sum">Provisional Sum</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={editForm.control}
+                    name="attachmentUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Attachment URL (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://..." {...field} value={field.value || ""} data-testid="input-edit-item-attachment" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={editForm.control}
+                      name="requestForQuote"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <input
+                              type="checkbox"
+                              checked={field.value}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="h-4 w-4 mt-1"
+                              data-testid="checkbox-edit-request-for-quote"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Request for Quote</FormLabel>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={editForm.control}
+                      name="isSelection"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <input
+                              type="checkbox"
+                              checked={field.value}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="h-4 w-4 mt-1"
+                              data-testid="checkbox-edit-is-selection"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Link to Selections</FormLabel>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <Separator className="my-4" />
+
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium">Proposal Settings</h4>
+                    
+                    <FormField
+                      control={editForm.control}
+                      name="proposalVisible"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <input
+                              type="checkbox"
+                              checked={field.value}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="h-4 w-4 mt-1"
+                              data-testid="checkbox-edit-visible-in-proposal"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Show in client proposal</FormLabel>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={editForm.control}
+                      name="shownAs"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Show as in proposal</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || undefined}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-show-as-in-proposal">
+                                <SelectValue placeholder="Select display format" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="empty">Empty (no price)</SelectItem>
+                              <SelectItem value="price">Show price</SelectItem>
+                              <SelectItem value="included">Included</SelectItem>
+                              <SelectItem value="excluded">Excluded</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
