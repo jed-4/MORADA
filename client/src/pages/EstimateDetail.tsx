@@ -1603,10 +1603,14 @@ export default function EstimateDetail() {
     const isCollapsed = collapsedItems.has(item.id);
     const isLocked = estimate?.isLocked;
     
+    const visibleColumns = columns.filter(col => col.visible);
+    console.log('[RENDER ROW] Visible columns:', visibleColumns.map(c => c.id));
+    console.log('[RENDER ROW] Item column visible?', visibleColumns.some(c => c.id === 'item'));
+    
     const rows = [
       // Parent item row
       <SortableRow key={item.id} id={item.id} className="min-h-8" isDraggable={!isLocked}>
-        {columns.filter(col => col.visible).map(column => (
+        {visibleColumns.map(column => (
           <React.Fragment key={column.id}>
             {renderCell(item, column.id)}
           </React.Fragment>
