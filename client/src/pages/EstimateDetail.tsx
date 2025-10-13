@@ -1904,10 +1904,38 @@ export default function EstimateDetail() {
         );
       
       case 'description':
-        if (isEditing) {
-          return (
-            <TableCell className="py-2" colSpan={1}>
-              <div className="min-w-[400px]">
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm relative`}
+            data-testid={`cell-description-${item.id}`}
+          >
+            <HoverCard openDelay={200}>
+              <HoverCardTrigger asChild>
+                <div 
+                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!isLocked) {
+                      handleCellEdit(item, 'description');
+                    }
+                  }}
+                  dangerouslySetInnerHTML={{ 
+                    __html: item.description || '<span class="text-muted-foreground">-</span>' 
+                  }}
+                />
+              </HoverCardTrigger>
+              {item.description && (
+                <HoverCardContent className="w-96" align="start">
+                  <div 
+                    className="prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: item.description }}
+                  />
+                </HoverCardContent>
+              )}
+            </HoverCard>
+            
+            {isEditing && (
+              <div className="absolute top-0 left-0 z-50 bg-background border rounded-md shadow-lg p-3 min-w-[400px]">
                 <RichTextEditor
                   content={editingValue}
                   onChange={(html) => setEditingValue(html)}
@@ -1939,39 +1967,7 @@ export default function EstimateDetail() {
                   </Button>
                 </div>
               </div>
-            </TableCell>
-          );
-        }
-        
-        return (
-          <TableCell 
-            className={`py-0.5 text-sm`}
-            data-testid={`cell-description-${item.id}`}
-          >
-            <HoverCard openDelay={200}>
-              <HoverCardTrigger asChild>
-                <div 
-                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    if (!isLocked) {
-                      handleCellEdit(item, 'description');
-                    }
-                  }}
-                  dangerouslySetInnerHTML={{ 
-                    __html: item.description || '<span class="text-muted-foreground">-</span>' 
-                  }}
-                />
-              </HoverCardTrigger>
-              {item.description && (
-                <HoverCardContent className="w-96" align="start">
-                  <div 
-                    className="prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: item.description }}
-                  />
-                </HoverCardContent>
-              )}
-            </HoverCard>
+            )}
           </TableCell>
         );
       
