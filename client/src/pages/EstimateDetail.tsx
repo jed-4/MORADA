@@ -192,6 +192,88 @@ function SortableGroup({ id, children, className }: SortableGroupProps) {
   );
 }
 
+// Separate component for sortable group row to comply with Rules of Hooks
+function SortableGroupRow({ 
+  group, 
+  groupedItems,
+  columns,
+  handleToggleGroupCollapse,
+  renderItemWithSubItems 
+}: { 
+  group: EstimateGroup;
+  groupedItems: Record<string, EstimateItem[]>;
+  columns: typeof ESTIMATE_COLUMNS;
+  handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
+  renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `group-${group.id}` });
+  
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  
+  return (
+    <>
+      <TableRow 
+        ref={setNodeRef}
+        style={style}
+        className="bg-muted/50 hover:bg-muted/70 border-t-2 border-b"
+        data-testid={`row-group-${group.id}`}
+      >
+        <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-2 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div
+                {...attributes}
+                {...listeners}
+                className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
+                data-testid={`drag-handle-group-${group.id}`}
+              >
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                data-testid={`button-toggle-group-${group.id}`}
+              >
+                {group.isCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+              <span className="font-medium text-sm">{group.name}</span>
+              {group.description && (
+                <span className="text-xs text-muted-foreground">- {group.description}</span>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {groupedItems[group.id]?.length || 0} items
+            </span>
+          </div>
+        </TableCell>
+      </TableRow>
+      
+      {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
+        <React.Fragment key={`item-wrapper-${item.id}`}>
+          {renderItemWithSubItems(item)}
+        </React.Fragment>
+      ))}
+    </>
+  );
+}
+
 export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
   const [location, setLocation] = useLocation();
@@ -2946,76 +3028,16 @@ export default function EstimateDetail() {
                               ))}
                               
                               {/* Render groups with inline header rows */}
-                              {sortedGroups.map((group) => {
-                                const {
-                                  attributes,
-                                  listeners,
-                                  setNodeRef,
-                                  transform,
-                                  transition,
-                                  isDragging,
-                                } = useSortable({ id: `group-${group.id}` });
-                                
-                                const style = {
-                                  transform: CSS.Transform.toString(transform),
-                                  transition,
-                                  opacity: isDragging ? 0.5 : 1,
-                                };
-                                
-                                return (
-                                  <React.Fragment key={`group-${group.id}`}>
-                                    {/* Group header row */}
-                                    <TableRow 
-                                      ref={setNodeRef}
-                                      style={style}
-                                      className="bg-muted/50 hover:bg-muted/70 border-t-2 border-b"
-                                      data-testid={`row-group-${group.id}`}
-                                    >
-                                      <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-2 px-4">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center space-x-2">
-                                            <div
-                                              {...attributes}
-                                              {...listeners}
-                                              className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
-                                              data-testid={`drag-handle-group-${group.id}`}
-                                            >
-                                              <GripVertical className="h-4 w-4 text-muted-foreground" />
-                                            </div>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              className="h-6 w-6 p-0"
-                                              onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                                              data-testid={`button-toggle-group-${group.id}`}
-                                            >
-                                              {group.isCollapsed ? (
-                                                <ChevronRight className="h-4 w-4" />
-                                              ) : (
-                                                <ChevronDown className="h-4 w-4" />
-                                              )}
-                                            </Button>
-                                            <span className="font-medium text-sm">{group.name}</span>
-                                            {group.description && (
-                                              <span className="text-xs text-muted-foreground">- {group.description}</span>
-                                            )}
-                                          </div>
-                                          <span className="text-xs text-muted-foreground">
-                                            {groupedItems[group.id]?.length || 0} items
-                                          </span>
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                    
-                                    {/* Group items */}
-                                    {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
-                                      <React.Fragment key={`item-wrapper-${item.id}`}>
-                                        {renderItemWithSubItems(item)}
-                                      </React.Fragment>
-                                    ))}
-                                  </React.Fragment>
-                                );
-                              })}
+                              {sortedGroups.map((group) => (
+                                <SortableGroupRow
+                                  key={`group-${group.id}`}
+                                  group={group}
+                                  groupedItems={groupedItems}
+                                  columns={columns}
+                                  handleToggleGroupCollapse={handleToggleGroupCollapse}
+                                  renderItemWithSubItems={renderItemWithSubItems}
+                                />
+                              ))}
                             </TableBody>
                           </Table>
                         </SortableContext>
