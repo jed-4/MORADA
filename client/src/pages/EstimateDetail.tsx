@@ -101,6 +101,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { RichTextEditor } from "@/components/RichTextEditor";
 
 interface EstimateDetailParams {
   id?: string;
@@ -225,6 +226,9 @@ export default function EstimateDetail() {
   // Inline editing state for table cells
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<any>("");
+  
+  // Description dialog state
+  const [descriptionDialog, setDescriptionDialog] = useState<{ item: EstimateItem; content: string } | null>(null);
 
   // Column configuration state
   type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
@@ -1898,36 +1902,24 @@ export default function EstimateDetail() {
         );
       
       case 'description':
-        if (isEditing) {
-          return (
-            <TableCell className="py-0.5">
-              <Input
-                value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'description')}
-                onBlur={() => handleCellSave(item, 'description')}
-                className="h-7 text-sm border-primary"
-                autoFocus
-                data-testid={`input-edit-description-${item.id}`}
-              />
-            </TableCell>
-          );
-        }
         return (
           <TableCell 
             className={`py-0.5 text-sm`}
             data-testid={`cell-description-${item.id}`}
           >
-            <span 
-              className={`truncate block max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-              title={isLocked ? (item.description || '-') : 'Double-click to edit'}
+            <div 
+              className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+              title={isLocked ? (item.description || '-') : 'Double-click to edit description'}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                if (!isLocked) handleCellEdit(item, 'description');
+                if (!isLocked) {
+                  setDescriptionDialog({ item, content: item.description || '' });
+                }
               }}
-            >
-              {item.description || '-'}
-            </span>
+              dangerouslySetInnerHTML={{ 
+                __html: item.description || '<span class="text-muted-foreground">-</span>' 
+              }}
+            />
           </TableCell>
         );
       
@@ -3889,6 +3881,54 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Description Rich Text Editor Dialog */}
+      <Dialog 
+        open={descriptionDialog !== null} 
+        onOpenChange={(open) => !open && setDescriptionDialog(null)}
+      >
+        <DialogContent className="max-w-4xl" style={{ resize: 'both', overflow: 'auto', minWidth: '600px', minHeight: '400px' }}>
+          <DialogHeader>
+            <DialogTitle>Edit Description - {descriptionDialog?.item.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <RichTextEditor
+              content={descriptionDialog?.content || ''}
+              onChange={(html) => {
+                if (descriptionDialog) {
+                  setDescriptionDialog({ ...descriptionDialog, content: html });
+                }
+              }}
+              placeholder="Enter item description..."
+              data-testid="richtext-description"
+            />
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => setDescriptionDialog(null)}
+                data-testid="button-cancel-description"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (descriptionDialog) {
+                    updateItemMutation.mutate({
+                      itemId: descriptionDialog.item.id,
+                      data: { description: descriptionDialog.content }
+                    });
+                    setDescriptionDialog(null);
+                  }
+                }}
+                disabled={updateItemMutation.isPending}
+                data-testid="button-save-description"
+              >
+                {updateItemMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
