@@ -2006,7 +2006,7 @@ export default function EstimateDetail() {
       case 'description':
         return (
           <TableCell 
-            className={`py-0.5 text-sm relative`}
+            className={`py-0.5 text-sm`}
             data-testid={`cell-description-${item.id}`}
           >
             <HoverCard openDelay={200}>
@@ -2033,41 +2033,6 @@ export default function EstimateDetail() {
                 </HoverCardContent>
               )}
             </HoverCard>
-            
-            {isEditing && (
-              <div className="absolute top-0 left-0 z-50 bg-background border rounded-md shadow-lg p-3 min-w-[400px]">
-                <RichTextEditor
-                  content={editingValue}
-                  onChange={(html) => setEditingValue(html)}
-                  placeholder="Enter description..."
-                  data-testid={`richtext-edit-description-${item.id}`}
-                />
-                <div className="flex justify-end gap-2 mt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingCell(null);
-                      setEditingValue("");
-                    }}
-                    data-testid={`button-cancel-description-${item.id}`}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCellSave(item, 'description');
-                    }}
-                    data-testid={`button-save-description-${item.id}`}
-                  >
-                    Save
-                  </Button>
-                </div>
-              </div>
-            )}
           </TableCell>
         );
       
@@ -4020,6 +3985,58 @@ export default function EstimateDetail() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Description Editor Dialog */}
+      <Dialog 
+        open={editingCell?.field === 'description'} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingCell(null);
+            setEditingValue("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Description</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <RichTextEditor
+              content={editingValue}
+              onChange={(html) => setEditingValue(html)}
+              placeholder="Enter description..."
+              data-testid={editingCell ? `richtext-edit-description-${editingCell.itemId}` : 'richtext-edit-description'}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingCell(null);
+                setEditingValue("");
+              }}
+              data-testid={editingCell ? `button-cancel-description-${editingCell.itemId}` : 'button-cancel-description'}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (editingCell) {
+                  const item = items.find(i => i.id === editingCell.itemId);
+                  if (item) {
+                    handleCellSave(item, 'description');
+                  }
+                }
+              }}
+              data-testid={editingCell ? `button-save-description-${editingCell.itemId}` : 'button-save-description'}
+            >
+              Save
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
