@@ -1784,6 +1784,10 @@ export default function EstimateDetail() {
     const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
     const isLocked = estimate?.isLocked;
     const pricingValues = calculatePricingValues(item);
+    
+    if (columnId === 'item') {
+      console.log('[RENDER CELL] Rendering item cell for:', item.id, 'isEditing:', isEditing, 'isLocked:', isLocked);
+    }
 
     switch (columnId) {
       case 'costCode':
