@@ -262,14 +262,25 @@ export default function EstimateDetail() {
   // Mutation for reordering items
   const reorderItemsMutation = useMutation({
     mutationFn: async ({ items }: { items: { id: string; order: number }[] }) => {
+      console.log('[REORDER MUTATION] Sending items:', items);
       return apiRequest("PATCH", "/api/estimate-items/reorder", { items });
     },
     onSuccess: () => {
+      console.log('[REORDER MUTATION] Success - invalidating queries');
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      toast({
+        title: "Items reordered",
+        description: "Successfully updated item order",
+      });
     },
-    onError: (error) => {
-      console.error('[DRAG] Reorder mutation failed:', error);
+    onError: (error: any) => {
+      console.error('[REORDER MUTATION] Failed:', error);
+      toast({
+        title: "Failed to reorder items",
+        description: error?.message || "Could not update item order. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -1854,23 +1865,9 @@ export default function EstimateDetail() {
                   )}
                 </Button>
               )}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="font-medium text-sm truncate max-w-[180px] block">
-                      {item.name}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="max-w-[300px]">
-                      <p className="font-medium">{item.name}</p>
-                      {item.description && (
-                        <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                      )}
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <span className="font-medium text-sm truncate max-w-[180px] block" title={item.name}>
+                {item.name}
+              </span>
             </div>
           </TableCell>
         );
