@@ -79,6 +79,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -226,9 +231,6 @@ export default function EstimateDetail() {
   // Inline editing state for table cells
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<any>("");
-  
-  // Description dialog state
-  const [descriptionDialog, setDescriptionDialog] = useState<{ item: EstimateItem; content: string } | null>(null);
 
   // Column configuration state
   type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
@@ -1902,24 +1904,74 @@ export default function EstimateDetail() {
         );
       
       case 'description':
+        if (isEditing) {
+          return (
+            <TableCell className="py-2" colSpan={1}>
+              <div className="min-w-[400px]">
+                <RichTextEditor
+                  content={editingValue}
+                  onChange={(html) => setEditingValue(html)}
+                  placeholder="Enter description..."
+                  data-testid={`richtext-edit-description-${item.id}`}
+                />
+                <div className="flex justify-end gap-2 mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingCell(null);
+                      setEditingValue("");
+                    }}
+                    data-testid={`button-cancel-description-${item.id}`}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCellSave(item, 'description');
+                    }}
+                    data-testid={`button-save-description-${item.id}`}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </TableCell>
+          );
+        }
+        
         return (
           <TableCell 
             className={`py-0.5 text-sm`}
             data-testid={`cell-description-${item.id}`}
           >
-            <div 
-              className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-              title={isLocked ? (item.description || '-') : 'Double-click to edit description'}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                if (!isLocked) {
-                  setDescriptionDialog({ item, content: item.description || '' });
-                }
-              }}
-              dangerouslySetInnerHTML={{ 
-                __html: item.description || '<span class="text-muted-foreground">-</span>' 
-              }}
-            />
+            <HoverCard openDelay={200}>
+              <HoverCardTrigger asChild>
+                <div 
+                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!isLocked) {
+                      handleCellEdit(item, 'description');
+                    }
+                  }}
+                  dangerouslySetInnerHTML={{ 
+                    __html: item.description || '<span class="text-muted-foreground">-</span>' 
+                  }}
+                />
+              </HoverCardTrigger>
+              {item.description && (
+                <HoverCardContent className="w-96" align="start">
+                  <div 
+                    className="prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: item.description }}
+                  />
+                </HoverCardContent>
+              )}
+            </HoverCard>
           </TableCell>
         );
       
@@ -3881,54 +3933,6 @@ export default function EstimateDetail() {
           }}
         />
       )}
-
-      {/* Description Rich Text Editor Dialog */}
-      <Dialog 
-        open={descriptionDialog !== null} 
-        onOpenChange={(open) => !open && setDescriptionDialog(null)}
-      >
-        <DialogContent className="max-w-4xl" style={{ resize: 'both', overflow: 'auto', minWidth: '600px', minHeight: '400px' }}>
-          <DialogHeader>
-            <DialogTitle>Edit Description - {descriptionDialog?.item.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <RichTextEditor
-              content={descriptionDialog?.content || ''}
-              onChange={(html) => {
-                if (descriptionDialog) {
-                  setDescriptionDialog({ ...descriptionDialog, content: html });
-                }
-              }}
-              placeholder="Enter item description..."
-              data-testid="richtext-description"
-            />
-            <div className="flex justify-end space-x-2">
-              <Button
-                variant="outline"
-                onClick={() => setDescriptionDialog(null)}
-                data-testid="button-cancel-description"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (descriptionDialog) {
-                    updateItemMutation.mutate({
-                      itemId: descriptionDialog.item.id,
-                      data: { description: descriptionDialog.content }
-                    });
-                    setDescriptionDialog(null);
-                  }
-                }}
-                disabled={updateItemMutation.isPending}
-                data-testid="button-save-description"
-              >
-                {updateItemMutation.isPending ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
