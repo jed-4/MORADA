@@ -338,6 +338,11 @@ export default function EstimateDetail() {
       allItems.push(...groupItems);
     });
     
+    // Also include all sub-items
+    items.filter(item => item.parentItemId).forEach(subItem => {
+      allItems.push(subItem);
+    });
+    
     console.log('[DRAG] All items count:', allItems.length);
     console.log('[DRAG] All item IDs:', allItems.map(i => i.id));
     
@@ -2816,12 +2821,18 @@ export default function EstimateDetail() {
 {(() => {
                       const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
                       
-                      // Create sortable IDs: group IDs prefixed with "group-" and item IDs
+                      // Create sortable IDs: group IDs prefixed with "group-" and item IDs (including sub-items)
                       const groupIds = sortedGroups.map(g => `group-${g.id}`);
                       const allItemIds = [...ungroupedItems.map(i => i.id)];
                       Object.values(groupedItems).forEach(groupItems => {
                         allItemIds.push(...groupItems.map(i => i.id));
                       });
+                      
+                      // Add all sub-item IDs to the sortable context
+                      items.filter(item => item.parentItemId).forEach(subItem => {
+                        allItemIds.push(subItem.id);
+                      });
+                      
                       const allSortableIds = [...groupIds, ...allItemIds];
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40;
