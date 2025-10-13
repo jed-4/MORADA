@@ -10,6 +10,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 13, 2025
+- **Inline Editing UX Enhancement**: Changed all editable cells from single-click to double-click activation to prevent drag-drop pointer event conflicts
+- **Rich Text Description Field**: Implemented inline rich text editor for item descriptions with formatting toolbar (bold, italic, underline, ordered/unordered lists)
+- **HoverCard Preview**: Added hover preview for description field showing full formatted HTML content without needing to open editor
+- **Overlay Editor Design**: Description editor now overlays on top of table instead of expanding row height for better visual consistency
+- **Drag-Drop Persistence Fix**: Resolved critical 404 "Estimate item not found" error by including sub-item IDs in both SortableContext and drag handler - sub-items can now be dragged and reordered successfully
+- **TipTap Integration**: Added @tiptap/extension-underline for complete rich text formatting support in descriptions
+
 ### October 8, 2025
 - **Templates Hub Implementation**: Transformed Templates page into a central hub with cards for all template types: Notes, Site Diary, Schedule, Tasks, Take-offs, Estimates, RFQ, RFI, Proposal, Selections, Purchase Orders
 - **Phased Rollout UX**: Implemented "Coming Soon" badges for unimplemented template types with visual indicators (reduced opacity, cursor-not-allowed) to prevent navigation to non-existent pages
