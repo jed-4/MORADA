@@ -265,28 +265,68 @@ export default function EstimateDetail() {
     })
   );
 
-  // Mutation for reordering items
+  // Mutation for reordering items with optimistic updates
   const reorderItemsMutation = useMutation({
-    mutationFn: async ({ items }: { items: { id: string; order: number }[] }) => {
+    mutationFn: async ({ items }: { items: { id: string; order: number; groupId?: string | null }[] }) => {
       console.log('[REORDER MUTATION] Sending items:', items);
       return apiRequest("PATCH", "/api/estimate-items/reorder", { items });
     },
-    onSuccess: () => {
-      console.log('[REORDER MUTATION] Success - invalidating queries');
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
-      toast({
-        title: "Items reordered",
-        description: "Successfully updated item order",
-      });
+    onMutate: async ({ items }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      
+      // Snapshot previous value
+      const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]);
+      
+      // Optimistically update
+      queryClient.setQueryData(
+        ["/api/estimates", effectiveEstimateId, "items"],
+        (old: any[]) => {
+          if (!old) return old;
+          return old.map(item => {
+            const update = items.find(u => u.id === item.id);
+            if (update) {
+              return { 
+                ...item, 
+                order: update.order,
+                ...(update.groupId !== undefined ? { groupId: update.groupId } : {})
+              };
+            }
+            return item;
+          });
+        }
+      );
+      
+      return { previousItems };
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
       console.error('[REORDER MUTATION] Failed:', error);
+      
+      // Rollback to previous state
+      if (context?.previousItems) {
+        queryClient.setQueryData(
+          ["/api/estimates", effectiveEstimateId, "items"],
+          context.previousItems
+        );
+      }
+      
       toast({
         title: "Failed to reorder items",
         description: error?.message || "Could not update item order. Please try again.",
         variant: "destructive",
       });
+    },
+    onSuccess: () => {
+      console.log('[REORDER MUTATION] Success');
+      toast({
+        title: "Items reordered",
+        description: "Successfully updated item order",
+      });
+    },
+    onSettled: () => {
+      // Always refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
     },
   });
 
@@ -331,91 +371,146 @@ export default function EstimateDetail() {
       return;
     }
     
-    // Handle item reordering and cross-group moves
-    const { ungroupedItems, groupedItems } = organizeItemsByGroups();
-    const allItems = [...ungroupedItems];
-    Object.values(groupedItems).forEach(groupItems => {
-      allItems.push(...groupItems);
-    });
+    // Find the dragged item and target item
+    const draggedItem = items.find(item => item.id === active.id);
+    const targetItem = items.find(item => item.id === over.id);
     
-    // Also include all sub-items
-    items.filter(item => item.parentItemId).forEach(subItem => {
-      allItems.push(subItem);
-    });
-    
-    console.log('[DRAG] All items count:', allItems.length);
-    console.log('[DRAG] All item IDs:', allItems.map(i => i.id));
-    
-    const oldIndex = allItems.findIndex(item => item.id === active.id);
-    
-    // Check if dropping onto a group (not an item)
-    if (isOverGroup) {
-      const targetGroupId = String(over.id).replace('group-', '');
-      console.log('[DRAG] Dropping item onto group:', targetGroupId);
-      
-      if (oldIndex === -1) return;
-      
-      const draggedItem = allItems[oldIndex];
-      const oldGroupId = draggedItem.groupId;
-      
-      // If same group, do nothing
-      if (targetGroupId === oldGroupId) return;
-      
-      // Move item to the end of the target group
-      const targetGroupItems = groupedItems[targetGroupId] || [];
-      const newOrder = targetGroupItems.length > 0 
-        ? Math.max(...targetGroupItems.map(i => i.order || 0)) + 1
-        : 0;
-      
-      console.log('[DRAG] Moving item to group', targetGroupId, 'with order', newOrder);
-      
-      // Update just this item's group and order
-      updateItemMutation.mutate({
-        itemId: draggedItem.id,
-        data: {
-          groupId: targetGroupId,
-          order: newOrder
-        }
-      });
+    if (!draggedItem) {
+      console.log('[DRAG] Dragged item not found:', active.id);
       return;
     }
     
-    const newIndex = allItems.findIndex(item => item.id === over.id);
-    
-    console.log('[DRAG] Old index:', oldIndex, 'New index:', newIndex);
-    
-    if (oldIndex === -1 || newIndex === -1) return;
-    
-    const draggedItem = allItems[oldIndex];
-    const targetItem = allItems[newIndex];
-    
-    // Check if item is being moved to a different group
-    const newGroupId = targetItem.groupId;
-    const oldGroupId = draggedItem.groupId;
-    
-    console.log('[DRAG] Moving item', draggedItem.id, 'from group', oldGroupId, 'to group', newGroupId);
-    
-    // Reorder items
-    const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
-    
-    // Build updates array with new order for all items, and groupId for moved item
-    const updates = reorderedItems.map((item, index) => {
-      const update: any = {
-        id: item.id,
-        order: index
-      };
+    // Handle dropping onto a group header (cross-group move to end of group)
+    if (isOverGroup) {
+      const targetGroupId = String(over.id).replace('group-', '');
+      console.log('[DRAG] Dropping item onto group header:', targetGroupId);
       
-      // If this is the dragged item and group changed, update groupId
-      if (item.id === draggedItem.id && newGroupId !== oldGroupId) {
-        update.groupId = newGroupId || null;
-        console.log('[DRAG] Item', item.id, 'will update groupId to', update.groupId);
+      if (targetGroupId === draggedItem.groupId) {
+        console.log('[DRAG] Same group, ignoring');
+        return;
       }
       
-      return update;
-    });
+      // Get source and target container items
+      const sourceGroupId = draggedItem.groupId || null;
+      const sourceContainerItems = items
+        .filter(item => !item.parentItemId && (item.groupId || null) === sourceGroupId)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      const targetContainerItems = items
+        .filter(i => i.groupId === targetGroupId && !i.parentItemId)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      // Remove from source, add to end of target
+      const remainingSourceItems = sourceContainerItems.filter(item => item.id !== draggedItem.id);
+      const updatedTargetItems = [...targetContainerItems, draggedItem];
+      
+      // Build updates for both containers
+      const updates: any[] = [];
+      
+      // Reindex source container
+      remainingSourceItems.forEach((item, index) => {
+        updates.push({ id: item.id, order: index });
+      });
+      
+      // Reindex target container (including moved item at end)
+      updatedTargetItems.forEach((item, index) => {
+        if (item.id === draggedItem.id) {
+          updates.push({ id: item.id, order: index, groupId: targetGroupId });
+        } else {
+          updates.push({ id: item.id, order: index });
+        }
+      });
+      
+      console.log('[DRAG] Group header drop updates:', updates);
+      
+      reorderItemsMutation.mutate({ items: updates });
+      return;
+    }
     
-    console.log('[DRAG] Sending reorder mutation with', updates.length, 'items');
-    console.log('[DRAG] Updates:', JSON.stringify(updates, null, 2));
+    if (!targetItem) {
+      console.log('[DRAG] Target item not found:', over.id);
+      return;
+    }
+    
+    // Determine the container (groupId or null for ungrouped)
+    const draggedGroupId = draggedItem.groupId || null;
+    const targetGroupId = targetItem.groupId || null;
+    
+    console.log('[DRAG] Dragged from container:', draggedGroupId, 'Target container:', targetGroupId);
+    
+    // Get all parent items in the source container, sorted by order
+    const sourceContainerItems = items
+      .filter(item => !item.parentItemId && (item.groupId || null) === draggedGroupId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    // Find indices within the source container
+    const oldIndex = sourceContainerItems.findIndex(item => item.id === active.id);
+    
+    if (oldIndex === -1) {
+      console.log('[DRAG] Item not found in source container');
+      return;
+    }
+    
+    // If moving to a different group, reindex both containers
+    if (targetGroupId !== draggedGroupId) {
+      console.log('[DRAG] Cross-group move detected');
+      
+      // Get target container items to find insertion point
+      const targetContainerItems = items
+        .filter(item => !item.parentItemId && (item.groupId || null) === targetGroupId)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      const targetIndex = targetContainerItems.findIndex(item => item.id === over.id);
+      const insertionIndex = targetIndex >= 0 ? targetIndex : targetContainerItems.length;
+      
+      // Remove from source, add to target at insertion point
+      const remainingSourceItems = sourceContainerItems.filter(item => item.id !== draggedItem.id);
+      const updatedTargetItems = [...targetContainerItems];
+      updatedTargetItems.splice(insertionIndex, 0, draggedItem);
+      
+      // Build updates for both containers
+      const updates: any[] = [];
+      
+      // Reindex source container
+      remainingSourceItems.forEach((item, index) => {
+        updates.push({ id: item.id, order: index });
+      });
+      
+      // Reindex target container (including moved item)
+      updatedTargetItems.forEach((item, index) => {
+        if (item.id === draggedItem.id) {
+          updates.push({ id: item.id, order: index, groupId: targetGroupId });
+        } else {
+          updates.push({ id: item.id, order: index });
+        }
+      });
+      
+      console.log('[DRAG] Cross-group move updates:', updates);
+      
+      reorderItemsMutation.mutate({ items: updates });
+      return;
+    }
+    
+    // Same container - reorder within it
+    const newIndex = sourceContainerItems.findIndex(item => item.id === over.id);
+    
+    if (newIndex === -1) {
+      console.log('[DRAG] Target not found in container');
+      return;
+    }
+    
+    console.log('[DRAG] Reordering within container - old:', oldIndex, 'new:', newIndex);
+    
+    // Reorder within the container
+    const reorderedItems = arrayMove(sourceContainerItems, oldIndex, newIndex);
+    
+    // Build updates with new order values (0, 1, 2, ...)
+    const updates = reorderedItems.map((item, index) => ({
+      id: item.id,
+      order: index
+    }));
+    
+    console.log('[DRAG] Sending reorder mutation with', updates.length, 'items:', updates);
     
     reorderItemsMutation.mutate({ items: updates });
   };
