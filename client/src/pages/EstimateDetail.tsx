@@ -1823,8 +1823,12 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'costCode')}
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? '' : 'Double-click to edit'}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'costCode');
+            }}
             data-testid={`cell-costCode-${item.id}`}
           >
             {item.costCode || '-'}
@@ -1855,23 +1859,7 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 ${indentClass} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={(e) => {
-              console.log('[CLICK] Item name cell clicked', item.id, 'isLocked:', isLocked);
-              // Don't trigger edit if clicking on a button or already in a tooltip trigger
-              const target = e.target as HTMLElement;
-              console.log('[CLICK] Target element:', target.tagName, target.className);
-              if (target.closest('button') || target.closest('[role="button"]')) {
-                console.log('[CLICK] Ignoring click on button');
-                return;
-              }
-              if (!isLocked) {
-                console.log('[CLICK] Calling handleCellEdit for name');
-                handleCellEdit(item, 'name');
-              } else {
-                console.log('[CLICK] Cell is locked, cannot edit');
-              }
-            }}
+            className={`py-0.5 ${indentClass}`}
             data-testid={`cell-name-${item.id}`}
           >
             <div className="flex items-center gap-2">
@@ -1893,7 +1881,16 @@ export default function EstimateDetail() {
                   )}
                 </Button>
               )}
-              <span className="font-medium text-sm truncate max-w-[180px] block" title={item.name}>
+              <span 
+                className={`font-medium text-sm truncate max-w-[180px] block ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+                title={isLocked ? item.name : 'Double-click to edit'}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  if (!isLocked) {
+                    handleCellEdit(item, 'name');
+                  }
+                }}
+              >
                 {item.name}
               </span>
             </div>
@@ -1918,11 +1915,17 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'description')}
+            className={`py-0.5 text-sm`}
             data-testid={`cell-description-${item.id}`}
           >
-            <span className="truncate block max-w-[200px]">
+            <span 
+              className={`truncate block max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+              title={isLocked ? (item.description || '-') : 'Double-click to edit'}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (!isLocked) handleCellEdit(item, 'description');
+              }}
+            >
               {item.description || '-'}
             </span>
           </TableCell>
@@ -2039,8 +2042,12 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'quantity')}
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? '' : 'Double-click to edit'}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'quantity');
+            }}
             data-testid={`cell-quantity-${item.id}`}
           >
             {(item.quantity / 100).toFixed(2).replace(/\.?0+$/, '')}
@@ -2083,8 +2090,12 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'unitType')}
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? '' : 'Double-click to edit'}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'unitType');
+            }}
             data-testid={`cell-unitType-${item.id}`}
           >
             {item.unitType || '-'}
@@ -2126,8 +2137,12 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            onClick={() => !isLocked && handleCellEdit(item, 'markupPercent')}
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? '' : 'Double-click to edit'}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'markupPercent');
+            }}
             data-testid={`cell-markup-${item.id}`}
           >
             {pricingValues.markupPercent != null ? `${pricingValues.markupPercent}%` : 
