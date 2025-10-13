@@ -88,6 +88,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Form,
@@ -2899,145 +2900,124 @@ export default function EstimateDetail() {
                       
                       return (
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          {/* Render ungrouped items first (if any) - NO CARD */}
-                          {ungroupedItems.length > 0 && (
-                            <Table style={{ 
-                              display: 'table',
-                              tableLayout: 'fixed',
-                              width: `${tableWidth}px`,
-                              minWidth: `${tableWidth}px`
-                            }} data-testid="table-ungrouped-items">
-                              <colgroup>
-                                <col style={{ width: '40px' }} />
+                          {/* Single continuous table with inline group headers (Buildern-style) */}
+                          <Table style={{ 
+                            display: 'table',
+                            tableLayout: 'fixed',
+                            width: `${tableWidth}px`,
+                            minWidth: `${tableWidth}px`
+                          }} data-testid="table-estimate-items">
+                            <colgroup>
+                              <col style={{ width: '40px' }} />
+                              {columns.filter(col => col.visible).map(column => (
+                                <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                              ))}
+                              <col style={{ width: '80px' }} />
+                            </colgroup>
+                            <TableHeader>
+                              <TableRow className="h-8">
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
                                 {columns.filter(col => col.visible).map(column => (
-                                  <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                                ))}
-                                <col style={{ width: '80px' }} />
-                              </colgroup>
-                              <TableHeader>
-                                <TableRow className="h-8">
-                                  <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
-                                  {columns.filter(col => col.visible).map(column => (
-                                    <TableHead 
-                                      key={column.id}
-                                      className="py-1 text-xs font-medium relative group"
-                                      style={{ width: `${column.widthPx}px` }}
-                                    >
-                                      <div className="flex items-center gap-1">
-                                        <span>{column.label}</span>
-                                      </div>
-                                      <div
-                                        className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                        style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                        onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                        data-testid={`resize-handle-${column.id}`}
-                                      />
-                                    </TableHead>
-                                  ))}
-                                  <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody data-testid="tbody-ungrouped-items">
-                                {ungroupedItems.map((item) => (
-                                  <React.Fragment key={`item-wrapper-${item.id}`}>
-                                    {renderItemWithSubItems(item)}
-                                  </React.Fragment>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          )}
-                          
-                          {/* Render each group as a card bubble */}
-                          {sortedGroups.map((group) => (
-                            <SortableGroup key={`group-${group.id}`} id={`group-${group.id}`}>
-                              {({ attributes, listeners }) => (
-                                <Card className="border" data-testid={`card-group-${group.id}`}>
-                                  <CardHeader className="py-3 px-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center space-x-2">
-                                        <div
-                                          {...attributes}
-                                          {...listeners}
-                                          className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity -ml-2 mr-1"
-                                          data-testid={`drag-handle-group-${group.id}`}
-                                        >
-                                          <GripVertical className="h-4 w-4 text-muted-foreground" />
-                                        </div>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                                          data-testid={`button-toggle-group-${group.id}`}
-                                        >
-                                          {group.isCollapsed ? (
-                                            <ChevronRight className="h-4 w-4" />
-                                          ) : (
-                                            <ChevronDown className="h-4 w-4" />
-                                          )}
-                                        </Button>
-                                        <span className="font-medium text-sm">{group.name}</span>
-                                        {group.description && (
-                                          <span className="text-xs text-muted-foreground">- {group.description}</span>
-                                        )}
-                                      </div>
-                                      <span className="text-xs text-muted-foreground">
-                                        {groupedItems[group.id]?.length || 0} items
-                                      </span>
+                                  <TableHead 
+                                    key={column.id}
+                                    className="py-1 text-xs font-medium relative group"
+                                    style={{ width: `${column.widthPx}px` }}
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      <span>{column.label}</span>
                                     </div>
-                                  </CardHeader>
-                              {!group.isCollapsed && groupedItems[group.id] && groupedItems[group.id].length > 0 && (
-                                <CardContent className="p-0">
-                                  <Table style={{ 
-                                    display: 'table',
-                                    tableLayout: 'fixed',
-                                    width: `${tableWidth}px`,
-                                    minWidth: `${tableWidth}px`
-                                  }}>
-                                    <colgroup>
-                                      <col style={{ width: '40px' }} />
-                                      {columns.filter(col => col.visible).map(column => (
-                                        <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                                      ))}
-                                      <col style={{ width: '80px' }} />
-                                    </colgroup>
-                                    <TableHeader>
-                                      <TableRow className="h-8">
-                                        <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
-                                        {columns.filter(col => col.visible).map(column => (
-                                          <TableHead 
-                                            key={column.id}
-                                            className="py-1 text-xs font-medium relative group"
-                                            style={{ width: `${column.widthPx}px` }}
-                                          >
-                                            <div className="flex items-center gap-1">
-                                              <span>{column.label}</span>
-                                            </div>
+                                    <div
+                                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                      style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                                      onMouseDown={(e) => handleResizeStart(e, column.id)}
+                                      data-testid={`resize-handle-${column.id}`}
+                                    />
+                                  </TableHead>
+                                ))}
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {/* Render ungrouped items first */}
+                              {ungroupedItems.map((item) => (
+                                <React.Fragment key={`item-wrapper-${item.id}`}>
+                                  {renderItemWithSubItems(item)}
+                                </React.Fragment>
+                              ))}
+                              
+                              {/* Render groups with inline header rows */}
+                              {sortedGroups.map((group) => {
+                                const {
+                                  attributes,
+                                  listeners,
+                                  setNodeRef,
+                                  transform,
+                                  transition,
+                                  isDragging,
+                                } = useSortable({ id: `group-${group.id}` });
+                                
+                                const style = {
+                                  transform: CSS.Transform.toString(transform),
+                                  transition,
+                                  opacity: isDragging ? 0.5 : 1,
+                                };
+                                
+                                return (
+                                  <React.Fragment key={`group-${group.id}`}>
+                                    {/* Group header row */}
+                                    <TableRow 
+                                      ref={setNodeRef}
+                                      style={style}
+                                      className="bg-muted/50 hover:bg-muted/70 border-t-2 border-b"
+                                      data-testid={`row-group-${group.id}`}
+                                    >
+                                      <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-2 px-4">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center space-x-2">
                                             <div
-                                              className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                              style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                              onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                              data-testid={`resize-handle-${column.id}`}
-                                            />
-                                          </TableHead>
-                                        ))}
-                                        <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {groupedItems[group.id].map((item) => (
-                                        <React.Fragment key={`item-wrapper-${item.id}`}>
-                                          {renderItemWithSubItems(item)}
-                                        </React.Fragment>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </CardContent>
-                              )}
-                                </Card>
-                              )}
-                            </SortableGroup>
-                          ))}
+                                              {...attributes}
+                                              {...listeners}
+                                              className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
+                                              data-testid={`drag-handle-group-${group.id}`}
+                                            >
+                                              <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                            </div>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-6 w-6 p-0"
+                                              onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                                              data-testid={`button-toggle-group-${group.id}`}
+                                            >
+                                              {group.isCollapsed ? (
+                                                <ChevronRight className="h-4 w-4" />
+                                              ) : (
+                                                <ChevronDown className="h-4 w-4" />
+                                              )}
+                                            </Button>
+                                            <span className="font-medium text-sm">{group.name}</span>
+                                            {group.description && (
+                                              <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                            )}
+                                          </div>
+                                          <span className="text-xs text-muted-foreground">
+                                            {groupedItems[group.id]?.length || 0} items
+                                          </span>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                    
+                                    {/* Group items */}
+                                    {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
+                                      <React.Fragment key={`item-wrapper-${item.id}`}>
+                                        {renderItemWithSubItems(item)}
+                                      </React.Fragment>
+                                    ))}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
                         </SortableContext>
                       );
                     })()}
