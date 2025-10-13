@@ -139,8 +139,8 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
       className={`${className} group`}
       data-testid={`row-item-${id}`}
     >
-      {isDraggable && (
-        <TableCell className="py-0.5 px-1" style={{ width: '40px' }}>
+      <TableCell className="py-0.5 px-1" style={{ width: '40px' }}>
+        {isDraggable && (
           <div
             {...attributes}
             {...listeners}
@@ -148,8 +148,8 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
           >
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
-        </TableCell>
-      )}
+        )}
+      </TableCell>
       {children}
     </TableRow>
   );
@@ -325,6 +325,39 @@ export default function EstimateDetail() {
     console.log('[DRAG] All item IDs:', allItems.map(i => i.id));
     
     const oldIndex = allItems.findIndex(item => item.id === active.id);
+    
+    // Check if dropping onto a group (not an item)
+    if (isOverGroup) {
+      const targetGroupId = String(over.id).replace('group-', '');
+      console.log('[DRAG] Dropping item onto group:', targetGroupId);
+      
+      if (oldIndex === -1) return;
+      
+      const draggedItem = allItems[oldIndex];
+      const oldGroupId = draggedItem.groupId;
+      
+      // If same group, do nothing
+      if (targetGroupId === oldGroupId) return;
+      
+      // Move item to the end of the target group
+      const targetGroupItems = groupedItems[targetGroupId] || [];
+      const newOrder = targetGroupItems.length > 0 
+        ? Math.max(...targetGroupItems.map(i => i.order || 0)) + 1
+        : 0;
+      
+      console.log('[DRAG] Moving item to group', targetGroupId, 'with order', newOrder);
+      
+      // Update just this item's group and order
+      updateItemMutation.mutate({
+        itemId: draggedItem.id,
+        data: {
+          groupId: targetGroupId,
+          order: newOrder
+        }
+      });
+      return;
+    }
+    
     const newIndex = allItems.findIndex(item => item.id === over.id);
     
     console.log('[DRAG] Old index:', oldIndex, 'New index:', newIndex);
