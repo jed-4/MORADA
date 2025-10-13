@@ -914,6 +914,8 @@ export default function EstimateDetail() {
 
   // Handlers for inline cell editing
   const handleCellEdit = (item: EstimateItem, field: string) => {
+    console.log('[CELL EDIT] Attempting to edit field:', field, 'for item:', item.id);
+    
     if (estimate?.isLocked) {
       toast({
         title: "Cannot Edit",
@@ -923,6 +925,7 @@ export default function EstimateDetail() {
       return;
     }
     
+    console.log('[CELL EDIT] Setting editing cell');
     setEditingCell({ itemId: item.id, field });
     
     // Set initial value based on field type
@@ -1835,13 +1838,19 @@ export default function EstimateDetail() {
           <TableCell 
             className={`py-0.5 ${indentClass} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
             onClick={(e) => {
+              console.log('[CLICK] Item name cell clicked', item.id, 'isLocked:', isLocked);
               // Don't trigger edit if clicking on a button or already in a tooltip trigger
               const target = e.target as HTMLElement;
+              console.log('[CLICK] Target element:', target.tagName, target.className);
               if (target.closest('button') || target.closest('[role="button"]')) {
+                console.log('[CLICK] Ignoring click on button');
                 return;
               }
               if (!isLocked) {
+                console.log('[CLICK] Calling handleCellEdit for name');
                 handleCellEdit(item, 'name');
+              } else {
+                console.log('[CLICK] Cell is locked, cannot edit');
               }
             }}
             data-testid={`cell-name-${item.id}`}
