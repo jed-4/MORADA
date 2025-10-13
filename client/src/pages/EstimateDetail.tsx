@@ -1736,7 +1736,12 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 ${indentClass}`}
+            className={`py-0.5 ${indentClass} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            onClick={(e) => {
+              // Don't trigger edit if clicking on collapse button
+              if ((e.target as HTMLElement).closest('button')) return;
+              !isLocked && handleCellEdit(item, 'name');
+            }}
             data-testid={`cell-name-${item.id}`}
           >
             <div className="flex items-center gap-2">
@@ -1761,10 +1766,7 @@ export default function EstimateDetail() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span 
-                      className={`font-medium text-sm truncate max-w-[180px] block ${!isLocked ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1' : ''}`}
-                      onClick={() => !isLocked && handleCellEdit(item, 'name')}
-                    >
+                    <span className="font-medium text-sm truncate max-w-[180px] block">
                       {item.name}
                     </span>
                   </TooltipTrigger>
