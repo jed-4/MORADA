@@ -376,7 +376,7 @@ export default function EstimateDetail() {
     // Reorder items
     const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
     
-    // Build updates array with order and potentially groupId
+    // Build updates array with new order for all items, and groupId for moved item
     const updates = reorderedItems.map((item, index) => {
       const update: any = {
         id: item.id,
@@ -1824,9 +1824,14 @@ export default function EstimateDetail() {
           <TableCell 
             className={`py-0.5 ${indentClass} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
             onClick={(e) => {
-              // Don't trigger edit if clicking on collapse button
-              if ((e.target as HTMLElement).closest('button')) return;
-              !isLocked && handleCellEdit(item, 'name');
+              // Don't trigger edit if clicking on a button or already in a tooltip trigger
+              const target = e.target as HTMLElement;
+              if (target.closest('button') || target.closest('[role="button"]')) {
+                return;
+              }
+              if (!isLocked) {
+                handleCellEdit(item, 'name');
+              }
             }}
             data-testid={`cell-name-${item.id}`}
           >
