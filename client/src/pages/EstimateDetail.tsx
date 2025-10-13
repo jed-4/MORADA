@@ -436,10 +436,21 @@ export default function EstimateDetail() {
                 mergedColumns[index] = savedCol;
               }
             });
+            // Ensure 'item' column is always visible
+            const itemColIndex = mergedColumns.findIndex(col => col.id === 'item');
+            if (itemColIndex !== -1) {
+              mergedColumns[itemColIndex].visible = true;
+            }
             setColumns(mergedColumns);
           } else {
+            // Ensure 'item' column is always visible
+            const itemColIndex = parsed.findIndex((col: ColumnConfig) => col.id === 'item');
+            if (itemColIndex !== -1) {
+              parsed[itemColIndex].visible = true;
+            }
             setColumns(parsed);
           }
+          console.log('[COLUMNS] Loaded columns from localStorage, item column visible:', parsed.find((c: ColumnConfig) => c.id === 'item')?.visible);
         } catch (e) {
           console.error('Failed to parse saved column config:', e);
         }
