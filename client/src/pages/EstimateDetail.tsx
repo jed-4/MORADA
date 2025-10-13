@@ -155,6 +155,36 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
   );
 }
 
+// Sortable Group Component for drag & drop groups
+interface SortableGroupProps {
+  id: string;
+  children: (dragHandleProps: { attributes: any; listeners: any }) => React.ReactNode;
+  className?: string;
+}
+
+function SortableGroup({ id, children, className }: SortableGroupProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={className}>
+      {children({ attributes, listeners })}
+    </div>
+  );
+}
+
 export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
   const [location, setLocation] = useLocation();
@@ -253,7 +283,7 @@ export default function EstimateDetail() {
     },
   });
 
-  // Handle drag end for reordering items and cross-group moves
+  // Handle drag end for reordering items, groups, and cross-group moves
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -261,7 +291,30 @@ export default function EstimateDetail() {
     
     if (!over || active.id === over.id) return;
     
-    // Get all visible items in current order
+    // Check if dragging a group (groups have IDs prefixed with "group-")
+    const isDraggingGroup = String(active.id).startsWith('group-');
+    const isOverGroup = String(over.id).startsWith('group-');
+    
+    if (isDraggingGroup) {
+      // Handle group reordering
+      const { sortedGroups } = organizeItemsByGroups();
+      const oldIndex = sortedGroups.findIndex(g => `group-${g.id}` === active.id);
+      const newIndex = sortedGroups.findIndex(g => `group-${g.id}` === over.id);
+      
+      if (oldIndex === -1 || newIndex === -1) return;
+      
+      const reorderedGroups = arrayMove(sortedGroups, oldIndex, newIndex);
+      const updates = reorderedGroups.map((group, index) => ({
+        id: group.id,
+        order: index
+      }));
+      
+      console.log('[DRAG] Reordering groups:', updates);
+      reorderGroupsMutation.mutate({ groups: updates });
+      return;
+    }
+    
+    // Handle item reordering and cross-group moves
     const { ungroupedItems, groupedItems } = organizeItemsByGroups();
     const allItems = [...ungroupedItems];
     Object.values(groupedItems).forEach(groupItems => {
@@ -2644,15 +2697,19 @@ export default function EstimateDetail() {
                     <div className="space-y-4">
 {(() => {
                       const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+                      
+                      // Create sortable IDs: group IDs prefixed with "group-" and item IDs
+                      const groupIds = sortedGroups.map(g => `group-${g.id}`);
                       const allItemIds = [...ungroupedItems.map(i => i.id)];
                       Object.values(groupedItems).forEach(groupItems => {
                         allItemIds.push(...groupItems.map(i => i.id));
                       });
+                      const allSortableIds = [...groupIds, ...allItemIds];
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40;
                       
                       return (
-                        <SortableContext items={allItemIds} strategy={verticalListSortingStrategy}>
+                        <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* Render ungrouped items first (if any) - NO CARD */}
                           {ungroupedItems.length > 0 && (
                             <Table style={{ 
@@ -2703,33 +2760,43 @@ export default function EstimateDetail() {
                           
                           {/* Render each group as a card bubble */}
                           {sortedGroups.map((group) => (
-                            <Card key={`group-${group.id}`} className="border" data-testid={`card-group-${group.id}`}>
-                              <CardHeader className="py-3 px-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 w-6 p-0"
-                                      onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                                      data-testid={`button-toggle-group-${group.id}`}
-                                    >
-                                      {group.isCollapsed ? (
-                                        <ChevronRight className="h-4 w-4" />
-                                      ) : (
-                                        <ChevronDown className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                    <span className="font-medium text-sm">{group.name}</span>
-                                    {group.description && (
-                                      <span className="text-xs text-muted-foreground">- {group.description}</span>
-                                    )}
-                                  </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    {groupedItems[group.id]?.length || 0} items
-                                  </span>
-                                </div>
-                              </CardHeader>
+                            <SortableGroup key={`group-${group.id}`} id={`group-${group.id}`}>
+                              {({ attributes, listeners }) => (
+                                <Card className="border" data-testid={`card-group-${group.id}`}>
+                                  <CardHeader className="py-3 px-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-2">
+                                        <div
+                                          {...attributes}
+                                          {...listeners}
+                                          className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity -ml-2 mr-1"
+                                          data-testid={`drag-handle-group-${group.id}`}
+                                        >
+                                          <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                                          data-testid={`button-toggle-group-${group.id}`}
+                                        >
+                                          {group.isCollapsed ? (
+                                            <ChevronRight className="h-4 w-4" />
+                                          ) : (
+                                            <ChevronDown className="h-4 w-4" />
+                                          )}
+                                        </Button>
+                                        <span className="font-medium text-sm">{group.name}</span>
+                                        {group.description && (
+                                          <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                        )}
+                                      </div>
+                                      <span className="text-xs text-muted-foreground">
+                                        {groupedItems[group.id]?.length || 0} items
+                                      </span>
+                                    </div>
+                                  </CardHeader>
                               {!group.isCollapsed && groupedItems[group.id] && groupedItems[group.id].length > 0 && (
                                 <CardContent className="p-0">
                                   <Table style={{ 
@@ -2778,7 +2845,9 @@ export default function EstimateDetail() {
                                   </Table>
                                 </CardContent>
                               )}
-                            </Card>
+                                </Card>
+                              )}
+                            </SortableGroup>
                           ))}
                         </SortableContext>
                       );
