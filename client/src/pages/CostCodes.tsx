@@ -22,7 +22,7 @@ import {
   Archive,
   GitMerge,
   Clock,
-  ClockOff,
+  Ban,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -276,7 +276,7 @@ export default function CostCodes() {
                                 </Badge>
                               ) : (
                                 <Badge variant="secondary" className="gap-1">
-                                  <ClockOff className="h-3 w-3" />
+                                  <Ban className="h-3 w-3" />
                                   No Timesheet
                                 </Badge>
                               )}
@@ -307,7 +307,7 @@ export default function CostCodes() {
                                   >
                                     {code.availableInTimesheets ? (
                                       <>
-                                        <ClockOff className="h-4 w-4 mr-2" />
+                                        <Ban className="h-4 w-4 mr-2" />
                                         Remove from Timesheets
                                       </>
                                     ) : (
@@ -390,7 +390,7 @@ export default function CostCodes() {
                             </Badge>
                           ) : (
                             <Badge variant="secondary" className="gap-1">
-                              <ClockOff className="h-3 w-3" />
+                              <Ban className="h-3 w-3" />
                               No Timesheet
                             </Badge>
                           )}
@@ -421,7 +421,7 @@ export default function CostCodes() {
                               >
                                 {code.availableInTimesheets ? (
                                   <>
-                                    <ClockOff className="h-4 w-4 mr-2" />
+                                    <Ban className="h-4 w-4 mr-2" />
                                     Remove from Timesheets
                                   </>
                                 ) : (

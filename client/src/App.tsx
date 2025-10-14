@@ -31,6 +31,7 @@ import ClientInvoices from "@/pages/ClientInvoices";
 import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
 import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
+import CostCodes from "@/pages/CostCodes";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -121,6 +122,7 @@ function Router() {
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
       <Route path="/settings" component={Settings} />
       <Route path="/suppliers" component={Suppliers} />
+      <Route path="/cost-codes" component={CostCodes} />
       <Route path="/checklists" component={() => <ComingSoonPage section="checklists" />} />
       <Route path="/emails" component={() => <ComingSoonPage section="emails" />} />
       <Route path="/crm" component={() => <ComingSoonPage section="crm" />} />

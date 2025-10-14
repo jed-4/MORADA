@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Plus,
   Truck,
+  Tag,
 } from "lucide-react";
 
 import {
@@ -127,6 +128,7 @@ const systemItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Checklists", url: "/checklists", icon: CheckCircle },
   { title: "Suppliers", url: "/suppliers", icon: Truck },
+  { title: "Cost Codes", url: "/cost-codes", icon: Tag },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: UserPlus },
 ];
