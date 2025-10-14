@@ -12,6 +12,7 @@ import {
   insertEstimateSchema,
   insertEstimateItemSchema,
   insertEstimateGroupSchema,
+  insertCostCategorySchema,
   insertCostCodeSchema,
   insertUserSchema,
   insertUserRoleSchema,
@@ -3311,6 +3312,247 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to delete entry",
+        details: error.message 
+      });
+    }
+  });
+
+  // Cost Categories routes (business-wide)
+  app.get("/api/cost-categories", async (req, res) => {
+    try {
+      const categories = await storage.getCostCategories();
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch cost categories",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/cost-categories/:id", async (req, res) => {
+    try {
+      const category = await storage.getCostCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Cost category not found" });
+      }
+      res.json(category);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch cost category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/cost-categories", async (req, res) => {
+    try {
+      const validationResult = insertCostCategorySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const category = await storage.createCostCategory(validationResult.data);
+      res.status(201).json(category);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create cost category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/cost-categories/:id", async (req, res) => {
+    try {
+      const validationResult = insertCostCategorySchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const category = await storage.updateCostCategory(req.params.id, validationResult.data);
+      if (!category) {
+        return res.status(404).json({ error: "Cost category not found" });
+      }
+      res.json(category);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update cost category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/cost-categories/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteCostCategory(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Cost category not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete cost category",
+        details: error.message 
+      });
+    }
+  });
+
+  // Cost Codes routes (business-wide)
+  app.get("/api/cost-codes", async (req, res) => {
+    try {
+      const codes = await storage.getCostCodes();
+      res.json(codes);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch cost codes",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/cost-codes/:id", async (req, res) => {
+    try {
+      const code = await storage.getCostCode(req.params.id);
+      if (!code) {
+        return res.status(404).json({ error: "Cost code not found" });
+      }
+      res.json(code);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch cost code",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/cost-codes", async (req, res) => {
+    try {
+      const validationResult = insertCostCodeSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Verify category exists if provided
+      if (validationResult.data.categoryId) {
+        const category = await storage.getCostCategory(validationResult.data.categoryId);
+        if (!category) {
+          return res.status(400).json({ error: "Cost category not found" });
+        }
+      }
+
+      const code = await storage.createCostCode(validationResult.data);
+      res.status(201).json(code);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create cost code",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/cost-codes/:id", async (req, res) => {
+    try {
+      const validationResult = insertCostCodeSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Verify category exists if being updated
+      if (validationResult.data.categoryId) {
+        const category = await storage.getCostCategory(validationResult.data.categoryId);
+        if (!category) {
+          return res.status(400).json({ error: "Cost category not found" });
+        }
+      }
+
+      const code = await storage.updateCostCode(req.params.id, validationResult.data);
+      if (!code) {
+        return res.status(404).json({ error: "Cost code not found" });
+      }
+      res.json(code);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update cost code",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/cost-codes/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteCostCode(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Cost code not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete cost code",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/cost-codes/:id/archive", async (req, res) => {
+    try {
+      const code = await storage.archiveCostCode(req.params.id);
+      if (!code) {
+        return res.status(404).json({ error: "Cost code not found" });
+      }
+      res.json(code);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to archive cost code",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/cost-codes/merge", async (req, res) => {
+    try {
+      const { sourceId, targetId } = req.body;
+      
+      if (!sourceId || !targetId) {
+        return res.status(400).json({ 
+          error: "Both sourceId and targetId are required" 
+        });
+      }
+
+      if (sourceId === targetId) {
+        return res.status(400).json({ 
+          error: "Source and target must be different" 
+        });
+      }
+
+      // Verify both codes exist
+      const sourceCode = await storage.getCostCode(sourceId);
+      const targetCode = await storage.getCostCode(targetId);
+
+      if (!sourceCode) {
+        return res.status(404).json({ error: "Source cost code not found" });
+      }
+
+      if (!targetCode) {
+        return res.status(404).json({ error: "Target cost code not found" });
+      }
+
+      const success = await storage.mergeCostCodes(sourceId, targetId);
+      res.json({ success });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to merge cost codes",
         details: error.message 
       });
     }
