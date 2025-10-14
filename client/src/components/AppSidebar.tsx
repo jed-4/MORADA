@@ -247,7 +247,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
           onOpenChange={setIsCompanyOpen}
           className="group/collapsible"
         >
-          <SidebarGroup>
+          <SidebarGroup className={!isCompanyOpen ? "pb-0" : ""}>
             <SidebarGroupLabel asChild>
               <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
                 <span className="font-medium">{companyName}</span>
@@ -291,7 +291,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
           onOpenChange={setIsProjectsOpen}
           className="group/collapsible"
         >
-          <SidebarGroup>
+          <SidebarGroup className={!isProjectsOpen && !isCompanyOpen ? "pt-0" : ""}>
             <SidebarGroupLabel asChild>
               <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
                 <span className="font-medium">Projects</span>
