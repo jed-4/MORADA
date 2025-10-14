@@ -28,12 +28,17 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import type { CostCategory, CostCode } from "@shared/schema";
+import AddCategoryDialog from "@/components/AddCategoryDialog";
+import AddCostCodeDialog from "@/components/AddCostCodeDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [isAddCostCodeOpen, setIsAddCostCodeOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
@@ -134,8 +139,8 @@ export default function CostCodes() {
           <Button
             variant="outline"
             size="default"
+            onClick={() => setIsAddCategoryOpen(true)}
             data-testid="button-add-category"
-            disabled
           >
             <Plus className="h-4 w-4 mr-2" />
             Add Category
@@ -143,8 +148,8 @@ export default function CostCodes() {
           <Button
             variant="outline"
             size="default"
+            onClick={() => setIsAddCostCodeOpen(true)}
             data-testid="button-add-code"
-            disabled
           >
             <Plus className="h-4 w-4 mr-2" />
             Add Cost Code
@@ -152,8 +157,8 @@ export default function CostCodes() {
           <Button
             variant="outline"
             size="default"
+            onClick={() => setIsImportOpen(true)}
             data-testid="button-import-csv"
-            disabled
           >
             <Upload className="h-4 w-4 mr-2" />
             Import CSV
@@ -469,6 +474,9 @@ export default function CostCodes() {
           </>
         )}
       </div>
+
+      <AddCategoryDialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen} />
+      <AddCostCodeDialog open={isAddCostCodeOpen} onOpenChange={setIsAddCostCodeOpen} />
     </div>
   );
 }
