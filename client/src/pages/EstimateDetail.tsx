@@ -351,8 +351,25 @@ export default function EstimateDetail() {
   // Mutation for reordering items with optimistic updates
   const reorderItemsMutation = useMutation({
     mutationFn: async ({ items }: { items: { id: string; order: number; groupId?: string | null }[] }) => {
-      console.log('[REORDER MUTATION] Sending items:', items);
-      return apiRequest("PATCH", "/api/estimate-items/reorder", { items });
+      // Filter out any items that might not be persisted yet (temporary IDs, optimistic updates, etc.)
+      // Only send items that exist in our current items data
+      const currentItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]) as EstimateItem[] || [];
+      const validItems = items.filter((update: any) => {
+        const existsInData = currentItems.some((item: any) => item.id === update.id);
+        if (!existsInData) {
+          console.warn('[REORDER MUTATION] Filtering out non-existent item:', update.id);
+        }
+        return existsInData;
+      });
+      
+      console.log('[REORDER MUTATION] Sending', validItems.length, 'valid items out of', items.length, ':', validItems);
+      
+      if (validItems.length === 0) {
+        console.warn('[REORDER MUTATION] No valid items to reorder, skipping');
+        return { success: true, count: 0 };
+      }
+      
+      return apiRequest("PATCH", "/api/estimate-items/reorder", { items: validItems });
     },
     onMutate: async ({ items }) => {
       // Cancel outgoing refetches
