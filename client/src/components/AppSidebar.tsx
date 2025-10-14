@@ -150,6 +150,11 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const [isSettingsOpen, setIsSettingsOpen] = useState(() => {
+    const saved = localStorage.getItem("sidebar-settings-open");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   // Fetch company settings
   const { data: companySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
@@ -163,6 +168,10 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
   useEffect(() => {
     localStorage.setItem("sidebar-projects-open", JSON.stringify(isProjectsOpen));
   }, [isProjectsOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-settings-open", JSON.stringify(isSettingsOpen));
+  }, [isSettingsOpen]);
 
   // Generate project-scoped URLs
   const getProjectItems = () => {
@@ -291,7 +300,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
           onOpenChange={setIsProjectsOpen}
           className="group/collapsible"
         >
-          <SidebarGroup className={!isProjectsOpen && !isCompanyOpen ? "pt-0" : ""}>
+          <SidebarGroup className={!isProjectsOpen && !isCompanyOpen ? "pt-0 pb-0" : !isProjectsOpen ? "pb-0" : ""}>
             <SidebarGroupLabel asChild>
               <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
                 <span className="font-medium">Projects</span>
@@ -406,37 +415,47 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
         </Collapsible>
       </SidebarContent>
 
-      {/* Settings Dropdown Footer */}
-      <SidebarFooter className="p-2 border-t">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-between" 
-              data-testid="button-settings-dropdown"
-            >
-              <div className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                <span className="text-sm font-medium">Settings</span>
-              </div>
-              <ChevronDown className="h-4 w-4 flex-shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 z-[60]" side="top">
-            <DropdownMenuLabel>Settings</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {settingsItems.map((item) => (
-              <DropdownMenuItem 
-                key={item.title}
-                data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                onClick={() => navigate(item.url)}
-              >
-                <item.icon className="h-4 w-4 mr-2" />
-                {item.title}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {/* Settings Section - Collapsible */}
+      <SidebarFooter className="border-t">
+        <Collapsible
+          open={isSettingsOpen}
+          onOpenChange={setIsSettingsOpen}
+          className="group/collapsible"
+        >
+          <SidebarGroup className={!isSettingsOpen && !isProjectsOpen ? "pt-0" : ""}>
+            <SidebarGroupLabel asChild>
+              <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
+                <span className="font-medium">Settings</span>
+                {isSettingsOpen ? (
+                  <ChevronDown className="h-4 w-4 transition-transform" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 transition-transform" />
+                )}
+              </CollapsibleTrigger>
+            </SidebarGroupLabel>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {settingsItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton 
+                        asChild
+                        tooltip={item.title}
+                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        data-active={location === item.url}
+                      >
+                        <Link href={item.url}>
+                          <item.icon className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </SidebarGroup>
+        </Collapsible>
       </SidebarFooter>
       
       {/* Create Project Dialog */}
