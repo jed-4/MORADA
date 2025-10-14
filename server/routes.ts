@@ -83,7 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, site diary, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills') || path.startsWith('/site-diary-templates') || path.startsWith('/site-diary-entries')) {
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-categories') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills') || path.startsWith('/site-diary-templates') || path.startsWith('/site-diary-entries')) {
       return next();
     }
     
@@ -1391,10 +1391,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cost Codes API Routes
+  // Cost Codes API Routes (legacy project-scoped route - deprecated)
   app.get("/api/projects/:projectId/cost-codes", async (req, res) => {
     try {
-      const costCodes = await storage.getCostCodes(req.params.projectId);
+      const costCodes = await storage.getCostCodes();
       res.json(costCodes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cost codes" });
@@ -3585,7 +3585,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create category if needed
         if (item.categoryCode && item.categoryTitle) {
           if (!categoryMap.has(item.categoryCode)) {
-            const newCategory = await storage.insertCostCategory({
+            const newCategory = await storage.createCostCategory({
               code: item.categoryCode,
               title: item.categoryTitle,
             });
@@ -3599,7 +3599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Create cost code
         if (item.costCode && item.costCodeTitle) {
-          await storage.insertCostCode({
+          await storage.createCostCode({
             code: item.costCode,
             title: item.costCodeTitle,
             categoryId,
