@@ -46,6 +46,7 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
       // Build the import data from mapped columns
       const importData = parsedData.rows.map((row) => {
         const getCell = (mapping: string) => {
+          if (!mapping || mapping === "__none__") return "";
           const colIndex = parsedData.headers.indexOf(mapping);
           return colIndex >= 0 ? row[colIndex] : "";
         };
@@ -82,6 +83,9 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -121,8 +125,8 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
         const autoMapping: ColumnMapping = {
           costCode: "",
           costCodeTitle: "",
-          categoryCode: "",
-          categoryTitle: "",
+          categoryCode: "__none__",
+          categoryTitle: "__none__",
         };
 
         headers.forEach((header) => {
@@ -161,8 +165,8 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
     setColumnMapping({
       costCode: "",
       costCodeTitle: "",
-      categoryCode: "",
-      categoryTitle: "",
+      categoryCode: "__none__",
+      categoryTitle: "__none__",
     });
     onOpenChange(false);
   };
@@ -174,6 +178,7 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
     
     return parsedData.rows.slice(0, 10).map((row) => {
       const getCell = (mapping: string) => {
+        if (!mapping || mapping === "__none__") return "";
         const colIndex = parsedData.headers.indexOf(mapping);
         return colIndex >= 0 ? row[colIndex] : "";
       };
@@ -298,7 +303,7 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="__none__">None</SelectItem>
                         {parsedData.headers.map((header) => (
                           <SelectItem key={header} value={header}>
                             {header}
@@ -320,7 +325,7 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
                         <SelectValue placeholder="Select column" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="__none__">None</SelectItem>
                         {parsedData.headers.map((header) => (
                           <SelectItem key={header} value={header}>
                             {header}
