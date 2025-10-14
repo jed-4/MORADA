@@ -32,7 +32,7 @@ export default function AddCategoryDialog({ open, onOpenChange }: AddCategoryDia
 
   const createCategoryMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const response = await apiRequest("/api/cost-categories", "POST", data);
+      const response = await apiRequest("POST", "/api/cost-categories", data);
       return response.json() as Promise<CostCategory>;
     },
     onSuccess: () => {

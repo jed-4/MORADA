@@ -58,7 +58,7 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
         };
       });
 
-      const response = await apiRequest("/api/cost-codes/import", "POST", { items: importData });
+      const response = await apiRequest("POST", "/api/cost-codes/import", { items: importData });
       return response.json();
     },
     onSuccess: (result: any) => {
