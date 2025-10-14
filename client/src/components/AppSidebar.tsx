@@ -102,8 +102,13 @@ const projectItemsBase = [
 
 // Coming soon business items
 const comingSoonBusinessItems = new Set([
-  "Templates", "Checklists", "Emails", "CRM", "Team",
+  "Team",
   "Messages", "Sick Days & Leave"
+]);
+
+// Coming soon system items
+const comingSoonSystemItems = new Set([
+  "Templates", "Checklists", "Emails", "CRM"
 ]);
 
 // Business sections
@@ -113,13 +118,17 @@ const businessItems = [
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
   { title: "Messages", url: "/business/messages", icon: MessageSquare },
   { title: "Sick Days & Leave", url: "/business/leave", icon: Calendar },
-  { title: "Templates", url: "/templates", icon: LayoutTemplate },
-  { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Bills", url: "/bills", icon: Receipt },
+  { title: "Team", url: "/business-team", icon: Users },
+];
+
+// System sections
+const systemItems = [
+  { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Checklists", url: "/checklists", icon: CheckCircle },
+  { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: UserPlus },
-  { title: "Team", url: "/business-team", icon: Users },
 ];
 
 // Settings items
@@ -150,6 +159,11 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const [isSystemOpen, setIsSystemOpen] = useState(() => {
+    const saved = localStorage.getItem("sidebar-system-open");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(() => {
     const saved = localStorage.getItem("sidebar-settings-open");
     return saved !== null ? JSON.parse(saved) : true;
@@ -168,6 +182,10 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
   useEffect(() => {
     localStorage.setItem("sidebar-projects-open", JSON.stringify(isProjectsOpen));
   }, [isProjectsOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-system-open", JSON.stringify(isSystemOpen));
+  }, [isSystemOpen]);
 
   useEffect(() => {
     localStorage.setItem("sidebar-settings-open", JSON.stringify(isSettingsOpen));
@@ -413,6 +431,50 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
             </CollapsibleContent>
           </SidebarGroup>
         </Collapsible>
+
+        {/* System Section - Collapsible */}
+        <Collapsible
+          open={isSystemOpen}
+          onOpenChange={setIsSystemOpen}
+          className="group/collapsible"
+        >
+          <SidebarGroup className={!isSystemOpen && !isProjectsOpen ? "pt-0 pb-0" : !isSystemOpen ? "pb-0" : ""}>
+            <SidebarGroupLabel asChild>
+              <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
+                <span className="font-medium">System</span>
+                {isSystemOpen ? (
+                  <ChevronDown className="h-4 w-4 transition-transform" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 transition-transform" />
+                )}
+              </CollapsibleTrigger>
+            </SidebarGroupLabel>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {systemItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton 
+                        asChild
+                        tooltip={item.title}
+                        data-testid={`nav-system-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        data-active={location === item.url}
+                      >
+                        <Link href={item.url}>
+                          <item.icon className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                          {showComingSoon && comingSoonSystemItems.has(item.title) && (
+                            <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
+                          )}
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </SidebarGroup>
+        </Collapsible>
       </SidebarContent>
 
       {/* Settings Section - Collapsible */}
@@ -422,7 +484,7 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
           onOpenChange={setIsSettingsOpen}
           className="group/collapsible"
         >
-          <SidebarGroup className={!isSettingsOpen && !isProjectsOpen ? "pt-0" : ""}>
+          <SidebarGroup className={!isSettingsOpen && !isSystemOpen ? "pt-0" : ""}>
             <SidebarGroupLabel asChild>
               <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
                 <span className="font-medium">Settings</span>
