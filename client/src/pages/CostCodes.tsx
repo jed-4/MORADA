@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { CostCategory, CostCode } from "@shared/schema";
 import AddCategoryDialog from "@/components/AddCategoryDialog";
 import AddCostCodeDialog from "@/components/AddCostCodeDialog";
+import ImportCostCodesDialog from "@/components/ImportCostCodesDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
@@ -477,6 +478,7 @@ export default function CostCodes() {
 
       <AddCategoryDialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen} />
       <AddCostCodeDialog open={isAddCostCodeOpen} onOpenChange={setIsAddCostCodeOpen} />
+      <ImportCostCodesDialog open={isImportOpen} onOpenChange={setIsImportOpen} />
     </div>
   );
 }

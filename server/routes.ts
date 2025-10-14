@@ -3558,6 +3558,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/cost-codes/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ 
+          error: "Items array is required" 
+        });
+      }
+
+      const categoryMap = new Map<string, string>(); // code -> categoryId
+      let categoriesCreated = 0;
+      let codesCreated = 0;
+
+      // Get existing categories
+      const existingCategories = await storage.getCostCategories();
+      for (const cat of existingCategories) {
+        categoryMap.set(cat.code, cat.id);
+      }
+
+      // Process each item
+      for (const item of items) {
+        let categoryId: string | null = null;
+
+        // Create category if needed
+        if (item.categoryCode && item.categoryTitle) {
+          if (!categoryMap.has(item.categoryCode)) {
+            const newCategory = await storage.insertCostCategory({
+              code: item.categoryCode,
+              title: item.categoryTitle,
+            });
+            categoryMap.set(item.categoryCode, newCategory.id);
+            categoriesCreated++;
+            categoryId = newCategory.id;
+          } else {
+            categoryId = categoryMap.get(item.categoryCode)!;
+          }
+        }
+
+        // Create cost code
+        if (item.costCode && item.costCodeTitle) {
+          await storage.insertCostCode({
+            code: item.costCode,
+            title: item.costCodeTitle,
+            categoryId,
+            availableInTimesheets: true,
+          });
+          codesCreated++;
+        }
+      }
+
+      res.json({
+        categoriesCreated,
+        codesCreated,
+        totalProcessed: items.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to import cost codes",
+        details: error.message 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
