@@ -202,7 +202,7 @@ function SortableGroupRow({
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
-  columns: Array<{id: string; label: string; visible: boolean; widthPx: number}>;
+  columns: typeof ESTIMATE_COLUMNS;
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
   renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
 }) {
@@ -505,14 +505,6 @@ export default function EstimateDetail() {
       });
       
       console.log('[DRAG] Group header drop updates:', updates);
-      console.log('[DRAG] All available item IDs:', items.map(i => i.id));
-      
-      // Validate that all IDs in updates exist in items
-      const invalidIds = updates.filter(u => !items.some(i => i.id === u.id));
-      if (invalidIds.length > 0) {
-        console.error('[DRAG] ERROR: Updates contain invalid IDs:', invalidIds);
-        return;
-      }
       
       reorderItemsMutation.mutate({ items: updates });
       return;
