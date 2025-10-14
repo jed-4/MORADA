@@ -17,6 +17,7 @@ import {
   type UserInvitation, type InsertUserInvitation,
   type UserWithRole, type PermissionAction, type UserCategory,
   type CompanySettings, type InsertCompanySettings,
+  type CostCategory, type InsertCostCategory,
   type CostCode, type InsertCostCode,
   type FieldCategory, type InsertFieldCategory,
   type FieldOption, type InsertFieldOption,
@@ -175,12 +176,21 @@ export interface IStorage {
   updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined>;
   deleteEstimateGroup(id: string): Promise<boolean>;
 
-  // Cost Codes CRUD
-  getCostCodes(projectId: string): Promise<CostCode[]>;
+  // Cost Categories CRUD (business-wide)
+  getCostCategories(): Promise<CostCategory[]>;
+  getCostCategory(id: string): Promise<CostCategory | undefined>;
+  createCostCategory(category: InsertCostCategory): Promise<CostCategory>;
+  updateCostCategory(id: string, category: Partial<InsertCostCategory>): Promise<CostCategory | undefined>;
+  deleteCostCategory(id: string): Promise<boolean>;
+
+  // Cost Codes CRUD (business-wide)
+  getCostCodes(): Promise<CostCode[]>;
   getCostCode(id: string): Promise<CostCode | undefined>;
   createCostCode(costCode: InsertCostCode): Promise<CostCode>;
   updateCostCode(id: string, costCode: Partial<InsertCostCode>): Promise<CostCode | undefined>;
   deleteCostCode(id: string): Promise<boolean>;
+  archiveCostCode(id: string): Promise<CostCode | undefined>;
+  mergeCostCodes(sourceId: string, targetId: string): Promise<boolean>;
 
   // Versioning and Locking
   createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate>;
@@ -348,6 +358,7 @@ export class MemStorage implements IStorage {
   private estimates: Map<string, Estimate>;
   private estimateItems: Map<string, EstimateItem>;
   private estimateGroups: Map<string, EstimateGroup>;
+  private costCategories: Map<string, CostCategory>;
   private costCodes: Map<string, CostCode>;
   private companySettings: CompanySettings | undefined;
   private fieldCategories: Map<string, FieldCategory>;
@@ -375,6 +386,7 @@ export class MemStorage implements IStorage {
     this.estimates = new Map();
     this.estimateItems = new Map();
     this.estimateGroups = new Map();
+    this.costCategories = new Map();
     this.costCodes = new Map();
     this.fieldCategories = new Map();
     this.fieldOptions = new Map();
@@ -2431,10 +2443,55 @@ export class MemStorage implements IStorage {
     return this.estimateGroups.delete(id);
   }
 
-  // Cost Codes CRUD operations
-  async getCostCodes(projectId: string): Promise<CostCode[]> {
+  // Cost Categories CRUD operations (business-wide)
+  async getCostCategories(): Promise<CostCategory[]> {
+    const categories = Array.from(this.costCategories.values())
+      .filter(category => category.isActive);
+    return categories.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  }
+
+  async getCostCategory(id: string): Promise<CostCategory | undefined> {
+    return this.costCategories.get(id);
+  }
+
+  async createCostCategory(insertCategory: InsertCostCategory): Promise<CostCategory> {
+    const id = randomUUID();
+    const now = new Date();
+    const category: CostCategory = {
+      ...insertCategory,
+      id,
+      isActive: insertCategory.isActive ?? true,
+      sortOrder: insertCategory.sortOrder ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.costCategories.set(id, category);
+    return category;
+  }
+
+  async updateCostCategory(id: string, updateCategory: Partial<InsertCostCategory>): Promise<CostCategory | undefined> {
+    const category = this.costCategories.get(id);
+    if (!category) {
+      return undefined;
+    }
+
+    const updatedCategory: CostCategory = {
+      ...category,
+      ...updateCategory,
+      updatedAt: new Date(),
+    };
+    this.costCategories.set(id, updatedCategory);
+    return updatedCategory;
+  }
+
+  async deleteCostCategory(id: string): Promise<boolean> {
+    return this.costCategories.delete(id);
+  }
+
+  // Cost Codes CRUD operations (business-wide)
+  async getCostCodes(): Promise<CostCode[]> {
     const codes = Array.from(this.costCodes.values())
-      .filter(code => code.projectId === projectId && code.isActive);
+      .filter(code => code.isActive);
     return codes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
 
@@ -2449,7 +2506,12 @@ export class MemStorage implements IStorage {
       ...insertCode,
       id,
       isActive: insertCode.isActive ?? true,
+      availableInTimesheets: insertCode.availableInTimesheets ?? true,
+      isSynced: insertCode.isSynced ?? false,
+      isArchived: insertCode.isArchived ?? false,
       sortOrder: insertCode.sortOrder ?? 0,
+      categoryId: insertCode.categoryId ?? null,
+      xeroTrackingCategoryId: insertCode.xeroTrackingCategoryId ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -2474,6 +2536,28 @@ export class MemStorage implements IStorage {
 
   async deleteCostCode(id: string): Promise<boolean> {
     return this.costCodes.delete(id);
+  }
+
+  async archiveCostCode(id: string): Promise<CostCode | undefined> {
+    const code = this.costCodes.get(id);
+    if (!code) {
+      return undefined;
+    }
+
+    const updatedCode: CostCode = {
+      ...code,
+      isArchived: true,
+      isActive: false,
+      updatedAt: new Date(),
+    };
+    this.costCodes.set(id, updatedCode);
+    return updatedCode;
+  }
+
+  async mergeCostCodes(sourceId: string, targetId: string): Promise<boolean> {
+    // Archive the source cost code
+    await this.archiveCostCode(sourceId);
+    return true;
   }
 
   // Versioning and Locking
@@ -4306,16 +4390,83 @@ export class DbStorage implements IStorage {
   }
   async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
 
-  // Cost Codes CRUD operations
-  async getCostCodes(projectId: string): Promise<CostCode[]> {
+  // Cost Categories CRUD operations (business-wide)
+  async getCostCategories(): Promise<CostCategory[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.costCategories)
+        .where(eq(schema.costCategories.isActive, true))
+        .orderBy(schema.costCategories.sortOrder);
+    } catch (error) {
+      console.error("Database error in getCostCategories:", error);
+      throw error;
+    }
+  }
+
+  async getCostCategory(id: string): Promise<CostCategory | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(schema.costCategories)
+        .where(eq(schema.costCategories.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getCostCategory:", error);
+      throw error;
+    }
+  }
+
+  async createCostCategory(insertCategory: InsertCostCategory): Promise<CostCategory> {
+    try {
+      const result = await db
+        .insert(schema.costCategories)
+        .values(insertCategory)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createCostCategory:", error);
+      throw error;
+    }
+  }
+
+  async updateCostCategory(id: string, updateCategory: Partial<InsertCostCategory>): Promise<CostCategory | undefined> {
+    try {
+      const result = await db
+        .update(schema.costCategories)
+        .set({
+          ...updateCategory,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.costCategories.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateCostCategory:", error);
+      throw error;
+    }
+  }
+
+  async deleteCostCategory(id: string): Promise<boolean> {
+    try {
+      await db
+        .delete(schema.costCategories)
+        .where(eq(schema.costCategories.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteCostCategory:", error);
+      return false;
+    }
+  }
+
+  // Cost Codes CRUD operations (business-wide)
+  async getCostCodes(): Promise<CostCode[]> {
     try {
       return await db
         .select()
         .from(schema.costCodes)
-        .where(and(
-          eq(schema.costCodes.projectId, projectId),
-          eq(schema.costCodes.isActive, true)
-        ))
+        .where(eq(schema.costCodes.isActive, true))
         .orderBy(schema.costCodes.sortOrder);
     } catch (error) {
       console.error("Database error in getCostCodes:", error);
@@ -4375,6 +4526,38 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteCostCode:", error);
+      return false;
+    }
+  }
+
+  async archiveCostCode(id: string): Promise<CostCode | undefined> {
+    try {
+      const result = await db
+        .update(schema.costCodes)
+        .set({
+          isArchived: true,
+          isActive: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.costCodes.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in archiveCostCode:", error);
+      throw error;
+    }
+  }
+
+  async mergeCostCodes(sourceId: string, targetId: string): Promise<boolean> {
+    try {
+      // Archive the source cost code
+      await this.archiveCostCode(sourceId);
+      // In the future, we'll need to update all references to sourceId to point to targetId
+      // This will be done in estimates, bills, timesheets, budgets, etc.
+      // For now, just archive the source
+      return true;
+    } catch (error) {
+      console.error("Database error in mergeCostCodes:", error);
       return false;
     }
   }
