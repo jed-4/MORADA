@@ -51,7 +51,7 @@ export default function CostCodes() {
 
   const archiveMutation = useMutation({
     mutationFn: (codeId: string) =>
-      apiRequest(`/api/cost-codes/${codeId}/archive`, "POST"),
+      apiRequest("POST", `/api/cost-codes/${codeId}/archive`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
       toast({
@@ -70,7 +70,7 @@ export default function CostCodes() {
 
   const toggleTimesheetMutation = useMutation({
     mutationFn: ({ id, availableInTimesheets }: { id: string; availableInTimesheets: boolean }) =>
-      apiRequest(`/api/cost-codes/${id}`, "PATCH", { availableInTimesheets }),
+      apiRequest("PATCH", `/api/cost-codes/${id}`, { availableInTimesheets }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
     },

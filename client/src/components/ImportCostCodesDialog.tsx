@@ -200,14 +200,19 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
         <div className="flex flex-col gap-6 flex-1 overflow-hidden">
           {/* File Upload */}
           {!parsedData ? (
-            <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-12 hover-elevate">
+            <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-12">
               <FileSpreadsheet className="h-12 w-12 text-muted-foreground mb-4" />
-              <Label htmlFor="file-upload" className="cursor-pointer">
-                <div className="flex flex-col items-center">
-                  <span className="text-sm font-medium mb-2">Click to upload a file</span>
-                  <span className="text-xs text-muted-foreground">CSV or Excel (.xlsx, .xls)</span>
-                </div>
-              </Label>
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-sm text-muted-foreground mb-2">CSV or Excel (.xlsx, .xls)</span>
+                <Button
+                  variant="outline"
+                  onClick={() => document.getElementById('file-upload')?.click()}
+                  data-testid="button-choose-file"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Choose File
+                </Button>
+              </div>
               <Input
                 id="file-upload"
                 type="file"
