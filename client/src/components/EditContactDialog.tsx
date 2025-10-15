@@ -101,7 +101,7 @@ export default function EditContactDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
-      return await apiRequest(`/api/contacts/${contact.id}`, "PATCH", data);
+      return await apiRequest("PATCH", `/api/contacts/${contact.id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
