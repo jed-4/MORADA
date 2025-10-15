@@ -228,6 +228,15 @@ export default function CostCodes() {
                code.title.toLowerCase().includes(searchTerm.toLowerCase());
       }
       return true;
+    }).sort((a, b) => {
+      // Sort numerically by code
+      const aNum = parseFloat(a.code);
+      const bNum = parseFloat(b.code);
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return aNum - bNum;
+      }
+      // Fallback to string comparison if not numeric
+      return a.code.localeCompare(b.code);
     });
   };
 
