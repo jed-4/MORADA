@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -15,9 +16,27 @@ interface ImportChecklistDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface ColumnMapping {
+  templateName: string;
+  templateDescription: string;
+  type: string;
+  groupName: string;
+  itemDescription: string;
+}
+
 export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDialogProps) {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [headerIndices, setHeaderIndices] = useState<Map<string, number>>(new Map());
+  const [rawData, setRawData] = useState<any[][]>([]);
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping>({
+    templateName: "",
+    templateDescription: "",
+    type: "",
+    groupName: "",
+    itemDescription: "",
+  });
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +65,40 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
     },
   });
 
+  // Auto-detect column mapping based on header names
+  const autoDetectColumns = (headers: string[]) => {
+    const mapping: ColumnMapping = {
+      templateName: "",
+      templateDescription: "",
+      type: "",
+      groupName: "",
+      itemDescription: "",
+    };
+
+    headers.forEach((header) => {
+      // Skip invalid headers
+      if (!header || typeof header !== 'string') return;
+      
+      const normalized = header.toLowerCase().trim();
+      
+      if (normalized.includes('template') && normalized.includes('name')) {
+        mapping.templateName = header;
+      } else if (normalized.includes('description') && !normalized.includes('item')) {
+        mapping.templateDescription = header;
+      } else if (normalized.includes('type')) {
+        mapping.type = header;
+      } else if (normalized.includes('group')) {
+        mapping.groupName = header;
+      } else if (normalized.includes('item') && normalized.includes('description')) {
+        mapping.itemDescription = header;
+      }
+    });
+
+    return mapping;
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
@@ -64,21 +116,37 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
           const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
           // Parse headers and rows
-          const headers = data[0] as string[];
+          const rawHeaders = data[0] as any[];
           const rows = data.slice(1) as any[][];
 
-          // Map to expected format
-          const mapped = rows
-            .filter(row => row.some(cell => cell)) // Skip empty rows
-            .map(row => ({
-              templateName: row[0] || "",
-              templateDescription: row[1] || "",
-              type: row[2] || "",
-              groupName: row[3] || "",
-              itemDescription: row[4] || "",
-            }));
+          // Normalize and track header indices
+          const validHeaders: string[] = [];
+          const indices = new Map<string, number>();
+          
+          rawHeaders.forEach((h: any, index: number) => {
+            const normalized = h ? String(h).trim() : '';
+            if (normalized.length > 0) {
+              validHeaders.push(normalized);
+              indices.set(normalized, index);
+            }
+          });
 
-          setPreviewData(mapped);
+          // Validate we have at least some headers
+          if (validHeaders.length === 0) {
+            setError("No valid headers found in file. Please ensure the first row contains column names.");
+            return;
+          }
+
+          setHeaders(validHeaders);
+          setHeaderIndices(indices);
+          setRawData(rows);
+
+          // Auto-detect column mapping
+          const detectedMapping = autoDetectColumns(validHeaders);
+          setColumnMapping(detectedMapping);
+
+          // Generate preview with detected mapping
+          updatePreview(rows, detectedMapping, indices);
         } catch (err) {
           setError("Failed to parse file. Please ensure it's a valid CSV or Excel file with the correct format.");
         }
@@ -89,9 +157,44 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
     }
   };
 
+  const updatePreview = (rows: any[][], mapping: ColumnMapping, indices: Map<string, number>) => {
+    const mapped = rows
+      .filter(row => row.some(cell => cell)) // Skip empty rows
+      .map(row => {
+        const getColumnValue = (fieldName: keyof ColumnMapping) => {
+          const headerName = mapping[fieldName];
+          if (!headerName) return "";
+          const columnIndex = indices.get(headerName);
+          return columnIndex !== undefined ? (row[columnIndex] || "") : "";
+        };
+
+        return {
+          templateName: getColumnValue('templateName'),
+          templateDescription: getColumnValue('templateDescription'),
+          type: getColumnValue('type'),
+          groupName: getColumnValue('groupName'),
+          itemDescription: getColumnValue('itemDescription'),
+        };
+      });
+
+    setPreviewData(mapped);
+  };
+
+  const handleColumnMappingChange = (field: keyof ColumnMapping, value: string) => {
+    const newMapping = { ...columnMapping, [field]: value === "__none__" ? "" : value };
+    setColumnMapping(newMapping);
+    updatePreview(rawData, newMapping, headerIndices);
+  };
+
   const handleImport = () => {
     if (previewData.length === 0) {
       setError("No data to import");
+      return;
+    }
+
+    // Validate that required fields are mapped
+    if (!columnMapping.templateName || !columnMapping.type) {
+      setError("Please map at least Template Name and Type columns");
       return;
     }
 
@@ -165,6 +268,117 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
+          )}
+
+          {/* Column Mapping */}
+          {headers.length > 0 && (
+            <div className="space-y-3 p-4 border rounded-md bg-muted/50">
+              <Label className="text-base">Map Your Columns</Label>
+              <p className="text-sm text-muted-foreground">
+                Select which column from your file matches each field. Fields marked with * are required.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="map-template-name">Template Name *</Label>
+                  <Select
+                    value={columnMapping.templateName || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('templateName', value)}
+                  >
+                    <SelectTrigger id="map-template-name" data-testid="select-map-template-name">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-type">Type *</Label>
+                  <Select
+                    value={columnMapping.type || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('type', value)}
+                  >
+                    <SelectTrigger id="map-type" data-testid="select-map-type">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-description">Template Description</Label>
+                  <Select
+                    value={columnMapping.templateDescription || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('templateDescription', value)}
+                  >
+                    <SelectTrigger id="map-description" data-testid="select-map-description">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-group">Group Name</Label>
+                  <Select
+                    value={columnMapping.groupName || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('groupName', value)}
+                  >
+                    <SelectTrigger id="map-group" data-testid="select-map-group">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-item">Item Description</Label>
+                  <Select
+                    value={columnMapping.itemDescription || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('itemDescription', value)}
+                  >
+                    <SelectTrigger id="map-item" data-testid="select-map-item">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Preview */}
