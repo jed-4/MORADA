@@ -23,6 +23,8 @@ import {
   GitMerge,
   Clock,
   Ban,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -127,6 +129,18 @@ export default function CostCodes() {
 
   const uncategorizedCodes = getCodesForCategory(null);
 
+  const expandAll = () => {
+    const allCategoryIds = filteredCategories.map(cat => cat.id);
+    setExpandedCategories(new Set(allCategoryIds));
+  };
+
+  const collapseAll = () => {
+    setExpandedCategories(new Set());
+  };
+
+  const allExpanded = filteredCategories.length > 0 && 
+                      filteredCategories.every(cat => expandedCategories.has(cat.id));
+
   const isLoading = categoriesLoading || codesLoading;
 
   return (
@@ -174,6 +188,19 @@ export default function CostCodes() {
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={allExpanded ? collapseAll : expandAll}
+              data-testid="button-toggle-all"
+              title={allExpanded ? "Collapse all" : "Expand all"}
+            >
+              {allExpanded ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </Button>
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -245,8 +272,35 @@ export default function CostCodes() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>{categoryCodes.length} codes</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">{categoryCodes.length} codes</span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              data-testid={`button-category-actions-${category.id}`}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem disabled data-testid={`menu-edit-category-${category.id}`}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem disabled data-testid={`menu-merge-category-${category.id}`}>
+                              <GitMerge className="h-4 w-4 mr-2" />
+                              Merge
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled data-testid={`menu-archive-category-${category.id}`}>
+                              <Archive className="h-4 w-4 mr-2" />
+                              Archive
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </CardHeader>
