@@ -47,17 +47,23 @@ export default function EditContactDialog({
     resolver: zodResolver(insertContactSchema),
     defaultValues: {
       name: contact.name || "",
+      firstName: contact.firstName || "",
+      lastName: contact.lastName || "",
       email: contact.email || "",
       phone: contact.phone || "",
       mobile: contact.mobile || "",
       company: contact.company || "",
       position: contact.position || "",
       contactType: contact.contactType,
+      spouseName: contact.spouseName || "",
+      spousePhone: contact.spousePhone || "",
+      spouseEmail: contact.spouseEmail || "",
+      primaryContact: contact.primaryContact || undefined,
       abn: contact.abn || "",
       businessNumber: contact.businessNumber || "",
       address: contact.address || "",
       paymentTerms: contact.paymentTerms || "",
-      defaultCostCodeId: contact.defaultCostCodeId || "",
+      defaultCostCodeId: contact.defaultCostCodeId || "__none__",
       role: contact.role || "",
       hourlyRate: contact.hourlyRate?.toString() || "",
       hourlyPrice: contact.hourlyPrice?.toString() || "",
@@ -75,17 +81,23 @@ export default function EditContactDialog({
     if (contact) {
       form.reset({
         name: contact.name || "",
+        firstName: contact.firstName || "",
+        lastName: contact.lastName || "",
         email: contact.email || "",
         phone: contact.phone || "",
         mobile: contact.mobile || "",
         company: contact.company || "",
         position: contact.position || "",
         contactType: contact.contactType,
+        spouseName: contact.spouseName || "",
+        spousePhone: contact.spousePhone || "",
+        spouseEmail: contact.spouseEmail || "",
+        primaryContact: contact.primaryContact || undefined,
         abn: contact.abn || "",
         businessNumber: contact.businessNumber || "",
         address: contact.address || "",
         paymentTerms: contact.paymentTerms || "",
-        defaultCostCodeId: contact.defaultCostCodeId || "",
+        defaultCostCodeId: contact.defaultCostCodeId || "__none__",
         role: contact.role || "",
         hourlyRate: contact.hourlyRate?.toString() || "",
         hourlyPrice: contact.hourlyPrice?.toString() || "",
@@ -162,12 +174,26 @@ export default function EditContactDialog({
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="name"
+                name="firstName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name *</FormLabel>
+                    <FormLabel>First Name</FormLabel>
                     <FormControl>
-                      <Input {...field} data-testid="input-name" />
+                      <Input {...field} value={field.value || ""} data-testid="input-first-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="lastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} data-testid="input-last-name" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -363,27 +389,97 @@ export default function EditContactDialog({
 
             {/* Client-specific fields */}
             {isClient && (
-              <FormField
-                control={form.control}
-                name="portalEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border-2 border-input p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">Portal Access</FormLabel>
-                      <div className="text-sm text-muted-foreground">
-                        Allow this client to access the project portal
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-sm font-medium">Spouse Information (Optional)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="spouseName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Spouse Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Spouse's full name" data-testid="input-spouse-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="primaryContact"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Primary Contact</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-primary-contact">
+                              <SelectValue placeholder="Select primary contact" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">Not specified</SelectItem>
+                            <SelectItem value="self">Client (Self)</SelectItem>
+                            <SelectItem value="spouse">Spouse</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="spousePhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Spouse Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Spouse's phone number" data-testid="input-spouse-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="spouseEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Spouse Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} type="email" placeholder="Spouse's email address" data-testid="input-spouse-email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="portalEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-md border-2 border-input p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Portal Access</FormLabel>
+                        <div className="text-sm text-muted-foreground">
+                          Allow this client to access the project portal
+                        </div>
                       </div>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        data-testid="switch-portal-enabled"
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-portal-enabled"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
             )}
 
             {/* Address */}
