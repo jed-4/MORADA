@@ -4047,6 +4047,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Checklist Template Import/Export routes
+  app.post("/api/checklist-templates/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ 
+          error: "Items array is required" 
+        });
+      }
+
+      let templatesCreated = 0;
+      let groupsCreated = 0;
+      let itemsCreated = 0;
+
+      // Process each template
+      for (const templateData of items) {
+        if (!templateData.templateName || !templateData.type) {
+          continue; // Skip invalid rows
+        }
+
+        // Create template
+        const template = await storage.createChecklistTemplate({
+          name: templateData.templateName,
+          description: templateData.templateDescription || null,
+          type: templateData.type,
+        });
+        templatesCreated++;
+
+        // Create group if provided
+        if (templateData.groupName) {
+          const group = await storage.createChecklistTemplateGroup({
+            templateId: template.id,
+            name: templateData.groupName,
+            order: 0,
+          });
+          groupsCreated++;
+
+          // Create item if provided
+          if (templateData.itemDescription) {
+            await storage.createChecklistTemplateItem({
+              groupId: group.id,
+              description: templateData.itemDescription,
+              order: 0,
+            });
+            itemsCreated++;
+          }
+        }
+      }
+
+      res.json({
+        templatesCreated,
+        groupsCreated,
+        itemsCreated,
+        totalProcessed: items.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to import checklist templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/checklist-templates/export", async (req, res) => {
+    try {
+      const templates = await storage.getChecklistTemplates();
+      const exportData = [];
+
+      for (const template of templates) {
+        const groups = await storage.getChecklistTemplateGroups(template.id);
+        
+        if (groups.length === 0) {
+          // Template with no groups
+          exportData.push({
+            templateName: template.name,
+            templateDescription: template.description || "",
+            type: template.type,
+            groupName: "",
+            itemDescription: "",
+          });
+        } else {
+          for (const group of groups) {
+            const items = await storage.getChecklistTemplateItems(group.id);
+            
+            if (items.length === 0) {
+              // Group with no items
+              exportData.push({
+                templateName: template.name,
+                templateDescription: template.description || "",
+                type: template.type,
+                groupName: group.name,
+                itemDescription: "",
+              });
+            } else {
+              for (const item of items) {
+                exportData.push({
+                  templateName: template.name,
+                  templateDescription: template.description || "",
+                  type: template.type,
+                  groupName: group.name,
+                  itemDescription: item.description,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      res.json(exportData);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to export checklist templates",
+        details: error.message 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

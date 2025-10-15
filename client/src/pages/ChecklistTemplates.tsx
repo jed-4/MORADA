@@ -34,15 +34,19 @@ import {
   Trash2,
   Copy,
   List,
+  Upload,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTemplateFormDialog";
+import { ImportChecklistDialog } from "@/components/checklist/ImportChecklistDialog";
 
 export default function ChecklistTemplates() {
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ChecklistTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<ChecklistTemplate | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const { toast } = useToast();
 
   // Fetch templates
@@ -96,6 +100,49 @@ export default function ChecklistTemplates() {
     },
   });
 
+  // Export mutation
+  const handleExport = async () => {
+    try {
+      const response = await fetch("/api/checklist-templates/export");
+      if (!response.ok) throw new Error("Failed to export");
+      
+      const data = await response.json();
+      
+      // Convert to CSV
+      const headers = ["Template Name", "Description", "Type", "Group Name", "Item Description"];
+      const csvRows = [
+        headers.join(","),
+        ...data.map((row: any) => [
+          `"${row.templateName || ""}"`,
+          `"${row.templateDescription || ""}"`,
+          `"${row.type || ""}"`,
+          `"${row.groupName || ""}"`,
+          `"${row.itemDescription || ""}"`
+        ].join(","))
+      ];
+      
+      const csvContent = csvRows.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `checklist-templates-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Export successful",
+        description: "Checklist templates have been exported to CSV.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: "Failed to export checklist templates.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Filter templates
   const filteredTemplates = templates.filter(template =>
     template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -123,13 +170,31 @@ export default function ChecklistTemplates() {
             Create and manage reusable checklist templates for tasks, jobs, estimations, and leads
           </p>
         </div>
-        <Button
-          onClick={() => setIsAddingTemplate(true)}
-          data-testid="button-add-template"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Template
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            data-testid="button-export-csv"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIsImportOpen(true)}
+            data-testid="button-import-csv"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Import CSV
+          </Button>
+          <Button
+            onClick={() => setIsAddingTemplate(true)}
+            data-testid="button-add-template"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Template
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -273,11 +338,17 @@ export default function ChecklistTemplates() {
         <ViewTemplateDialog
           template={selectedTemplate}
           open={!!selectedTemplate}
-          onOpenChange={(open) => {
+          onOpenChange={(open: boolean) => {
             if (!open) setSelectedTemplate(null);
           }}
         />
       )}
+
+      {/* Import Dialog */}
+      <ImportChecklistDialog 
+        open={isImportOpen} 
+        onOpenChange={setIsImportOpen} 
+      />
     </div>
   );
 }
