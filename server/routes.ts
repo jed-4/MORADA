@@ -43,7 +43,10 @@ import {
   insertInvoiceBillSchema,
   insertSiteDiaryTemplateSchema,
   insertSiteDiaryEntrySchema,
-  insertActivitySchema
+  insertActivitySchema,
+  insertChecklistTemplateSchema,
+  insertChecklistTemplateGroupSchema,
+  insertChecklistTemplateItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -3811,6 +3814,234 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to import cost codes",
+        details: error.message 
+      });
+    }
+  });
+
+  // Checklist Template routes
+  app.get("/api/checklist-templates", async (req, res) => {
+    try {
+      const templates = await storage.getChecklistTemplates();
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/checklist-templates/:id", async (req, res) => {
+    try {
+      const template = await storage.getChecklistTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/checklist-templates", async (req, res) => {
+    try {
+      const validationResult = insertChecklistTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const template = await storage.createChecklistTemplate(validationResult.data);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/checklist-templates/:id", async (req, res) => {
+    try {
+      const validationResult = insertChecklistTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const template = await storage.updateChecklistTemplate(req.params.id, validationResult.data);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/checklist-templates/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteChecklistTemplate(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Checklist Template Group routes
+  app.get("/api/checklist-templates/:templateId/groups", async (req, res) => {
+    try {
+      const groups = await storage.getChecklistTemplateGroups(req.params.templateId);
+      res.json(groups);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch groups",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/checklist-template-groups", async (req, res) => {
+    try {
+      const validationResult = insertChecklistTemplateGroupSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const group = await storage.createChecklistTemplateGroup(validationResult.data);
+      res.status(201).json(group);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create group",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/checklist-template-groups/:id", async (req, res) => {
+    try {
+      const validationResult = insertChecklistTemplateGroupSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const group = await storage.updateChecklistTemplateGroup(req.params.id, validationResult.data);
+      if (!group) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+      res.json(group);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update group",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/checklist-template-groups/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteChecklistTemplateGroup(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete group",
+        details: error.message 
+      });
+    }
+  });
+
+  // Checklist Template Item routes
+  app.get("/api/checklist-template-groups/:groupId/items", async (req, res) => {
+    try {
+      const items = await storage.getChecklistTemplateItems(req.params.groupId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch items",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/checklist-template-items", async (req, res) => {
+    try {
+      const validationResult = insertChecklistTemplateItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createChecklistTemplateItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/checklist-template-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertChecklistTemplateItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateChecklistTemplateItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/checklist-template-items/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteChecklistTemplateItem(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete item",
         details: error.message 
       });
     }

@@ -41,7 +41,10 @@ import {
   type InvoiceVariation, type InsertInvoiceVariation,
   type InvoiceBill, type InsertInvoiceBill,
   type SiteDiaryTemplate, type InsertSiteDiaryTemplate,
-  type SiteDiaryEntry, type InsertSiteDiaryEntry
+  type SiteDiaryEntry, type InsertSiteDiaryEntry,
+  type ChecklistTemplate, type InsertChecklistTemplate,
+  type ChecklistTemplateGroup, type InsertChecklistTemplateGroup,
+  type ChecklistTemplateItem, type InsertChecklistTemplateItem
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -355,6 +358,27 @@ export interface IStorage {
   createSiteDiaryEntry(entry: schema.InsertSiteDiaryEntry): Promise<schema.SiteDiaryEntry>;
   updateSiteDiaryEntry(id: string, entry: Partial<schema.InsertSiteDiaryEntry>): Promise<schema.SiteDiaryEntry | undefined>;
   deleteSiteDiaryEntry(id: string): Promise<boolean>;
+
+  // Checklist Templates CRUD
+  getChecklistTemplates(): Promise<ChecklistTemplate[]>;
+  getChecklistTemplate(id: string): Promise<ChecklistTemplate | undefined>;
+  createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate>;
+  updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined>;
+  deleteChecklistTemplate(id: string): Promise<boolean>;
+
+  // Checklist Template Groups CRUD
+  getChecklistTemplateGroups(templateId: string): Promise<ChecklistTemplateGroup[]>;
+  getChecklistTemplateGroup(id: string): Promise<ChecklistTemplateGroup | undefined>;
+  createChecklistTemplateGroup(group: InsertChecklistTemplateGroup): Promise<ChecklistTemplateGroup>;
+  updateChecklistTemplateGroup(id: string, group: Partial<InsertChecklistTemplateGroup>): Promise<ChecklistTemplateGroup | undefined>;
+  deleteChecklistTemplateGroup(id: string): Promise<boolean>;
+
+  // Checklist Template Items CRUD
+  getChecklistTemplateItems(groupId: string): Promise<ChecklistTemplateItem[]>;
+  getChecklistTemplateItem(id: string): Promise<ChecklistTemplateItem | undefined>;
+  createChecklistTemplateItem(item: InsertChecklistTemplateItem): Promise<ChecklistTemplateItem>;
+  updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined>;
+  deleteChecklistTemplateItem(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -5854,6 +5878,198 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteSiteDiaryEntry:", error);
+      throw error;
+    }
+  }
+
+  // Checklist Templates CRUD
+  async getChecklistTemplates(): Promise<ChecklistTemplate[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistTemplates)
+        .where(eq(schema.checklistTemplates.isArchived, false))
+        .orderBy(desc(schema.checklistTemplates.createdAt));
+    } catch (error) {
+      console.error("Database error in getChecklistTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistTemplate(id: string): Promise<ChecklistTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.checklistTemplates)
+        .where(eq(schema.checklistTemplates.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getChecklistTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate> {
+    try {
+      const result = await db.insert(schema.checklistTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createChecklistTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined> {
+    try {
+      const result = await db.update(schema.checklistTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(eq(schema.checklistTemplates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateChecklistTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistTemplate(id: string): Promise<boolean> {
+    try {
+      // Soft delete by archiving
+      const result = await db.update(schema.checklistTemplates)
+        .set({ isArchived: true, updatedAt: new Date() })
+        .where(eq(schema.checklistTemplates.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Checklist Template Groups CRUD
+  async getChecklistTemplateGroups(templateId: string): Promise<ChecklistTemplateGroup[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistTemplateGroups)
+        .where(eq(schema.checklistTemplateGroups.templateId, templateId))
+        .orderBy(schema.checklistTemplateGroups.order);
+    } catch (error) {
+      console.error("Database error in getChecklistTemplateGroups:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistTemplateGroup(id: string): Promise<ChecklistTemplateGroup | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.checklistTemplateGroups)
+        .where(eq(schema.checklistTemplateGroups.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getChecklistTemplateGroup:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistTemplateGroup(group: InsertChecklistTemplateGroup): Promise<ChecklistTemplateGroup> {
+    try {
+      const result = await db.insert(schema.checklistTemplateGroups)
+        .values(group)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createChecklistTemplateGroup:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistTemplateGroup(id: string, group: Partial<InsertChecklistTemplateGroup>): Promise<ChecklistTemplateGroup | undefined> {
+    try {
+      const result = await db.update(schema.checklistTemplateGroups)
+        .set({ ...group, updatedAt: new Date() })
+        .where(eq(schema.checklistTemplateGroups.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateChecklistTemplateGroup:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistTemplateGroup(id: string): Promise<boolean> {
+    try {
+      // Hard delete since cascade will handle items
+      const result = await db.delete(schema.checklistTemplateGroups)
+        .where(eq(schema.checklistTemplateGroups.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistTemplateGroup:", error);
+      throw error;
+    }
+  }
+
+  // Checklist Template Items CRUD
+  async getChecklistTemplateItems(groupId: string): Promise<ChecklistTemplateItem[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistTemplateItems)
+        .where(eq(schema.checklistTemplateItems.groupId, groupId))
+        .orderBy(schema.checklistTemplateItems.order);
+    } catch (error) {
+      console.error("Database error in getChecklistTemplateItems:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistTemplateItem(id: string): Promise<ChecklistTemplateItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.checklistTemplateItems)
+        .where(eq(schema.checklistTemplateItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getChecklistTemplateItem:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistTemplateItem(item: InsertChecklistTemplateItem): Promise<ChecklistTemplateItem> {
+    try {
+      const result = await db.insert(schema.checklistTemplateItems)
+        .values(item)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createChecklistTemplateItem:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined> {
+    try {
+      const result = await db.update(schema.checklistTemplateItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.checklistTemplateItems.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateChecklistTemplateItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistTemplateItem(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.checklistTemplateItems)
+        .where(eq(schema.checklistTemplateItems.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistTemplateItem:", error);
       throw error;
     }
   }
