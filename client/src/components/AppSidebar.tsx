@@ -220,24 +220,27 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
     queryKey: ["/api/projects"],
   });
 
+  // Filter out archived projects
+  const activeProjects = projects.filter(p => !p.isArchived);
+
   // Set first project as current if none selected and projects are available
   useEffect(() => {
-    if (!currentProject && projects.length > 0) {
+    if (!currentProject && activeProjects.length > 0) {
       const savedProjectId = localStorage.getItem("currentProjectId");
       if (savedProjectId) {
-        const savedProject = projects.find(p => p.id === savedProjectId);
+        const savedProject = activeProjects.find(p => p.id === savedProjectId);
         if (savedProject) {
           setCurrentProject(savedProject);
         } else {
-          // Fallback to first project if saved project not found
-          setCurrentProject(projects[0]);
+          // Fallback to first active project if saved project not found
+          setCurrentProject(activeProjects[0]);
         }
       } else {
-        // Set first project as default
-        setCurrentProject(projects[0]);
+        // Set first active project as default
+        setCurrentProject(activeProjects[0]);
       }
     }
-  }, [projects, currentProject, setCurrentProject]);
+  }, [activeProjects, currentProject, setCurrentProject]);
 
   const handleProjectSelect = (project: Project) => {
     setCurrentProject(project);
@@ -359,12 +362,12 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                         <DropdownMenuItem disabled>
                           <span className="text-muted-foreground">Loading projects...</span>
                         </DropdownMenuItem>
-                      ) : projects.length === 0 ? (
+                      ) : activeProjects.length === 0 ? (
                         <DropdownMenuItem disabled>
-                          <span className="text-muted-foreground">No projects found</span>
+                          <span className="text-muted-foreground">No active projects found</span>
                         </DropdownMenuItem>
                       ) : (
-                        projects.map((project) => (
+                        activeProjects.map((project) => (
                           <DropdownMenuItem 
                             key={project.id} 
                             data-testid={`project-${project.id}`}
