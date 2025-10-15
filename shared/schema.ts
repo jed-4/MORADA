@@ -347,6 +347,7 @@ export const projects = pgTable("projects", {
   color: text("color").default("#3b82f6"), // Default blue
   icon: text("icon").default("Building2"), // Lucide icon name
   isActive: boolean("is_active").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business project flag
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
   ownerId: varchar("owner_id").references(() => users.id),

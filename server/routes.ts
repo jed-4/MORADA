@@ -3926,7 +3926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       duplicateTemplate = await storage.createChecklistTemplate({
         name: `${originalTemplate.name} (Copy)`,
         description: originalTemplate.description,
-        type: originalTemplate.type,
+        type: originalTemplate.type as "Task" | "Job" | "Estimation" | "Lead",
       });
       
       // Get original groups and items
