@@ -194,7 +194,10 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col" data-testid="dialog-import-cost-codes">
+      <DialogContent 
+        className="!left-1/2 !right-auto !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !max-w-6xl !w-[90vw] max-h-[90vh] flex flex-col"
+        data-testid="dialog-import-cost-codes"
+      >
         <DialogHeader>
           <DialogTitle>Import Cost Codes</DialogTitle>
           <DialogDescription>
