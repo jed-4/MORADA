@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,10 +31,8 @@ import {
   Plus,
   Search,
   MoreVertical,
-  Edit3,
   Trash2,
   Copy,
-  List,
   Upload,
   Download,
 } from "lucide-react";
@@ -42,12 +41,15 @@ import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTem
 import { ImportChecklistDialog } from "@/components/checklist/ImportChecklistDialog";
 
 export default function ChecklistTemplates() {
+  const [, setLocation] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<ChecklistTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTemplate, setSelectedTemplate] = useState<ChecklistTemplate | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const { toast } = useToast();
+
+  const handleTemplateCreated = (templateId: string) => {
+    setLocation(`/checklist-templates/${templateId}`);
+  };
 
   // Fetch templates
   const { data: templates = [], isLoading } = useQuery<ChecklistTemplate[]>({
@@ -235,7 +237,12 @@ export default function ChecklistTemplates() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTemplates.map((template) => (
-            <Card key={template.id} className="hover-elevate" data-testid={`card-template-${template.id}`}>
+            <Card 
+              key={template.id} 
+              className="hover-elevate cursor-pointer" 
+              onClick={() => setLocation(`/checklist-templates/${template.id}`)}
+              data-testid={`card-template-${template.id}`}
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
@@ -261,6 +268,7 @@ export default function ChecklistTemplates() {
                         variant="ghost"
                         size="icon"
                         className="shrink-0"
+                        onClick={(e) => e.stopPropagation()}
                         data-testid={`button-template-menu-${template.id}`}
                       >
                         <MoreVertical className="h-4 w-4" />
@@ -268,28 +276,20 @@ export default function ChecklistTemplates() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem 
-                        onClick={() => setSelectedTemplate(template)}
-                        data-testid={`menu-view-${template.id}`}
-                      >
-                        <List className="h-4 w-4 mr-2" />
-                        View Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={() => setEditingTemplate(template)}
-                        data-testid={`menu-edit-${template.id}`}
-                      >
-                        <Edit3 className="h-4 w-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={() => duplicateMutation.mutate(template.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicateMutation.mutate(template.id);
+                        }}
                         data-testid={`menu-duplicate-${template.id}`}
                       >
                         <Copy className="h-4 w-4 mr-2" />
                         Duplicate
                       </DropdownMenuItem>
                       <DropdownMenuItem 
-                        onClick={() => deleteMutation.mutate(template.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMutation.mutate(template.id);
+                        }}
                         className="text-destructive focus:text-destructive"
                         data-testid={`menu-delete-${template.id}`}
                       >
@@ -316,30 +316,12 @@ export default function ChecklistTemplates() {
         </div>
       )}
 
-      {/* Add/Edit Template Dialog */}
-      {(isAddingTemplate || editingTemplate) && (
-        <ChecklistTemplateFormDialog
-          open={isAddingTemplate || !!editingTemplate}
-          onOpenChange={(open) => {
-            if (!open) {
-              setIsAddingTemplate(false);
-              setEditingTemplate(null);
-            }
-          }}
-          template={editingTemplate}
-        />
-      )}
-
-      {/* View Template Details Dialog */}
-      {selectedTemplate && (
-        <ViewTemplateDialog
-          template={selectedTemplate}
-          open={!!selectedTemplate}
-          onOpenChange={(open: boolean) => {
-            if (!open) setSelectedTemplate(null);
-          }}
-        />
-      )}
+      {/* Add Template Dialog */}
+      <ChecklistTemplateFormDialog
+        open={isAddingTemplate}
+        onOpenChange={setIsAddingTemplate}
+        onTemplateCreated={handleTemplateCreated}
+      />
 
       {/* Import Dialog */}
       <ImportChecklistDialog 
@@ -347,85 +329,5 @@ export default function ChecklistTemplates() {
         onOpenChange={setIsImportOpen} 
       />
     </div>
-  );
-}
-
-// View Template Dialog Component
-function ViewTemplateDialog({ 
-  template, 
-  open, 
-  onOpenChange 
-}: { 
-  template: ChecklistTemplate; 
-  open: boolean; 
-  onOpenChange: (open: boolean) => void;
-}): JSX.Element {
-  const { data: groups = [] } = useQuery<ChecklistTemplateGroup[]>({
-    queryKey: ["/api/checklist-templates", template.id, "groups"],
-    queryFn: async () => {
-      const res = await fetch(`/api/checklist-templates/${template.id}/groups`);
-      if (!res.ok) throw new Error("Failed to fetch groups");
-      return res.json();
-    },
-    enabled: !!template,
-  });
-
-  const { data: allItems = [] } = useQuery<ChecklistTemplateItem[]>({
-    queryKey: ["/api/checklist-template-items", template.id],
-    queryFn: async () => {
-      const itemPromises = groups.map(async (group) => {
-        const res = await fetch(`/api/checklist-template-groups/${group.id}/items`);
-        if (!res.ok) throw new Error("Failed to fetch items");
-        return res.json();
-      });
-      const results = await Promise.all(itemPromises);
-      return results.flat();
-    },
-    enabled: groups.length > 0,
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {template.name}
-            <Badge variant="secondary">{template.type}</Badge>
-          </DialogTitle>
-          {template.description && (
-            <DialogDescription>{template.description}</DialogDescription>
-          )}
-        </DialogHeader>
-
-        <div className="space-y-4 mt-4">
-          {groups.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              No groups or items have been added to this template yet.
-            </p>
-          ) : (
-            groups.map((group) => {
-              const groupItems = allItems.filter(item => item.groupId === group.id);
-              return (
-                <div key={group.id} className="space-y-2">
-                  <h3 className="font-semibold text-lg">{group.name}</h3>
-                  {groupItems.length === 0 ? (
-                    <p className="text-sm text-muted-foreground ml-4">No items in this group</p>
-                  ) : (
-                    <ul className="space-y-2 ml-4">
-                      {groupItems.map((item) => (
-                        <li key={item.id} className="flex items-start gap-2">
-                          <CheckSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                          <span className="text-sm">{item.description}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

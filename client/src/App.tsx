@@ -34,6 +34,7 @@ import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
 import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
 import ChecklistTemplates from "@/pages/ChecklistTemplates";
+import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
 import CostCodes from "@/pages/CostCodes";
 import Contacts from "@/pages/Contacts";
 import NotFound from "@/pages/not-found";
@@ -124,6 +125,7 @@ function Router() {
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
+      <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/settings" component={Settings} />
       <Route path="/system-configuration" component={SystemConfiguration} />
