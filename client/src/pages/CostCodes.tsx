@@ -12,6 +12,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ChevronDown,
   ChevronRight,
   Plus,
@@ -25,6 +32,8 @@ import {
   Ban,
   Maximize2,
   Minimize2,
+  X,
+  FolderInput,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -109,6 +118,75 @@ export default function CostCodes() {
       toast({
         title: "Error",
         description: "Failed to update cost code.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkToggleTimesheetMutation = useMutation({
+    mutationFn: async ({ codeIds, availableInTimesheets }: { codeIds: string[]; availableInTimesheets: boolean }) => {
+      await Promise.all(
+        codeIds.map(id => apiRequest("PATCH", `/api/cost-codes/${id}`, { availableInTimesheets }))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
+      clearSelection();
+      toast({
+        title: "Bulk update completed",
+        description: "Timesheet availability updated for selected codes.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update some cost codes.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkMoveCategoryMutation = useMutation({
+    mutationFn: async ({ codeIds, categoryId }: { codeIds: string[]; categoryId: string | null }) => {
+      await Promise.all(
+        codeIds.map(id => apiRequest("PATCH", `/api/cost-codes/${id}`, { categoryId }))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
+      clearSelection();
+      toast({
+        title: "Bulk move completed",
+        description: "Selected codes moved to new category.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to move some cost codes.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkArchiveMutation = useMutation({
+    mutationFn: async (codeIds: string[]) => {
+      await Promise.all(
+        codeIds.map(id => apiRequest("POST", `/api/cost-codes/${id}/archive`))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
+      clearSelection();
+      toast({
+        title: "Bulk archive completed",
+        description: "Selected codes have been archived.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to archive some cost codes.",
         variant: "destructive",
       });
     },
@@ -199,6 +277,17 @@ export default function CostCodes() {
 
   const selectedCodes = codes.filter(code => selectedCodeIds.has(code.id));
 
+  // Calculate visible codes for select all checkbox state
+  const allVisibleCodeIds = new Set<string>();
+  filteredCategories.forEach(category => {
+    getCodesForCategory(category.id).forEach(code => allVisibleCodeIds.add(code.id));
+  });
+  uncategorizedCodes.forEach(code => allVisibleCodeIds.add(code.id));
+  
+  const allVisibleSelected = allVisibleCodeIds.size > 0 && 
+    Array.from(allVisibleCodeIds).every(id => selectedCodeIds.has(id));
+  const someVisibleSelected = Array.from(allVisibleCodeIds).some(id => selectedCodeIds.has(id)) && !allVisibleSelected;
+
   const isLoading = categoriesLoading || codesLoading;
 
   return (
@@ -286,6 +375,108 @@ export default function CostCodes() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Bulk Actions Toolbar */}
+      {selectedCodeIds.size > 0 && (
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={someVisibleSelected ? "indeterminate" : allVisibleSelected}
+                  onCheckedChange={toggleAllVisibleCodes}
+                  data-testid="checkbox-select-all"
+                />
+                <span className="font-medium">
+                  {selectedCodeIds.size} {selectedCodeIds.size === 1 ? 'item' : 'items'} selected
+                </span>
+              </div>
+              
+              <div className="flex-1" />
+              
+              <div className="flex items-center gap-2">
+                {/* Toggle Timesheets */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="default" data-testid="button-bulk-timesheets">
+                      <Clock className="h-4 w-4 mr-2" />
+                      Timesheets
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem 
+                      onClick={() => bulkToggleTimesheetMutation.mutate({ 
+                        codeIds: Array.from(selectedCodeIds), 
+                        availableInTimesheets: true 
+                      })}
+                      data-testid="menu-bulk-add-timesheets"
+                    >
+                      <Clock className="h-4 w-4 mr-2" />
+                      Add to Timesheets
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => bulkToggleTimesheetMutation.mutate({ 
+                        codeIds: Array.from(selectedCodeIds), 
+                        availableInTimesheets: false 
+                      })}
+                      data-testid="menu-bulk-remove-timesheets"
+                    >
+                      <Ban className="h-4 w-4 mr-2" />
+                      Remove from Timesheets
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Move to Category */}
+                <Select
+                  onValueChange={(value) => {
+                    const categoryId = value === "__none__" ? null : value;
+                    bulkMoveCategoryMutation.mutate({ 
+                      codeIds: Array.from(selectedCodeIds), 
+                      categoryId 
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-[200px]" data-testid="select-bulk-move-category">
+                    <FolderInput className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Move to category..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Uncategorized</SelectItem>
+                    {categories.filter(cat => cat.isActive).map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.code} - {cat.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Archive */}
+                <Button 
+                  variant="outline" 
+                  size="default"
+                  onClick={() => bulkArchiveMutation.mutate(Array.from(selectedCodeIds))}
+                  disabled={selectedCodes.some(code => code.isArchived)}
+                  data-testid="button-bulk-archive"
+                >
+                  <Archive className="h-4 w-4 mr-2" />
+                  Archive
+                </Button>
+
+                {/* Clear Selection */}
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={clearSelection}
+                  data-testid="button-clear-selection"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Cost Categories and Codes List */}
       <div className="flex-1 overflow-auto space-y-2">
