@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -47,6 +47,7 @@ export default function ChecklistTemplateDetail() {
   const [editingGroup, setEditingGroup] = useState<ChecklistTemplateGroup | null>(null);
   const [addingItemToGroup, setAddingItemToGroup] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistTemplateItem | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
   // Fetch template
   const { data: template, isLoading: templateLoading } = useQuery<ChecklistTemplate>({
@@ -85,6 +86,20 @@ export default function ChecklistTemplateDetail() {
     },
     enabled: groups.length > 0,
   });
+
+  // Auto-select first group when groups load or when selected group is deleted
+  useEffect(() => {
+    if (groups.length > 0) {
+      // If no group is selected or the selected group no longer exists, select the first one
+      const selectedExists = groups.some(g => g.id === selectedGroupId);
+      if (!selectedGroupId || !selectedExists) {
+        setSelectedGroupId(groups[0].id);
+      }
+    } else {
+      // No groups available, clear selection
+      setSelectedGroupId(null);
+    }
+  }, [groups, selectedGroupId]);
 
   // Delete group mutation
   const deleteGroupMutation = useMutation({
@@ -163,29 +178,10 @@ export default function ChecklistTemplateDetail() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Groups Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Groups & Items</h2>
-              <p className="text-sm text-muted-foreground">
-                Organize checklist items into groups
-              </p>
-            </div>
-            <Button 
-              onClick={() => setIsAddingGroup(true)} 
-              size="sm"
-              data-testid="button-add-group"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Group
-            </Button>
-          </div>
-
-          {/* Groups List */}
-          {groups.length === 0 ? (
-            <Card className="border-dashed">
+      <div className="flex-1 overflow-hidden p-6">
+        {groups.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <Card className="border-dashed max-w-md w-full">
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <CheckSquare className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No groups yet</h3>
@@ -198,72 +194,121 @@ export default function ChecklistTemplateDetail() {
                 </Button>
               </CardContent>
             </Card>
-          ) : (
-            <div className="space-y-4">
-              {groups.map((group) => {
-                const groupItems = allItems.filter(item => item.groupId === group.id);
-                return (
-                  <Card key={group.id} data-testid={`card-group-${group.id}`}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-1">
-                          <GripVertical className="h-4 w-4 text-muted-foreground" />
-                          <CardTitle className="text-base">{group.name}</CardTitle>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setAddingItemToGroup(group.id)}
-                            data-testid={`button-add-item-${group.id}`}
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Item
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteGroupMutation.mutate(group.id)}
-                            data-testid={`button-delete-group-${group.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+            {/* Groups Column */}
+            <Card className="flex flex-col">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Groups</CardTitle>
+                  <Button 
+                    onClick={() => setIsAddingGroup(true)} 
+                    size="sm"
+                    data-testid="button-add-group"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-y-auto">
+                <div className="space-y-2">
+                  {groups.map((group) => (
+                    <div
+                      key={group.id}
+                      className={`flex items-center justify-between gap-2 p-3 rounded border cursor-pointer hover-elevate ${
+                        selectedGroupId === group.id 
+                          ? 'bg-accent border-accent' 
+                          : 'bg-card border-border'
+                      }`}
+                      onClick={() => setSelectedGroupId(group.id)}
+                      data-testid={`group-item-${group.id}`}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="font-medium truncate">{group.name}</span>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      {groupItems.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No items in this group</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {groupItems.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center gap-2 p-2 rounded hover-elevate"
-                              data-testid={`item-${item.id}`}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteGroupMutation.mutate(group.id);
+                        }}
+                        data-testid={`button-delete-group-${group.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Items Column */}
+            {selectedGroupId && (
+              <Card className="flex flex-col">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">Items</CardTitle>
+                    <Button 
+                      onClick={() => setAddingItemToGroup(selectedGroupId)} 
+                      size="sm"
+                      data-testid="button-add-item"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto">
+                  {allItems.filter(item => item.groupId === selectedGroupId).length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                      <CheckSquare className="h-10 w-10 text-muted-foreground mb-3" />
+                      <p className="text-sm text-muted-foreground mb-3">
+                        No items in this group
+                      </p>
+                      <Button 
+                        onClick={() => setAddingItemToGroup(selectedGroupId)} 
+                        size="sm"
+                        data-testid="button-add-first-item"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add First Item
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {allItems
+                        .filter(item => item.groupId === selectedGroupId)
+                        .map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-2 p-3 rounded border hover-elevate"
+                            data-testid={`item-${item.id}`}
+                          >
+                            <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="flex-1 text-sm">{item.description}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              onClick={() => deleteItemMutation.mutate(item.id)}
+                              data-testid={`button-delete-item-${item.id}`}
                             >
-                              <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
-                              <span className="flex-1 text-sm">{item.description}</span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => deleteItemMutation.mutate(item.id)}
-                                data-testid={`button-delete-item-${item.id}`}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Group Dialog */}
