@@ -84,6 +84,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
+    // TEMPORARY: Allow roles/permissions for development (needed for Settings page)
+    if ((path.startsWith('/user-roles') || path.startsWith('/permissions')) && process.env.NODE_ENV === 'development') {
+      return next();
+    }
+    
     // TEMPORARY: Allow notes operations for development (remove when auth UI is ready)
     if (path.startsWith('/notes')) {
       return next();

@@ -874,6 +874,8 @@ export default function Settings() {
                   onClick={() => {
                     if (category.id === "system-configuration") {
                       navigate("/system-configuration");
+                    } else if (category.id === "roles-permissions") {
+                      navigate("/roles-permissions");
                     } else {
                       setActiveSection(category.id);
                     }

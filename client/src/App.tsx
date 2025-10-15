@@ -16,6 +16,7 @@ import Templates from "@/pages/Templates";
 import Settings from "@/pages/Settings";
 import ProjectSettings from "@/pages/ProjectSettings";
 import SystemConfiguration from "@/pages/SystemConfiguration";
+import RolesPermissions from "@/pages/RolesPermissions";
 import BusinessOverviewPage from "@/pages/BusinessOverview";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
@@ -124,6 +125,7 @@ function Router() {
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
       <Route path="/settings" component={Settings} />
       <Route path="/system-configuration" component={SystemConfiguration} />
+      <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
