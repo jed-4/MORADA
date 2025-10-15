@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   ResizablePanelGroup,
@@ -23,6 +24,7 @@ import {
   Trash2,
   GripVertical,
   CheckSquare,
+  FileText,
 } from "lucide-react";
 import {
   Dialog,
@@ -296,20 +298,36 @@ export default function ChecklistTemplateDetail() {
                           .map((item) => (
                             <div
                               key={item.id}
-                              className="flex items-center gap-2 py-2 px-2 rounded border hover-elevate"
+                              className="py-2 px-2 rounded border hover-elevate"
                               data-testid={`item-${item.id}`}
                             >
-                              <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
-                              <span className="flex-1 text-sm">{item.description}</span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 shrink-0"
-                                onClick={() => deleteItemMutation.mutate(item.id)}
-                                data-testid={`button-delete-item-${item.id}`}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <span className="flex-1 text-sm">{item.description}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0"
+                                  onClick={() => setEditingItem(item)}
+                                  data-testid={`button-edit-item-${item.id}`}
+                                >
+                                  <FileText className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0"
+                                  onClick={() => deleteItemMutation.mutate(item.id)}
+                                  data-testid={`button-delete-item-${item.id}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              {item.tooltip && (
+                                <div className="ml-6 mt-1 text-xs text-muted-foreground">
+                                  {item.tooltip}
+                                </div>
+                              )}
                             </div>
                           ))}
                       </div>
@@ -458,6 +476,7 @@ function GroupFormDialog({
 // Item Form Dialog
 const itemSchema = z.object({
   description: z.string().min(1, "Item description is required"),
+  tooltip: z.string().optional(),
 });
 
 function ItemFormDialog({
@@ -479,16 +498,31 @@ function ItemFormDialog({
     resolver: zodResolver(itemSchema),
     defaultValues: {
       description: item?.description || "",
+      tooltip: item?.tooltip || "",
     },
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (data: { description: string }) => {
-      const res = await apiRequest('POST', "/api/checklist-template-items", {
-        groupId,
-        description: data.description,
-        order: 0,
+  // Reset form when item changes
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        description: item?.description || "",
+        tooltip: item?.tooltip || "",
       });
+    }
+  }, [item, open, form]);
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { description: string; tooltip?: string }) => {
+      const res = await apiRequest(item ? 'PATCH' : 'POST', 
+        item ? `/api/checklist-template-items/${item.id}` : "/api/checklist-template-items", 
+        item ? data : {
+          groupId,
+          description: data.description,
+          tooltip: data.tooltip || null,
+          order: 0,
+        }
+      );
       return res.json();
     },
     onSuccess: () => {
@@ -502,7 +536,7 @@ function ItemFormDialog({
     },
   });
 
-  const onSubmit = (data: { description: string }) => {
+  const onSubmit = (data: { description: string; tooltip?: string }) => {
     createMutation.mutate(data);
   };
 
@@ -529,6 +563,26 @@ function ItemFormDialog({
                       placeholder="e.g., Check soil conditions" 
                       {...field} 
                       data-testid="input-item-description"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="tooltip"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Additional Notes (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea 
+                      placeholder="Add extra details or notes..."
+                      className="resize-none"
+                      rows={3}
+                      {...field} 
+                      data-testid="input-item-tooltip"
                     />
                   </FormControl>
                   <FormMessage />

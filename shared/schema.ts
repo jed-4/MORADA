@@ -1441,7 +1441,8 @@ export type ChecklistTemplateGroup = typeof checklistTemplateGroups.$inferSelect
 export const checklistTemplateItems = pgTable("checklist_template_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   groupId: varchar("group_id").notNull().references(() => checklistTemplateGroups.id, { onDelete: "cascade" }),
-  description: text("description").notNull(), // The main task description (visible as hover tooltip)
+  description: text("description").notNull(), // The main task description
+  tooltip: text("tooltip"), // Additional description/notes shown underneath
   order: integer("order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
