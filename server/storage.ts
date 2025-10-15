@@ -4083,23 +4083,211 @@ export class DbStorage implements IStorage {
     return result.rowCount > 0;
   }
 
-  // Add placeholder implementations for other required interface methods
-  // These can be implemented as needed
-  async getUserRoles(category?: UserCategory): Promise<UserRole[]> { return []; }
-  async getUserRole(id: string): Promise<UserRole | undefined> { return undefined; }
-  async createUserRole(role: InsertUserRole): Promise<UserRole> { throw new Error("Not implemented"); }
-  async updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined> { return undefined; }
-  async deleteUserRole(id: string): Promise<boolean> { return false; }
-  async getPermissions(category?: string): Promise<Permission[]> { return []; }
-  async getPermission(id: string): Promise<Permission | undefined> { return undefined; }
-  async createPermission(permission: InsertPermission): Promise<Permission> { throw new Error("Not implemented"); }
-  async updatePermission(id: string, permission: Partial<InsertPermission>): Promise<Permission | undefined> { return undefined; }
-  async deletePermission(id: string): Promise<boolean> { return false; }
-  async getRolePermissions(roleId: string): Promise<RolePermission[]> { return []; }
-  async createRolePermission(rolePermission: InsertRolePermission): Promise<RolePermission> { throw new Error("Not implemented"); }
-  async updateRolePermission(id: string, rolePermission: Partial<InsertRolePermission>): Promise<RolePermission | undefined> { return undefined; }
-  async deleteRolePermission(id: string): Promise<boolean> { return false; }
-  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void> {}
+  // User Roles CRUD
+  async getUserRoles(category?: UserCategory): Promise<UserRole[]> {
+    try {
+      if (category) {
+        return await db.select()
+          .from(schema.userRoles)
+          .where(eq(schema.userRoles.category, category))
+          .orderBy(schema.userRoles.name);
+      }
+      return await db.select()
+        .from(schema.userRoles)
+        .orderBy(schema.userRoles.name);
+    } catch (error) {
+      console.error("Database error in getUserRoles:", error);
+      throw error;
+    }
+  }
+
+  async getUserRole(id: string): Promise<UserRole | undefined> {
+    try {
+      const results = await db.select()
+        .from(schema.userRoles)
+        .where(eq(schema.userRoles.id, id))
+        .limit(1);
+      return results[0];
+    } catch (error) {
+      console.error("Database error in getUserRole:", error);
+      throw error;
+    }
+  }
+
+  async createUserRole(role: InsertUserRole): Promise<UserRole> {
+    try {
+      const results = await db.insert(schema.userRoles)
+        .values(role)
+        .returning();
+      return results[0];
+    } catch (error) {
+      console.error("Database error in createUserRole:", error);
+      throw error;
+    }
+  }
+
+  async updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined> {
+    try {
+      const results = await db.update(schema.userRoles)
+        .set({ ...role, updatedAt: new Date() })
+        .where(eq(schema.userRoles.id, id))
+        .returning();
+      return results[0];
+    } catch (error) {
+      console.error("Database error in updateUserRole:", error);
+      throw error;
+    }
+  }
+
+  async deleteUserRole(id: string): Promise<boolean> {
+    try {
+      const results = await db.delete(schema.userRoles)
+        .where(eq(schema.userRoles.id, id))
+        .returning();
+      return results.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteUserRole:", error);
+      throw error;
+    }
+  }
+
+  // Permissions CRUD
+  async getPermissions(category?: string): Promise<Permission[]> {
+    try {
+      if (category) {
+        return await db.select()
+          .from(schema.permissions)
+          .where(eq(schema.permissions.category, category))
+          .orderBy(schema.permissions.key);
+      }
+      return await db.select()
+        .from(schema.permissions)
+        .orderBy(schema.permissions.key);
+    } catch (error) {
+      console.error("Database error in getPermissions:", error);
+      throw error;
+    }
+  }
+
+  async getPermission(id: string): Promise<Permission | undefined> {
+    try {
+      const results = await db.select()
+        .from(schema.permissions)
+        .where(eq(schema.permissions.id, id))
+        .limit(1);
+      return results[0];
+    } catch (error) {
+      console.error("Database error in getPermission:", error);
+      throw error;
+    }
+  }
+
+  async createPermission(permission: InsertPermission): Promise<Permission> {
+    try {
+      const results = await db.insert(schema.permissions)
+        .values(permission)
+        .returning();
+      return results[0];
+    } catch (error) {
+      console.error("Database error in createPermission:", error);
+      throw error;
+    }
+  }
+
+  async updatePermission(id: string, permission: Partial<InsertPermission>): Promise<Permission | undefined> {
+    try {
+      const results = await db.update(schema.permissions)
+        .set({ ...permission, updatedAt: new Date() })
+        .where(eq(schema.permissions.id, id))
+        .returning();
+      return results[0];
+    } catch (error) {
+      console.error("Database error in updatePermission:", error);
+      throw error;
+    }
+  }
+
+  async deletePermission(id: string): Promise<boolean> {
+    try {
+      const results = await db.delete(schema.permissions)
+        .where(eq(schema.permissions.id, id))
+        .returning();
+      return results.length > 0;
+    } catch (error) {
+      console.error("Database error in deletePermission:", error);
+      throw error;
+    }
+  }
+
+  // Role Permissions CRUD
+  async getRolePermissions(roleId: string): Promise<RolePermission[]> {
+    try {
+      return await db.select()
+        .from(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.roleId, roleId));
+    } catch (error) {
+      console.error("Database error in getRolePermissions:", error);
+      throw error;
+    }
+  }
+
+  async createRolePermission(rolePermission: InsertRolePermission): Promise<RolePermission> {
+    try {
+      const results = await db.insert(schema.rolePermissions)
+        .values(rolePermission)
+        .returning();
+      return results[0];
+    } catch (error) {
+      console.error("Database error in createRolePermission:", error);
+      throw error;
+    }
+  }
+
+  async updateRolePermission(id: string, rolePermission: Partial<InsertRolePermission>): Promise<RolePermission | undefined> {
+    try {
+      const results = await db.update(schema.rolePermissions)
+        .set({ ...rolePermission, updatedAt: new Date() })
+        .where(eq(schema.rolePermissions.id, id))
+        .returning();
+      return results[0];
+    } catch (error) {
+      console.error("Database error in updateRolePermission:", error);
+      throw error;
+    }
+  }
+
+  async deleteRolePermission(id: string): Promise<boolean> {
+    try {
+      const results = await db.delete(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.id, id))
+        .returning();
+      return results.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRolePermission:", error);
+      throw error;
+    }
+  }
+
+  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void> {
+    try {
+      // Delete existing permissions for this role
+      await db.delete(schema.rolePermissions)
+        .where(eq(schema.rolePermissions.roleId, roleId));
+
+      // Insert new permissions
+      if (permissions.length > 0) {
+        await db.insert(schema.rolePermissions)
+          .values(permissions.map(p => ({
+            roleId,
+            permissionId: p.permissionId,
+            allowedActions: p.allowedActions,
+          })));
+      }
+    } catch (error) {
+      console.error("Database error in setRolePermissions:", error);
+      throw error;
+    }
+  }
   async getUserProjectAccess(userId: string): Promise<UserProjectAccess[]> { return []; }
   async createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
   async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
