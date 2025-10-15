@@ -46,7 +46,9 @@ import {
   insertActivitySchema,
   insertChecklistTemplateSchema,
   insertChecklistTemplateGroupSchema,
-  insertChecklistTemplateItemSchema
+  insertChecklistTemplateItemSchema,
+  updateBudgetSchema,
+  updateBudgetLineItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -97,8 +99,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     
-    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, site diary, checklists, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-categories') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills') || path.startsWith('/site-diary-templates') || path.startsWith('/site-diary-entries') || path.startsWith('/checklist-templates') || path.startsWith('/checklist-template-groups') || path.startsWith('/checklist-template-items')) {
+    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, site diary, checklists, budgets, and other core operations for development
+    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-categories') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills') || path.startsWith('/site-diary-templates') || path.startsWith('/site-diary-entries') || path.startsWith('/checklist-templates') || path.startsWith('/checklist-template-groups') || path.startsWith('/checklist-template-items') || path.startsWith('/budgets') || path.startsWith('/budget-line-items')) {
       return next();
     }
     
@@ -4261,6 +4263,122 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to export checklist templates",
+        details: error.message 
+      });
+    }
+  });
+
+  // Budget routes
+  app.get("/api/projects/:projectId/budget", async (req, res) => {
+    try {
+      const budget = await storage.getBudget(req.params.projectId);
+      if (!budget) {
+        // Auto-create budget if it doesn't exist
+        const newBudget = await storage.calculateBudget(req.params.projectId);
+        return res.json(newBudget);
+      }
+      res.json(budget);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch budget",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/projects/:projectId/budget/calculate", async (req, res) => {
+    try {
+      const budget = await storage.calculateBudget(req.params.projectId);
+      res.json(budget);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to calculate budget",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/budgets/:id", async (req, res) => {
+    try {
+      const validationResult = updateBudgetSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const budget = await storage.updateBudget(req.params.id, validationResult.data);
+      if (!budget) {
+        return res.status(404).json({ error: "Budget not found" });
+      }
+      res.json(budget);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update budget",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/budgets/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteBudget(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Budget not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete budget",
+        details: error.message 
+      });
+    }
+  });
+
+  // Budget Line Items routes
+  app.get("/api/budgets/:budgetId/line-items", async (req, res) => {
+    try {
+      const lineItems = await storage.getBudgetLineItems(req.params.budgetId);
+      res.json(lineItems);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch budget line items",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/budgets/:budgetId/line-items/recalculate", async (req, res) => {
+    try {
+      const lineItems = await storage.recalculateBudgetLineItems(req.params.budgetId);
+      res.json(lineItems);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to recalculate budget line items",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/budget-line-items/:id", async (req, res) => {
+    try {
+      const validationResult = updateBudgetLineItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const lineItem = await storage.updateBudgetLineItem(req.params.id, validationResult.data);
+      if (!lineItem) {
+        return res.status(404).json({ error: "Budget line item not found" });
+      }
+      res.json(lineItem);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update budget line item",
         details: error.message 
       });
     }

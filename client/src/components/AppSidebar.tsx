@@ -72,7 +72,7 @@ const comingSoonItems = new Set([
   "Request For Quotes", "Request For Information", "Proposal", 
   "Allowances", "Purchase Orders", 
   "Site Diary", "Timesheets", 
-  "Budget", "Files", "Team"
+  "Files", "Team"
 ]);
 
 // Project sections base configuration

@@ -1456,3 +1456,83 @@ export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTem
 
 export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
 export type ChecklistTemplateItem = typeof checklistTemplateItems.$inferSelect;
+
+// Budgets (project budget tracking)
+export const budgets = pgTable("budgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).unique(), // One budget per project
+  name: text("name").notNull().default("Project Budget"),
+  baselineAmount: integer("baseline_amount").notNull().default(0), // Original budget in cents (from estimates)
+  revisedAmount: integer("revised_amount").notNull().default(0), // Current budget after variations in cents
+  actualAmount: integer("actual_amount").notNull().default(0), // Actual spent in cents (from bills)
+  forecastAmount: integer("forecast_amount").notNull().default(0), // Projected final cost in cents
+  varianceAmount: integer("variance_amount").notNull().default(0), // Difference between revised and forecast in cents
+  profitAmount: integer("profit_amount").notNull().default(0), // Estimated profit in cents
+  profitPercent: integer("profit_percent").notNull().default(0), // Profit percentage (10 = 10%)
+  status: text("status").notNull().default("active"), // "active" | "completed" | "on_hold"
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBudgetSchema = createInsertSchema(budgets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  baselineAmount: z.number().default(0),
+  revisedAmount: z.number().default(0),
+  actualAmount: z.number().default(0),
+  forecastAmount: z.number().default(0),
+  varianceAmount: z.number().default(0),
+  profitAmount: z.number().default(0),
+  profitPercent: z.number().default(0),
+  status: z.enum(["active", "completed", "on_hold"]).default("active"),
+});
+
+export type InsertBudget = z.infer<typeof insertBudgetSchema>;
+export type Budget = typeof budgets.$inferSelect;
+
+export const updateBudgetSchema = insertBudgetSchema.partial();
+export type UpdateBudget = z.infer<typeof updateBudgetSchema>;
+
+// Budget Line Items (budget per cost code)
+export const budgetLineItems = pgTable("budget_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  budgetId: varchar("budget_id").notNull().references(() => budgets.id, { onDelete: "cascade" }),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }), // Nullable - can be uncategorized
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  categoryTitle: text("category_title"), // Cached category name for grouping
+  budgetedAmount: integer("budgeted_amount").notNull().default(0), // Budgeted amount in cents (from estimates)
+  actualAmount: integer("actual_amount").notNull().default(0), // Actual spent in cents (from bills)
+  variationAmount: integer("variation_amount").notNull().default(0), // Variation adjustments in cents
+  forecastAmount: integer("forecast_amount").notNull().default(0), // Projected final cost in cents
+  variance: integer("variance").notNull().default(0), // Difference between budgeted and forecast in cents
+  variancePercent: integer("variance_percent").notNull().default(0), // Variance as percentage (10 = 10%)
+  profitAmount: integer("profit_amount").notNull().default(0), // Profit on this cost code in cents
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBudgetLineItemSchema = createInsertSchema(budgetLineItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  budgetedAmount: z.number().default(0),
+  actualAmount: z.number().default(0),
+  variationAmount: z.number().default(0),
+  forecastAmount: z.number().default(0),
+  variance: z.number().default(0),
+  variancePercent: z.number().default(0),
+  profitAmount: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertBudgetLineItem = z.infer<typeof insertBudgetLineItemSchema>;
+export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
+
+export const updateBudgetLineItemSchema = insertBudgetLineItemSchema.partial();
+export type UpdateBudgetLineItem = z.infer<typeof updateBudgetLineItemSchema>;

@@ -44,7 +44,9 @@ import {
   type SiteDiaryEntry, type InsertSiteDiaryEntry,
   type ChecklistTemplate, type InsertChecklistTemplate,
   type ChecklistTemplateGroup, type InsertChecklistTemplateGroup,
-  type ChecklistTemplateItem, type InsertChecklistTemplateItem
+  type ChecklistTemplateItem, type InsertChecklistTemplateItem,
+  type Budget, type InsertBudget,
+  type BudgetLineItem, type InsertBudgetLineItem
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -380,6 +382,21 @@ export interface IStorage {
   createChecklistTemplateItem(item: InsertChecklistTemplateItem): Promise<ChecklistTemplateItem>;
   updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined>;
   deleteChecklistTemplateItem(id: string): Promise<boolean>;
+
+  // Budget CRUD
+  getBudget(projectId: string): Promise<Budget | undefined>;
+  createBudget(budget: InsertBudget): Promise<Budget>;
+  updateBudget(id: string, budget: Partial<InsertBudget>): Promise<Budget | undefined>;
+  deleteBudget(id: string): Promise<boolean>;
+  calculateBudget(projectId: string): Promise<Budget | undefined>; // Recalculates from estimates, bills, variations
+
+  // Budget Line Items CRUD
+  getBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]>;
+  getBudgetLineItem(id: string): Promise<BudgetLineItem | undefined>;
+  createBudgetLineItem(item: InsertBudgetLineItem): Promise<BudgetLineItem>;
+  updateBudgetLineItem(id: string, item: Partial<InsertBudgetLineItem>): Promise<BudgetLineItem | undefined>;
+  deleteBudgetLineItem(id: string): Promise<boolean>;
+  recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]>; // Recalculates all line items
 }
 
 export class MemStorage implements IStorage {
@@ -6273,6 +6290,301 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteChecklistTemplateItem:", error);
+      throw error;
+    }
+  }
+
+  // Budget CRUD
+  async getBudget(projectId: string): Promise<Budget | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.budgets)
+        .where(eq(schema.budgets.projectId, projectId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getBudget:", error);
+      throw error;
+    }
+  }
+
+  async createBudget(budget: InsertBudget): Promise<Budget> {
+    try {
+      const result = await db.insert(schema.budgets)
+        .values(budget)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createBudget:", error);
+      throw error;
+    }
+  }
+
+  async updateBudget(id: string, budget: Partial<InsertBudget>): Promise<Budget | undefined> {
+    try {
+      const result = await db.update(schema.budgets)
+        .set({ ...budget, updatedAt: new Date() })
+        .where(eq(schema.budgets.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateBudget:", error);
+      throw error;
+    }
+  }
+
+  async deleteBudget(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.budgets)
+        .where(eq(schema.budgets.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteBudget:", error);
+      throw error;
+    }
+  }
+
+  async calculateBudget(projectId: string): Promise<Budget | undefined> {
+    try {
+      // Get or create budget for this project
+      let budget = await this.getBudget(projectId);
+      if (!budget) {
+        budget = await this.createBudget({ 
+          projectId,
+          name: "Project Budget",
+          baselineAmount: 0,
+          revisedAmount: 0,
+          actualAmount: 0,
+          forecastAmount: 0,
+          varianceAmount: 0,
+          profitAmount: 0,
+          profitPercent: 0
+        });
+      }
+
+      // Calculate baseline from estimates
+      const estimates = await db.select()
+        .from(schema.estimates)
+        .where(eq(schema.estimates.projectId, projectId));
+      
+      const estimateItems = estimates.length > 0 ? await db.select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.estimateId, estimates[0].id)) : [];
+
+      const baselineAmount = estimateItems.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
+
+      // Calculate actual from bills
+      const bills = await db.select()
+        .from(schema.bills)
+        .where(eq(schema.bills.projectId, projectId));
+      
+      const actualAmount = bills.reduce((sum, bill) => sum + (bill.total || 0), 0);
+
+      // Calculate variations
+      const variations = await db.select()
+        .from(schema.variations)
+        .where(and(
+          eq(schema.variations.projectId, projectId),
+          eq(schema.variations.status, "approved")
+        ));
+      
+      const variationAmount = variations.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
+
+      const revisedAmount = baselineAmount + variationAmount;
+      const forecastAmount = actualAmount + (revisedAmount - actualAmount); // Simple forecast
+      const varianceAmount = revisedAmount - forecastAmount;
+      const profitPercent = revisedAmount > 0 ? Math.round(((revisedAmount - forecastAmount) / revisedAmount) * 100) : 0;
+
+      // Update budget
+      const updated = await this.updateBudget(budget.id, {
+        baselineAmount,
+        revisedAmount,
+        actualAmount,
+        forecastAmount,
+        varianceAmount,
+        profitPercent
+      });
+
+      return updated;
+    } catch (error) {
+      console.error("Database error in calculateBudget:", error);
+      throw error;
+    }
+  }
+
+  // Budget Line Items CRUD
+  async getBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]> {
+    try {
+      return await db.select()
+        .from(schema.budgetLineItems)
+        .where(eq(schema.budgetLineItems.budgetId, budgetId))
+        .orderBy(schema.budgetLineItems.sortOrder);
+    } catch (error) {
+      console.error("Database error in getBudgetLineItems:", error);
+      throw error;
+    }
+  }
+
+  async getBudgetLineItem(id: string): Promise<BudgetLineItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.budgetLineItems)
+        .where(eq(schema.budgetLineItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getBudgetLineItem:", error);
+      throw error;
+    }
+  }
+
+  async createBudgetLineItem(item: InsertBudgetLineItem): Promise<BudgetLineItem> {
+    try {
+      const result = await db.insert(schema.budgetLineItems)
+        .values(item)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createBudgetLineItem:", error);
+      throw error;
+    }
+  }
+
+  async updateBudgetLineItem(id: string, item: Partial<InsertBudgetLineItem>): Promise<BudgetLineItem | undefined> {
+    try {
+      const result = await db.update(schema.budgetLineItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.budgetLineItems.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateBudgetLineItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteBudgetLineItem(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.budgetLineItems)
+        .where(eq(schema.budgetLineItems.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteBudgetLineItem:", error);
+      throw error;
+    }
+  }
+
+  async recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]> {
+    try {
+      // Get the budget
+      const budgetResult = await db.select()
+        .from(schema.budgets)
+        .where(eq(schema.budgets.id, budgetId))
+        .limit(1);
+      
+      if (!budgetResult[0]) {
+        throw new Error("Budget not found");
+      }
+
+      const budget = budgetResult[0];
+      const projectId = budget.projectId;
+
+      // Get all cost codes
+      const costCodes = await db.select()
+        .from(schema.costCodes)
+        .where(eq(schema.costCodes.isActive, true));
+
+      // Get estimates for this project
+      const estimates = await db.select()
+        .from(schema.estimates)
+        .where(eq(schema.estimates.projectId, projectId));
+
+      const estimateItems = estimates.length > 0 ? await db.select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.estimateId, estimates[0].id)) : [];
+
+      // Get bills for this project
+      const bills = await db.select()
+        .from(schema.bills)
+        .where(eq(schema.bills.projectId, projectId));
+
+      const billIds = bills.map(b => b.id);
+      const billLineItems = billIds.length > 0 ? await db.select()
+        .from(schema.billLineItems)
+        .where(schema.billLineItems.billId) : [];
+
+      // Group by cost code
+      const costCodeMap = new Map<string, {
+        budgeted: number;
+        actual: number;
+        costCodeTitle: string;
+        categoryTitle: string;
+      }>();
+
+      // Calculate budgeted amounts from estimates
+      for (const item of estimateItems) {
+        const costCodeKey = item.costCode || "uncategorized";
+        const existing = costCodeMap.get(costCodeKey) || { 
+          budgeted: 0, 
+          actual: 0,
+          costCodeTitle: item.costCode || "Uncategorized",
+          categoryTitle: "General"
+        };
+        existing.budgeted += item.priceIncTax || 0;
+        costCodeMap.set(costCodeKey, existing);
+      }
+
+      // Calculate actual amounts from bills
+      for (const billItem of billLineItems) {
+        const costCode = costCodes.find(cc => cc.id === billItem.costCodeId);
+        const costCodeKey = costCode?.code || "uncategorized";
+        const existing = costCodeMap.get(costCodeKey) || { 
+          budgeted: 0, 
+          actual: 0,
+          costCodeTitle: costCode?.title || "Uncategorized",
+          categoryTitle: "General"
+        };
+        existing.actual += billItem.total || 0;
+        costCodeMap.set(costCodeKey, existing);
+      }
+
+      // Delete existing line items
+      await db.delete(schema.budgetLineItems)
+        .where(eq(schema.budgetLineItems.budgetId, budgetId));
+
+      // Create new line items
+      const lineItems: BudgetLineItem[] = [];
+      let sortOrder = 0;
+
+      for (const [costCodeKey, data] of costCodeMap.entries()) {
+        const costCode = costCodes.find(cc => cc.code === costCodeKey);
+        const forecast = data.actual + Math.max(0, data.budgeted - data.actual);
+        const variance = data.budgeted - forecast;
+        const variancePercent = data.budgeted > 0 ? Math.round((variance / data.budgeted) * 100) : 0;
+
+        const lineItem = await this.createBudgetLineItem({
+          budgetId,
+          costCodeId: costCode?.id || null,
+          costCodeTitle: data.costCodeTitle,
+          categoryTitle: data.categoryTitle,
+          budgetedAmount: data.budgeted,
+          actualAmount: data.actual,
+          variationAmount: 0,
+          forecastAmount: forecast,
+          variance,
+          variancePercent,
+          profitAmount: variance,
+          sortOrder: sortOrder++
+        });
+
+        lineItems.push(lineItem);
+      }
+
+      return lineItems;
+    } catch (error) {
+      console.error("Database error in recalculateBudgetLineItems:", error);
       throw error;
     }
   }

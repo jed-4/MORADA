@@ -37,6 +37,7 @@ import ChecklistTemplates from "@/pages/ChecklistTemplates";
 import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
 import CostCodes from "@/pages/CostCodes";
 import Contacts from "@/pages/Contacts";
+import Budget from "@/pages/Budget";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -87,7 +88,7 @@ function Router() {
       <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/projects/:projectId/site-diary" component={SiteDiaryEntries} />
       <Route path="/projects/:projectId/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
-      <Route path="/projects/:projectId/budget" component={() => <ComingSoonPage section="budget" />} />
+      <Route path="/projects/:projectId/budget" component={Budget} />
       <Route path="/projects/:projectId/files" component={() => <ComingSoonPage section="files" />} />
       <Route path="/projects/:projectId/team" component={() => <ComingSoonPage section="team" />} />
       
