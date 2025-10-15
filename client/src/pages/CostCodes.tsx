@@ -31,6 +31,7 @@ import type { CostCategory, CostCode } from "@shared/schema";
 import AddCategoryDialog from "@/components/AddCategoryDialog";
 import AddCostCodeDialog from "@/components/AddCostCodeDialog";
 import ImportCostCodesDialog from "@/components/ImportCostCodesDialog";
+import MergeCostCodeDialog from "@/components/MergeCostCodeDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
@@ -40,6 +41,8 @@ export default function CostCodes() {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [isAddCostCodeOpen, setIsAddCostCodeOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isMergeOpen, setIsMergeOpen] = useState(false);
+  const [selectedCodeForMerge, setSelectedCodeForMerge] = useState<CostCode | null>(null);
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
@@ -324,7 +327,14 @@ export default function CostCodes() {
                                     )}
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem disabled data-testid={`menu-merge-${code.id}`}>
+                                  <DropdownMenuItem 
+                                    onClick={() => {
+                                      setSelectedCodeForMerge(code);
+                                      setIsMergeOpen(true);
+                                    }}
+                                    disabled={code.isArchived}
+                                    data-testid={`menu-merge-${code.id}`}
+                                  >
                                     <GitMerge className="h-4 w-4 mr-2" />
                                     Merge
                                   </DropdownMenuItem>
@@ -438,7 +448,14 @@ export default function CostCodes() {
                                 )}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem disabled data-testid={`menu-merge-${code.id}`}>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  setSelectedCodeForMerge(code);
+                                  setIsMergeOpen(true);
+                                }}
+                                disabled={code.isArchived}
+                                data-testid={`menu-merge-${code.id}`}
+                              >
                                 <GitMerge className="h-4 w-4 mr-2" />
                                 Merge
                               </DropdownMenuItem>
@@ -479,6 +496,11 @@ export default function CostCodes() {
       <AddCategoryDialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen} />
       <AddCostCodeDialog open={isAddCostCodeOpen} onOpenChange={setIsAddCostCodeOpen} />
       <ImportCostCodesDialog open={isImportOpen} onOpenChange={setIsImportOpen} />
+      <MergeCostCodeDialog 
+        open={isMergeOpen} 
+        onOpenChange={setIsMergeOpen} 
+        costCode={selectedCodeForMerge}
+      />
     </div>
   );
 }
