@@ -155,6 +155,16 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {/* Contacts Button */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => navigate("/contacts")}
+          data-testid="button-contacts"
+        >
+          <Users className="h-4 w-4" />
+        </Button>
+
         <ThemeToggle />
         
         {/* User Menu */}
