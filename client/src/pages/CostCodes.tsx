@@ -34,6 +34,8 @@ import AddCategoryDialog from "@/components/AddCategoryDialog";
 import AddCostCodeDialog from "@/components/AddCostCodeDialog";
 import ImportCostCodesDialog from "@/components/ImportCostCodesDialog";
 import MergeCostCodeDialog from "@/components/MergeCostCodeDialog";
+import EditCategoryDialog from "@/components/EditCategoryDialog";
+import MergeCategoryDialog from "@/components/MergeCategoryDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
@@ -45,6 +47,10 @@ export default function CostCodes() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   const [selectedCodeForMerge, setSelectedCodeForMerge] = useState<CostCode | null>(null);
+  const [isEditCategoryOpen, setIsEditCategoryOpen] = useState(false);
+  const [selectedCategoryForEdit, setSelectedCategoryForEdit] = useState<CostCategory | null>(null);
+  const [isMergeCategoryOpen, setIsMergeCategoryOpen] = useState(false);
+  const [selectedCategoryForMerge, setSelectedCategoryForMerge] = useState<CostCategory | null>(null);
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
@@ -68,6 +74,25 @@ export default function CostCodes() {
       toast({
         title: "Error",
         description: "Failed to archive cost code.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const archiveCategoryMutation = useMutation({
+    mutationFn: (categoryId: string) =>
+      apiRequest("POST", `/api/cost-categories/${categoryId}/archive`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-categories"] });
+      toast({
+        title: "Category archived",
+        description: "The cost category has been archived successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to archive category.",
         variant: "destructive",
       });
     },
@@ -286,16 +311,33 @@ export default function CostCodes() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem disabled data-testid={`menu-edit-category-${category.id}`}>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                setSelectedCategoryForEdit(category);
+                                setIsEditCategoryOpen(true);
+                              }}
+                              data-testid={`menu-edit-category-${category.id}`}
+                            >
                               <Pencil className="h-4 w-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem disabled data-testid={`menu-merge-category-${category.id}`}>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                setSelectedCategoryForMerge(category);
+                                setIsMergeCategoryOpen(true);
+                              }}
+                              disabled={!category.isActive}
+                              data-testid={`menu-merge-category-${category.id}`}
+                            >
                               <GitMerge className="h-4 w-4 mr-2" />
                               Merge
                             </DropdownMenuItem>
-                            <DropdownMenuItem disabled data-testid={`menu-archive-category-${category.id}`}>
+                            <DropdownMenuItem 
+                              onClick={() => archiveCategoryMutation.mutate(category.id)}
+                              disabled={!category.isActive}
+                              data-testid={`menu-archive-category-${category.id}`}
+                            >
                               <Archive className="h-4 w-4 mr-2" />
                               Archive
                             </DropdownMenuItem>
@@ -554,6 +596,16 @@ export default function CostCodes() {
         open={isMergeOpen} 
         onOpenChange={setIsMergeOpen} 
         costCode={selectedCodeForMerge}
+      />
+      <EditCategoryDialog 
+        open={isEditCategoryOpen} 
+        onOpenChange={setIsEditCategoryOpen} 
+        category={selectedCategoryForEdit}
+      />
+      <MergeCategoryDialog 
+        open={isMergeCategoryOpen} 
+        onOpenChange={setIsMergeCategoryOpen} 
+        category={selectedCategoryForMerge}
       />
     </div>
   );
