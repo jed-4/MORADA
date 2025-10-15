@@ -38,6 +38,7 @@ import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
 import CostCodes from "@/pages/CostCodes";
 import Contacts from "@/pages/Contacts";
 import Budget from "@/pages/Budget";
+import ArchivedProjects from "@/pages/ArchivedProjects";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -134,6 +135,7 @@ function Router() {
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
+      <Route path="/archived-projects" component={ArchivedProjects} />
       <Route path="/checklists" component={() => <ComingSoonPage section="checklists" />} />
       <Route path="/emails" component={() => <ComingSoonPage section="emails" />} />
       <Route path="/crm" component={() => <ComingSoonPage section="crm" />} />

@@ -29,6 +29,7 @@ import {
   Plus,
   Truck,
   Tag,
+  Archive,
 } from "lucide-react";
 
 import {
@@ -128,6 +129,7 @@ const systemItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Cost Codes", url: "/cost-codes", icon: Tag },
+  { title: "Archived Projects", url: "/archived-projects", icon: Archive },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: UserPlus },
 ];
