@@ -557,7 +557,7 @@ function ItemFormDialog({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Item Description</FormLabel>
+                  <FormLabel>Checklist Item</FormLabel>
                   <FormControl>
                     <Input 
                       placeholder="e.g., Check soil conditions" 
@@ -575,7 +575,7 @@ function ItemFormDialog({
               name="tooltip"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Additional Notes (Optional)</FormLabel>
+                  <FormLabel>Description (Optional)</FormLabel>
                   <FormControl>
                     <Textarea 
                       placeholder="Add extra details or notes..."

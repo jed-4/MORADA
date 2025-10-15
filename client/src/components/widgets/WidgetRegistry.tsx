@@ -1,10 +1,11 @@
-import { CheckSquare, BarChart3, FileText, Calendar, Activity } from "lucide-react";
+import { CheckSquare, BarChart3, FileText, Calendar, Activity, ListChecks } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import TasksWidget from "./TasksWidget";
 import MetricsWidget from "./MetricsWidget";
 import NotesWidget from "./NotesWidget";
 import ScheduleWidget from "./ScheduleWidget";
 import ActivityWidget from "./ActivityWidget";
+import ChecklistWidget from "./ChecklistWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
   tasks: {
@@ -51,6 +52,15 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     component: ActivityWidget,
     defaultSize: "md",
     configurable: false,
+  },
+  checklist: {
+    type: "checklist",
+    name: "Checklists",
+    description: "View and access project checklists",
+    icon: ListChecks,
+    component: ChecklistWidget,
+    defaultSize: "md",
+    configurable: true,
   },
 };
 
