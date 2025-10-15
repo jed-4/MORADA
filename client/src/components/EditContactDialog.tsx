@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
   Form,
@@ -177,6 +178,8 @@ export default function EditContactDialog({
                 </FormItem>
               )}
             />
+
+            <Separator />
 
             {/* Supplier Layout: Company First, Then Primary Contact */}
             {isSupplier ? (

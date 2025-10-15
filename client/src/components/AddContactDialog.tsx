@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   Form,
   FormControl,
@@ -174,6 +175,8 @@ export default function AddContactDialog({
                 </FormItem>
               )}
             />
+
+            <Separator />
 
             {/* Supplier Layout: Company First, Then Primary Contact */}
             {selectedType === "supplier" ? (
