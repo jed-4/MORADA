@@ -97,7 +97,9 @@ export default function Contacts() {
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
         return (
-          contact.name.toLowerCase().includes(search) ||
+          contact.name?.toLowerCase().includes(search) ||
+          contact.firstName?.toLowerCase().includes(search) ||
+          contact.lastName?.toLowerCase().includes(search) ||
           contact.email?.toLowerCase().includes(search) ||
           contact.company?.toLowerCase().includes(search) ||
           contact.phone?.toLowerCase().includes(search)
@@ -117,12 +119,25 @@ export default function Contacts() {
     };
   }, [contacts]);
 
-  const getInitials = (name: string) => {
-    const parts = name.trim().split(" ");
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  const getInitials = (contact: Contact) => {
+    if (contact.firstName && contact.lastName) {
+      return (contact.firstName[0] + contact.lastName[0]).toUpperCase();
     }
-    return name.substring(0, 2).toUpperCase();
+    if (contact.firstName) {
+      return contact.firstName.substring(0, 2).toUpperCase();
+    }
+    if (contact.lastName) {
+      return contact.lastName.substring(0, 2).toUpperCase();
+    }
+    // Fallback to name field if firstName/lastName not available
+    if (contact.name) {
+      const parts = contact.name.trim().split(" ");
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return contact.name.substring(0, 2).toUpperCase();
+    }
+    return "??";
   };
 
   const handleAddContact = (type?: "team" | "supplier" | "client") => {
@@ -252,11 +267,15 @@ export default function Contacts() {
                       <TableCell>
                         <Avatar className="h-8 w-8" style={{ backgroundColor: contact.avatarColor || "#6366f1" }}>
                           <AvatarFallback className="text-white" style={{ backgroundColor: "transparent" }}>
-                            {getInitials(contact.name)}
+                            {getInitials(contact)}
                           </AvatarFallback>
                         </Avatar>
                       </TableCell>
-                      <TableCell className="font-medium">{contact.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {contact.firstName || contact.lastName 
+                          ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") 
+                          : contact.name || "-"}
+                      </TableCell>
                       <TableCell>{contact.company || "-"}</TableCell>
                       <TableCell>
                         {contact.contactType === "team" ? contact.role : contact.position || "-"}

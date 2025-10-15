@@ -107,9 +107,17 @@ export default function AddContactDialog({
 
   const createContactMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
+      // Clean up empty strings - convert to undefined to prevent backend from treating them as defined
+      const cleanData = { ...data };
+      if (cleanData.firstName === "") cleanData.firstName = undefined;
+      if (cleanData.lastName === "") cleanData.lastName = undefined;
+      if (cleanData.spouseName === "") cleanData.spouseName = undefined;
+      if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
+      if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
+      
       // Auto-generate full name from firstName and lastName
-      const fullName = `${data.firstName || ""} ${data.lastName || ""}`.trim() || data.name;
-      const payload = { ...data, name: fullName };
+      const fullName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim() || cleanData.name;
+      const payload = { ...cleanData, name: fullName };
       const response = await apiRequest("POST", "/api/contacts", payload);
       return response.json();
     },

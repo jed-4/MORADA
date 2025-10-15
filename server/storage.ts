@@ -4927,8 +4927,11 @@ export class DbStorage implements IStorage {
 
   async createContact(contact: InsertContact): Promise<Contact> {
     try {
+      // Auto-generate name from firstName and lastName if not provided
+      const name = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
+      
       const newContacts = await db.insert(schema.contacts)
-        .values(contact)
+        .values({ ...contact, name })
         .returning();
       return newContacts[0];
     } catch (error) {
@@ -4939,8 +4942,29 @@ export class DbStorage implements IStorage {
 
   async updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined> {
     try {
+      // Auto-generate name from firstName and lastName if either is being updated with a non-empty value
+      let updateData = { ...contact, updatedAt: new Date() };
+      
+      if (contact.firstName !== undefined || contact.lastName !== undefined) {
+        // Get existing contact to merge firstName/lastName
+        const existing = await this.getContact(id);
+        if (existing) {
+          const firstName = contact.firstName !== undefined ? contact.firstName : existing.firstName;
+          const lastName = contact.lastName !== undefined ? contact.lastName : existing.lastName;
+          
+          // Only regenerate name if at least one name component is non-empty
+          const trimmedFirst = (firstName || "").trim();
+          const trimmedLast = (lastName || "").trim();
+          
+          if (trimmedFirst || trimmedLast) {
+            updateData.name = [trimmedFirst, trimmedLast].filter(Boolean).join(" ");
+          }
+          // If both are empty, preserve the existing name (don't overwrite with "")
+        }
+      }
+      
       const updatedContacts = await db.update(schema.contacts)
-        .set({ ...contact, updatedAt: new Date() })
+        .set(updateData)
         .where(eq(schema.contacts.id, id))
         .returning();
       return updatedContacts[0];

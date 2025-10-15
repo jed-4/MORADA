@@ -113,7 +113,15 @@ export default function EditContactDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
-      return await apiRequest("PATCH", `/api/contacts/${contact.id}`, data);
+      // Clean up empty strings - convert to undefined to prevent backend from treating them as defined
+      const cleanData = { ...data };
+      if (cleanData.firstName === "") cleanData.firstName = undefined;
+      if (cleanData.lastName === "") cleanData.lastName = undefined;
+      if (cleanData.spouseName === "") cleanData.spouseName = undefined;
+      if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
+      if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
+      
+      return await apiRequest("PATCH", `/api/contacts/${contact.id}`, cleanData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
