@@ -4550,11 +4550,15 @@ export class DbStorage implements IStorage {
 
   async mergeCostCodes(sourceId: string, targetId: string): Promise<boolean> {
     try {
+      // Update all bill line items that reference the source cost code
+      await db
+        .update(schema.billLineItems)
+        .set({ costCodeId: targetId })
+        .where(eq(schema.billLineItems.costCodeId, sourceId));
+      
       // Archive the source cost code
       await this.archiveCostCode(sourceId);
-      // In the future, we'll need to update all references to sourceId to point to targetId
-      // This will be done in estimates, bills, timesheets, budgets, etc.
-      // For now, just archive the source
+      
       return true;
     } catch (error) {
       console.error("Database error in mergeCostCodes:", error);
