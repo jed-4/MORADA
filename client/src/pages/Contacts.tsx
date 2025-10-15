@@ -35,6 +35,7 @@ import { type Contact } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AddContactDialog from "@/components/AddContactDialog";
+import EditContactDialog from "@/components/EditContactDialog";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -42,6 +43,8 @@ export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedContactType, setSelectedContactType] = useState<"team" | "supplier" | "client" | undefined>();
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -133,6 +136,11 @@ export default function Contacts() {
 
   const handleRestore = (contactId: string) => {
     restoreMutation.mutate(contactId);
+  };
+
+  const handleEdit = (contact: Contact) => {
+    setContactToEdit(contact);
+    setIsEditDialogOpen(true);
   };
 
   return (
@@ -295,7 +303,10 @@ export default function Contacts() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem data-testid={`menu-edit-${contact.id}`}>
+                            <DropdownMenuItem
+                              onClick={() => handleEdit(contact)}
+                              data-testid={`menu-edit-${contact.id}`}
+                            >
                               <Edit className="h-4 w-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
@@ -334,6 +345,14 @@ export default function Contacts() {
         onOpenChange={setIsAddDialogOpen}
         defaultContactType={selectedContactType}
       />
+
+      {contactToEdit && (
+        <EditContactDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          contact={contactToEdit}
+        />
+      )}
     </div>
   );
 }
