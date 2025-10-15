@@ -15,7 +15,7 @@ Preferred communication style: Simple, everyday language.
 - **Checklist Item Form Labels**: Updated ItemFormDialog labels - top field is "Checklist Item", bottom field is "Description (Optional)" for clearer UX
 - **Checklist Dashboard Widget**: Created new ChecklistWidget for dashboard displaying project checklists with type badges, descriptions, and navigation to detail pages
 - **Critical Import Bug Fix**: Fixed checklist template import to properly group items - now correctly creates one template per unique name and one group per unique group name instead of creating duplicate templates for every row
-- **Sidebar Cleanup**: Removed Contacts from System section (page still accessible at /contacts)
+- **Sidebar Navigation Updates**: Removed Contacts and Checklists from System section (pages still accessible via direct URLs /contacts and /checklists)
 - **Contact Form UX Improvements**: Added visual separator under contact type selector in Add/Edit dialogs for better form structure
 - **Client Address Field Repositioning**: Moved address field into top section for client contacts (alongside name, email, phone, mobile) for more intuitive layout
 - **Google Maps Integration Preparation**: Added structured address database fields (street, city, state, postcode, country, lat/lng, formatted address) for future Google Places API integration (on hold - user to provide API key when ready)
