@@ -761,6 +761,62 @@ export const insertSupplierSchema = createInsertSchema(suppliers).omit({
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
 
+// Contact type enum
+export const contactTypeEnum = pgEnum("contact_type", ["team", "supplier", "client"]);
+
+// Contacts (Team, Suppliers, Clients)
+export const contacts = pgTable("contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  mobile: text("mobile"),
+  company: text("company"),
+  position: text("position"),
+  contactType: contactTypeEnum("contact_type").notNull(),
+  
+  // Business fields (for suppliers)
+  abn: text("abn"), // Australian Business Number
+  businessNumber: text("business_number"), // ACN or other business registration
+  address: text("address"),
+  paymentTerms: text("payment_terms"), // e.g., "Net 30", "COD", "EOM"
+  defaultCostCodeId: varchar("default_cost_code_id").references(() => costCodes.id),
+  
+  // Employment fields (for team)
+  role: text("role"), // Job title/role
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }), // Cost to company per hour
+  hourlyPrice: numeric("hourly_price", { precision: 10, scale: 2 }), // Billable rate per hour
+  
+  // General fields
+  notes: text("notes"),
+  labels: json("labels").default([]), // Array of string tags
+  projectIds: json("project_ids").default([]), // Array of associated project IDs
+  avatarColor: text("avatar_color"), // Hex color for avatar background
+  
+  // Portal access (for clients - future feature)
+  portalEnabled: boolean("portal_enabled").notNull().default(false),
+  
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertContactSchema = createInsertSchema(contacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  contactType: z.enum(["team", "supplier", "client"]),
+  email: z.string().email().optional().or(z.literal("")),
+  hourlyRate: z.string().optional().or(z.literal("")),
+  hourlyPrice: z.string().optional().or(z.literal("")),
+  labels: z.array(z.string()).optional(),
+  projectIds: z.array(z.string()).optional(),
+});
+
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type Contact = typeof contacts.$inferSelect;
+
 // Bills
 export const bills = pgTable("bills", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
