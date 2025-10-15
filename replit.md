@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 15, 2025
+- **Cost Code Merge Functionality**: Implemented complete merge feature allowing users to consolidate duplicate cost codes with proper reference updating
+- **MergeCostCodeDialog Component**: Created dialog with target cost code selection, visual previews of source/target codes with category details, and warning about irreversible action
+- **Backend Merge Implementation**: Updated mergeCostCodes method to update all billLineItems references before archiving source code
+- **Import Dialog Enhancement**: Changed import dialog from side drawer to large centered modal (max-w-6xl) for better usability with data tables
+- **Import Bug Fixes**: Fixed SelectItem validation errors by using "__none__" sentinel value for optional category columns, added event prevention to file input handler
+
 ### October 13, 2025
 - **Drag-Drop Persistence Architecture**: Refactored reordering system with container-scoped logic, proper cross-group moves with source/destination reindexing, and optimistic updates with snapshot/rollback for reliability
 - **Description Dialog Overlay**: Redesigned rich text editor as proper Dialog overlay (Buildern-style), hoisted to component level to prevent per-row instances and layout issues
