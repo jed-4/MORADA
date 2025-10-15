@@ -90,6 +90,12 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
  */
 export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Development bypass
+    if (process.env.NODE_ENV === 'development') {
+      next();
+      return;
+    }
+
     if (!req.user || !req.user.roleId) {
       res.status(403).json({ error: 'Insufficient permissions' });
       return;
@@ -125,6 +131,12 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
  * Team member access only (excludes suppliers and clients from admin functions)
  */
 export function requireTeamMember(req: Request, res: Response, next: NextFunction): void {
+  // Development bypass
+  if (process.env.NODE_ENV === 'development') {
+    next();
+    return;
+  }
+
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
     return;
