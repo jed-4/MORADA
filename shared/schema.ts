@@ -523,6 +523,60 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings).o
 export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
 export type CompanySettings = typeof companySettings.$inferSelect;
 
+// System Configuration
+export const systemConfiguration = pgTable("system_configuration", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Regional Settings
+  language: text("language").notNull().default("en-AU"), // English (Australia)
+  measurementSystem: text("measurement_system").notNull().default("metric"), // metric | imperial
+  currency: text("currency").notNull().default("AUD"), // Australian Dollar
+  currencySymbol: text("currency_symbol").notNull().default("$"),
+  timezone: text("timezone").notNull().default("Australia/Sydney"),
+  
+  // Formatting
+  temperatureFormat: text("temperature_format").notNull().default("celsius"), // celsius | fahrenheit
+  dateFormat: text("date_format").notNull().default("DD/MM/YYYY"), // DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD
+  timeFormat: text("time_format").notNull().default("12h"), // 12h | 24h
+  
+  // Document Numbering Prefixes
+  estimatePrefix: text("estimate_prefix").notNull().default("EST-"),
+  variationPrefix: text("variation_prefix").notNull().default("VAR-"),
+  clientInvoicePrefix: text("client_invoice_prefix").notNull().default("INV-"),
+  billPrefix: text("bill_prefix").notNull().default("BILL-"),
+  purchaseOrderPrefix: text("purchase_order_prefix").notNull().default("PO-"),
+  rfqPrefix: text("rfq_prefix").notNull().default("RFQ-"),
+  rfiPrefix: text("rfi_prefix").notNull().default("RFI-"),
+  proposalPrefix: text("proposal_prefix").notNull().default("PROP-"),
+  
+  // Document Starting Numbers
+  estimateStartNumber: integer("estimate_start_number").notNull().default(1000),
+  variationStartNumber: integer("variation_start_number").notNull().default(1000),
+  clientInvoiceStartNumber: integer("client_invoice_start_number").notNull().default(1000),
+  billStartNumber: integer("bill_start_number").notNull().default(1000),
+  purchaseOrderStartNumber: integer("purchase_order_start_number").notNull().default(1000),
+  rfqStartNumber: integer("rfq_start_number").notNull().default(1000),
+  rfiStartNumber: integer("rfi_start_number").notNull().default(1000),
+  proposalStartNumber: integer("proposal_start_number").notNull().default(1000),
+  
+  // Business Settings
+  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull().default("10.00"), // GST rate as percentage
+  fiscalYearStart: text("fiscal_year_start").notNull().default("07-01"), // MM-DD format (July 1 for Australia)
+  defaultPaymentTerms: text("default_payment_terms").notNull().default("Net 30"), // Net 30, Net 14, COD, etc.
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemConfigurationSchema = createInsertSchema(systemConfiguration).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSystemConfiguration = z.infer<typeof insertSystemConfigurationSchema>;
+export type SystemConfiguration = typeof systemConfiguration.$inferSelect;
+
 // Cost Categories (business-wide categories for cost codes)
 export const costCategories = pgTable("cost_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
