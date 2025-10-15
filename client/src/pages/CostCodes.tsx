@@ -51,6 +51,7 @@ export default function CostCodes() {
   const [selectedCategoryForEdit, setSelectedCategoryForEdit] = useState<CostCategory | null>(null);
   const [isMergeCategoryOpen, setIsMergeCategoryOpen] = useState(false);
   const [selectedCategoryForMerge, setSelectedCategoryForMerge] = useState<CostCategory | null>(null);
+  const [selectedCodeIds, setSelectedCodeIds] = useState<Set<string>>(new Set());
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
     queryKey: ["/api/cost-categories"],
@@ -165,6 +166,38 @@ export default function CostCodes() {
 
   const allExpanded = filteredCategories.length > 0 && 
                       filteredCategories.every(cat => expandedCategories.has(cat.id));
+
+  const toggleCodeSelection = (codeId: string) => {
+    setSelectedCodeIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(codeId)) {
+        newSet.delete(codeId);
+      } else {
+        newSet.add(codeId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleAllVisibleCodes = () => {
+    const visibleCodeIds = new Set<string>();
+    filteredCategories.forEach(category => {
+      getCodesForCategory(category.id).forEach(code => visibleCodeIds.add(code.id));
+    });
+    uncategorizedCodes.forEach(code => visibleCodeIds.add(code.id));
+
+    if (Array.from(visibleCodeIds).every(id => selectedCodeIds.has(id))) {
+      setSelectedCodeIds(new Set());
+    } else {
+      setSelectedCodeIds(visibleCodeIds);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedCodeIds(new Set());
+  };
+
+  const selectedCodes = codes.filter(code => selectedCodeIds.has(code.id));
 
   const isLoading = categoriesLoading || codesLoading;
 
@@ -352,10 +385,14 @@ export default function CostCodes() {
                         {categoryCodes.map((code) => (
                           <div
                             key={code.id}
-                            className="flex items-center gap-3 py-2 px-3 rounded-md hover-elevate"
+                            className="flex items-center gap-3 py-2 px-3 rounded-md hover-elevate border-t border-border"
                             data-testid={`row-cost-code-${code.id}`}
                           >
-                            <div className="w-8" />
+                            <Checkbox
+                              checked={selectedCodeIds.has(code.id)}
+                              onCheckedChange={() => toggleCodeSelection(code.id)}
+                              data-testid={`checkbox-code-${code.id}`}
+                            />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{code.code}</span>
@@ -473,10 +510,14 @@ export default function CostCodes() {
                     {uncategorizedCodes.map((code) => (
                       <div
                         key={code.id}
-                        className="flex items-center gap-3 py-2 px-3 rounded-md hover-elevate"
+                        className="flex items-center gap-3 py-2 px-3 rounded-md hover-elevate border-t border-border"
                         data-testid={`row-cost-code-${code.id}`}
                       >
-                        <div className="w-8" />
+                        <Checkbox
+                          checked={selectedCodeIds.has(code.id)}
+                          onCheckedChange={() => toggleCodeSelection(code.id)}
+                          data-testid={`checkbox-code-${code.id}`}
+                        />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{code.code}</span>
