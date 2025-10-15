@@ -28,6 +28,7 @@ import {
   insertOptionAttachmentSchema,
   insertClientSelectionSchema,
   insertSupplierSchema,
+  insertContactSchema,
   insertBillSchema,
   insertBillLineItemSchema,
   insertBillApprovalSchema,
@@ -2236,6 +2237,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete supplier" });
+    }
+  });
+
+  // Contacts API Routes
+  app.get("/api/contacts", async (req, res) => {
+    try {
+      const { contactType } = req.query;
+      const contacts = await storage.getContacts(contactType as "team" | "supplier" | "client" | undefined);
+      res.json(contacts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contacts" });
+    }
+  });
+
+  app.get("/api/contacts/:id", async (req, res) => {
+    try {
+      const contact = await storage.getContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contact" });
+    }
+  });
+
+  app.post("/api/contacts", async (req, res) => {
+    try {
+      const validationResult = insertContactSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const contact = await storage.createContact(validationResult.data);
+      res.status(201).json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create contact" });
+    }
+  });
+
+  app.patch("/api/contacts/:id", async (req, res) => {
+    try {
+      const validationResult = insertContactSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const contact = await storage.updateContact(req.params.id, validationResult.data);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update contact" });
+    }
+  });
+
+  app.post("/api/contacts/:id/archive", async (req, res) => {
+    try {
+      const contact = await storage.archiveContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to archive contact" });
+    }
+  });
+
+  app.post("/api/contacts/:id/restore", async (req, res) => {
+    try {
+      const contact = await storage.restoreContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to restore contact" });
     }
   });
 

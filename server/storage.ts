@@ -28,6 +28,7 @@ import {
   type ClientSelection, type InsertClientSelection,
   type SelectionWithOptions,
   type Supplier, type InsertSupplier,
+  type Contact, type InsertContact,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
   type BillApproval, type InsertBillApproval,
@@ -260,6 +261,14 @@ export interface IStorage {
   createSupplier(supplier: InsertSupplier): Promise<Supplier>;
   updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier>;
   deleteSupplier(id: string): Promise<void>;
+
+  // Contacts CRUD
+  getContacts(contactType?: "team" | "supplier" | "client"): Promise<Contact[]>;
+  getContact(id: string): Promise<Contact | undefined>;
+  createContact(contact: InsertContact): Promise<Contact>;
+  updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
+  archiveContact(id: string): Promise<Contact | undefined>;
+  restoreContact(id: string): Promise<Contact | undefined>;
 
   // Bills CRUD
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
@@ -4886,6 +4895,83 @@ export class DbStorage implements IStorage {
         .where(eq(schema.suppliers.id, id));
     } catch (error) {
       console.error("Database error in deleteSupplier:", error);
+      throw error;
+    }
+  }
+
+  async getContacts(contactType?: "team" | "supplier" | "client"): Promise<Contact[]> {
+    try {
+      if (contactType) {
+        return await db.select()
+          .from(schema.contacts)
+          .where(eq(schema.contacts.contactType, contactType));
+      }
+      return await db.select().from(schema.contacts);
+    } catch (error) {
+      console.error("Database error in getContacts:", error);
+      throw error;
+    }
+  }
+
+  async getContact(id: string): Promise<Contact | undefined> {
+    try {
+      const contacts = await db.select()
+        .from(schema.contacts)
+        .where(eq(schema.contacts.id, id));
+      return contacts[0];
+    } catch (error) {
+      console.error("Database error in getContact:", error);
+      throw error;
+    }
+  }
+
+  async createContact(contact: InsertContact): Promise<Contact> {
+    try {
+      const newContacts = await db.insert(schema.contacts)
+        .values(contact)
+        .returning();
+      return newContacts[0];
+    } catch (error) {
+      console.error("Database error in createContact:", error);
+      throw error;
+    }
+  }
+
+  async updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined> {
+    try {
+      const updatedContacts = await db.update(schema.contacts)
+        .set({ ...contact, updatedAt: new Date() })
+        .where(eq(schema.contacts.id, id))
+        .returning();
+      return updatedContacts[0];
+    } catch (error) {
+      console.error("Database error in updateContact:", error);
+      throw error;
+    }
+  }
+
+  async archiveContact(id: string): Promise<Contact | undefined> {
+    try {
+      const archivedContacts = await db.update(schema.contacts)
+        .set({ isArchived: true, updatedAt: new Date() })
+        .where(eq(schema.contacts.id, id))
+        .returning();
+      return archivedContacts[0];
+    } catch (error) {
+      console.error("Database error in archiveContact:", error);
+      throw error;
+    }
+  }
+
+  async restoreContact(id: string): Promise<Contact | undefined> {
+    try {
+      const restoredContacts = await db.update(schema.contacts)
+        .set({ isArchived: false, updatedAt: new Date() })
+        .where(eq(schema.contacts.id, id))
+        .returning();
+      return restoredContacts[0];
+    } catch (error) {
+      console.error("Database error in restoreContact:", error);
       throw error;
     }
   }
