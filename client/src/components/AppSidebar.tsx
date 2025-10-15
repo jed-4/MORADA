@@ -127,6 +127,7 @@ const businessItems = [
 const systemItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Checklists", url: "/checklists", icon: CheckCircle },
+  { title: "Contacts", url: "/contacts", icon: Users },
   { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Cost Codes", url: "/cost-codes", icon: Tag },
   { title: "Emails", url: "/emails", icon: Mail },
