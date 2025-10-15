@@ -11,6 +11,10 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### October 15, 2025
+- **Checklist Template List View**: Converted checklist templates page from card grid to responsive table format with proper column headers, overflow wrapper for mobile
+- **Checklist Item Form Labels**: Updated ItemFormDialog labels - top field is "Checklist Item", bottom field is "Description (Optional)" for clearer UX
+- **Checklist Dashboard Widget**: Created new ChecklistWidget for dashboard displaying project checklists with type badges, descriptions, and navigation to detail pages
+- **Critical Import Bug Fix**: Fixed checklist template import to properly group items - now correctly creates one template per unique name and one group per unique group name instead of creating duplicate templates for every row
 - **Sidebar Cleanup**: Removed Contacts from System section (page still accessible at /contacts)
 - **Contact Form UX Improvements**: Added visual separator under contact type selector in Add/Edit dialogs for better form structure
 - **Client Address Field Repositioning**: Moved address field into top section for client contacts (alongside name, email, phone, mobile) for more intuitive layout

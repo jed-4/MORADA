@@ -4121,35 +4121,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let groupsCreated = 0;
       let itemsCreated = 0;
 
-      // Process each template
-      for (const templateData of items) {
-        if (!templateData.templateName || !templateData.type) {
+      // Group items by template name
+      const templateMap = new Map<string, {
+        name: string;
+        description: string | null;
+        type: "Task" | "Job" | "Estimation" | "Lead";
+        groups: Map<string, Array<{ description: string; order: number }>>;
+      }>();
+
+      // First pass: organize data structure
+      for (const row of items) {
+        if (!row.templateName || !row.type) {
           continue; // Skip invalid rows
         }
 
+        const templateKey = row.templateName.trim();
+        
+        if (!templateMap.has(templateKey)) {
+          templateMap.set(templateKey, {
+            name: row.templateName,
+            description: row.templateDescription || null,
+            type: row.type,
+            groups: new Map(),
+          });
+        }
+
+        const template = templateMap.get(templateKey)!;
+        
+        // Add group if provided
+        if (row.groupName) {
+          const groupKey = row.groupName.trim();
+          
+          if (!template.groups.has(groupKey)) {
+            template.groups.set(groupKey, []);
+          }
+
+          // Add item if provided
+          if (row.itemDescription && row.itemDescription.trim()) {
+            template.groups.get(groupKey)!.push({
+              description: row.itemDescription,
+              order: template.groups.get(groupKey)!.length,
+            });
+          }
+        }
+      }
+
+      // Second pass: create database records
+      for (const [, templateData] of Array.from(templateMap)) {
         // Create template
         const template = await storage.createChecklistTemplate({
-          name: templateData.templateName,
-          description: templateData.templateDescription || null,
+          name: templateData.name,
+          description: templateData.description,
           type: templateData.type,
         });
         templatesCreated++;
 
-        // Create group if provided
-        if (templateData.groupName) {
+        // Create groups and items
+        let groupOrder = 0;
+        for (const [groupName, groupItems] of Array.from(templateData.groups)) {
           const group = await storage.createChecklistTemplateGroup({
             templateId: template.id,
-            name: templateData.groupName,
-            order: 0,
+            name: groupName,
+            order: groupOrder++,
           });
           groupsCreated++;
 
-          // Create item if provided
-          if (templateData.itemDescription) {
+          // Create items for this group
+          for (const item of groupItems) {
             await storage.createChecklistTemplateItem({
               groupId: group.id,
-              description: templateData.itemDescription,
-              order: 0,
+              description: item.description,
+              order: item.order,
             });
             itemsCreated++;
           }
