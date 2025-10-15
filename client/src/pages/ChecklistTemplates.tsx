@@ -4,6 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -235,85 +243,91 @@ export default function ChecklistTemplates() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTemplates.map((template) => (
-            <Card 
-              key={template.id} 
-              className="hover-elevate cursor-pointer" 
-              onClick={() => setLocation(`/checklist-templates/${template.id}`)}
-              data-testid={`card-template-${template.id}`}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CardTitle className="text-lg truncate">{template.name}</CardTitle>
-                      <Badge 
-                        variant="secondary" 
-                        className={getTypeColor(template.type)}
-                        data-testid={`badge-type-${template.id}`}
-                      >
-                        {template.type}
-                      </Badge>
-                    </div>
-                    {template.description && (
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+        <Card>
+          <div className="overflow-x-auto">
+            <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTemplates.map((template) => (
+                <TableRow
+                  key={template.id}
+                  className="cursor-pointer hover-elevate"
+                  onClick={() => setLocation(`/checklist-templates/${template.id}`)}
+                  data-testid={`row-template-${template.id}`}
+                >
+                  <TableCell className="font-medium">{template.name}</TableCell>
+                  <TableCell>
+                    <Badge 
+                      variant="secondary" 
+                      className={getTypeColor(template.type)}
+                      data-testid={`badge-type-${template.id}`}
+                    >
+                      {template.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-md">
+                    {template.description ? (
+                      <span className="text-sm text-muted-foreground line-clamp-1">
                         {template.description}
-                      </p>
+                      </span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground italic">No description</span>
                     )}
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                        data-testid={`button-template-menu-${template.id}`}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          duplicateMutation.mutate(template.id);
-                        }}
-                        data-testid={`menu-duplicate-${template.id}`}
-                      >
-                        <Copy className="h-4 w-4 mr-2" />
-                        Duplicate
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteMutation.mutate(template.id);
-                        }}
-                        className="text-destructive focus:text-destructive"
-                        data-testid={`menu-delete-${template.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <CheckSquare className="h-4 w-4" />
-                    <span>Click to view details</span>
-                  </div>
-                  {template.createdAt && (
-                    <span>{format(new Date(template.createdAt), "MMM d, yyyy")}</span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {template.createdAt ? format(new Date(template.createdAt), "MMM d, yyyy") : "-"}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`button-template-menu-${template.id}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            duplicateMutation.mutate(template.id);
+                          }}
+                          data-testid={`menu-duplicate-${template.id}`}
+                        >
+                          <Copy className="h-4 w-4 mr-2" />
+                          Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMutation.mutate(template.id);
+                          }}
+                          className="text-destructive focus:text-destructive"
+                          data-testid={`menu-delete-${template.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          </div>
+        </Card>
       )}
 
       {/* Add Template Dialog */}
