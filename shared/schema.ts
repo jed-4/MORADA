@@ -789,7 +789,18 @@ export const contacts = pgTable("contacts", {
   // Business fields (for suppliers)
   abn: text("abn"), // Australian Business Number
   businessNumber: text("business_number"), // ACN or other business registration
-  address: text("address"),
+  address: text("address"), // Legacy field - kept for backward compatibility
+  
+  // Structured address fields (for Google Maps integration)
+  addressStreet: text("address_street"),
+  addressCity: text("address_city"),
+  addressState: text("address_state"),
+  addressPostcode: text("address_postcode"),
+  addressCountry: text("address_country").default("Australia"),
+  addressLat: numeric("address_lat", { precision: 10, scale: 7 }), // Latitude for mapping
+  addressLng: numeric("address_lng", { precision: 10, scale: 7 }), // Longitude for mapping
+  addressFormatted: text("address_formatted"), // Full formatted address from Google
+  
   paymentTerms: text("payment_terms"), // e.g., "Net 30", "COD", "EOM"
   defaultCostCodeId: varchar("default_cost_code_id").references(() => costCodes.id),
   
