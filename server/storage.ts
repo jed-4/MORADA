@@ -365,6 +365,7 @@ export interface IStorage {
   createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate>;
   updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined>;
   deleteChecklistTemplate(id: string): Promise<boolean>;
+  hardDeleteChecklistTemplate(id: string): Promise<boolean>;
 
   // Checklist Template Groups CRUD
   getChecklistTemplateGroups(templateId: string): Promise<ChecklistTemplateGroup[]>;
@@ -5943,6 +5944,20 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteChecklistTemplate:", error);
+      throw error;
+    }
+  }
+
+  async hardDeleteChecklistTemplate(id: string): Promise<boolean> {
+    try {
+      // Hard delete - physically removes the row
+      // Groups and items will cascade delete due to onDelete: cascade in schema
+      const result = await db.delete(schema.checklistTemplates)
+        .where(eq(schema.checklistTemplates.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in hardDeleteChecklistTemplate:", error);
       throw error;
     }
   }

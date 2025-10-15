@@ -77,18 +77,15 @@ export default function ChecklistTemplates() {
 
   // Duplicate mutation
   const duplicateMutation = useMutation({
-    mutationFn: async (template: ChecklistTemplate) => {
-      const { id, createdAt, updatedAt, isArchived, ...rest } = template;
-      await apiRequest('POST', "/api/checklist-templates", {
-        ...rest,
-        name: `${template.name} (Copy)`,
-      });
+    mutationFn: async (id: string) => {
+      const res = await apiRequest('POST', `/api/checklist-templates/${id}/duplicate`);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
         title: "Template duplicated",
-        description: "The template has been duplicated successfully.",
+        description: "The template has been duplicated with all groups and items.",
       });
     },
     onError: () => {
@@ -285,7 +282,7 @@ export default function ChecklistTemplates() {
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem 
-                        onClick={() => duplicateMutation.mutate(template)}
+                        onClick={() => duplicateMutation.mutate(template.id)}
                         data-testid={`menu-duplicate-${template.id}`}
                       >
                         <Copy className="h-4 w-4 mr-2" />

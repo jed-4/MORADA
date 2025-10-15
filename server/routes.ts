@@ -3905,6 +3905,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Duplicate checklist template (with all groups and items)
+  app.post("/api/checklist-templates/:id/duplicate", async (req, res) => {
+    let duplicateTemplate: any = null;
+    
+    try {
+      const { id } = req.params;
+      
+      // Get original template
+      const templates = await storage.getChecklistTemplates();
+      const originalTemplate = templates.find(t => t.id === id);
+      
+      if (!originalTemplate) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      // Create duplicate template
+      duplicateTemplate = await storage.createChecklistTemplate({
+        name: `${originalTemplate.name} (Copy)`,
+        description: originalTemplate.description,
+        type: originalTemplate.type,
+      });
+      
+      // Get original groups and items
+      const groups = await storage.getChecklistTemplateGroups(id);
+      
+      // Duplicate each group and its items
+      for (const group of groups) {
+        const duplicateGroup = await storage.createChecklistTemplateGroup({
+          templateId: duplicateTemplate.id,
+          name: group.name,
+          order: group.order,
+        });
+        
+        const items = await storage.getChecklistTemplateItems(group.id);
+        for (const item of items) {
+          await storage.createChecklistTemplateItem({
+            groupId: duplicateGroup.id,
+            description: item.description,
+            order: item.order,
+          });
+        }
+      }
+      
+      res.json(duplicateTemplate);
+    } catch (error: any) {
+      // Cleanup: hard delete partially created duplicate on error
+      // This will cascade delete all groups and items due to onDelete: cascade in schema
+      if (duplicateTemplate) {
+        try {
+          await storage.hardDeleteChecklistTemplate(duplicateTemplate.id);
+        } catch (cleanupError) {
+          // Log cleanup error but don't override original error
+          console.error("Failed to cleanup duplicate template after error:", cleanupError);
+        }
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Checklist Template Group routes
   app.get("/api/checklist-templates/:templateId/groups", async (req, res) => {
     try {
