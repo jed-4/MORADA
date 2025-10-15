@@ -11,6 +11,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### October 15, 2025
+- **Sidebar Cleanup**: Removed Contacts from System section (page still accessible at /contacts)
 - **Contact Form UX Improvements**: Added visual separator under contact type selector in Add/Edit dialogs for better form structure
 - **Client Address Field Repositioning**: Moved address field into top section for client contacts (alongside name, email, phone, mobile) for more intuitive layout
 - **Google Maps Integration Preparation**: Added structured address database fields (street, city, state, postcode, country, lat/lng, formatted address) for future Google Places API integration (on hold - user to provide API key when ready)
