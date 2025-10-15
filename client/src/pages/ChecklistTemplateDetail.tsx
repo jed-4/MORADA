@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
+import {
   ChevronLeft,
   Plus,
   Trash2,
@@ -196,67 +201,17 @@ export default function ChecklistTemplateDetail() {
             </Card>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+          <ResizablePanelGroup direction="horizontal" className="h-full">
             {/* Groups Column */}
-            <Card className="flex flex-col">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Groups</CardTitle>
-                  <Button 
-                    onClick={() => setIsAddingGroup(true)} 
-                    size="sm"
-                    data-testid="button-add-group"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-y-auto">
-                <div className="space-y-2">
-                  {groups.map((group) => (
-                    <div
-                      key={group.id}
-                      className={`flex items-center justify-between gap-2 p-3 rounded border cursor-pointer hover-elevate ${
-                        selectedGroupId === group.id 
-                          ? 'bg-accent border-accent' 
-                          : 'bg-card border-border'
-                      }`}
-                      onClick={() => setSelectedGroupId(group.id)}
-                      data-testid={`group-item-${group.id}`}
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="font-medium truncate">{group.name}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteGroupMutation.mutate(group.id);
-                        }}
-                        data-testid={`button-delete-group-${group.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Items Column */}
-            {selectedGroupId && (
-              <Card className="flex flex-col">
-                <CardHeader className="pb-3">
+            <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+              <Card className="flex flex-col h-full mr-3">
+                <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">Items</CardTitle>
+                    <CardTitle className="text-lg">Groups</CardTitle>
                     <Button 
-                      onClick={() => setAddingItemToGroup(selectedGroupId)} 
+                      onClick={() => setIsAddingGroup(true)} 
                       size="sm"
-                      data-testid="button-add-item"
+                      data-testid="button-add-group"
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       Add
@@ -264,50 +219,106 @@ export default function ChecklistTemplateDetail() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex-1 overflow-y-auto">
-                  {allItems.filter(item => item.groupId === selectedGroupId).length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                      <CheckSquare className="h-10 w-10 text-muted-foreground mb-3" />
-                      <p className="text-sm text-muted-foreground mb-3">
-                        No items in this group
-                      </p>
+                  <div className="space-y-1">
+                    {groups.map((group) => (
+                      <div
+                        key={group.id}
+                        className={`flex items-center justify-between gap-2 py-2 px-2 rounded border cursor-pointer hover-elevate ${
+                          selectedGroupId === group.id 
+                            ? 'bg-accent border-accent' 
+                            : 'bg-card border-border'
+                        }`}
+                        onClick={() => setSelectedGroupId(group.id)}
+                        data-testid={`group-item-${group.id}`}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="font-medium truncate text-sm">{group.name}</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteGroupMutation.mutate(group.id);
+                          }}
+                          data-testid={`button-delete-group-${group.id}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </ResizablePanel>
+
+            <ResizableHandle withHandle />
+
+            {/* Items Column */}
+            <ResizablePanel defaultSize={65} minSize={50}>
+              {selectedGroupId && (
+                <Card className="flex flex-col h-full ml-3">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">Items</CardTitle>
                       <Button 
                         onClick={() => setAddingItemToGroup(selectedGroupId)} 
                         size="sm"
-                        data-testid="button-add-first-item"
+                        data-testid="button-add-item"
                       >
                         <Plus className="h-4 w-4 mr-2" />
-                        Add First Item
+                        Add
                       </Button>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {allItems
-                        .filter(item => item.groupId === selectedGroupId)
-                        .map((item) => (
-                          <div
-                            key={item.id}
-                            className="flex items-center gap-2 p-3 rounded border hover-elevate"
-                            data-testid={`item-${item.id}`}
-                          >
-                            <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="flex-1 text-sm">{item.description}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0"
-                              onClick={() => deleteItemMutation.mutate(item.id)}
-                              data-testid={`button-delete-item-${item.id}`}
+                  </CardHeader>
+                  <CardContent className="flex-1 overflow-y-auto">
+                    {allItems.filter(item => item.groupId === selectedGroupId).length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                        <CheckSquare className="h-10 w-10 text-muted-foreground mb-3" />
+                        <p className="text-sm text-muted-foreground mb-3">
+                          No items in this group
+                        </p>
+                        <Button 
+                          onClick={() => setAddingItemToGroup(selectedGroupId)} 
+                          size="sm"
+                          data-testid="button-add-first-item"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add First Item
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {allItems
+                          .filter(item => item.groupId === selectedGroupId)
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center gap-2 py-2 px-2 rounded border hover-elevate"
+                              data-testid={`item-${item.id}`}
                             >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                              <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <span className="flex-1 text-sm">{item.description}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0"
+                                onClick={() => deleteItemMutation.mutate(item.id)}
+                                data-testid={`button-delete-item-${item.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </ResizablePanel>
+          </ResizablePanelGroup>
         )}
       </div>
 
