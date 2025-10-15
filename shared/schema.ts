@@ -764,16 +764,27 @@ export type Supplier = typeof suppliers.$inferSelect;
 // Contact type enum
 export const contactTypeEnum = pgEnum("contact_type", ["team", "supplier", "client"]);
 
+// Primary contact enum (for clients with spouse)
+export const primaryContactEnum = pgEnum("primary_contact", ["self", "spouse"]);
+
 // Contacts (Team, Suppliers, Clients)
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
+  name: text("name").notNull(), // Full name (computed from firstName + lastName for display)
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   email: text("email"),
   phone: text("phone"),
   mobile: text("mobile"),
   company: text("company"),
   position: text("position"),
   contactType: contactTypeEnum("contact_type").notNull(),
+  
+  // Client-specific spouse fields
+  spouseName: text("spouse_name"),
+  spousePhone: text("spouse_phone"),
+  spouseEmail: text("spouse_email"),
+  primaryContact: primaryContactEnum("primary_contact"),
   
   // Business fields (for suppliers)
   abn: text("abn"), // Australian Business Number
@@ -808,10 +819,12 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
 }).extend({
   contactType: z.enum(["team", "supplier", "client"]),
   email: z.string().email().optional().or(z.literal("")),
+  spouseEmail: z.string().email().optional().or(z.literal("")),
   hourlyRate: z.string().optional().or(z.literal("")),
   hourlyPrice: z.string().optional().or(z.literal("")),
   labels: z.array(z.string()).optional(),
   projectIds: z.array(z.string()).optional(),
+  primaryContact: z.enum(["self", "spouse"]).optional(),
 });
 
 export type InsertContact = z.infer<typeof insertContactSchema>;

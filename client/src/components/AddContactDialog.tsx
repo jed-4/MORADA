@@ -70,7 +70,7 @@ export default function AddContactDialog({
       businessNumber: "",
       address: "",
       paymentTerms: "",
-      defaultCostCodeId: "",
+      defaultCostCodeId: "__none__",
       role: "",
       hourlyRate: "",
       hourlyPrice: "",
