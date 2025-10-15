@@ -1393,3 +1393,65 @@ export const insertSiteDiaryEntrySchema = createInsertSchema(siteDiaryEntries).o
 
 export type InsertSiteDiaryEntry = z.infer<typeof insertSiteDiaryEntrySchema>;
 export type SiteDiaryEntry = typeof siteDiaryEntries.$inferSelect;
+
+// Checklist Templates (reusable checklists with groups and items)
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull(), // "Task" | "Job" | "Estimation" | "Lead"
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["Task", "Job", "Estimation", "Lead"]),
+});
+
+export type InsertChecklistTemplate = z.infer<typeof insertChecklistTemplateSchema>;
+export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
+
+// Checklist Template Groups (grouping for checklist items)
+export const checklistTemplateGroups = pgTable("checklist_template_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistTemplateGroupSchema = createInsertSchema(checklistTemplateGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChecklistTemplateGroup = z.infer<typeof insertChecklistTemplateGroupSchema>;
+export type ChecklistTemplateGroup = typeof checklistTemplateGroups.$inferSelect;
+
+// Checklist Template Items (individual tasks within groups)
+export const checklistTemplateItems = pgTable("checklist_template_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").notNull().references(() => checklistTemplateGroups.id, { onDelete: "cascade" }),
+  description: text("description").notNull(), // The main task description (visible as hover tooltip)
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTemplateItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
+export type ChecklistTemplateItem = typeof checklistTemplateItems.$inferSelect;
