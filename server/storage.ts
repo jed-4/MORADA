@@ -213,6 +213,10 @@ export interface IStorage {
   getCompanySettings(): Promise<CompanySettings | undefined>;
   updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined>;
 
+  // System Configuration
+  getSystemConfiguration(): Promise<SystemConfiguration | undefined>;
+  updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined>;
+
   // Field Categories CRUD (Buildern-style)
   getFieldCategories(): Promise<FieldCategory[]>;
   getFieldCategory(id: string): Promise<FieldCategory | undefined>;
@@ -372,6 +376,7 @@ export class MemStorage implements IStorage {
   private costCategories: Map<string, CostCategory>;
   private costCodes: Map<string, CostCode>;
   private companySettings: CompanySettings | undefined;
+  private systemConfiguration: SystemConfiguration | undefined;
   private fieldCategories: Map<string, FieldCategory>;
   private fieldOptions: Map<string, FieldOption>;
   private selections: Map<string, Selection>;
@@ -2850,6 +2855,58 @@ export class MemStorage implements IStorage {
     return this.companySettings;
   }
 
+  // System Configuration
+  async getSystemConfiguration(): Promise<SystemConfiguration | undefined> {
+    return this.systemConfiguration;
+  }
+
+  async updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined> {
+    if (!this.systemConfiguration) {
+      // Create new system configuration if none exist
+      this.systemConfiguration = {
+        id: randomUUID(),
+        language: "en-AU",
+        measurementSystem: "metric",
+        currency: "AUD",
+        currencySymbol: "$",
+        timezone: "Australia/Sydney",
+        temperatureFormat: "celsius",
+        dateFormat: "DD/MM/YYYY",
+        timeFormat: "12h",
+        estimatePrefix: "EST-",
+        variationPrefix: "VAR-",
+        clientInvoicePrefix: "INV-",
+        billPrefix: "BILL-",
+        purchaseOrderPrefix: "PO-",
+        rfqPrefix: "RFQ-",
+        rfiPrefix: "RFI-",
+        proposalPrefix: "PROP-",
+        estimateStartNumber: 1000,
+        variationStartNumber: 1000,
+        clientInvoiceStartNumber: 1000,
+        billStartNumber: 1000,
+        purchaseOrderStartNumber: 1000,
+        rfqStartNumber: 1000,
+        rfiStartNumber: 1000,
+        proposalStartNumber: 1000,
+        gstRate: "10.00",
+        fiscalYearStart: "07-01",
+        defaultPaymentTerms: "Net 30",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...config,
+      };
+    } else {
+      // Update existing configuration
+      this.systemConfiguration = {
+        ...this.systemConfiguration,
+        ...config,
+        updatedAt: new Date(),
+      };
+    }
+    return this.systemConfiguration;
+  }
+
   // Field Categories CRUD (Buildern-style)
   async getFieldCategories(): Promise<FieldCategory[]> {
     return Array.from(this.fieldCategories.values())
@@ -4739,8 +4796,57 @@ export class DbStorage implements IStorage {
       return { subtotal: 0, markupAmount: 0, subtotalWithMarkup: 0, taxAmount: 0, total: 0, itemCount: 0 };
     }
   }
-  async getCompanySettings(): Promise<CompanySettings | undefined> { return undefined; }
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> { return undefined; }
+  async getCompanySettings(): Promise<CompanySettings | undefined> { 
+    // Get first (and only) company settings record
+    const [settings] = await db.select().from(schema.companySettings).limit(1);
+    return settings;
+  }
+  
+  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined> {
+    // Get existing settings
+    const existing = await this.getCompanySettings();
+    
+    if (existing) {
+      // Update existing record
+      const [updated] = await db.update(schema.companySettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(schema.companySettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new record
+      const [created] = await db.insert(schema.companySettings)
+        .values(settings as InsertCompanySettings)
+        .returning();
+      return created;
+    }
+  }
+
+  async getSystemConfiguration(): Promise<SystemConfiguration | undefined> {
+    // Get first (and only) system configuration record
+    const [config] = await db.select().from(schema.systemConfiguration).limit(1);
+    return config;
+  }
+  
+  async updateSystemConfiguration(config: Partial<InsertSystemConfiguration>): Promise<SystemConfiguration | undefined> {
+    // Get existing config
+    const existing = await this.getSystemConfiguration();
+    
+    if (existing) {
+      // Update existing record
+      const [updated] = await db.update(schema.systemConfiguration)
+        .set({ ...config, updatedAt: new Date() })
+        .where(eq(schema.systemConfiguration.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new record with defaults
+      const [created] = await db.insert(schema.systemConfiguration)
+        .values(config as InsertSystemConfiguration)
+        .returning();
+      return created;
+    }
+  }
   async getFieldCategories(): Promise<FieldCategory[]> {
     return await db.select().from(schema.fieldCategories)
       .where(eq(schema.fieldCategories.isActive, true))

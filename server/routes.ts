@@ -21,6 +21,7 @@ import {
   insertUserProjectAccessSchema,
   insertUserInvitationSchema,
   insertCompanySettingsSchema,
+  insertSystemConfigurationSchema,
   insertFieldCategorySchema,
   insertFieldOptionSchema,
   insertSelectionSchema,
@@ -75,6 +76,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     // TEMPORARY: Allow company settings for development (needed for Settings page)
     if (path.startsWith('/company-settings') && process.env.NODE_ENV === 'development') {
+      return next();
+    }
+    
+    // TEMPORARY: Allow system configuration for development (needed for Settings page)
+    if (path.startsWith('/system-configuration') && process.env.NODE_ENV === 'development') {
       return next();
     }
     
@@ -3070,6 +3076,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update company settings" });
+    }
+  });
+
+  // System Configuration routes (protected - admin access only in production)
+  // Note: Development bypass is handled by global middleware at line 82-85
+  app.get("/api/system-configuration", 
+    ...(process.env.NODE_ENV !== 'development' ? [requireAuth, requireAdmin] : []),
+    async (req, res) => {
+      try {
+        const config = await storage.getSystemConfiguration();
+        res.json(config || {});
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch system configuration" });
+      }
+    }
+  );
+
+  app.put("/api/system-configuration",
+    ...(process.env.NODE_ENV !== 'development' ? [requireAuth, requireAdmin] : []),
+    async (req, res) => {
+    try {
+      const validationResult = insertSystemConfigurationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const config = await storage.updateSystemConfiguration(validationResult.data);
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update system configuration" });
     }
   });
 

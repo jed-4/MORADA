@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -160,6 +161,7 @@ const companyInfoSchema = z.object({
 });
 
 export default function Settings() {
+  const [, navigate] = useLocation();
   const [activeSection, setActiveSection] = useState("branding");
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
@@ -869,7 +871,13 @@ export default function Settings() {
               return (
                 <button
                   key={category.id}
-                  onClick={() => setActiveSection(category.id)}
+                  onClick={() => {
+                    if (category.id === "system-configuration") {
+                      navigate("/system-configuration");
+                    } else {
+                      setActiveSection(category.id);
+                    }
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left btn-enhanced focus-enhanced ${
                     isActive 
                       ? "bg-primary text-primary-foreground" 
