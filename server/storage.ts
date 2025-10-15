@@ -182,6 +182,8 @@ export interface IStorage {
   createCostCategory(category: InsertCostCategory): Promise<CostCategory>;
   updateCostCategory(id: string, category: Partial<InsertCostCategory>): Promise<CostCategory | undefined>;
   deleteCostCategory(id: string): Promise<boolean>;
+  archiveCostCategory(id: string): Promise<CostCategory | undefined>;
+  mergeCostCategories(sourceId: string, targetId: string): Promise<void>;
 
   // Cost Codes CRUD (business-wide)
   getCostCodes(): Promise<CostCode[]>;
@@ -2488,6 +2490,43 @@ export class MemStorage implements IStorage {
     return this.costCategories.delete(id);
   }
 
+  async archiveCostCategory(id: string): Promise<CostCategory | undefined> {
+    const category = this.costCategories.get(id);
+    if (!category) {
+      return undefined;
+    }
+
+    const updatedCategory: CostCategory = {
+      ...category,
+      isActive: false,
+    };
+
+    this.costCategories.set(id, updatedCategory);
+    return updatedCategory;
+  }
+
+  async mergeCostCategories(sourceId: string, targetId: string): Promise<void> {
+    const sourceCategory = this.costCategories.get(sourceId);
+    const targetCategory = this.costCategories.get(targetId);
+
+    if (!sourceCategory || !targetCategory) {
+      throw new Error("Source or target category not found");
+    }
+
+    // Update all cost codes from source category to target category
+    for (const [id, code] of this.costCodes.entries()) {
+      if (code.categoryId === sourceId) {
+        this.costCodes.set(id, {
+          ...code,
+          categoryId: targetId,
+        });
+      }
+    }
+
+    // Archive the source category
+    await this.archiveCostCategory(sourceId);
+  }
+
   // Cost Codes CRUD operations (business-wide)
   async getCostCodes(): Promise<CostCode[]> {
     const codes = Array.from(this.costCodes.values())
@@ -4457,6 +4496,40 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteCostCategory:", error);
       return false;
+    }
+  }
+
+  async archiveCostCategory(id: string): Promise<CostCategory | undefined> {
+    try {
+      const result = await db
+        .update(schema.costCategories)
+        .set({ isActive: false })
+        .where(eq(schema.costCategories.id, id))
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      console.error("Database error in archiveCostCategory:", error);
+      throw error;
+    }
+  }
+
+  async mergeCostCategories(sourceId: string, targetId: string): Promise<void> {
+    try {
+      // Update all cost codes from source category to target category
+      await db
+        .update(schema.costCodes)
+        .set({ categoryId: targetId })
+        .where(eq(schema.costCodes.categoryId, sourceId));
+
+      // Archive the source category
+      await db
+        .update(schema.costCategories)
+        .set({ isActive: false })
+        .where(eq(schema.costCategories.id, sourceId));
+    } catch (error) {
+      console.error("Database error in mergeCostCategories:", error);
+      throw error;
     }
   }
 

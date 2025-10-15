@@ -3403,6 +3403,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/cost-categories/:id/archive", async (req, res) => {
+    try {
+      const category = await storage.archiveCostCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Cost category not found" });
+      }
+      res.json(category);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to archive cost category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/cost-categories/merge", async (req, res) => {
+    try {
+      // Validate request body
+      const validationResult = z.object({
+        sourceId: z.string().uuid(),
+        targetId: z.string().uuid()
+      }).safeParse(req.body);
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const { sourceId, targetId } = validationResult.data;
+
+      if (sourceId === targetId) {
+        return res.status(400).json({ error: "Cannot merge a category into itself" });
+      }
+
+      // Check if both categories exist
+      const [sourceCategory, targetCategory] = await Promise.all([
+        storage.getCostCategory(sourceId),
+        storage.getCostCategory(targetId)
+      ]);
+
+      if (!sourceCategory) {
+        return res.status(404).json({ error: "Source category not found" });
+      }
+
+      if (!targetCategory) {
+        return res.status(404).json({ error: "Target category not found" });
+      }
+
+      // Check if target category is active
+      if (!targetCategory.isActive) {
+        return res.status(400).json({ error: "Cannot merge into an archived category" });
+      }
+
+      await storage.mergeCostCategories(sourceId, targetId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to merge cost categories",
+        details: error.message 
+      });
+    }
+  });
+
   // Cost Codes routes (business-wide)
   app.get("/api/cost-codes", async (req, res) => {
     try {
