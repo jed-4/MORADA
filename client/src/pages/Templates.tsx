@@ -115,6 +115,15 @@ const templateTypes = [
     color: "text-rose-500",
     implemented: false,
   },
+  {
+    id: "checklists",
+    title: "Checklists",
+    description: "Create reusable checklist templates for tasks, jobs, estimations, and leads",
+    icon: CheckSquare,
+    url: "/checklist-templates",
+    color: "text-violet-500",
+    implemented: true,
+  },
 ];
 
 export default function Templates() {
