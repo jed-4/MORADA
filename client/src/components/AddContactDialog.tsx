@@ -60,12 +60,18 @@ export default function AddContactDialog({
     resolver: zodResolver(insertContactSchema),
     defaultValues: {
       name: "",
+      firstName: "",
+      lastName: "",
       email: "",
       phone: "",
       mobile: "",
       company: "",
       position: "",
       contactType: defaultContactType || "team",
+      spouseName: "",
+      spousePhone: "",
+      spouseEmail: "",
+      primaryContact: undefined,
       abn: "",
       businessNumber: "",
       address: "",
@@ -101,7 +107,10 @@ export default function AddContactDialog({
 
   const createContactMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
-      const response = await apiRequest("POST", "/api/contacts", data);
+      // Auto-generate full name from firstName and lastName
+      const fullName = `${data.firstName || ""} ${data.lastName || ""}`.trim() || data.name;
+      const payload = { ...data, name: fullName };
+      const response = await apiRequest("POST", "/api/contacts", payload);
       return response.json();
     },
     onSuccess: () => {
@@ -162,12 +171,26 @@ export default function AddContactDialog({
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="name"
+                name="firstName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name *</FormLabel>
+                    <FormLabel>First Name</FormLabel>
                     <FormControl>
-                      <Input {...field} data-testid="input-name" />
+                      <Input {...field} value={field.value || ""} data-testid="input-first-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="lastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} data-testid="input-last-name" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -314,14 +337,14 @@ export default function AddContactDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Default Cost Code</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <Select onValueChange={field.onChange} value={field.value || "__none__"}>
                           <FormControl>
                             <SelectTrigger data-testid="select-cost-code">
                               <SelectValue placeholder="Select cost code" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {costCodes.map((code) => (
                               <SelectItem key={code.id} value={code.id}>
                                 {code.code} - {code.title}
@@ -349,7 +372,7 @@ export default function AddContactDialog({
                       <FormItem>
                         <FormLabel>Hourly Rate (Cost)</FormLabel>
                         <FormControl>
-                          <Input {...field} type="number" step="0.01" placeholder="Cost to company" data-testid="input-hourly-rate" />
+                          <Input {...field} value={field.value || ""} type="number" step="0.01" placeholder="Cost to company" data-testid="input-hourly-rate" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -363,7 +386,80 @@ export default function AddContactDialog({
                       <FormItem>
                         <FormLabel>Hourly Price (Billable)</FormLabel>
                         <FormControl>
-                          <Input {...field} type="number" step="0.01" placeholder="Billable rate" data-testid="input-hourly-price" />
+                          <Input {...field} value={field.value || ""} type="number" step="0.01" placeholder="Billable rate" data-testid="input-hourly-price" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Client Spouse Information */}
+            {selectedType === "client" && (
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-sm font-medium">Spouse Information (Optional)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="spouseName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Spouse Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Spouse's full name" data-testid="input-spouse-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="primaryContact"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Primary Contact</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-primary-contact">
+                              <SelectValue placeholder="Select primary contact" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">Not specified</SelectItem>
+                            <SelectItem value="self">Client (Self)</SelectItem>
+                            <SelectItem value="spouse">Spouse</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="spousePhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Spouse Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Spouse's phone number" data-testid="input-spouse-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="spouseEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Spouse Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} type="email" placeholder="Spouse's email address" data-testid="input-spouse-email" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
