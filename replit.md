@@ -23,7 +23,9 @@ Preferred communication style: Simple, everyday language.
 - **MergeCostCodeDialog Component**: Created dialog with target cost code selection, visual previews of source/target codes with category details, and warning about irreversible action
 - **Backend Merge Implementation**: Updated mergeCostCodes method to update all billLineItems references before archiving source code
 - **Import Dialog Enhancement**: Changed import dialog from side drawer to large centered modal (max-w-6xl) for better usability with data tables
-- **Import Bug Fixes**: Fixed SelectItem validation errors by using "__none__" sentinel value for optional category columns, added event prevention to file input handler
+- **Column Mapping System**: Added flexible column mapping interface with auto-detection logic and manual override dropdowns for all fields (Template Name, Description, Type, Group Name, Item Description)
+- **Blank Header Handling**: Implemented robust validation to skip invalid/null/undefined headers, track original column indices in Map for sparse layouts, and prevent crashes on files with blank columns
+- **Header Index Tracking**: Created headerIndices Map to preserve original column positions after filtering blank headers, ensuring correct data mapping even with gaps in spreadsheet layout
 
 ### October 13, 2025
 - **Drag-Drop Persistence Architecture**: Refactored reordering system with container-scoped logic, proper cross-group moves with source/destination reindexing, and optimistic updates with snapshot/rollback for reliability
