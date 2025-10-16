@@ -56,8 +56,9 @@ import {
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
-import { eq, or, and, desc } from "drizzle-orm";
+import { eq, or, and, desc, gte, lte, sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
+import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -406,6 +407,22 @@ export interface IStorage {
   // Labour Hours Budget CRUD
   getLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>;
   recalculateLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>; // Recalculates from flagged estimate items
+
+  // Timesheets CRUD
+  getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]>;
+  getTimesheet(id: string): Promise<Timesheet | undefined>;
+  createTimesheet(timesheet: InsertTimesheet): Promise<Timesheet>;
+  updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined>;
+  deleteTimesheet(id: string): Promise<boolean>;
+  submitTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from draft to submitted
+  approveTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from submitted to approved
+  rejectTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from submitted to rejected
+
+  // Timesheet Cost Codes (for split timesheets)
+  getTimesheetCostCodes(timesheetId: string): Promise<TimesheetCostCode[]>;
+  createTimesheetCostCode(costCode: InsertTimesheetCostCode): Promise<TimesheetCostCode>;
+  updateTimesheetCostCode(id: string, costCode: Partial<InsertTimesheetCostCode>): Promise<TimesheetCostCode | undefined>;
+  deleteTimesheetCostCode(id: string): Promise<boolean>;
 
   // Schedule CRUD
   getSchedule(projectId: string): Promise<Schedule | undefined>;
@@ -6783,6 +6800,36 @@ export class DbStorage implements IStorage {
         costCodeMap.set(costCodeKey, existing);
       }
 
+      // Get timesheets for this project
+      const timesheets = await db.select()
+        .from(schema.timesheets)
+        .where(eq(schema.timesheets.projectId, projectId));
+
+      // Get timesheet cost code splits
+      const timesheetIds = timesheets.map(t => t.id);
+      const timesheetCostCodes = timesheetIds.length > 0 ? await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(sql`${schema.timesheetCostCodes.timesheetId} = ANY(${timesheetIds})`) : [];
+
+      // Map pending and approved hours by cost code
+      const pendingHoursMap = new Map<string, number>();
+      const approvedHoursMap = new Map<string, number>();
+
+      for (const split of timesheetCostCodes) {
+        const timesheet = timesheets.find(t => t.id === split.timesheetId);
+        if (!timesheet) continue;
+
+        const duration = parseFloat(split.duration);
+        const costCode = costCodes.find(cc => cc.id === split.costCodeId);
+        const costCodeKey = costCode?.code || "uncategorized";
+
+        if (timesheet.status === "submitted") {
+          pendingHoursMap.set(costCodeKey, (pendingHoursMap.get(costCodeKey) || 0) + duration);
+        } else if (timesheet.status === "approved") {
+          approvedHoursMap.set(costCodeKey, (approvedHoursMap.get(costCodeKey) || 0) + duration);
+        }
+      }
+
       // Delete existing labour hours budget for this project
       await db.delete(schema.labourHoursBudget)
         .where(eq(schema.labourHoursBudget.projectId, projectId));
@@ -6792,6 +6839,9 @@ export class DbStorage implements IStorage {
       let sortOrder = 0;
 
       for (const [costCodeKey, data] of costCodeMap.entries()) {
+        const pendingHours = pendingHoursMap.get(costCodeKey) || 0;
+        const approvedHours = approvedHoursMap.get(costCodeKey) || 0;
+
         const result = await db.insert(schema.labourHoursBudget)
           .values({
             projectId,
@@ -6799,8 +6849,8 @@ export class DbStorage implements IStorage {
             costCodeTitle: data.costCodeTitle,
             categoryTitle: data.categoryTitle,
             budgetedHours: data.budgetedHours.toString(),
-            pendingHours: "0",
-            approvedHours: "0",
+            pendingHours: pendingHours.toString(),
+            approvedHours: approvedHours.toString(),
             sortOrder: sortOrder++
           })
           .returning();
@@ -6811,6 +6861,170 @@ export class DbStorage implements IStorage {
       return labourHoursBudget;
     } catch (error) {
       console.error("Database error in recalculateLabourHoursBudget:", error);
+      throw error;
+    }
+  }
+
+  // Timesheets CRUD
+  async getTimesheets(projectId?: string, filters?: { userId?: string; startDate?: Date; endDate?: Date; status?: string; costCodeId?: string; invoiced?: boolean }): Promise<Timesheet[]> {
+    try {
+      let query = db.select().from(schema.timesheets);
+      
+      const conditions: any[] = [];
+      if (projectId) conditions.push(eq(schema.timesheets.projectId, projectId));
+      if (filters?.userId) conditions.push(eq(schema.timesheets.userId, filters.userId));
+      if (filters?.status) conditions.push(eq(schema.timesheets.status, filters.status as any));
+      if (filters?.invoiced !== undefined) conditions.push(eq(schema.timesheets.invoiced, filters.invoiced));
+      if (filters?.startDate) conditions.push(gte(schema.timesheets.date, filters.startDate));
+      if (filters?.endDate) conditions.push(lte(schema.timesheets.date, filters.endDate));
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+      
+      const result = await query.orderBy(desc(schema.timesheets.date));
+      return result;
+    } catch (error) {
+      console.error("Database error in getTimesheets:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheet(id: string): Promise<Timesheet | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheets)
+        .where(eq(schema.timesheets.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheet(timesheet: InsertTimesheet): Promise<Timesheet> {
+    try {
+      const result = await db.insert(schema.timesheets)
+        .values(timesheet)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined> {
+    try {
+      const result = await db.update(schema.timesheets)
+        .set({ ...timesheet, updatedAt: new Date() })
+        .where(eq(schema.timesheets.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async deleteTimesheet(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.timesheets)
+        .where(eq(schema.timesheets.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async submitTimesheet(id: string): Promise<Timesheet | undefined> {
+    try {
+      const result = await db.update(schema.timesheets)
+        .set({ status: "submitted", updatedAt: new Date() })
+        .where(eq(schema.timesheets.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in submitTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async approveTimesheet(id: string): Promise<Timesheet | undefined> {
+    try {
+      const result = await db.update(schema.timesheets)
+        .set({ status: "approved", updatedAt: new Date() })
+        .where(eq(schema.timesheets.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in approveTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async rejectTimesheet(id: string): Promise<Timesheet | undefined> {
+    try {
+      const result = await db.update(schema.timesheets)
+        .set({ status: "rejected", updatedAt: new Date() })
+        .where(eq(schema.timesheets.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in rejectTimesheet:", error);
+      throw error;
+    }
+  }
+
+  // Timesheet Cost Codes
+  async getTimesheetCostCodes(timesheetId: string): Promise<TimesheetCostCode[]> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheetCostCodes)
+        .where(eq(schema.timesheetCostCodes.timesheetId, timesheetId));
+      return result;
+    } catch (error) {
+      console.error("Database error in getTimesheetCostCodes:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheetCostCode(costCode: InsertTimesheetCostCode): Promise<TimesheetCostCode> {
+    try {
+      const result = await db.insert(schema.timesheetCostCodes)
+        .values(costCode)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createTimesheetCostCode:", error);
+      throw error;
+    }
+  }
+
+  async updateTimesheetCostCode(id: string, costCode: Partial<InsertTimesheetCostCode>): Promise<TimesheetCostCode | undefined> {
+    try {
+      const result = await db.update(schema.timesheetCostCodes)
+        .set({ ...costCode, updatedAt: new Date() })
+        .where(eq(schema.timesheetCostCodes.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateTimesheetCostCode:", error);
+      throw error;
+    }
+  }
+
+  async deleteTimesheetCostCode(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.timesheetCostCodes)
+        .where(eq(schema.timesheetCostCodes.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteTimesheetCostCode:", error);
       throw error;
     }
   }

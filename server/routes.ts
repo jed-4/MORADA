@@ -4415,6 +4415,190 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Timesheet routes
+  app.get("/api/timesheets", async (req, res) => {
+    try {
+      const { projectId, userId, startDate, endDate, status, costCodeId, invoiced } = req.query;
+      const timesheets = await storage.getTimesheets(
+        projectId as string | undefined,
+        {
+          userId: userId as string | undefined,
+          startDate: startDate ? new Date(startDate as string) : undefined,
+          endDate: endDate ? new Date(endDate as string) : undefined,
+          status: status as string | undefined,
+          costCodeId: costCodeId as string | undefined,
+          invoiced: invoiced ? invoiced === 'true' : undefined,
+        }
+      );
+      res.json(timesheets);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to get timesheets",
+        details: error.message
+      });
+    }
+  });
+
+  app.get("/api/timesheets/:id", async (req, res) => {
+    try {
+      const timesheet = await storage.getTimesheet(req.params.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to get timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  app.post("/api/timesheets", async (req, res) => {
+    try {
+      const timesheet = await storage.createTimesheet(req.body);
+      res.json(timesheet);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to create timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  app.patch("/api/timesheets/:id", async (req, res) => {
+    try {
+      const timesheet = await storage.updateTimesheet(req.params.id, req.body);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to update timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  app.delete("/api/timesheets/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTimesheet(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to delete timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  app.post("/api/timesheets/:id/submit", async (req, res) => {
+    try {
+      const timesheet = await storage.submitTimesheet(req.params.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to submit timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  app.post("/api/timesheets/:id/approve", async (req, res) => {
+    try {
+      const timesheet = await storage.approveTimesheet(req.params.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to approve timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  app.post("/api/timesheets/:id/reject", async (req, res) => {
+    try {
+      const timesheet = await storage.rejectTimesheet(req.params.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to reject timesheet",
+        details: error.message
+      });
+    }
+  });
+
+  // Timesheet cost codes routes
+  app.get("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
+    try {
+      const costCodes = await storage.getTimesheetCostCodes(req.params.timesheetId);
+      res.json(costCodes);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to get timesheet cost codes",
+        details: error.message
+      });
+    }
+  });
+
+  app.post("/api/timesheets/:timesheetId/cost-codes", async (req, res) => {
+    try {
+      const costCode = await storage.createTimesheetCostCode({
+        ...req.body,
+        timesheetId: req.params.timesheetId
+      });
+      res.json(costCode);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to create timesheet cost code",
+        details: error.message
+      });
+    }
+  });
+
+  app.patch("/api/timesheets/cost-codes/:id", async (req, res) => {
+    try {
+      const costCode = await storage.updateTimesheetCostCode(req.params.id, req.body);
+      if (!costCode) {
+        return res.status(404).json({ error: "Timesheet cost code not found" });
+      }
+      res.json(costCode);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to update timesheet cost code",
+        details: error.message
+      });
+    }
+  });
+
+  app.delete("/api/timesheets/cost-codes/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTimesheetCostCode(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Timesheet cost code not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to delete timesheet cost code",
+        details: error.message
+      });
+    }
+  });
+
   // Schedule routes
   app.get("/api/projects/:projectId/schedule", async (req, res) => {
     try {

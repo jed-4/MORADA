@@ -1570,6 +1570,71 @@ export const insertLabourHoursBudgetSchema = createInsertSchema(labourHoursBudge
 export type InsertLabourHoursBudget = z.infer<typeof insertLabourHoursBudgetSchema>;
 export type LabourHoursBudget = typeof labourHoursBudget.$inferSelect;
 
+// Timesheets (time tracking for labour hours)
+export const timesheetStatusEnum = pgEnum("timesheet_status", ["draft", "submitted", "approved", "rejected"]);
+
+export const timesheets = pgTable("timesheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  startTime: text("start_time"), // HH:mm format, nullable
+  endTime: text("end_time"), // HH:mm format, nullable
+  duration: numeric("duration", { precision: 10, scale: 2 }).notNull().default("0"), // In hours (e.g., 8.5)
+  breakDuration: numeric("break_duration", { precision: 10, scale: 2 }).notNull().default("0"), // In hours
+  description: text("description"),
+  status: timesheetStatusEnum("status").notNull().default("draft"),
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  total: numeric("total", { precision: 10, scale: 2 }).notNull().default("0"), // duration × hourlyRate
+  invoiced: boolean("invoiced").notNull().default(false),
+  workItemId: varchar("work_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Optional link to labour estimate item
+  attachments: json("attachments").default([]), // Array of attachment URLs
+  labels: json("labels").default([]), // Array of label strings
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Timesheet Cost Codes (for split timesheets - distributing hours across multiple cost codes)
+export const timesheetCostCodes = pgTable("timesheet_cost_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  timesheetId: varchar("timesheet_id").notNull().references(() => timesheets.id, { onDelete: "cascade" }),
+  costCodeId: varchar("cost_code_id").notNull().references(() => costCodes.id, { onDelete: "cascade" }),
+  duration: numeric("duration", { precision: 10, scale: 2 }).notNull(), // Hours allocated to this cost code
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  total: numeric("total", { precision: 10, scale: 2 }).notNull().default("0"), // duration × hourlyRate
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTimesheetSchema = createInsertSchema(timesheets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  duration: z.number().min(0),
+  breakDuration: z.number().min(0).default(0),
+  hourlyRate: z.number().min(0).default(0),
+  total: z.number().min(0).default(0),
+  status: z.enum(["draft", "submitted", "approved", "rejected"]).default("draft"),
+  invoiced: z.boolean().default(false),
+});
+
+export type InsertTimesheet = z.infer<typeof insertTimesheetSchema>;
+export type Timesheet = typeof timesheets.$inferSelect;
+
+export const insertTimesheetCostCodeSchema = createInsertSchema(timesheetCostCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  duration: z.number().min(0),
+  hourlyRate: z.number().min(0).default(0),
+  total: z.number().min(0).default(0),
+});
+
+export type InsertTimesheetCostCode = z.infer<typeof insertTimesheetCostCodeSchema>;
+export type TimesheetCostCode = typeof timesheetCostCodes.$inferSelect;
+
 // Schedules (project-level schedule with offline/online/locked states)
 export const schedules = pgTable("schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

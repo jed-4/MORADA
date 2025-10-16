@@ -40,6 +40,7 @@ import Contacts from "@/pages/Contacts";
 import Budget from "@/pages/Budget";
 import ArchivedProjects from "@/pages/ArchivedProjects";
 import Schedule from "@/pages/Schedule";
+import Timesheets from "@/pages/Timesheets";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -57,7 +58,7 @@ function Router() {
       {/* Business Project */}
       <Route path="/business" component={BusinessOverviewPage} />
       <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
-      <Route path="/business/timesheets" component={() => <ComingSoonPage section="business-timesheets" />} />
+      <Route path="/business/timesheets" component={Timesheets} />
       <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
       <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
       
@@ -89,7 +90,7 @@ function Router() {
       <Route path="/projects/:projectId/client-invoices/:invoiceId" component={ClientInvoiceDetail} />
       <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/projects/:projectId/site-diary" component={SiteDiaryEntries} />
-      <Route path="/projects/:projectId/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
+      <Route path="/projects/:projectId/timesheets" component={Timesheets} />
       <Route path="/projects/:projectId/budget" component={Budget} />
       <Route path="/projects/:projectId/files" component={() => <ComingSoonPage section="files" />} />
       <Route path="/projects/:projectId/team" component={() => <ComingSoonPage section="team" />} />
@@ -120,7 +121,7 @@ function Router() {
       <Route path="/client-invoices/:id" component={ClientInvoiceDetail} />
       <Route path="/invoices" component={() => <ComingSoonPage section="invoices" />} />
       <Route path="/site-diary" component={SiteDiaryEntries} />
-      <Route path="/timesheets" component={() => <ComingSoonPage section="timesheets" />} />
+      <Route path="/timesheets" component={Timesheets} />
       <Route path="/budget" component={() => <ComingSoonPage section="budget" />} />
       <Route path="/files" component={() => <ComingSoonPage section="files" />} />
       <Route path="/team" component={() => <ComingSoonPage section="team" />} />
