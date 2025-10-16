@@ -45,6 +45,8 @@ Preferred communication style: Simple, everyday language.
 - **Cost Code Management**: Merge functionality to consolidate duplicate cost codes.
 - **Import System**: Enhanced dialog with flexible column mapping, auto-detection, and blank header handling.
 - **Templates Hub**: Centralized "Templates" page with cards for various template types (e.g., Notes, Site Diary, Schedule), supporting phased rollouts with "Coming Soon" indicators.
+- **Allowances System**: Track Prime Cost (PC) and Provisional Sum (PS) items from estimates through to final pricing and invoicing. PC items allow markup over supplier cost, PS items accumulate bills and timesheets. Integrates with Bills, Timesheets, and Client Invoices. Status tracking: Pending → In Progress → Finalized.
+- **Timesheet Enhancements**: 15-minute time block intervals, standard work hours configuration in company settings, time picker auto-scroll to default hours, Excel export with filtering.
 - **UI/UX**: White & minimalist theme, column resizing for tables, and accessibility compliance.
 
 ## External Dependencies

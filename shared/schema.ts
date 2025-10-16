@@ -424,6 +424,8 @@ export const estimateItems = pgTable("estimate_items", {
   parentItemId: varchar("parent_item_id").references((): any => estimateItems.id, { onDelete: "cascade" }), // For sub-items (3-level nesting)
   costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
   allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
+  allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
+  pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
   quantity: integer("quantity").notNull().default(1),
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
@@ -1000,6 +1002,46 @@ export const insertBillApprovalSchema = createInsertSchema(billApprovals).omit({
 
 export type InsertBillApproval = z.infer<typeof insertBillApprovalSchema>;
 export type BillApproval = typeof billApprovals.$inferSelect;
+
+// Bill Line Item Allowance Allocations (link bill line items to estimate item allowances)
+export const billLineItemAllowances = pgTable("bill_line_item_allowances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The allowance (PC/PS item)
+  amount: integer("amount").notNull().default(0), // Amount allocated to this allowance in cents
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertBillLineItemAllowanceSchema = createInsertSchema(billLineItemAllowances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  amount: z.number().default(0),
+});
+
+export type InsertBillLineItemAllowance = z.infer<typeof insertBillLineItemAllowanceSchema>;
+export type BillLineItemAllowance = typeof billLineItemAllowances.$inferSelect;
+
+// Timesheet Allowance Allocations (link timesheets to PS allowances)
+export const timesheetAllowances = pgTable("timesheet_allowances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  timesheetId: varchar("timesheet_id").notNull().references(() => timesheets.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The PS allowance
+  hours: numeric("hours", { precision: 10, scale: 2 }).notNull().default("0"), // Hours allocated to this PS allowance
+  amount: integer("amount").notNull().default(0), // Amount allocated (hours * rate) in cents
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTimesheetAllowanceSchema = createInsertSchema(timesheetAllowances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  hours: z.string().default("0"),
+  amount: z.number().default(0),
+});
+
+export type InsertTimesheetAllowance = z.infer<typeof insertTimesheetAllowanceSchema>;
+export type TimesheetAllowance = typeof timesheetAllowances.$inferSelect;
 
 // Xero Connections
 export const xeroConnections = pgTable("xero_connections", {
