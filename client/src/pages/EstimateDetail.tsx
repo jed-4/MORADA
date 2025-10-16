@@ -1222,11 +1222,13 @@ export default function EstimateDetail() {
     let fieldToUpdate = field;
     
     if (field === 'unitCostExTax') {
-      // Convert dollars to cents
-      valueToSave = Math.round(parseFloat(editingValue) * 100);
+      // Send actual dollar value to backend (backend will multiply by 100)
+      valueToSave = parseFloat(editingValue);
       
-      // Check if value actually changed (compare cents to cents)
-      if (valueToSave === (item as any)[field]) {
+      // Check if value actually changed (compare actual to stored cents)
+      // Only skip save if both values are finite numbers and they match
+      if (Number.isFinite(item.unitCostExTax) && Number.isFinite(valueToSave) && 
+          Math.round(valueToSave * 100) === item.unitCostExTax) {
         setEditingCell(null);
         return;
       }
