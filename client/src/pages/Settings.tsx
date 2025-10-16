@@ -152,6 +152,8 @@ const companyInfoSchema = z.object({
   website: z.string().url("Invalid website URL").optional().or(z.literal("")),
   address: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).default(10),
+  standardWorkStart: z.string().optional(),
+  standardWorkEnd: z.string().optional(),
   facebook: z.string().optional(),
   linkedin: z.string().optional(), 
   twitter: z.string().optional(),
@@ -176,6 +178,8 @@ export default function Settings() {
       website: "",
       address: "",
       taxRate: 10,
+      standardWorkStart: "07:00",
+      standardWorkEnd: "15:30",
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -200,6 +204,8 @@ export default function Settings() {
         website: companySettings.website || "",
         address: companySettings.address || "",
         taxRate: companySettings.taxRate ? parseFloat(companySettings.taxRate as string) : 10,
+        standardWorkStart: companySettings.standardWorkStart || "07:00",
+        standardWorkEnd: companySettings.standardWorkEnd || "15:30",
         facebook: companySettings.facebook || "",
         linkedin: companySettings.linkedin || "",
         twitter: companySettings.twitter || "",
@@ -697,6 +703,48 @@ export default function Settings() {
                   </FormItem>
                 )}
               />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={companyForm.control}
+                  name="standardWorkStart"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Standard Work Start Time</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="time"
+                          placeholder="07:00"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="standard-work-start-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="standardWorkEnd"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Standard Work End Time</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="time"
+                          placeholder="15:30"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="standard-work-end-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </CardContent>
           </Card>
 
