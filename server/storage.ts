@@ -303,8 +303,17 @@ export interface IStorage {
   getBillLineItemAllowances(billLineItemId: string): Promise<BillLineItemAllowance[]>;
   getBillLineItemAllowancesByBillId(billId: string): Promise<BillLineItemAllowance[]>;
   createBillLineItemAllowance(allowance: InsertBillLineItemAllowance): Promise<BillLineItemAllowance>;
+  updateBillLineItemAllowance(id: string, allowance: Partial<InsertBillLineItemAllowance>): Promise<BillLineItemAllowance | undefined>;
   deleteBillLineItemAllowance(id: string): Promise<void>;
   deleteBillLineItemAllowancesByLineItemId(billLineItemId: string): Promise<void>;
+
+  // Timesheet Allowances
+  getTimesheetAllowances(timesheetId: string): Promise<TimesheetAllowance[]>;
+  getTimesheetAllowancesByProject(projectId: string): Promise<TimesheetAllowance[]>;
+  createTimesheetAllowance(allowance: InsertTimesheetAllowance): Promise<TimesheetAllowance>;
+  updateTimesheetAllowance(id: string, allowance: Partial<InsertTimesheetAllowance>): Promise<TimesheetAllowance | undefined>;
+  deleteTimesheetAllowance(id: string): Promise<void>;
+  deleteTimesheetAllowancesByTimesheetId(timesheetId: string): Promise<void>;
 
   // Bill Approvals
   getBillApprovals(billId: string): Promise<BillApproval[]>;
@@ -5764,6 +5773,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async updateBillLineItemAllowance(id: string, allowance: Partial<InsertBillLineItemAllowance>): Promise<BillLineItemAllowance | undefined> {
+    try {
+      const [updatedAllowance] = await db.update(schema.billLineItemAllowances)
+        .set(allowance)
+        .where(eq(schema.billLineItemAllowances.id, id))
+        .returning();
+      return updatedAllowance;
+    } catch (error) {
+      console.error("Database error in updateBillLineItemAllowance:", error);
+      throw error;
+    }
+  }
+
   async deleteBillLineItemAllowance(id: string): Promise<void> {
     try {
       await db.delete(schema.billLineItemAllowances)
@@ -5780,6 +5802,83 @@ export class DbStorage implements IStorage {
         .where(eq(schema.billLineItemAllowances.billLineItemId, billLineItemId));
     } catch (error) {
       console.error("Database error in deleteBillLineItemAllowancesByLineItemId:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetAllowances(timesheetId: string): Promise<TimesheetAllowance[]> {
+    try {
+      const allowances = await db.select()
+        .from(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.timesheetId, timesheetId));
+      return allowances;
+    } catch (error) {
+      console.error("Database error in getTimesheetAllowances:", error);
+      throw error;
+    }
+  }
+
+  async getTimesheetAllowancesByProject(projectId: string): Promise<TimesheetAllowance[]> {
+    try {
+      const allowances = await db.select({
+        id: schema.timesheetAllowances.id,
+        timesheetId: schema.timesheetAllowances.timesheetId,
+        estimateItemId: schema.timesheetAllowances.estimateItemId,
+        hours: schema.timesheetAllowances.hours,
+        amount: schema.timesheetAllowances.amount,
+        createdAt: schema.timesheetAllowances.createdAt,
+      })
+        .from(schema.timesheetAllowances)
+        .innerJoin(schema.timesheets, eq(schema.timesheetAllowances.timesheetId, schema.timesheets.id))
+        .where(eq(schema.timesheets.projectId, projectId));
+      return allowances as TimesheetAllowance[];
+    } catch (error) {
+      console.error("Database error in getTimesheetAllowancesByProject:", error);
+      throw error;
+    }
+  }
+
+  async createTimesheetAllowance(allowance: InsertTimesheetAllowance): Promise<TimesheetAllowance> {
+    try {
+      const [newAllowance] = await db.insert(schema.timesheetAllowances)
+        .values(allowance)
+        .returning();
+      return newAllowance;
+    } catch (error) {
+      console.error("Database error in createTimesheetAllowance:", error);
+      throw error;
+    }
+  }
+
+  async updateTimesheetAllowance(id: string, allowance: Partial<InsertTimesheetAllowance>): Promise<TimesheetAllowance | undefined> {
+    try {
+      const [updatedAllowance] = await db.update(schema.timesheetAllowances)
+        .set(allowance)
+        .where(eq(schema.timesheetAllowances.id, id))
+        .returning();
+      return updatedAllowance;
+    } catch (error) {
+      console.error("Database error in updateTimesheetAllowance:", error);
+      throw error;
+    }
+  }
+
+  async deleteTimesheetAllowance(id: string): Promise<void> {
+    try {
+      await db.delete(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.id, id));
+    } catch (error) {
+      console.error("Database error in deleteTimesheetAllowance:", error);
+      throw error;
+    }
+  }
+
+  async deleteTimesheetAllowancesByTimesheetId(timesheetId: string): Promise<void> {
+    try {
+      await db.delete(schema.timesheetAllowances)
+        .where(eq(schema.timesheetAllowances.timesheetId, timesheetId));
+    } catch (error) {
+      console.error("Database error in deleteTimesheetAllowancesByTimesheetId:", error);
       throw error;
     }
   }

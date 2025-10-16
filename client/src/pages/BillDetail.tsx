@@ -144,27 +144,6 @@ export default function BillDetail() {
     enabled: isEditMode,
   });
 
-  const currentProjectId = form.watch("projectId") || bill?.projectId;
-
-  const { data: allowances = [], isLoading: allowancesLoading } = useQuery<EstimateItem[]>({
-    queryKey: ["/api/projects", currentProjectId, "allowances"],
-    queryFn: async () => {
-      if (!currentProjectId) return [];
-      const response = await fetch(`/api/projects/${currentProjectId}/allowances`);
-      if (!response.ok) throw new Error("Failed to fetch allowances");
-      const data = await response.json();
-      return data
-        .filter((item: any) => item.item.itemType === "Prime Cost" || item.item.itemType === "Provisional Sum")
-        .map((item: any) => item.item);
-    },
-    enabled: !!currentProjectId,
-  });
-
-  const { data: existingAllowances = [] } = useQuery<BillLineItemAllowance[]>({
-    queryKey: ["/api/bills", id, "line-item-allowances"],
-    enabled: isEditMode,
-  });
-
   const form = useForm<BillFormData>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
@@ -181,6 +160,27 @@ export default function BillDetail() {
       paidAmount: 0,
       sendToXero: false,
     },
+  });
+
+  const currentProjectId = form.watch("projectId") || bill?.projectId;
+
+  const { data: allowances = [], isLoading: allowancesLoading } = useQuery<any[]>({
+    queryKey: ["/api/projects", currentProjectId, "allowances"],
+    queryFn: async () => {
+      if (!currentProjectId) return [];
+      const response = await fetch(`/api/projects/${currentProjectId}/allowances`);
+      if (!response.ok) throw new Error("Failed to fetch allowances");
+      const data = await response.json();
+      return data
+        .filter((item: any) => item.item.allowance === "Prime Cost" || item.item.allowance === "Provisional Sum")
+        .map((item: any) => ({ ...item.item, itemType: item.item.allowance }));
+    },
+    enabled: !!currentProjectId,
+  });
+
+  const { data: existingAllowances = [] } = useQuery<any[]>({
+    queryKey: ["/api/bills", id, "line-item-allowances"],
+    enabled: isEditMode,
   });
 
   useEffect(() => {
@@ -336,7 +336,7 @@ export default function BillDetail() {
 
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i];
-        await apiRequest("POST", `/api/bills/${newBill.id}/line-items`, {
+        const lineItemRes = await apiRequest("POST", `/api/bills/${newBill.id}/line-items`, {
           billId: newBill.id,
           lineType: item.lineType,
           description: item.description,
@@ -348,12 +348,22 @@ export default function BillDetail() {
           total: Math.round(item.total * 100),
           order: i,
         });
+        const createdLineItem = await lineItemRes.json();
+
+        if (item.appliesToAllowances && item.allowanceItemId) {
+          await apiRequest("POST", "/api/bill-line-item-allowances", {
+            billLineItemId: createdLineItem.id,
+            estimateItemId: item.allowanceItemId,
+            amount: Math.round(item.total * 100),
+          });
+        }
       }
 
       return newBill;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
       toast({
         title: "Success",
         description: "Bill created successfully",
@@ -407,10 +417,32 @@ export default function BillDetail() {
           order: i,
         };
 
+        let lineItemId = item.id;
         if (item.id) {
           await apiRequest("PATCH", `/api/bills/${id}/line-items/${item.id}`, itemData);
         } else {
-          await apiRequest("POST", `/api/bills/${id}/line-items`, itemData);
+          const lineItemRes = await apiRequest("POST", `/api/bills/${id}/line-items`, itemData);
+          const createdLineItem = await lineItemRes.json();
+          lineItemId = createdLineItem.id;
+        }
+
+        const existingAllowance = existingAllowances.find(a => a.billLineItemId === lineItemId);
+        
+        if (item.appliesToAllowances && item.allowanceItemId) {
+          if (existingAllowance) {
+            await apiRequest("PATCH", `/api/bill-line-item-allowances/${existingAllowance.id}`, {
+              estimateItemId: item.allowanceItemId,
+              amount: Math.round(item.total * 100),
+            });
+          } else {
+            await apiRequest("POST", "/api/bill-line-item-allowances", {
+              billLineItemId: lineItemId,
+              estimateItemId: item.allowanceItemId,
+              amount: Math.round(item.total * 100),
+            });
+          }
+        } else if (existingAllowance) {
+          await apiRequest("DELETE", `/api/bill-line-item-allowances/${existingAllowance.id}`);
         }
       }
 
@@ -419,6 +451,8 @@ export default function BillDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
       toast({
         title: "Success",
         description: "Bill updated successfully",

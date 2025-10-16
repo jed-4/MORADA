@@ -46,6 +46,9 @@ Preferred communication style: Simple, everyday language.
 - **Import System**: Enhanced dialog with flexible column mapping, auto-detection, and blank header handling.
 - **Templates Hub**: Centralized "Templates" page with cards for various template types (e.g., Notes, Site Diary, Schedule), supporting phased rollouts with "Coming Soon" indicators.
 - **Allowances System**: Track Prime Cost (PC) and Provisional Sum (PS) items from estimates through to final pricing and invoicing. PC items allow markup over supplier cost, PS items accumulate bills and timesheets. Integrates with Bills, Timesheets, and Client Invoices. Status tracking: Pending → In Progress → Finalized.
+  - **Bill Allocation (Complete)**: Bill line items can be allocated to PC/PS allowances with checkbox "Applies to Allowances" and dropdown selection. Saves to billLineItemAllowances table with proper create/update/delete handling.
+  - **Timesheet Allocation (Backend Complete)**: Infrastructure added for PS allowance allocation including timesheetAllowances table, storage methods (get, create, update, delete), and API routes. UI integration pending.
+  - **Client Invoice Integration (Pending)**: Allowance variance display in client invoices not yet implemented.
 - **Timesheet Enhancements**: 15-minute time block intervals, standard work hours configuration in company settings, time picker auto-scroll to default hours, Excel export with filtering.
 - **UI/UX**: White & minimalist theme, column resizing for tables, and accessibility compliance.
 

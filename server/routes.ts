@@ -2501,6 +2501,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/bill-line-item-allowances/:id", async (req, res) => {
+    try {
+      const validationResult = insertBillLineItemAllowanceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const allowance = await storage.updateBillLineItemAllowance(req.params.id, validationResult.data);
+      if (!allowance) {
+        return res.status(404).json({ error: "Bill line item allowance not found" });
+      }
+      res.json(allowance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update bill line item allowance" });
+    }
+  });
+
   app.delete("/api/bill-line-item-allowances/:id", async (req, res) => {
     try {
       await storage.deleteBillLineItemAllowance(req.params.id);
@@ -4658,6 +4678,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to delete timesheet cost code",
         details: error.message
       });
+    }
+  });
+
+  // Timesheet Allowances routes
+  app.get("/api/timesheets/:timesheetId/allowances", async (req, res) => {
+    try {
+      const allowances = await storage.getTimesheetAllowances(req.params.timesheetId);
+      res.json(allowances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch timesheet allowances" });
+    }
+  });
+
+  app.post("/api/timesheet-allowances", async (req, res) => {
+    try {
+      const validationResult = insertTimesheetAllowanceSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const allowance = await storage.createTimesheetAllowance(validationResult.data);
+      res.status(201).json(allowance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create timesheet allowance" });
+    }
+  });
+
+  app.patch("/api/timesheet-allowances/:id", async (req, res) => {
+    try {
+      const validationResult = insertTimesheetAllowanceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const allowance = await storage.updateTimesheetAllowance(req.params.id, validationResult.data);
+      if (!allowance) {
+        return res.status(404).json({ error: "Timesheet allowance not found" });
+      }
+      res.json(allowance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update timesheet allowance" });
+    }
+  });
+
+  app.delete("/api/timesheet-allowances/:id", async (req, res) => {
+    try {
+      await storage.deleteTimesheetAllowance(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete timesheet allowance" });
     }
   });
 
