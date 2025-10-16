@@ -39,6 +39,7 @@ import CostCodes from "@/pages/CostCodes";
 import Contacts from "@/pages/Contacts";
 import Budget from "@/pages/Budget";
 import ArchivedProjects from "@/pages/ArchivedProjects";
+import Schedule from "@/pages/Schedule";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -71,7 +72,7 @@ function Router() {
       <Route path="/projects/:projectId/selections" component={Selections} />
       <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
       <Route path="/projects/:projectId/messages" component={() => <ComingSoonPage section="messages" />} />
-      <Route path="/projects/:projectId/schedule" component={() => <ComingSoonPage section="schedule" />} />
+      <Route path="/projects/:projectId/schedule" component={Schedule} />
       <Route path="/projects/:projectId/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
       <Route path="/projects/:projectId/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/projects/:projectId/rfi" component={() => <ComingSoonPage section="rfi" />} />

@@ -69,7 +69,7 @@ import { ProjectIcon } from "./ProjectIcon";
 
 // Coming soon items that should have strikeout styling
 const comingSoonItems = new Set([
-  "Messages", "Schedule", "Take off", 
+  "Messages", "Take off", 
   "Request For Quotes", "Request For Information", "Proposal", 
   "Allowances", "Purchase Orders", 
   "Site Diary", "Timesheets", 
