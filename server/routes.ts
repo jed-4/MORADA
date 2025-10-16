@@ -4390,6 +4390,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Labour Hours Budget routes
+  app.get("/api/projects/:projectId/labour-hours-budget", async (req, res) => {
+    try {
+      const labourHours = await storage.getLabourHoursBudget(req.params.projectId);
+      res.json(labourHours);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch labour hours budget",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/projects/:projectId/labour-hours-budget/recalculate", async (req, res) => {
+    try {
+      const labourHours = await storage.recalculateLabourHoursBudget(req.params.projectId);
+      res.json(labourHours);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to recalculate labour hours budget",
+        details: error.message 
+      });
+    }
+  });
+
   // Schedule routes
   app.get("/api/projects/:projectId/schedule", async (req, res) => {
     try {
