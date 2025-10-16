@@ -1,6 +1,6 @@
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -85,7 +85,7 @@ export default function Allowances() {
   });
 
   // Set default estimate (working estimate or first estimate)
-  useMemo(() => {
+  useEffect(() => {
     if (estimates.length > 0 && !selectedEstimateId) {
       const workingEstimate = estimates.find(e => e.status === 'working');
       setSelectedEstimateId(workingEstimate?.id || estimates[0].id);
