@@ -1,6 +1,6 @@
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
+import { type Estimate } from "@shared/schema";
 
 type EstimateItem = {
   id: string;
@@ -61,6 +62,18 @@ export default function Allowances() {
   const { toast } = useToast();
   const [editingMarkup, setEditingMarkup] = useState<string | null>(null);
   const [markupValue, setMarkupValue] = useState<string>("");
+  const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
+
+  // Fetch estimates for the project
+  const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates", projectId],
+    queryFn: async () => {
+      const response = await fetch(`/api/estimates?projectId=${projectId}`);
+      if (!response.ok) throw new Error("Failed to fetch estimates");
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
 
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
     queryKey: ["/api/projects", projectId, "allowances"],
@@ -70,6 +83,14 @@ export default function Allowances() {
       return response.json();
     },
   });
+
+  // Set default estimate (working estimate or first estimate)
+  useMemo(() => {
+    if (estimates.length > 0 && !selectedEstimateId) {
+      const workingEstimate = estimates.find(e => e.status === 'working');
+      setSelectedEstimateId(workingEstimate?.id || estimates[0].id);
+    }
+  }, [estimates, selectedEstimateId]);
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
@@ -115,8 +136,14 @@ export default function Allowances() {
     updateMarkupMutation.mutate({ itemId, markup });
   };
 
-  const pcItems = allowances.filter(a => a.item.allowance === "Prime Cost");
-  const psItems = allowances.filter(a => a.item.allowance === "Provisional Sum");
+  // Filter allowances by selected estimate
+  const filteredAllowances = useMemo(() => {
+    if (!selectedEstimateId) return allowances;
+    return allowances.filter(a => a.item.estimateId === selectedEstimateId);
+  }, [allowances, selectedEstimateId]);
+
+  const pcItems = filteredAllowances.filter(a => a.item.allowance === "Prime Cost");
+  const psItems = filteredAllowances.filter(a => a.item.allowance === "Provisional Sum");
 
   if (isLoading) {
     return (
@@ -148,14 +175,37 @@ export default function Allowances() {
               Track Prime Cost and Provisional Sum items from estimates
             </p>
           </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="estimate-selector" className="text-sm font-medium">
+              Select Estimate:
+            </label>
+            <Select
+              value={selectedEstimateId || ""}
+              onValueChange={setSelectedEstimateId}
+              disabled={estimatesLoading || estimates.length === 0}
+            >
+              <SelectTrigger className="w-[250px]" id="estimate-selector" data-testid="select-estimate">
+                <SelectValue placeholder="Select an estimate" />
+              </SelectTrigger>
+              <SelectContent>
+                {estimates.map((estimate) => (
+                  <SelectItem key={estimate.id} value={estimate.id} data-testid={`estimate-option-${estimate.id}`}>
+                    {estimate.name} (v{estimate.version})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        {allowances.length === 0 ? (
+        {filteredAllowances.length === 0 ? (
           <Card className="p-12 text-center">
             <DollarSign className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Allowances</h3>
             <p className="text-muted-foreground">
-              Create estimate items with Prime Cost or Provisional Sum allowances to see them here.
+              {allowances.length === 0 
+                ? "Create estimate items with Prime Cost or Provisional Sum allowances to see them here."
+                : "No allowances found for the selected estimate."}
             </p>
           </Card>
         ) : (
