@@ -48,6 +48,7 @@ import {
   type ChecklistTemplateItem, type InsertChecklistTemplateItem,
   type Budget, type InsertBudget,
   type BudgetLineItem, type InsertBudgetLineItem,
+  type LabourHoursBudget, type InsertLabourHoursBudget,
   type Schedule, type InsertSchedule,
   type ScheduleItem, type InsertScheduleItem,
   type ScheduleTemplate, type InsertScheduleTemplate
@@ -401,6 +402,10 @@ export interface IStorage {
   updateBudgetLineItem(id: string, item: Partial<InsertBudgetLineItem>): Promise<BudgetLineItem | undefined>;
   deleteBudgetLineItem(id: string): Promise<boolean>;
   recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]>; // Recalculates all line items
+
+  // Labour Hours Budget CRUD
+  getLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>;
+  recalculateLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]>; // Recalculates from flagged estimate items
 
   // Schedule CRUD
   getSchedule(projectId: string): Promise<Schedule | undefined>;
@@ -1189,6 +1194,7 @@ export class MemStorage implements IStorage {
         requestForQuote: false,
         isSelection: false,
         proposalVisible: true,
+        trackLabourHours: false,
         shownAs: "price",
         order: 0,
         createdAt: now,
@@ -6708,6 +6714,103 @@ export class DbStorage implements IStorage {
       return lineItems;
     } catch (error) {
       console.error("Database error in recalculateBudgetLineItems:", error);
+      throw error;
+    }
+  }
+
+  // Labour Hours Budget CRUD
+  async getLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]> {
+    try {
+      const result = await db.select()
+        .from(schema.labourHoursBudget)
+        .where(eq(schema.labourHoursBudget.projectId, projectId))
+        .orderBy(schema.labourHoursBudget.sortOrder);
+      return result;
+    } catch (error) {
+      console.error("Database error in getLabourHoursBudget:", error);
+      throw error;
+    }
+  }
+
+  async recalculateLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]> {
+    try {
+      // Get all cost codes
+      const costCodes = await db.select()
+        .from(schema.costCodes)
+        .where(eq(schema.costCodes.isActive, true));
+
+      // Get estimates for this project
+      const estimates = await db.select()
+        .from(schema.estimates)
+        .where(eq(schema.estimates.projectId, projectId));
+
+      // Get estimate items that are flagged for labour hours tracking
+      const estimateItems = estimates.length > 0 ? await db.select()
+        .from(schema.estimateItems)
+        .where(
+          and(
+            eq(schema.estimateItems.estimateId, estimates[0].id),
+            eq(schema.estimateItems.type, "Labour"),
+            eq(schema.estimateItems.trackLabourHours, true)
+          )
+        ) : [];
+
+      // Group hours by cost code
+      const costCodeMap = new Map<string, {
+        budgetedHours: number;
+        costCodeTitle: string;
+        categoryTitle: string;
+        costCodeId: string | null;
+      }>();
+
+      // Calculate budgeted hours from flagged estimate items (rounded to 0.25)
+      for (const item of estimateItems) {
+        const costCodeKey = item.costCode || "uncategorized";
+        const costCode = costCodes.find(cc => cc.code === costCodeKey);
+        
+        const existing = costCodeMap.get(costCodeKey) || { 
+          budgetedHours: 0,
+          costCodeTitle: costCode?.title || item.costCode || "Uncategorized",
+          categoryTitle: "General",
+          costCodeId: costCode?.id || null
+        };
+        
+        // Round hours to nearest 0.25
+        const hours = item.quantity || 0;
+        const roundedHours = Math.round(hours * 4) / 4;
+        existing.budgetedHours += roundedHours;
+        
+        costCodeMap.set(costCodeKey, existing);
+      }
+
+      // Delete existing labour hours budget for this project
+      await db.delete(schema.labourHoursBudget)
+        .where(eq(schema.labourHoursBudget.projectId, projectId));
+
+      // Create new labour hours budget entries
+      const labourHoursBudget: LabourHoursBudget[] = [];
+      let sortOrder = 0;
+
+      for (const [costCodeKey, data] of costCodeMap.entries()) {
+        const result = await db.insert(schema.labourHoursBudget)
+          .values({
+            projectId,
+            costCodeId: data.costCodeId,
+            costCodeTitle: data.costCodeTitle,
+            categoryTitle: data.categoryTitle,
+            budgetedHours: data.budgetedHours.toString(),
+            pendingHours: "0",
+            approvedHours: "0",
+            sortOrder: sortOrder++
+          })
+          .returning();
+        
+        labourHoursBudget.push(result[0]);
+      }
+
+      return labourHoursBudget;
+    } catch (error) {
+      console.error("Database error in recalculateLabourHoursBudget:", error);
       throw error;
     }
   }
