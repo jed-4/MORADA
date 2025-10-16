@@ -51,6 +51,7 @@ const timesheetSchema = z.object({
   breakDuration: z.string().optional(),
   description: z.string().optional(),
   hourlyRate: z.string().optional(),
+  costCodeId: z.string().optional(),
 });
 
 type TimesheetFormData = z.infer<typeof timesheetSchema>;
@@ -109,6 +110,7 @@ export function TimesheetDialog({
       breakDuration: "0",
       description: "",
       hourlyRate: "50",
+      costCodeId: "",
     },
   });
 
@@ -141,6 +143,14 @@ export function TimesheetDialog({
   // Create/Update mutation
   const createMutation = useMutation({
     mutationFn: async (data: TimesheetFormData) => {
+      // Validate cost code
+      if (!isSplit && !data.costCodeId) {
+        throw new Error("Please select a cost code");
+      }
+      if (isSplit && costCodeSplits.length === 0) {
+        throw new Error("Please add at least one cost code split");
+      }
+
       const duration = parseFloat(data.duration || "0");
       const hourlyRate = parseFloat(data.hourlyRate || "0");
       const total = (duration * hourlyRate).toFixed(2);
@@ -189,6 +199,18 @@ export function TimesheetDialog({
               }
             );
           }
+        } else {
+          // Create a single cost code entry for the primary cost code
+          await apiRequest(
+            "POST",
+            `/api/timesheets/${created.id}/cost-codes`,
+            {
+              costCodeId: data.costCodeId,
+              duration: duration.toString(),
+              hourlyRate: hourlyRate.toString(),
+              total: total,
+            }
+          );
         }
         
         return created;
@@ -487,6 +509,34 @@ export function TimesheetDialog({
                 </div>
               </div>
             </div>
+
+            {/* Cost Code */}
+            {!isSplit && (
+              <FormField
+                control={form.control}
+                name="costCodeId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cost Code</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-cost-code">
+                          <SelectValue placeholder="Select cost code" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {costCodes.map((code) => (
+                          <SelectItem key={code.id} value={code.id}>
+                            {code.code} - {code.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             {/* Cost Code Split */}
             {!timesheet && (
