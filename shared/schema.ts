@@ -511,6 +511,11 @@ export const companySettings = pgTable("company_settings", {
   
   // System settings
   taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("10.00"), // Tax rate as percentage (e.g., 10.00 for 10%)
+  
+  // Timesheet defaults
+  standardWorkStart: text("standard_work_start").default("07:00"), // Default work start time (e.g., "07:00")
+  standardWorkEnd: text("standard_work_end").default("15:30"), // Default work end time (e.g., "15:30")
+  
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
