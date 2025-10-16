@@ -1474,6 +1474,13 @@ export default function EstimateDetail() {
           case 'unitType':
             row.push(escapeCsvField(item.unitType || ''));
             break;
+          case 'unitCostExTax':
+            row.push((item.unitCostExTax / 100).toFixed(2));
+            break;
+          case 'unitCostIncTax':
+            const pricingValsUnit = calculatePricingValues(item);
+            row.push((pricingValsUnit.unitCostIncTax / 100).toFixed(2));
+            break;
           case 'builderCost':
             const pricingVals = calculatePricingValues(item);
             row.push((pricingVals.builderCost / 100).toFixed(2));
