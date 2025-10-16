@@ -17,6 +17,7 @@ import {
   type UserInvitation, type InsertUserInvitation,
   type UserWithRole, type PermissionAction, type UserCategory,
   type CompanySettings, type InsertCompanySettings,
+  type SystemConfiguration, type InsertSystemConfiguration,
   type CostCategory, type InsertCostCategory,
   type CostCode, type InsertCostCode,
   type FieldCategory, type InsertFieldCategory,
@@ -46,7 +47,10 @@ import {
   type ChecklistTemplateGroup, type InsertChecklistTemplateGroup,
   type ChecklistTemplateItem, type InsertChecklistTemplateItem,
   type Budget, type InsertBudget,
-  type BudgetLineItem, type InsertBudgetLineItem
+  type BudgetLineItem, type InsertBudgetLineItem,
+  type Schedule, type InsertSchedule,
+  type ScheduleItem, type InsertScheduleItem,
+  type ScheduleTemplate, type InsertScheduleTemplate
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -397,6 +401,28 @@ export interface IStorage {
   updateBudgetLineItem(id: string, item: Partial<InsertBudgetLineItem>): Promise<BudgetLineItem | undefined>;
   deleteBudgetLineItem(id: string): Promise<boolean>;
   recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]>; // Recalculates all line items
+
+  // Schedule CRUD
+  getSchedule(projectId: string): Promise<Schedule | undefined>;
+  createSchedule(schedule: InsertSchedule): Promise<Schedule>;
+  updateSchedule(id: string, schedule: Partial<InsertSchedule>): Promise<Schedule | undefined>;
+  deleteSchedule(id: string): Promise<boolean>;
+  updateScheduleStatus(id: string, status: "offline" | "online" | "locked", userId?: string): Promise<Schedule | undefined>;
+
+  // Schedule Items CRUD
+  getScheduleItems(scheduleId: string): Promise<ScheduleItem[]>;
+  getScheduleItem(id: string): Promise<ScheduleItem | undefined>;
+  createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem>;
+  updateScheduleItem(id: string, item: Partial<InsertScheduleItem>): Promise<ScheduleItem | undefined>;
+  deleteScheduleItem(id: string): Promise<boolean>;
+  bulkUpdateScheduleItems(items: { id: string; updates: Partial<InsertScheduleItem> }[]): Promise<ScheduleItem[]>;
+
+  // Schedule Templates CRUD
+  getScheduleTemplates(category?: string): Promise<ScheduleTemplate[]>;
+  getScheduleTemplate(id: string): Promise<ScheduleTemplate | undefined>;
+  createScheduleTemplate(template: InsertScheduleTemplate): Promise<ScheduleTemplate>;
+  updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>): Promise<ScheduleTemplate | undefined>;
+  deleteScheduleTemplate(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -715,6 +741,7 @@ export class MemStorage implements IStorage {
         color: opt.color,
         isActive: true,
         isDefault: opt.isDefault,
+        isCompleted: opt.key === "done",
         sortOrder: index,
         createdAt: now,
         updatedAt: now,
@@ -739,6 +766,7 @@ export class MemStorage implements IStorage {
         color: opt.color,
         isActive: true,
         isDefault: opt.isDefault,
+        isCompleted: false,
         sortOrder: index,
         createdAt: now,
         updatedAt: now,
@@ -765,6 +793,7 @@ export class MemStorage implements IStorage {
         color: opt.color,
         isActive: true,
         isDefault: opt.isDefault,
+        isCompleted: false,
         sortOrder: index,
         createdAt: now,
         updatedAt: now,
@@ -941,6 +970,7 @@ export class MemStorage implements IStorage {
         color: opt.color,
         isActive: true,
         isDefault: index === 0, // First one is default
+        isCompleted: false,
         sortOrder: index,
         createdAt: now,
         updatedAt: now,
@@ -976,6 +1006,7 @@ export class MemStorage implements IStorage {
         color: opt.color,
         isActive: true,
         isDefault: index === 0, // First one is default
+        isCompleted: false,
         sortOrder: index,
         createdAt: now,
         updatedAt: now,
@@ -1029,8 +1060,11 @@ export class MemStorage implements IStorage {
       jobNumber: null,
       projectType: null,
       color: "#6366F1",
+      icon: "Building2",
       isActive: true,
+      isArchived: false,
       isBusiness: true,
+      invoicingMethod: "progress_payments",
       ownerId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -1060,7 +1094,10 @@ export class MemStorage implements IStorage {
         ...proj,
         jobNumber: null,
         projectType: null,
+        icon: "Building2",
         isActive: true,
+        isArchived: false,
+        invoicingMethod: "progress_payments",
         ownerId: null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -1095,9 +1132,14 @@ export class MemStorage implements IStorage {
       id: "test-project-123",
       name: "Kitchen Renovation",
       description: "Complete kitchen remodel project",
+      jobNumber: null,
+      projectType: null,
       color: "#2563eb",
+      icon: "Building2",
       isActive: true,
+      isArchived: false,
       isBusiness: false,
+      invoicingMethod: "progress_payments",
       ownerId: null,
       createdAt: new Date("2025-09-21T09:17:57.333Z"),
       updatedAt: new Date("2025-09-21T09:17:57.333Z"),
@@ -1141,6 +1183,7 @@ export class MemStorage implements IStorage {
         parentItemId: null,
         costCode: null,
         allowance: "None",
+        markupPercent: null,
         notes: null,
         attachmentUrl: null,
         requestForQuote: false,
@@ -1355,6 +1398,7 @@ export class MemStorage implements IStorage {
       ...insertPermission,
       id,
       description: insertPermission.description || null,
+      actions: insertPermission.actions || ['view'],
       isBuiltIn: insertPermission.isBuiltIn ?? false,
       createdAt: new Date(),
     };
@@ -1391,6 +1435,7 @@ export class MemStorage implements IStorage {
     const rolePermission: RolePermission = {
       ...insertRolePermission,
       id,
+      allowedActions: insertRolePermission.allowedActions || ['view'],
       createdAt: new Date(),
     };
     this.rolePermissions.set(id, rolePermission);
@@ -1446,6 +1491,7 @@ export class MemStorage implements IStorage {
     const access: UserProjectAccess = {
       ...insertAccess,
       id,
+      accessLevel: insertAccess.accessLevel || "view",
       grantedBy: insertAccess.grantedBy || null,
       createdAt: new Date(),
     };
@@ -1476,7 +1522,11 @@ export class MemStorage implements IStorage {
 
     if (existingAccess) {
       // Update existing access
-      return await this.updateUserProjectAccess(existingAccess.id, { accessLevel, grantedBy });
+      const updated = await this.updateUserProjectAccess(existingAccess.id, { accessLevel, grantedBy });
+      if (!updated) {
+        throw new Error("Failed to update project access");
+      }
+      return updated;
     } else {
       // Create new access
       return await this.createUserProjectAccess({
@@ -1906,15 +1956,20 @@ export class MemStorage implements IStorage {
   // Projects CRUD operations
   async getProjects(ownerId?: string): Promise<Project[]> {
     try {
-      let query = db.select().from(schema.projects).where(eq(schema.projects.isActive, true));
+      let query = db.select().from(schema.projects);
       
       if (ownerId) {
         query = query.where(
-          or(
-            eq(schema.projects.ownerId, ownerId),
-            eq(schema.projects.isBusiness, true)
+          and(
+            eq(schema.projects.isActive, true),
+            or(
+              eq(schema.projects.ownerId, ownerId),
+              eq(schema.projects.isBusiness, true)
+            )
           )
         );
+      } else {
+        query = query.where(eq(schema.projects.isActive, true));
       }
       
       const projects = await query.orderBy(schema.projects.createdAt);
@@ -1953,10 +2008,15 @@ export class MemStorage implements IStorage {
       ...insertProject,
       id,
       description: insertProject.description ?? null,
+      jobNumber: insertProject.jobNumber ?? null,
+      projectType: insertProject.projectType ?? null,
       color: insertProject.color ?? null,
+      icon: insertProject.icon ?? "Building2",
       ownerId: insertProject.ownerId ?? null,
       isActive: insertProject.isActive ?? true,
+      isArchived: insertProject.isArchived ?? false,
       isBusiness: insertProject.isBusiness ?? false,
+      invoicingMethod: insertProject.invoicingMethod ?? "progress_payments",
       createdAt: now,
       updatedAt: now,
     };
@@ -2034,6 +2094,7 @@ export class MemStorage implements IStorage {
     const taskView: TaskView = {
       ...insertTaskView,
       id,
+      ownerId: insertTaskView.ownerId ?? null,
       viewType: insertTaskView.viewType || "kanban",
       filters: insertTaskView.filters || {},
       columnConfig: insertTaskView.columnConfig || {},
@@ -2170,6 +2231,11 @@ export class MemStorage implements IStorage {
         ...insertEstimate,
         id,
         status: insertEstimate.status || "draft",
+        ownerId: insertEstimate.ownerId ?? null,
+        ownerName: insertEstimate.ownerName ?? null,
+        projectMarkupPercent: insertEstimate.projectMarkupPercent ?? null,
+        taxRate: insertEstimate.taxRate ?? null,
+        notes: insertEstimate.notes ?? null,
         version: 1,
         isLocked: false,
         createdAt: now,
@@ -2318,6 +2384,21 @@ export class MemStorage implements IStorage {
       const memItem: EstimateItem = {
         ...insertItem,
         id,
+        description: insertItem.description ?? null,
+        type: insertItem.type || "Material",
+        status: insertItem.status || "pending",
+        order: insertItem.order || 0,
+        notes: insertItem.notes ?? null,
+        groupId: insertItem.groupId ?? null,
+        parentItemId: insertItem.parentItemId ?? null,
+        costCode: insertItem.costCode ?? null,
+        allowance: insertItem.allowance ?? null,
+        markupPercent: insertItem.markupPercent ?? null,
+        attachmentUrl: insertItem.attachmentUrl ?? null,
+        requestForQuote: insertItem.requestForQuote ?? false,
+        isSelection: insertItem.isSelection ?? false,
+        proposalVisible: insertItem.proposalVisible ?? true,
+        shownAs: insertItem.shownAs ?? null,
         taxAmount,
         priceIncTax,
         createdAt: now,
@@ -2372,6 +2453,18 @@ export class MemStorage implements IStorage {
         const memItem: EstimateItem = {
           ...item,
           id,
+          description: item.description ?? null,
+          notes: item.notes ?? null,
+          groupId: item.groupId ?? null,
+          parentItemId: item.parentItemId ?? null,
+          costCode: item.costCode ?? null,
+          allowance: item.allowance ?? null,
+          markupPercent: item.markupPercent ?? null,
+          attachmentUrl: item.attachmentUrl ?? null,
+          requestForQuote: item.requestForQuote ?? false,
+          isSelection: item.isSelection ?? false,
+          proposalVisible: item.proposalVisible ?? true,
+          shownAs: item.shownAs ?? null,
           createdAt: now,
           updatedAt: now,
         };
@@ -2450,6 +2543,9 @@ export class MemStorage implements IStorage {
     const group: EstimateGroup = {
       ...insertGroup,
       id,
+      description: insertGroup.description ?? null,
+      order: insertGroup.order || 0,
+      isCollapsed: insertGroup.isCollapsed ?? false,
       createdAt: now,
       updatedAt: now,
     };
@@ -2872,6 +2968,7 @@ export class MemStorage implements IStorage {
         companyName: null,
         email: null,
         phone: null,
+        taxRate: "10.00",
         website: null,
         address: null,
         logoUrl: null,
@@ -3038,6 +3135,7 @@ export class MemStorage implements IStorage {
       color: insertOption.color || null,
       isActive: insertOption.isActive !== false,
       isDefault: insertOption.isDefault || false,
+      isCompleted: insertOption.isCompleted || false,
       sortOrder: insertOption.sortOrder || 0,
       createdAt: now,
       updatedAt: now,
@@ -3092,6 +3190,7 @@ export class MemStorage implements IStorage {
         color: optData.color || "#6B7280",
         isActive: optData.isActive !== false, // Default to true
         isDefault: hasDefault ? (optData.isDefault === true) : (index === 0), // First option is default if none specified
+        isCompleted: optData.isCompleted || false,
         sortOrder: optData.sortOrder || index,
         createdAt: optData.createdAt || now,
         updatedAt: now,
@@ -6609,6 +6708,224 @@ export class DbStorage implements IStorage {
       return lineItems;
     } catch (error) {
       console.error("Database error in recalculateBudgetLineItems:", error);
+      throw error;
+    }
+  }
+
+  // Schedule CRUD
+  async getSchedule(projectId: string): Promise<Schedule | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.schedules)
+        .where(eq(schema.schedules.projectId, projectId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getSchedule:", error);
+      throw error;
+    }
+  }
+
+  async createSchedule(schedule: InsertSchedule): Promise<Schedule> {
+    try {
+      const result = await db.insert(schema.schedules)
+        .values(schedule)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createSchedule:", error);
+      throw error;
+    }
+  }
+
+  async updateSchedule(id: string, schedule: Partial<InsertSchedule>): Promise<Schedule | undefined> {
+    try {
+      const result = await db.update(schema.schedules)
+        .set({ ...schedule, updatedAt: new Date() })
+        .where(eq(schema.schedules.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateSchedule:", error);
+      throw error;
+    }
+  }
+
+  async deleteSchedule(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.schedules)
+        .where(eq(schema.schedules.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteSchedule:", error);
+      throw error;
+    }
+  }
+
+  async updateScheduleStatus(id: string, status: "offline" | "online" | "locked", userId?: string): Promise<Schedule | undefined> {
+    try {
+      const updates: any = { status, updatedAt: new Date() };
+      if (status === "locked" && userId) {
+        updates.lockedBy = userId;
+        updates.lockedAt = new Date();
+      } else if (status !== "locked") {
+        updates.lockedBy = null;
+        updates.lockedAt = null;
+      }
+      const result = await db.update(schema.schedules)
+        .set(updates)
+        .where(eq(schema.schedules.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateScheduleStatus:", error);
+      throw error;
+    }
+  }
+
+  // Schedule Items CRUD
+  async getScheduleItems(scheduleId: string): Promise<ScheduleItem[]> {
+    try {
+      return await db.select()
+        .from(schema.scheduleItems)
+        .where(eq(schema.scheduleItems.scheduleId, scheduleId))
+        .orderBy(schema.scheduleItems.sortOrder, schema.scheduleItems.startDate);
+    } catch (error) {
+      console.error("Database error in getScheduleItems:", error);
+      throw error;
+    }
+  }
+
+  async getScheduleItem(id: string): Promise<ScheduleItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.scheduleItems)
+        .where(eq(schema.scheduleItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getScheduleItem:", error);
+      throw error;
+    }
+  }
+
+  async createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem> {
+    try {
+      const result = await db.insert(schema.scheduleItems)
+        .values(item)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createScheduleItem:", error);
+      throw error;
+    }
+  }
+
+  async updateScheduleItem(id: string, item: Partial<InsertScheduleItem>): Promise<ScheduleItem | undefined> {
+    try {
+      const result = await db.update(schema.scheduleItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.scheduleItems.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateScheduleItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteScheduleItem(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.scheduleItems)
+        .where(eq(schema.scheduleItems.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteScheduleItem:", error);
+      throw error;
+    }
+  }
+
+  async bulkUpdateScheduleItems(items: { id: string; updates: Partial<InsertScheduleItem> }[]): Promise<ScheduleItem[]> {
+    try {
+      const results: ScheduleItem[] = [];
+      for (const { id, updates } of items) {
+        const result = await this.updateScheduleItem(id, updates);
+        if (result) {
+          results.push(result);
+        }
+      }
+      return results;
+    } catch (error) {
+      console.error("Database error in bulkUpdateScheduleItems:", error);
+      throw error;
+    }
+  }
+
+  // Schedule Templates CRUD
+  async getScheduleTemplates(category?: string): Promise<ScheduleTemplate[]> {
+    try {
+      const query = db.select()
+        .from(schema.scheduleTemplates)
+        .where(eq(schema.scheduleTemplates.isArchived, false));
+      
+      if (category) {
+        return await query.where(eq(schema.scheduleTemplates.category, category));
+      }
+      return await query;
+    } catch (error) {
+      console.error("Database error in getScheduleTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getScheduleTemplate(id: string): Promise<ScheduleTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.scheduleTemplates)
+        .where(eq(schema.scheduleTemplates.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getScheduleTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createScheduleTemplate(template: InsertScheduleTemplate): Promise<ScheduleTemplate> {
+    try {
+      const result = await db.insert(schema.scheduleTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createScheduleTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>): Promise<ScheduleTemplate | undefined> {
+    try {
+      const result = await db.update(schema.scheduleTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(eq(schema.scheduleTemplates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateScheduleTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteScheduleTemplate(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.scheduleTemplates)
+        .where(eq(schema.scheduleTemplates.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteScheduleTemplate:", error);
       throw error;
     }
   }

@@ -869,6 +869,7 @@ export const contacts = pgTable("contacts", {
   labels: json("labels").default([]), // Array of string tags
   projectIds: json("project_ids").default([]), // Array of associated project IDs
   avatarColor: text("avatar_color"), // Hex color for avatar background
+  scheduleColor: text("schedule_color"), // Hex color for trade/supplier color-coding in schedules
   
   // Portal access (for clients - future feature)
   portalEnabled: boolean("portal_enabled").notNull().default(false),
@@ -1537,3 +1538,147 @@ export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
 
 export const updateBudgetLineItemSchema = insertBudgetLineItemSchema.partial();
 export type UpdateBudgetLineItem = z.infer<typeof updateBudgetLineItemSchema>;
+
+// Schedules (project-level schedule with offline/online/locked states)
+export const schedules = pgTable("schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).unique(), // One schedule per project
+  name: text("name").notNull().default("Project Schedule"),
+  status: text("status").notNull().default("offline"), // "offline" | "online" | "locked"
+  description: text("description"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  lockedBy: varchar("locked_by").references(() => users.id), // Who locked it
+  lockedAt: timestamp("locked_at"), // When it was locked
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduleSchema = createInsertSchema(schedules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["offline", "online", "locked"]).default("offline"),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  lockedAt: z.coerce.date().optional(),
+});
+
+export type InsertSchedule = z.infer<typeof insertScheduleSchema>;
+export type Schedule = typeof schedules.$inferSelect;
+
+// Schedule Items (individual tasks/activities in the schedule)
+export const scheduleItems = pgTable("schedule_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull().default("task"), // "task" | "milestone" | "inspection" | "delivery" | "meeting"
+  status: text("status").notNull().default("not_started"), // "not_started" | "in_progress" | "completed" | "on_hold" | "cancelled"
+  priority: text("priority").default("medium"), // "low" | "medium" | "high" | "urgent"
+  
+  // Date and duration
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  duration: integer("duration").notNull().default(1), // Duration in days
+  actualStartDate: timestamp("actual_start_date"),
+  actualEndDate: timestamp("actual_end_date"),
+  
+  // Assignment and responsibility
+  assignedToId: varchar("assigned_to_id").references(() => contacts.id), // Contact/supplier assigned
+  assignedToName: text("assigned_to_name"), // Cached for performance
+  assignedToColor: text("assigned_to_color"), // Color from contact's scheduleColor
+  
+  // Organization
+  groupId: varchar("group_id"), // For grouping items (phases, stages)
+  groupName: text("group_name"),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id), // Link to cost code
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  
+  // Dependencies
+  predecessorIds: json("predecessor_ids").default([]), // Array of schedule item IDs that must complete first
+  
+  // Progress and completion
+  progressPercent: integer("progress_percent").notNull().default(0), // 0-100
+  completedAt: timestamp("completed_at"),
+  
+  // Rich content
+  notes: text("notes"),
+  notesHtml: text("notes_html"), // Rich text notes
+  checklistIds: json("checklist_ids").default([]), // Array of checklist template IDs linked
+  taskIds: json("task_ids").default([]), // Array of task IDs linked
+  attachments: json("attachments").default([]), // Array of attachment objects [{url, name, type}]
+  
+  // Site diary integration
+  siteDiaryEntryIds: json("site_diary_entry_ids").default([]), // Linked site diary entries
+  
+  // Display
+  color: text("color"), // Custom color override
+  sortOrder: integer("sort_order").notNull().default(0),
+  isCollapsed: boolean("is_collapsed").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["task", "milestone", "inspection", "delivery", "meeting"]).default("task"),
+  status: z.enum(["not_started", "in_progress", "completed", "on_hold", "cancelled"]).default("not_started"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  actualStartDate: z.coerce.date().optional(),
+  actualEndDate: z.coerce.date().optional(),
+  completedAt: z.coerce.date().optional(),
+  duration: z.number().default(1),
+  progressPercent: z.number().int().min(0).max(100).default(0),
+  predecessorIds: z.array(z.string()).optional(),
+  checklistIds: z.array(z.string()).optional(),
+  taskIds: z.array(z.string()).optional(),
+  attachments: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+  })).optional(),
+  siteDiaryEntryIds: z.array(z.string()).optional(),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertScheduleItem = z.infer<typeof insertScheduleItemSchema>;
+export type ScheduleItem = typeof scheduleItems.$inferSelect;
+
+// Schedule Templates (reusable schedule templates)
+export const scheduleTemplates = pgTable("schedule_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
+  templateData: json("template_data").notNull(), // Array of template schedule items (structure similar to scheduleItems)
+  isPublic: boolean("is_public").notNull().default(false), // Can other users use this template
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduleTemplateSchema = createInsertSchema(scheduleTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()), // Will contain schedule item objects without IDs
+});
+
+export type InsertScheduleTemplate = z.infer<typeof insertScheduleTemplateSchema>;
+export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
