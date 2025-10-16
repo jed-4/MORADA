@@ -326,6 +326,8 @@ export default function EstimateDetail() {
     { id: 'allowance', label: 'Allowance', visible: true, widthPx: 140 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
     { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
+    { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
+    { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
     { id: 'builderCost', label: "Builder's Cost ex Tax", visible: true, widthPx: 150 },
     { id: 'builderCostIncTax', label: "Builder's Cost inc Tax", visible: true, widthPx: 150 },
     { id: 'markup', label: 'Markup %', visible: true, widthPx: 100 },
