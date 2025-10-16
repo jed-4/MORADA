@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useParams } from "wouter";
 import { Plus, Clock, Filter, Search, Calendar, User, Check, X, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,17 +29,24 @@ import type { Timesheet, Project, User as UserType, CostCode } from "@shared/sch
 
 export default function Timesheets() {
   const { toast } = useToast();
+  const { projectId } = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedProject, setSelectedProject] = useState<string>("all");
+  const [selectedProject, setSelectedProject] = useState<string>(projectId || "all");
   const [selectedUser, setSelectedUser] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
 
-  // Fetch timesheets
+  // Fetch timesheets - project-specific or all
   const { data: timesheets = [], isLoading: loadingTimesheets } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets"],
+    queryKey: projectId ? ["/api/projects", projectId, "timesheets"] : ["/api/timesheets"],
+    queryFn: async () => {
+      const url = projectId ? `/api/projects/${projectId}/timesheets` : "/api/timesheets";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch timesheets");
+      return res.json();
+    },
   });
 
   // Fetch projects for filter
@@ -59,6 +67,10 @@ export default function Timesheets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
+      }
       toast({
         title: "Timesheet submitted",
         description: "The timesheet has been submitted for approval.",
@@ -73,6 +85,10 @@ export default function Timesheets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); // Refresh labour hours
       toast({
         title: "Timesheet approved",
@@ -88,6 +104,10 @@ export default function Timesheets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
+      }
       toast({
         title: "Timesheet rejected",
         description: "The timesheet has been rejected.",
@@ -143,12 +163,17 @@ export default function Timesheets() {
     return `${h}:${m.toString().padStart(2, '0')}`;
   };
 
+  // Get current project if in project context
+  const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="heading-timesheets">Timesheets</h1>
+          <h1 className="text-3xl font-bold" data-testid="heading-timesheets">
+            {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
+          </h1>
           <p className="text-muted-foreground">Track and manage time entries</p>
         </div>
         <Button
@@ -166,7 +191,7 @@ export default function Timesheets() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className={`grid gap-4 ${projectId ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-muted-foreground" />
@@ -179,21 +204,24 @@ export default function Timesheets() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger data-testid="select-filter-project">
-                  <SelectValue placeholder="All Projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Only show project filter when not in project context */}
+            {!projectId && (
+              <div className="space-y-2">
+                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <SelectTrigger data-testid="select-filter-project">
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Select value={selectedUser} onValueChange={setSelectedUser}>

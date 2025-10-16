@@ -216,8 +216,14 @@ export function TimesheetDialog({
         return created;
       }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      // Invalidate project-specific queries
+      const projectId = data.projectId || form.getValues("projectId");
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
+      }
       toast({
         title: timesheet ? "Timesheet updated" : "Timesheet created",
         description: timesheet ? "The timesheet has been updated successfully." : "The timesheet has been created successfully.",

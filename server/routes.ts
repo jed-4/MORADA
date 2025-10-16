@@ -4416,6 +4416,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Timesheet routes
+  app.get("/api/projects/:projectId/timesheets", async (req, res) => {
+    try {
+      const timesheets = await storage.getTimesheets(req.params.projectId);
+      res.json(timesheets);
+    } catch (error: any) {
+      res.status(500).json({
+        error: "Failed to get project timesheets",
+        details: error.message
+      });
+    }
+  });
+
   app.get("/api/timesheets", async (req, res) => {
     try {
       const { projectId, userId, startDate, endDate, status, costCodeId, invoiced } = req.query;
