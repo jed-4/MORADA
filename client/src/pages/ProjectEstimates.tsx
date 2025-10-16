@@ -186,7 +186,7 @@ export default function ProjectEstimates() {
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD'
-    }).format(amount);
+    }).format(amount / 100);
   };
 
   const getStatusBadge = (estimate: Estimate) => {
