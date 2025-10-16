@@ -4416,8 +4416,32 @@ export class DbStorage implements IStorage {
     console.log(`createProject: Successfully saved project ${project.name} to database`);
     return project;
   }
-  async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> { return undefined; }
-  async deleteProject(id: string): Promise<boolean> { return false; }
+  async updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined> {
+    try {
+      const result = await db
+        .update(schema.projects)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(schema.projects.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateProject:", error);
+      return undefined;
+    }
+  }
+  
+  async deleteProject(id: string): Promise<boolean> {
+    try {
+      const result = await db
+        .delete(schema.projects)
+        .where(eq(schema.projects.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteProject:", error);
+      return false;
+    }
+  }
   async getTaskViews(ownerId?: string): Promise<TaskView[]> { return []; }
   async getTaskView(id: string): Promise<TaskView | undefined> { return undefined; }
   async createTaskView(view: InsertTaskView): Promise<TaskView> { throw new Error("Not implemented"); }
