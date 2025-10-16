@@ -1695,11 +1695,15 @@ export default function EstimateDetail() {
 
   // Helper function to calculate two-tier pricing values
   const calculatePricingValues = (item: EstimateItem) => {
+    // Unit cost with tax
+    const taxRate = estimate?.taxRate ?? 10;
+    const unitCostTax = Math.round((item.unitCostExTax * taxRate) / 100); // in cents
+    const unitCostIncTax = item.unitCostExTax + unitCostTax; // in cents
+    
     // Builder's cost (what builder pays)
     const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100); // in cents
     
     // Builder's cost with tax
-    const taxRate = estimate?.taxRate ?? 10;
     const builderCostTax = Math.round((builderCost * taxRate) / 100); // in cents
     const builderCostIncTax = builderCost + builderCostTax; // in cents
     
@@ -1712,6 +1716,7 @@ export default function EstimateDetail() {
     const clientPriceExTax = clientPriceIncTax - clientTax; // in cents
     
     return {
+      unitCostIncTax, // in cents
       builderCost, // in cents
       builderCostIncTax, // in cents
       markupPercent, // percentage (10 = 10%)
@@ -2328,6 +2333,47 @@ export default function EstimateDetail() {
             data-testid={`cell-unitType-${item.id}`}
           >
             {item.unitType || '-'}
+          </TableCell>
+        );
+      
+      case 'unitCostExTax':
+        if (isEditing) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostExTax')}
+                onBlur={() => handleCellSave(item, 'unitCostExTax')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                min="0"
+                step="0.01"
+                data-testid={`input-edit-unitCostExTax-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
+        return (
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? '' : 'Double-click to edit'}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'unitCostExTax');
+            }}
+            data-testid={`cell-unitCostExTax-${item.id}`}
+          >
+            {formatCurrency(item.unitCostExTax)}
+          </TableCell>
+        );
+      
+      case 'unitCostIncTax':
+        const unitCostIncTax = pricingValues.unitCostIncTax || 0;
+        return (
+          <TableCell className="py-0.5 text-sm text-muted-foreground" data-testid={`cell-unitCostIncTax-${item.id}`}>
+            {formatCurrency(unitCostIncTax)}
           </TableCell>
         );
       
