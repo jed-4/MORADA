@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar, User, Check, X, Send } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, Send, CalendarRange } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +21,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +39,9 @@ export default function Timesheets() {
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
+  const [dateRangeType, setDateRangeType] = useState<string>("all");
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
 
   // Fetch timesheets - project-specific or all
   const { data: timesheets = [], isLoading: loadingTimesheets } = useQuery<Timesheet[]>({
@@ -115,6 +120,32 @@ export default function Timesheets() {
     },
   });
 
+  // Get date range based on selection
+  const getDateRange = (): { start: Date; end: Date } | null => {
+    const now = new Date();
+    
+    switch (dateRangeType) {
+      case "this-week":
+        return {
+          start: startOfWeek(now, { weekStartsOn: 1 }), // Monday
+          end: endOfWeek(now, { weekStartsOn: 1 }), // Sunday
+        };
+      case "last-week":
+        const lastWeek = addWeeks(now, -1);
+        return {
+          start: startOfWeek(lastWeek, { weekStartsOn: 1 }),
+          end: endOfWeek(lastWeek, { weekStartsOn: 1 }),
+        };
+      case "custom":
+        if (customStartDate && customEndDate) {
+          return { start: customStartDate, end: customEndDate };
+        }
+        return null;
+      default:
+        return null;
+    }
+  };
+
   // Filter timesheets
   const filteredTimesheets = timesheets.filter((timesheet) => {
     const matchesSearch = searchTerm === "" || 
@@ -124,8 +155,22 @@ export default function Timesheets() {
     const matchesStatus = selectedStatus === "all" || timesheet.status === selectedStatus;
     const matchesInvoiced = !showInvoicedOnly || timesheet.invoiced;
 
-    return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesInvoiced;
+    // Date range filter
+    const dateRange = getDateRange();
+    const matchesDateRange = !dateRange || isWithinInterval(parseISO(timesheet.date as unknown as string), {
+      start: dateRange.start,
+      end: dateRange.end,
+    });
+
+    return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesInvoiced && matchesDateRange;
   });
+
+  // Get date range display text
+  const getDateRangeText = (): string => {
+    const range = getDateRange();
+    if (!range) return "";
+    return `${format(range.start, "dd MMM yyyy")} - ${format(range.end, "dd MMM yyyy")}`;
+  };
 
   // Get project name
   const getProjectName = (projectId: string) => {
@@ -191,68 +236,142 @@ export default function Timesheets() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className={`grid gap-4 ${projectId ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search description..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search-timesheets"
-                />
-              </div>
-            </div>
-
-            {/* Only show project filter when not in project context */}
-            {!projectId && (
+          <div className="space-y-4">
+            <div className={`grid gap-4 ${projectId ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-5'}`}>
               <div className="space-y-2">
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger data-testid="select-filter-project">
-                    <SelectValue placeholder="All Projects" />
+                <div className="flex items-center gap-2">
+                  <Search className="w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search description..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    data-testid="input-search-timesheets"
+                  />
+                </div>
+              </div>
+
+              {/* Only show project filter when not in project context */}
+              {!projectId && (
+                <div className="space-y-2">
+                  <Select value={selectedProject} onValueChange={setSelectedProject}>
+                    <SelectTrigger data-testid="select-filter-project">
+                      <SelectValue placeholder="All Projects" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Projects</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Select value={selectedUser} onValueChange={setSelectedUser}>
+                  <SelectTrigger data-testid="select-filter-user">
+                    <SelectValue placeholder="All Users" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Projects</SelectItem>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
+                    <SelectItem value="all">All Users</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {`${user.firstName} ${user.lastName}`.trim() || user.username}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger data-testid="select-filter-status">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="submitted">Submitted</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Select value={dateRangeType} onValueChange={(value) => {
+                  setDateRangeType(value);
+                  if (value !== "custom") {
+                    setCustomStartDate(undefined);
+                    setCustomEndDate(undefined);
+                  }
+                }}>
+                  <SelectTrigger data-testid="select-filter-date-range">
+                    <SelectValue placeholder="All Time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="last-week">Last Week</SelectItem>
+                    <SelectItem value="custom">Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Custom Date Range Pickers */}
+            {dateRangeType === "custom" && (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <CalendarRange className="w-4 h-4 text-muted-foreground" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="justify-start" data-testid="button-start-date">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {customStartDate ? format(customStartDate, "dd MMM yyyy") : "Start Date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={customStartDate}
+                        onSelect={setCustomStartDate}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  <span className="text-muted-foreground">to</span>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="justify-start" data-testid="button-end-date">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {customEndDate ? format(customEndDate, "dd MMM yyyy") : "End Date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={customEndDate}
+                        onSelect={setCustomEndDate}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
             )}
 
-            <div className="space-y-2">
-              <Select value={selectedUser} onValueChange={setSelectedUser}>
-                <SelectTrigger data-testid="select-filter-user">
-                  <SelectValue placeholder="All Users" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Users</SelectItem>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {`${user.firstName} ${user.lastName}`.trim() || user.username}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger data-testid="select-filter-status">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="submitted">Submitted</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Date Range Display */}
+            {dateRangeType !== "all" && dateRangeType !== "custom" && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CalendarRange className="w-4 h-4" />
+                <span>{getDateRangeText()}</span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
