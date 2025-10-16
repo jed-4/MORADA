@@ -1682,3 +1682,13 @@ export const insertScheduleTemplateSchema = createInsertSchema(scheduleTemplates
 
 export type InsertScheduleTemplate = z.infer<typeof insertScheduleTemplateSchema>;
 export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
+
+// Update schemas for schedules
+export const updateScheduleSchema = insertScheduleSchema.partial();
+export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;
+
+export const updateScheduleItemSchema = insertScheduleItemSchema.partial();
+export type UpdateScheduleItem = z.infer<typeof updateScheduleItemSchema>;
+
+export const updateScheduleTemplateSchema = insertScheduleTemplateSchema.partial();
+export type UpdateScheduleTemplate = z.infer<typeof updateScheduleTemplateSchema>;

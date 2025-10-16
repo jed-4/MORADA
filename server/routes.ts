@@ -48,7 +48,13 @@ import {
   insertChecklistTemplateGroupSchema,
   insertChecklistTemplateItemSchema,
   updateBudgetSchema,
-  updateBudgetLineItemSchema
+  updateBudgetLineItemSchema,
+  insertScheduleSchema,
+  updateScheduleSchema,
+  insertScheduleItemSchema,
+  updateScheduleItemSchema,
+  insertScheduleTemplateSchema,
+  updateScheduleTemplateSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -4379,6 +4385,291 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to update budget line item",
+        details: error.message 
+      });
+    }
+  });
+
+  // Schedule routes
+  app.get("/api/projects/:projectId/schedule", async (req, res) => {
+    try {
+      const schedule = await storage.getSchedule(req.params.projectId);
+      if (!schedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      res.json(schedule);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedule",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/schedules", async (req, res) => {
+    try {
+      const validationResult = insertScheduleSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const schedule = await storage.createSchedule(validationResult.data);
+      res.status(201).json(schedule);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create schedule",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/schedules/:id", async (req, res) => {
+    try {
+      const validationResult = updateScheduleSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const schedule = await storage.updateSchedule(req.params.id, validationResult.data);
+      if (!schedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      res.json(schedule);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update schedule",
+        details: error.message 
+      });
+    }
+  });
+
+  app.put("/api/schedules/:id/status", async (req, res) => {
+    try {
+      const { status } = req.body;
+      if (!["offline", "online", "locked"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be offline, online, or locked" });
+      }
+      
+      const userId = req.user?.id;
+      const schedule = await storage.updateScheduleStatus(req.params.id, status, userId);
+      if (!schedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      res.json(schedule);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update schedule status",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/schedules/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteSchedule(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete schedule",
+        details: error.message 
+      });
+    }
+  });
+
+  // Schedule Items routes
+  app.get("/api/schedules/:scheduleId/items", async (req, res) => {
+    try {
+      const items = await storage.getScheduleItems(req.params.scheduleId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedule items",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/schedule-items/:id", async (req, res) => {
+    try {
+      const item = await storage.getScheduleItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedule item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/schedule-items", async (req, res) => {
+    try {
+      const validationResult = insertScheduleItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const item = await storage.createScheduleItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create schedule item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/schedule-items/:id", async (req, res) => {
+    try {
+      const validationResult = updateScheduleItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const item = await storage.updateScheduleItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update schedule item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/schedule-items/bulk", async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "Expected items array" });
+      }
+      
+      const updatedItems = await storage.bulkUpdateScheduleItems(items);
+      res.json(updatedItems);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to bulk update schedule items",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/schedule-items/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteScheduleItem(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete schedule item",
+        details: error.message 
+      });
+    }
+  });
+
+  // Schedule Templates routes
+  app.get("/api/schedule-templates", async (req, res) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getScheduleTemplates(category);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedule templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/schedule-templates/:id", async (req, res) => {
+    try {
+      const template = await storage.getScheduleTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedule template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/schedule-templates", async (req, res) => {
+    try {
+      const validationResult = insertScheduleTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const template = await storage.createScheduleTemplate(validationResult.data);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create schedule template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/schedule-templates/:id", async (req, res) => {
+    try {
+      const validationResult = updateScheduleTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const template = await storage.updateScheduleTemplate(req.params.id, validationResult.data);
+      if (!template) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update schedule template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/schedule-templates/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteScheduleTemplate(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete schedule template",
         details: error.message 
       });
     }
