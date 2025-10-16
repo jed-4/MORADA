@@ -240,6 +240,39 @@ export default function Schedule() {
     if (filters.status !== "all" && item.status !== filters.status) return false;
     if (filters.assignee !== "all" && item.assignedToId !== filters.assignee) return false;
     if (filters.type !== "all" && item.type !== filters.type) return false;
+    
+    // Date range filtering
+    if (filters.dateRange !== "all") {
+      const now = new Date();
+      const itemStart = new Date(item.startDate);
+      const itemEnd = new Date(item.endDate);
+      
+      switch (filters.dateRange) {
+        case "today":
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          if (itemEnd < today || itemStart >= tomorrow) return false;
+          break;
+        case "this_week":
+          const weekStart = new Date(now);
+          weekStart.setDate(now.getDate() - now.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 7);
+          if (itemEnd < weekStart || itemStart >= weekEnd) return false;
+          break;
+        case "this_month":
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+          if (itemEnd < monthStart || itemStart >= monthEnd) return false;
+          break;
+        case "overdue":
+          if (itemEnd >= now || item.status === "completed") return false;
+          break;
+      }
+    }
+    
     return true;
   });
 
@@ -260,7 +293,7 @@ export default function Schedule() {
                 </Badge>
                 {schedule?.status === "locked" && schedule?.lockedBy && (
                   <span className="text-sm text-muted-foreground">
-                    Locked by {schedule.createdByName}
+                    {schedule.lockedByName ? `Locked by ${schedule.lockedByName}` : "Locked"}
                   </span>
                 )}
               </div>
@@ -405,6 +438,25 @@ export default function Schedule() {
                     <SelectItem value="inspection">Inspection</SelectItem>
                     <SelectItem value="delivery">Delivery</SelectItem>
                     <SelectItem value="meeting">Meeting</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex-1">
+                <Label className="text-xs">Date Range</Label>
+                <Select
+                  value={filters.dateRange}
+                  onValueChange={(value) => setFilters({ ...filters, dateRange: value })}
+                >
+                  <SelectTrigger data-testid="select-filter-date-range">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Dates</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="this_week">This Week</SelectItem>
+                    <SelectItem value="this_month">This Month</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -1552,6 +1552,7 @@ export const schedules = pgTable("schedules", {
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   lockedBy: varchar("locked_by").references(() => users.id), // Who locked it
+  lockedByName: text("locked_by_name"), // Name of who locked it
   lockedAt: timestamp("locked_at"), // When it was locked
   isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),

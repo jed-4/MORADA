@@ -6767,10 +6767,24 @@ export class DbStorage implements IStorage {
     try {
       const updates: any = { status, updatedAt: new Date() };
       if (status === "locked" && userId) {
+        // Get user name for lockedByName
+        const user = await db.select()
+          .from(schema.users)
+          .where(eq(schema.users.id, userId))
+          .limit(1);
+        
         updates.lockedBy = userId;
+        if (user[0]) {
+          const firstName = user[0].firstName || '';
+          const lastName = user[0].lastName || '';
+          updates.lockedByName = `${firstName} ${lastName}`.trim() || user[0].username || null;
+        } else {
+          updates.lockedByName = null;
+        }
         updates.lockedAt = new Date();
       } else if (status !== "locked") {
         updates.lockedBy = null;
+        updates.lockedByName = null;
         updates.lockedAt = null;
       }
       const result = await db.update(schema.schedules)
