@@ -757,9 +757,8 @@ export default function EstimateDetail() {
       <div className="flex h-full flex-col">
         <div className="border-b border-border p-4">
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Estimates
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} aria-label="Back to Estimates">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
             <h1 className="text-2xl font-semibold">New Estimate</h1>
           </div>
@@ -2468,9 +2467,8 @@ export default function EstimateDetail() {
       <div className="flex h-full flex-col">
         <div className="border-b border-border p-4">
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Estimates
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} aria-label="Back to Estimates">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
             <div className="h-6 bg-gray-300 rounded w-48 animate-pulse"></div>
           </div>
@@ -2490,9 +2488,8 @@ export default function EstimateDetail() {
       <div className="flex h-full flex-col">
         <div className="border-b border-border p-4">
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Estimates
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} aria-label="Back to Estimates">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -2515,9 +2512,8 @@ export default function EstimateDetail() {
         {/* Header */}
         <div className="border-b border-border p-4">
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Estimates
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} aria-label="Back to Estimates">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
             <h1 className="text-2xl font-semibold">New Estimate</h1>
           </div>
@@ -2589,9 +2585,8 @@ export default function EstimateDetail() {
       <div className="bg-white dark:bg-gray-950 border-b border-border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" onClick={() => setLocation("/estimates")} data-testid="button-back-to-estimates">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Estimates
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} data-testid="button-back-to-estimates" aria-label="Back to Estimates">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
               {isEditingName ? (
