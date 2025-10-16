@@ -202,7 +202,7 @@ function SortableGroupRow({
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
-  columns: typeof ESTIMATE_COLUMNS;
+  columns: Array<{ id: string; label: string; visible: boolean; widthPx: number }>;
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
   renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
 }) {
