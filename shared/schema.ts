@@ -438,6 +438,7 @@ export const estimateItems = pgTable("estimate_items", {
   isSelection: boolean("is_selection").notNull().default(false), // Can link to Selections section
   proposalVisible: boolean("proposal_visible").notNull().default(true), // Show/hide in proposal (renamed from visibleInProposal)
   shownAs: text("shown_as"), // Custom text to display in proposal instead of item name
+  trackLabourHours: boolean("track_labour_hours").notNull().default(false), // Include in labour hours budget tracking
   order: integer("order").notNull().default(0), // For sorting within groups
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1538,6 +1539,36 @@ export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
 
 export const updateBudgetLineItemSchema = insertBudgetLineItemSchema.partial();
 export type UpdateBudgetLineItem = z.infer<typeof updateBudgetLineItemSchema>;
+
+// Labour Hours Budget (tracking labour hours vs budget)
+export const labourHoursBudget = pgTable("labour_hours_budget", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  categoryTitle: text("category_title"), // Cached category name
+  budgetedHours: numeric("budgeted_hours", { precision: 10, scale: 2 }).notNull().default("0"), // From flagged estimate items (rounded to 0.25)
+  pendingHours: numeric("pending_hours", { precision: 10, scale: 2 }).notNull().default("0"), // From unapproved timesheets
+  approvedHours: numeric("approved_hours", { precision: 10, scale: 2 }).notNull().default("0"), // From approved timesheets
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertLabourHoursBudgetSchema = createInsertSchema(labourHoursBudget).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  budgetedHours: z.number().default(0),
+  pendingHours: z.number().default(0),
+  approvedHours: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertLabourHoursBudget = z.infer<typeof insertLabourHoursBudgetSchema>;
+export type LabourHoursBudget = typeof labourHoursBudget.$inferSelect;
 
 // Schedules (project-level schedule with offline/online/locked states)
 export const schedules = pgTable("schedules", {
