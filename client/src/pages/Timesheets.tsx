@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, Send, CalendarRange } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, Send, CalendarRange, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -211,6 +212,56 @@ export default function Timesheets() {
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
 
+  // Export timesheets to Excel
+  const handleExport = () => {
+    const exportData = filteredTimesheets.map((timesheet) => ({
+      Date: format(new Date(timesheet.date), "dd/MM/yyyy"),
+      User: getUserName(timesheet.userId),
+      Project: getProjectName(timesheet.projectId),
+      "Start Time": timesheet.startTime || "-",
+      "End Time": timesheet.endTime || "-",
+      "Break (hrs)": timesheet.breakDuration ? parseFloat(timesheet.breakDuration).toFixed(2) : "0.00",
+      "Duration (hrs)": parseFloat(timesheet.duration).toFixed(2),
+      "Hourly Rate": `$${parseFloat(timesheet.hourlyRate || "0").toFixed(2)}`,
+      Total: `$${parseFloat(timesheet.total || "0").toFixed(2)}`,
+      Status: timesheet.status.charAt(0).toUpperCase() + timesheet.status.slice(1),
+      Invoiced: timesheet.invoiced ? "Yes" : "No",
+      Description: timesheet.description || "-",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Timesheets");
+
+    // Auto-size columns
+    const colWidths = [
+      { wch: 12 }, // Date
+      { wch: 20 }, // User
+      { wch: 25 }, // Project
+      { wch: 12 }, // Start Time
+      { wch: 12 }, // End Time
+      { wch: 12 }, // Break
+      { wch: 14 }, // Duration
+      { wch: 14 }, // Hourly Rate
+      { wch: 12 }, // Total
+      { wch: 12 }, // Status
+      { wch: 10 }, // Invoiced
+      { wch: 40 }, // Description
+    ];
+    worksheet["!cols"] = colWidths;
+
+    const fileName = currentProject
+      ? `${currentProject.name}_Timesheets_${format(new Date(), "yyyy-MM-dd")}.xlsx`
+      : `Timesheets_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${filteredTimesheets.length} timesheets to ${fileName}`,
+    });
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -221,16 +272,27 @@ export default function Timesheets() {
           </h1>
           <p className="text-muted-foreground">Track and manage time entries</p>
         </div>
-        <Button
-          onClick={() => {
-            setSelectedTimesheet(undefined);
-            setIsDialogOpen(true);
-          }}
-          data-testid="button-add-timesheet"
-        >
-          <Clock className="w-4 h-4 mr-2" />
-          Clock In
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={filteredTimesheets.length === 0}
+            data-testid="button-export-timesheets"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+          <Button
+            onClick={() => {
+              setSelectedTimesheet(undefined);
+              setIsDialogOpen(true);
+            }}
+            data-testid="button-add-timesheet"
+          >
+            <Clock className="w-4 h-4 mr-2" />
+            Clock In
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
