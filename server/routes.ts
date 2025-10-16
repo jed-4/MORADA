@@ -33,6 +33,7 @@ import {
   insertBillSchema,
   insertBillLineItemSchema,
   insertBillApprovalSchema,
+  insertBillLineItemAllowanceSchema,
   insertVariationSchema,
   insertVariationItemSchema,
   insertClientInvoiceSchema,
@@ -2470,6 +2471,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item" });
+    }
+  });
+
+  // Bill Line Item Allowances routes
+  app.get("/api/bills/:billId/line-item-allowances", async (req, res) => {
+    try {
+      const allowances = await storage.getBillLineItemAllowancesByBillId(req.params.billId);
+      res.json(allowances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch bill line item allowances" });
+    }
+  });
+
+  app.post("/api/bill-line-item-allowances", async (req, res) => {
+    try {
+      const validationResult = insertBillLineItemAllowanceSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const allowance = await storage.createBillLineItemAllowance(validationResult.data);
+      res.status(201).json(allowance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create bill line item allowance" });
+    }
+  });
+
+  app.delete("/api/bill-line-item-allowances/:id", async (req, res) => {
+    try {
+      await storage.deleteBillLineItemAllowance(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete bill line item allowance" });
     }
   });
 

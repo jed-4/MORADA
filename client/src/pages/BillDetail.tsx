@@ -63,7 +63,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval } from "@shared/schema";
+import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillLineItemAllowance, EstimateItem } from "@shared/schema";
 
 const billFormSchema = z.object({
   billNumber: z.string().min(1, "Bill number is required"),
@@ -94,6 +94,8 @@ type LineItem = {
   account: string;
   total: number;
   order: number;
+  appliesToAllowances: boolean;
+  allowanceItemId?: string;
 };
 
 export default function BillDetail() {
@@ -142,6 +144,27 @@ export default function BillDetail() {
     enabled: isEditMode,
   });
 
+  const currentProjectId = form.watch("projectId") || bill?.projectId;
+
+  const { data: allowances = [], isLoading: allowancesLoading } = useQuery<EstimateItem[]>({
+    queryKey: ["/api/projects", currentProjectId, "allowances"],
+    queryFn: async () => {
+      if (!currentProjectId) return [];
+      const response = await fetch(`/api/projects/${currentProjectId}/allowances`);
+      if (!response.ok) throw new Error("Failed to fetch allowances");
+      const data = await response.json();
+      return data
+        .filter((item: any) => item.item.itemType === "Prime Cost" || item.item.itemType === "Provisional Sum")
+        .map((item: any) => item.item);
+    },
+    enabled: !!currentProjectId,
+  });
+
+  const { data: existingAllowances = [] } = useQuery<BillLineItemAllowance[]>({
+    queryKey: ["/api/bills", id, "line-item-allowances"],
+    enabled: isEditMode,
+  });
+
   const form = useForm<BillFormData>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
@@ -182,22 +205,27 @@ export default function BillDetail() {
   useEffect(() => {
     if (existingLineItems.length > 0 && isEditMode) {
       setLineItems(
-        existingLineItems.map((item) => ({
-          id: item.id,
-          lineType: item.lineType as "estimate" | "item" | "custom",
-          description: item.description,
-          costCodeId: item.costCodeId || undefined,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice / 100,
-          unit: "",
-          tax: item.tax as "GST on expenses" | "No GST",
-          account: item.account || "",
-          total: item.total / 100,
-          order: item.order,
-        }))
+        existingLineItems.map((item) => {
+          const allowance = existingAllowances.find(a => a.billLineItemId === item.id);
+          return {
+            id: item.id,
+            lineType: item.lineType as "estimate" | "item" | "custom",
+            description: item.description,
+            costCodeId: item.costCodeId || undefined,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice / 100,
+            unit: "",
+            tax: item.tax as "GST on expenses" | "No GST",
+            account: item.account || "",
+            total: item.total / 100,
+            order: item.order,
+            appliesToAllowances: !!allowance,
+            allowanceItemId: allowance?.estimateItemId,
+          };
+        })
       );
     }
-  }, [existingLineItems, isEditMode]);
+  }, [existingLineItems, existingAllowances, isEditMode]);
 
   useEffect(() => {
     if (!isEditMode && projects.length > 0) {
@@ -224,6 +252,8 @@ export default function BillDetail() {
         account: "",
         total: 0,
         order: lineItems.length,
+        appliesToAllowances: false,
+        allowanceItemId: undefined,
       },
     ]);
   };
@@ -1140,6 +1170,7 @@ export default function BillDetail() {
                       <TableHead className="w-40">Tax</TableHead>
                       <TableHead className="w-32">Account</TableHead>
                       <TableHead className="w-32">Amount</TableHead>
+                      <TableHead className="w-48">Allowance</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1257,6 +1288,39 @@ export default function BillDetail() {
                             }
                             data-testid={`input-amount-${index}`}
                           />
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={item.appliesToAllowances}
+                                onCheckedChange={(checked) =>
+                                  updateLineItem(index, "appliesToAllowances", checked === true)
+                                }
+                                data-testid={`checkbox-applies-to-allowances-${index}`}
+                              />
+                              <label className="text-sm">Applies to Allowances</label>
+                            </div>
+                            {item.appliesToAllowances && (
+                              <Select
+                                value={item.allowanceItemId || ""}
+                                onValueChange={(value) =>
+                                  updateLineItem(index, "allowanceItemId", value)
+                                }
+                              >
+                                <SelectTrigger data-testid={`select-allowance-${index}`}>
+                                  <SelectValue placeholder="Select allowance..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {allowances.map((allowance) => (
+                                    <SelectItem key={allowance.id} value={allowance.id}>
+                                      {allowance.description} ({allowance.itemType})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Button

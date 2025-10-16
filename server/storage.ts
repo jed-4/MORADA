@@ -299,6 +299,13 @@ export interface IStorage {
   updateBillLineItem(id: string, item: Partial<InsertBillLineItem>): Promise<BillLineItem>;
   deleteBillLineItem(id: string): Promise<void>;
 
+  // Bill Line Item Allowances
+  getBillLineItemAllowances(billLineItemId: string): Promise<BillLineItemAllowance[]>;
+  getBillLineItemAllowancesByBillId(billId: string): Promise<BillLineItemAllowance[]>;
+  createBillLineItemAllowance(allowance: InsertBillLineItemAllowance): Promise<BillLineItemAllowance>;
+  deleteBillLineItemAllowance(id: string): Promise<void>;
+  deleteBillLineItemAllowancesByLineItemId(billLineItemId: string): Promise<void>;
+
   // Bill Approvals
   getBillApprovals(billId: string): Promise<BillApproval[]>;
   createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
@@ -5710,6 +5717,69 @@ export class DbStorage implements IStorage {
         .where(eq(schema.billLineItems.id, id));
     } catch (error) {
       console.error("Database error in deleteBillLineItem:", error);
+      throw error;
+    }
+  }
+
+  async getBillLineItemAllowances(billLineItemId: string): Promise<BillLineItemAllowance[]> {
+    try {
+      const allowances = await db.select()
+        .from(schema.billLineItemAllowances)
+        .where(eq(schema.billLineItemAllowances.billLineItemId, billLineItemId));
+      return allowances;
+    } catch (error) {
+      console.error("Database error in getBillLineItemAllowances:", error);
+      throw error;
+    }
+  }
+
+  async getBillLineItemAllowancesByBillId(billId: string): Promise<BillLineItemAllowance[]> {
+    try {
+      const allowances = await db.select({
+        id: schema.billLineItemAllowances.id,
+        billLineItemId: schema.billLineItemAllowances.billLineItemId,
+        estimateItemId: schema.billLineItemAllowances.estimateItemId,
+        amount: schema.billLineItemAllowances.amount,
+        createdAt: schema.billLineItemAllowances.createdAt,
+      })
+        .from(schema.billLineItemAllowances)
+        .innerJoin(schema.billLineItems, eq(schema.billLineItemAllowances.billLineItemId, schema.billLineItems.id))
+        .where(eq(schema.billLineItems.billId, billId));
+      return allowances as BillLineItemAllowance[];
+    } catch (error) {
+      console.error("Database error in getBillLineItemAllowancesByBillId:", error);
+      throw error;
+    }
+  }
+
+  async createBillLineItemAllowance(allowance: InsertBillLineItemAllowance): Promise<BillLineItemAllowance> {
+    try {
+      const [newAllowance] = await db.insert(schema.billLineItemAllowances)
+        .values(allowance)
+        .returning();
+      return newAllowance;
+    } catch (error) {
+      console.error("Database error in createBillLineItemAllowance:", error);
+      throw error;
+    }
+  }
+
+  async deleteBillLineItemAllowance(id: string): Promise<void> {
+    try {
+      await db.delete(schema.billLineItemAllowances)
+        .where(eq(schema.billLineItemAllowances.id, id));
+    } catch (error) {
+      console.error("Database error in deleteBillLineItemAllowance:", error);
+      throw error;
+    }
+  }
+
+  async deleteBillLineItemAllowancesByLineItemId(billLineItemId: string): Promise<void> {
+    try {
+      await db.delete(schema.billLineItemAllowances)
+        .where(eq(schema.billLineItemAllowances.billLineItemId, billLineItemId));
+    } catch (error) {
+      console.error("Database error in deleteBillLineItemAllowancesByLineItemId:", error);
       throw error;
     }
   }
