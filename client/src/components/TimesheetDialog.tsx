@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Timesheet, Project, User as UserType, CostCode, TimesheetCostCode } from "@shared/schema";
+import type { Timesheet, Project, User as UserType, CostCode, TimesheetCostCode, CompanySettings } from "@shared/schema";
 
 const timesheetSchema = z.object({
   projectId: z.string().min(1, "Project is required"),
@@ -81,6 +81,8 @@ export function TimesheetDialog({
   const [timeEntryMode, setTimeEntryMode] = useState<"time" | "duration">("time");
   const [isSplit, setIsSplit] = useState(false);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
+  const startTimeViewportRef = useRef<HTMLDivElement>(null);
+  const endTimeViewportRef = useRef<HTMLDivElement>(null);
 
   // Fetch projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -96,6 +98,38 @@ export function TimesheetDialog({
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
   });
+
+  // Fetch company settings for standard work hours
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Generate 15-minute interval time options
+  const generateTimeOptions = () => {
+    const options: string[] = [];
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 15) {
+        const hourStr = hour.toString().padStart(2, '0');
+        const minStr = minute.toString().padStart(2, '0');
+        options.push(`${hourStr}:${minStr}`);
+      }
+    }
+    return options;
+  };
+
+  const timeOptions = generateTimeOptions();
+
+  // Scroll to default time in Select dropdown
+  const scrollToTime = (viewportRef: React.RefObject<HTMLDivElement>, time: string) => {
+    if (!viewportRef.current) return;
+    
+    setTimeout(() => {
+      const selectedItem = viewportRef.current?.querySelector(`[data-value="${time}"]`);
+      if (selectedItem) {
+        selectedItem.scrollIntoView({ block: 'center', behavior: 'instant' });
+      }
+    }, 0);
+  };
 
   const form = useForm<TimesheetFormData>({
     resolver: zodResolver(timesheetSchema),
@@ -413,9 +447,29 @@ export function TimesheetDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Start Time</FormLabel>
-                      <FormControl>
-                        <Input type="time" {...field} data-testid="input-start-time" />
-                      </FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                        onOpenChange={(open) => {
+                          if (open && !field.value) {
+                            const defaultTime = companySettings?.standardWorkStart || "07:00";
+                            scrollToTime(startTimeViewportRef, defaultTime);
+                          }
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-start-time">
+                            <SelectValue placeholder="Select start time" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="max-h-[300px]" ref={startTimeViewportRef}>
+                          {timeOptions.map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {time}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -427,9 +481,29 @@ export function TimesheetDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>End Time</FormLabel>
-                      <FormControl>
-                        <Input type="time" {...field} data-testid="input-end-time" />
-                      </FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                        onOpenChange={(open) => {
+                          if (open && !field.value) {
+                            const defaultTime = companySettings?.standardWorkEnd || "15:30";
+                            scrollToTime(endTimeViewportRef, defaultTime);
+                          }
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-end-time">
+                            <SelectValue placeholder="Select end time" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="max-h-[300px]" ref={endTimeViewportRef}>
+                          {timeOptions.map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {time}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
