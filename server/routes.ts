@@ -4415,6 +4415,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Allowances routes
+  app.get("/api/projects/:projectId/allowances", async (req, res) => {
+    try {
+      const allowances = await storage.getProjectAllowances(req.params.projectId);
+      res.json(allowances);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch allowances",
+        details: error.message 
+      });
+    }
+  });
+
   // Timesheet routes
   app.get("/api/projects/:projectId/timesheets", async (req, res) => {
     try {

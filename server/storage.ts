@@ -56,7 +56,7 @@ import {
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
-import { eq, or, and, desc, gte, lte, sql } from "drizzle-orm";
+import { eq, or, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 
@@ -180,6 +180,7 @@ export interface IStorage {
   bulkCreateEstimateItems(items: InsertEstimateItem[]): Promise<EstimateItem[]>;
   updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined>;
   deleteEstimateItem(id: string): Promise<boolean>;
+  getProjectAllowances(projectId: string): Promise<any[]>;
 
   // Estimate Groups CRUD
   getEstimateGroups(estimateId: string): Promise<EstimateGroup[]>;
@@ -2543,6 +2544,43 @@ export class MemStorage implements IStorage {
     return this.estimateItems.delete(id);
   }
 
+  async getProjectAllowances(projectId: string): Promise<any[]> {
+    // Get all estimates for this project
+    const estimates = Array.from(this.estimates.values())
+      .filter(e => e.projectId === projectId);
+    
+    const estimateIds = estimates.map(e => e.id);
+    if (estimateIds.length === 0) return [];
+    
+    // Get all PC/PS items from these estimates
+    const allowanceItems = Array.from(this.estimateItems.values())
+      .filter(item => 
+        estimateIds.includes(item.estimateId) && 
+        (item.allowance === "Prime Cost" || item.allowance === "Provisional Sum")
+      );
+    
+    // For each item, calculate actual costs from bills and timesheets
+    const allowancesWithCosts = allowanceItems.map(item => {
+      const estimate = estimates.find(e => e.id === item.estimateId);
+      
+      // Since we don't have bill/timesheet allocations in memory, return 0 for now
+      const actualCost = 0;
+      const variance = actualCost - (item.priceIncTax || 0);
+      
+      return {
+        item: {
+          ...item,
+          estimateName: estimate?.name || "Unknown",
+          estimateVersion: estimate?.version || 1,
+        },
+        actualCost,
+        variance,
+      };
+    });
+    
+    return allowancesWithCosts;
+  }
+
   // Estimate Groups CRUD operations
   async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {
     const groups = Array.from(this.estimateGroups.values())
@@ -4799,6 +4837,73 @@ export class DbStorage implements IStorage {
     }
   }
   async deleteEstimateItem(id: string): Promise<boolean> { return false; }
+  
+  async getProjectAllowances(projectId: string): Promise<any[]> {
+    try {
+      // Get all estimates for this project
+      const estimates = await db.select().from(schema.estimates)
+        .where(eq(schema.estimates.projectId, projectId));
+      
+      const estimateIds = estimates.map(e => e.id);
+      if (estimateIds.length === 0) return [];
+      
+      // Get all PC/PS items from these estimates
+      const allowanceItems = await db.select().from(schema.estimateItems)
+        .where(
+          and(
+            inArray(schema.estimateItems.estimateId, estimateIds),
+            or(
+              eq(schema.estimateItems.allowance, "Prime Cost"),
+              eq(schema.estimateItems.allowance, "Provisional Sum")
+            )
+          )
+        );
+      
+      // For each item, calculate actual costs from bills and timesheets
+      const allowancesWithCosts = await Promise.all(
+        allowanceItems.map(async (item) => {
+          const estimate = estimates.find(e => e.id === item.estimateId);
+          
+          // Get bill line item allocations
+          const billAllocations = await db.select({
+            amount: schema.billLineItemAllowances.amount,
+          })
+          .from(schema.billLineItemAllowances)
+          .where(eq(schema.billLineItemAllowances.estimateItemId, item.id));
+          
+          const billCost = billAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
+          
+          // Get timesheet allocations
+          const timesheetAllocations = await db.select({
+            amount: schema.timesheetAllowances.amount,
+          })
+          .from(schema.timesheetAllowances)
+          .where(eq(schema.timesheetAllowances.estimateItemId, item.id));
+          
+          const timesheetCost = timesheetAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
+          
+          const actualCost = billCost + timesheetCost;
+          const variance = actualCost - (item.priceIncTax || 0);
+          
+          return {
+            item: {
+              ...item,
+              estimateName: estimate?.name || "Unknown",
+              estimateVersion: estimate?.version || 1,
+            },
+            actualCost,
+            variance,
+          };
+        })
+      );
+      
+      return allowancesWithCosts;
+    } catch (error) {
+      console.error("Database error in getProjectAllowances:", error);
+      return [];
+    }
+  }
+  
   async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {
     try {
       const groups = await db.select().from(schema.estimateGroups)
