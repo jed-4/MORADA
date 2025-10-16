@@ -1314,8 +1314,19 @@ export default function EstimateDetail() {
       proposalVisible: true,
       shownAs: "price",
       order: 0,
+      trackLabourHours: false,
     },
   });
+
+  // Reset trackLabourHours when type changes away from labour
+  React.useEffect(() => {
+    const subscription = form.watch((value, { name }) => {
+      if (name === "type" && value.type !== "labour" && value.trackLabourHours) {
+        form.setValue("trackLabourHours", false);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
 
   // Separate form for editing items
   const editForm = useForm<z.infer<typeof addItemFormSchema>>({
@@ -1339,8 +1350,19 @@ export default function EstimateDetail() {
       proposalVisible: true,
       shownAs: "price",
       order: 0,
+      trackLabourHours: false,
     },
   });
+
+  // Reset trackLabourHours when type changes away from labour in edit form
+  React.useEffect(() => {
+    const subscription = editForm.watch((value, { name }) => {
+      if (name === "type" && value.type !== "labour" && value.trackLabourHours) {
+        editForm.setValue("trackLabourHours", false);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [editForm]);
 
   // Form setup for adding groups
   const addGroupFormSchema = insertEstimateGroupSchema.omit({ 
@@ -1745,6 +1767,7 @@ export default function EstimateDetail() {
           groupId: item.groupId || undefined,
           costCode: item.costCode || '',
           status: item.status || 'pending',
+          trackLabourHours: item.trackLabourHours || false,
           notes: item.notes || '',
           attachmentUrl: item.attachmentUrl || '',
           requestForQuote: item.requestForQuote || false,
@@ -3213,6 +3236,33 @@ export default function EstimateDetail() {
                 />
               </div>
 
+              {/* Labour Hours Tracking - Only for Labour items */}
+              {form.watch("type") === "labour" && (
+                <FormField
+                  control={form.control}
+                  name="trackLabourHours"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value || false}
+                          onCheckedChange={field.onChange}
+                          data-testid="checkbox-track-labour-hours"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="cursor-pointer">
+                          Track labour hours for this item
+                        </FormLabel>
+                        <p className="text-sm text-muted-foreground">
+                          Include this item in the labour hours budget tracking system
+                        </p>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              )}
+
               <Separator className="my-4" />
 
               <div className="grid grid-cols-2 gap-4">
@@ -3651,6 +3701,33 @@ export default function EstimateDetail() {
                       )}
                     />
                   </div>
+
+                  {/* Labour Hours Tracking - Only for Labour items */}
+                  {editForm.watch("type") === "labour" && (
+                    <FormField
+                      control={editForm.control}
+                      name="trackLabourHours"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value || false}
+                              onCheckedChange={field.onChange}
+                              data-testid="checkbox-edit-track-labour-hours"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel className="cursor-pointer">
+                              Track labour hours for this item
+                            </FormLabel>
+                            <p className="text-sm text-muted-foreground">
+                              Include this item in the labour hours budget tracking system
+                            </p>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   <Separator className="my-4" />
 
