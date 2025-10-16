@@ -35,8 +35,17 @@ export default function MetricsWidget({ widget }: WidgetProps) {
     ? generateProjectMetrics(currentProject.id, currentProject.name)
     : null;
   
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
+  const formatCurrency = (value: number) => {
+    // Check if it's a whole number
+    const isWholeNumber = value % 1 === 0;
+    
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(value);
+  };
 
   if (!currentProject) {
     return (

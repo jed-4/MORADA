@@ -312,9 +312,14 @@ export default function BillDetail() {
   };
 
   const formatCurrency = (amount: number) => {
+    // Check if it's a whole number
+    const isWholeNumber = amount % 1 === 0;
+    
     return new Intl.NumberFormat("en-AU", {
       style: "currency",
       currency: "AUD",
+      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      maximumFractionDigits: 2
     }).format(amount);
   };
 

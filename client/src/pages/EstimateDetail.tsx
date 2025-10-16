@@ -1696,10 +1696,16 @@ export default function EstimateDetail() {
   const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
 
   const formatCurrency = (amount: number) => {
+    const dollars = amount / 100;
+    // Check if it's a whole number
+    const isWholeNumber = dollars % 1 === 0;
+    
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
-      currency: 'AUD'
-    }).format(amount / 100); // Convert cents to dollars
+      currency: 'AUD',
+      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(dollars);
   };
 
   // Helper function to calculate two-tier pricing values

@@ -183,10 +183,16 @@ export default function ProjectEstimates() {
   });
 
   const formatCurrency = (amount: number) => {
+    const dollars = amount / 100;
+    // Check if it's a whole number
+    const isWholeNumber = dollars % 1 === 0;
+    
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
-      currency: 'AUD'
-    }).format(amount / 100);
+      currency: 'AUD',
+      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(dollars);
   };
 
   const getStatusBadge = (estimate: Estimate) => {

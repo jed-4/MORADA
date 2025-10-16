@@ -93,10 +93,16 @@ export default function Allowances() {
   });
 
   const formatCurrency = (cents: number) => {
+    const dollars = cents / 100;
+    // Check if it's a whole number
+    const isWholeNumber = dollars % 1 === 0;
+    
     return new Intl.NumberFormat("en-AU", {
       style: "currency",
       currency: "AUD",
-    }).format(cents / 100);
+      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(dollars);
   };
 
   const handleMarkupEdit = (itemId: string, currentMarkup: number | null) => {
