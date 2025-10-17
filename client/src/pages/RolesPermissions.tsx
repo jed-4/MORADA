@@ -96,12 +96,11 @@ export default function RolesPermissions() {
           allowedActions,
         }));
 
-      const response = await apiRequest(
-        "POST",
+      return await apiRequest(
         `/api/user-roles/${selectedRoleId}/permissions`,
+        "POST",
         { permissions: permissionsToSave }
       );
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-roles", selectedRoleId, "permissions"] });
@@ -370,8 +369,7 @@ function AddRoleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
 
   const createRoleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof insertUserRoleSchema>) => {
-      const response = await apiRequest("POST", "/api/user-roles", data);
-      return response.json();
+      return await apiRequest("/api/user-roles", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-roles"] });
@@ -492,8 +490,7 @@ function EditRoleDialog({
 
   const updateRoleMutation = useMutation({
     mutationFn: async (data: Partial<z.infer<typeof insertUserRoleSchema>>) => {
-      const response = await apiRequest("PATCH", `/api/user-roles/${role.id}`, data);
-      return response.json();
+      return await apiRequest(`/api/user-roles/${role.id}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-roles"] });

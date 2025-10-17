@@ -35,7 +35,7 @@ import {
   type InsertProposalSection,
   insertProposalSchema 
 } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -89,19 +89,9 @@ export default function ProposalDetail() {
   });
 
   // Fetch company settings (optional - for branding)
-  const { data: companySettings } = useQuery({
+  const { data: companySettings } = useQuery<{ logoUrl?: string; companyName?: string } | null>({
     queryKey: ["/api/company-settings"],
-    queryFn: async () => {
-      try {
-        const res = await fetch("/api/company-settings", {
-          credentials: "include",
-        });
-        if (!res.ok) return null;
-        return await res.json();
-      } catch {
-        return null;
-      }
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
   });
 

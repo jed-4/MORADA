@@ -145,10 +145,7 @@ export default function AllowanceDetail() {
   // Mutation to update allowance (for simple cost entry)
   const updateAllowanceMutation = useMutation({
     mutationFn: async ({ actualCost }: { actualCost: number }) => {
-      return apiRequest(`/api/estimate-items/${allowanceId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ actualCost }),
-      });
+      return apiRequest(`/api/estimate-items/${allowanceId}`, "PATCH", { actualCost });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
@@ -169,13 +166,10 @@ export default function AllowanceDetail() {
   // Mutation to create bill line item allowances (for bill selection)
   const createBillLineItemAllowanceMutation = useMutation({
     mutationFn: async ({ billLineItemId, amount }: { billLineItemId: string; amount: number }) => {
-      return apiRequest("/api/bill-line-item-allowances", {
-        method: "POST",
-        body: JSON.stringify({
-          billLineItemId,
-          estimateItemId: allowanceId,
-          amount,
-        }),
+      return apiRequest("/api/bill-line-item-allowances", "POST", {
+        billLineItemId,
+        estimateItemId: allowanceId,
+        amount,
       });
     },
   });
@@ -183,13 +177,10 @@ export default function AllowanceDetail() {
   // Mutation to create timesheet allowances
   const createTimesheetAllowanceMutation = useMutation({
     mutationFn: async ({ timesheetId, amount }: { timesheetId: string; amount: number }) => {
-      return apiRequest("/api/timesheet-allowances", {
-        method: "POST",
-        body: JSON.stringify({
-          timesheetId,
-          estimateItemId: allowanceId,
-          amount,
-        }),
+      return apiRequest("/api/timesheet-allowances", "POST", {
+        timesheetId,
+        estimateItemId: allowanceId,
+        amount,
       });
     },
   });
@@ -197,12 +188,9 @@ export default function AllowanceDetail() {
   // Mutation to create allowance items (custom lines)
   const createAllowanceItemMutation = useMutation({
     mutationFn: async (item: { description: string; quantity: number; unitPrice: number; totalPrice: number; sortOrder: number }) => {
-      return apiRequest("/api/allowance-items", {
-        method: "POST",
-        body: JSON.stringify({
-          estimateItemId: allowanceId,
-          ...item,
-        }),
+      return apiRequest("/api/allowance-items", "POST", {
+        estimateItemId: allowanceId,
+        ...item,
       });
     },
   });

@@ -14,7 +14,7 @@ export interface ActivityLogData {
 
 export async function logActivity(data: ActivityLogData): Promise<void> {
   try {
-    await apiRequest("POST", "/api/activities", {
+    await apiRequest("/api/activities", "POST", {
       ...data,
       metadata: data.metadata || {},
     });
