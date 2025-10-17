@@ -40,6 +40,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
+import { SectionEditor } from "@/components/proposals/SectionEditor";
 
 interface ProposalDetailParams {
   id?: string;
@@ -191,9 +192,27 @@ export default function ProposalDetail() {
     reorderSectionsMutation.mutate(reorderedSections);
   };
 
+  // Update section mutation
+  const updateSectionMutation = useMutation({
+    mutationFn: async ({ sectionId, updates }: { sectionId: string; updates: Partial<ProposalSection> }) => {
+      return await apiRequest(`/api/proposals/${params.id}/sections/${sectionId}`, "PATCH", updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
+      setEditingSectionId(null);
+      toast({
+        title: "Success",
+        description: "Section updated successfully.",
+      });
+    },
+  });
+
   const handleSectionEdit = (section: ProposalSection) => {
     setEditingSectionId(section.id);
-    // TODO: Open section editor dialog
+  };
+
+  const handleSectionSave = (sectionId: string, updates: Partial<ProposalSection>) => {
+    updateSectionMutation.mutate({ sectionId, updates });
   };
 
   const handleAddSection = () => {
@@ -336,12 +355,24 @@ export default function ProposalDetail() {
       <div className="flex-1 overflow-hidden p-4">
         {isNewProposal ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className="text-muted-foreground mb-4">
-                Save the proposal first to start building
+            <div className="text-center max-w-md">
+              <h3 className="text-lg font-semibold mb-2">Create Your Proposal</h3>
+              <p className="text-muted-foreground mb-6">
+                Fill in the proposal name and select a project above, then click Save & Continue to access the PDF builder.
               </p>
-              <Button onClick={handleSave} data-testid="button-save-first">
-                Save & Continue
+              <Button 
+                onClick={handleSave} 
+                disabled={!form.watch('name') || !form.watch('projectId') || updateProposalMutation.isPending}
+                data-testid="button-save-first"
+              >
+                {updateProposalMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Save & Continue'
+                )}
               </Button>
             </div>
           </div>
@@ -411,6 +442,15 @@ export default function ProposalDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Section Editor Dialog */}
+      <SectionEditor
+        section={localSections.find(s => s.id === editingSectionId) || null}
+        isOpen={!!editingSectionId}
+        onClose={() => setEditingSectionId(null)}
+        onSave={handleSectionSave}
+        isSaving={updateSectionMutation.isPending}
+      />
     </div>
   );
 }
