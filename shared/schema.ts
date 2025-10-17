@@ -1353,14 +1353,212 @@ export const insertInvoiceTimesheetSchema = createInsertSchema(invoiceTimesheets
 export type InsertInvoiceTimesheet = z.infer<typeof insertInvoiceTimesheetSchema>;
 export type InvoiceTimesheet = typeof invoiceTimesheets.$inferSelect;
 
+// Proposals (client-facing proposals generated from estimates)
+export const proposals = pgTable("proposals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalNumber: text("proposal_number").notNull().unique(),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  estimateId: varchar("estimate_id").references(() => estimates.id), // Source estimate
+  clientId: varchar("client_id").references(() => users.id),
+  
+  // Content and presentation
+  introductionText: text("introduction_text"),
+  closingText: text("closing_text"),
+  termsAndConditions: text("terms_and_conditions"),
+  
+  // Pricing
+  subtotal: integer("subtotal").notNull().default(0),
+  gstAmount: integer("gst_amount").notNull().default(0),
+  totalAmount: integer("total_amount").notNull().default(0),
+  
+  // Status and workflow
+  status: text("status").notNull().default("draft"), // "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired"
+  expiryDate: timestamp("expiry_date"),
+  sentDate: timestamp("sent_date"),
+  viewedDate: timestamp("viewed_date"), // When client first viewed it
+  
+  // Acceptance tracking
+  acceptedDate: timestamp("accepted_date"),
+  acceptedBy: varchar("accepted_by").references(() => users.id),
+  acceptedByName: text("accepted_by_name"),
+  acceptedByEmail: text("accepted_by_email"),
+  signature: text("signature"), // Base64 encoded signature image or signature text
+  
+  // Rejection tracking
+  rejectedDate: timestamp("rejected_date"),
+  rejectionReason: text("rejection_reason"),
+  
+  // Conversion tracking
+  convertedToInvoiceId: varchar("converted_to_invoice_id").references(() => clientInvoices.id),
+  convertedDate: timestamp("converted_date"),
+  
+  // Display options
+  showPricing: boolean("show_pricing").notNull().default(true), // Show/hide prices to client
+  allowClientOptions: boolean("allow_client_options").notNull().default(false), // Allow client to select from alternatives
+  
+  // Audit
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  notes: text("notes"), // Internal notes, not visible to client
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalSchema = createInsertSchema(proposals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired"]).default("draft"),
+  subtotal: z.number().default(0),
+  gstAmount: z.number().default(0),
+  totalAmount: z.number().default(0),
+  expiryDate: z.coerce.date().optional(),
+  sentDate: z.coerce.date().optional(),
+  viewedDate: z.coerce.date().optional(),
+  acceptedDate: z.coerce.date().optional(),
+  rejectedDate: z.coerce.date().optional(),
+  convertedDate: z.coerce.date().optional(),
+});
+
+export type InsertProposal = z.infer<typeof insertProposalSchema>;
+export type Proposal = typeof proposals.$inferSelect;
+
+// Proposal Sections (organize proposal items into sections)
+export const proposalSections = pgTable("proposal_sections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  descriptionHtml: text("description_html"), // Rich text description
+  order: integer("order").notNull().default(0),
+  isCollapsed: boolean("is_collapsed").notNull().default(false),
+  
+  // Section-level pricing visibility
+  showPricing: boolean("show_pricing").notNull().default(true),
+  showSubtotal: boolean("show_subtotal").notNull().default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalSectionSchema = createInsertSchema(proposalSections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertProposalSection = z.infer<typeof insertProposalSectionSchema>;
+export type ProposalSection = typeof proposalSections.$inferSelect;
+
+// Proposal Items (line items within sections)
+export const proposalItems = pgTable("proposal_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  sectionId: varchar("section_id").references(() => proposalSections.id, { onDelete: "set null" }),
+  estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id), // Source estimate item if imported
+  
+  // Item details
+  name: text("name").notNull(),
+  description: text("description"),
+  descriptionHtml: text("description_html"), // Rich text description
+  quantity: integer("quantity").notNull().default(1),
+  unitType: text("unit_type").notNull().default("each"),
+  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
+  totalPrice: integer("total_price").notNull().default(0), // Total in cents
+  taxable: boolean("taxable").notNull().default(true),
+  
+  // Display options
+  showInProposal: boolean("show_in_proposal").notNull().default(true),
+  showPricing: boolean("show_pricing").notNull().default(true), // Override section/proposal setting
+  
+  // Client options (for alternative selections)
+  isOptional: boolean("is_optional").notNull().default(false), // Client can choose to include/exclude
+  isAlternative: boolean("is_alternative").notNull().default(false), // Part of an alternative group
+  alternativeGroupId: varchar("alternative_group_id"), // Group ID for alternatives
+  isClientSelected: boolean("is_client_selected"), // True if client selected this option
+  
+  // Attachments and images
+  attachments: json("attachments").default([]), // Array of attachment objects
+  imageUrl: text("image_url"), // Optional product/item image
+  
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProposalItemSchema = createInsertSchema(proposalItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  attachments: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertProposalItem = z.infer<typeof insertProposalItemSchema>;
+export type ProposalItem = typeof proposalItems.$inferSelect;
+
+// Proposal Acceptances (audit trail for client acceptance/rejection)
+export const proposalAcceptances = pgTable("proposal_acceptances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: varchar("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  
+  // Signer information
+  signedBy: varchar("signed_by").references(() => users.id),
+  signedByName: text("signed_by_name").notNull(),
+  signedByEmail: text("signed_by_email").notNull(),
+  signedByRole: text("signed_by_role"), // "client" | "contractor" | "project_manager" etc.
+  
+  // Acceptance/Rejection
+  status: text("status").notNull(), // "accepted" | "rejected"
+  signature: text("signature"), // Base64 encoded signature image or typed name
+  signatureMethod: text("signature_method"), // "drawn" | "typed" | "uploaded"
+  ipAddress: text("ip_address"), // IP address of signer for legal purposes
+  userAgent: text("user_agent"), // Browser/device info
+  
+  // Selected options (for proposals with client choices)
+  selectedItemIds: json("selected_item_ids").default([]), // Array of proposal_item IDs client selected
+  
+  // Rejection details
+  rejectionReason: text("rejection_reason"),
+  comments: text("comments"),
+  
+  // Timestamps
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProposalAcceptanceSchema = createInsertSchema(proposalAcceptances).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  status: z.enum(["accepted", "rejected"]),
+  signatureMethod: z.enum(["drawn", "typed", "uploaded"]).optional(),
+  selectedItemIds: z.array(z.string()).optional(),
+  signedAt: z.coerce.date().optional(),
+});
+
+export type InsertProposalAcceptance = z.infer<typeof insertProposalAcceptanceSchema>;
+export type ProposalAcceptance = typeof proposalAcceptances.$inferSelect;
+
 // Activity feed table
 export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id),
   userName: text("user_name"),
-  activityType: text("activity_type").notNull(), // "task", "estimate", "bill", "variation", "invoice", etc.
-  action: text("action").notNull(), // "created", "updated", "deleted", "status_changed", "approved", etc.
+  activityType: text("activity_type").notNull(), // "task", "estimate", "bill", "variation", "invoice", "proposal", etc.
+  action: text("action").notNull(), // "created", "updated", "deleted", "status_changed", "approved", "accepted", etc.
   description: text("description").notNull(),
   entityId: varchar("entity_id"), // ID of the related entity (task, estimate, etc.)
   entityName: text("entity_name"), // Name/title of the entity
@@ -1372,8 +1570,8 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
   id: true,
   createdAt: true,
 }).extend({
-  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "project", "site_diary", "other"]),
-  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "submitted", "paid"]),
+  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "proposal", "project", "site_diary", "other"]),
+  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "accepted", "submitted", "paid"]),
 });
 
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
