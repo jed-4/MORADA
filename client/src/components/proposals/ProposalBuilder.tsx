@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
+import { useState, useEffect } from 'react';
+import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { GripVertical, Plus, Download, Eye } from 'lucide-react';
+import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
 import type { Proposal, ProposalSection } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 
@@ -66,6 +66,8 @@ export function ProposalBuilder({
   companyName,
 }: ProposalBuilderProps) {
   const [showPreview, setShowPreview] = useState(true);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -73,6 +75,50 @@ export function ProposalBuilder({
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  useEffect(() => {
+    let isCancelled = false;
+    
+    async function generatePdf() {
+      if (!showPreview) return;
+      
+      setIsGenerating(true);
+      
+      try {
+        const blob = await pdf(
+          <ProposalDocument
+            proposal={proposal}
+            sections={sections}
+            companyLogo={companyLogo}
+            companyName={companyName}
+          />
+        ).toBlob();
+        
+        if (!isCancelled) {
+          const url = URL.createObjectURL(blob);
+          setPdfUrl(prevUrl => {
+            if (prevUrl) URL.revokeObjectURL(prevUrl);
+            return url;
+          });
+        }
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+      } finally {
+        if (!isCancelled) {
+          setIsGenerating(false);
+        }
+      }
+    }
+    
+    generatePdf();
+    
+    return () => {
+      isCancelled = true;
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+      }
+    };
+  }, [proposal, sections, companyLogo, companyName, showPreview]);
 
   function handleDragEnd(event: any) {
     const { active, over } = event;
@@ -131,15 +177,28 @@ export function ProposalBuilder({
         </div>
 
         {showPreview ? (
-          <div className="flex-1 border rounded-lg overflow-hidden bg-gray-100">
-            <PDFViewer width="100%" height="100%" showToolbar={false}>
-              <ProposalDocument
-                proposal={proposal}
-                sections={sections}
-                companyLogo={companyLogo}
-                companyName={companyName}
+          <div className="flex-1 border rounded-lg overflow-hidden bg-gray-100 relative">
+            {isGenerating ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Generating PDF...</span>
+                </div>
+              </div>
+            ) : null}
+            {pdfUrl ? (
+              <embed
+                src={pdfUrl}
+                type="application/pdf"
+                width="100%"
+                height="100%"
+                className="w-full h-full"
               />
-            </PDFViewer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <p>Loading preview...</p>
+              </div>
+            )}
           </div>
         ) : (
           <Card className="flex-1 flex items-center justify-center text-muted-foreground">
