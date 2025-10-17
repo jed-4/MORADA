@@ -95,8 +95,8 @@ export function ProposalDocument({
         {/* Render sections */}
         {sortedSections.map((section) => (
           <View key={section.id} style={styles.section}>
-            <Text style={styles.sectionTitle}>{section.name}</Text>
-            {section.description && (
+            <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
+            {section.description && section.description.trim() !== '' && (
               <Text style={styles.text}>{section.description}</Text>
             )}
           </View>
@@ -104,7 +104,7 @@ export function ProposalDocument({
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text>{companyName}</Text>
+          <Text>{companyName || 'Company Name'}</Text>
           <Text>Page 1</Text>
         </View>
       </Page>

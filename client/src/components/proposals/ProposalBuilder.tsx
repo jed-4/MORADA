@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { pdf, PDFDownloadLink } from '@react-pdf/renderer';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -68,6 +68,7 @@ export function ProposalBuilder({
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const pdfUrlRef = useRef<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -80,7 +81,15 @@ export function ProposalBuilder({
     let isCancelled = false;
     
     async function generatePdf() {
-      if (!showPreview) return;
+      if (!showPreview) {
+        // Clear PDF when preview is hidden
+        if (pdfUrlRef.current) {
+          URL.revokeObjectURL(pdfUrlRef.current);
+          pdfUrlRef.current = null;
+        }
+        setPdfUrl(null);
+        return;
+      }
       
       setIsGenerating(true);
       
@@ -95,11 +104,15 @@ export function ProposalBuilder({
         ).toBlob();
         
         if (!isCancelled) {
+          // Revoke previous URL
+          if (pdfUrlRef.current) {
+            URL.revokeObjectURL(pdfUrlRef.current);
+          }
+          
+          // Create and store new URL
           const url = URL.createObjectURL(blob);
-          setPdfUrl(prevUrl => {
-            if (prevUrl) URL.revokeObjectURL(prevUrl);
-            return url;
-          });
+          pdfUrlRef.current = url;
+          setPdfUrl(url);
         }
       } catch (error) {
         console.error('Error generating PDF:', error);
@@ -114,8 +127,10 @@ export function ProposalBuilder({
     
     return () => {
       isCancelled = true;
-      if (pdfUrl) {
-        URL.revokeObjectURL(pdfUrl);
+      // Cleanup: revoke the current URL on unmount
+      if (pdfUrlRef.current) {
+        URL.revokeObjectURL(pdfUrlRef.current);
+        pdfUrlRef.current = null;
       }
     };
   }, [proposal, sections, companyLogo, companyName, showPreview]);
