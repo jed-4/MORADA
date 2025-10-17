@@ -91,8 +91,18 @@ export default function ProposalDetail() {
   // Fetch company settings (optional - for branding)
   const { data: companySettings } = useQuery({
     queryKey: ["/api/company-settings"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/company-settings", {
+          credentials: "include",
+        });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    },
     retry: false,
-    throwOnError: false,
   });
 
   // Determine if we're in project context
