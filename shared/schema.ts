@@ -1662,6 +1662,9 @@ export const timesheets = pgTable("timesheets", {
   total: numeric("total", { precision: 10, scale: 2 }).notNull().default("0"), // duration × hourlyRate
   invoiced: boolean("invoiced").notNull().default(false),
   workItemId: varchar("work_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Optional link to labour estimate item
+  isActive: boolean("is_active").notNull().default(false), // True when timer is running
+  clockInTime: timestamp("clock_in_time"), // Actual timestamp when clocked in (for real-time calculation)
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }), // Cost code for clock-in widget
   attachments: json("attachments").default([]), // Array of attachment URLs
   labels: json("labels").default([]), // Array of label strings
   createdAt: timestamp("created_at").notNull().defaultNow(),

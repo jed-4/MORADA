@@ -7407,6 +7407,106 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Clock-in/out methods
+  async getActiveTimesheet(userId: string): Promise<Timesheet | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheets)
+        .where(and(
+          eq(schema.timesheets.userId, userId),
+          eq(schema.timesheets.isActive, true)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getActiveTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async clockIn(projectId: string, userId: string, costCodeId?: string): Promise<Timesheet> {
+    try {
+      // First, clock out any existing active timesheet
+      const activeTimesheet = await this.getActiveTimesheet(userId);
+      if (activeTimesheet) {
+        await this.clockOut(activeTimesheet.id, userId);
+      }
+
+      // Create new active timesheet
+      const now = new Date();
+      const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      
+      const newTimesheet = await db.insert(schema.timesheets)
+        .values({
+          projectId,
+          userId,
+          date: now,
+          startTime,
+          isActive: true,
+          clockInTime: now,
+          costCodeId: costCodeId || null,
+          status: "draft",
+          duration: "0",
+          breakDuration: "0",
+          hourlyRate: "0",
+          total: "0",
+          invoiced: false,
+        })
+        .returning();
+      
+      return newTimesheet[0];
+    } catch (error) {
+      console.error("Database error in clockIn:", error);
+      throw error;
+    }
+  }
+
+  async clockOut(timesheetId: string, userId: string): Promise<Timesheet | undefined> {
+    try {
+      const timesheet = await this.getTimesheet(timesheetId);
+      if (!timesheet) {
+        return undefined;
+      }
+
+      // Verify ownership
+      if (timesheet.userId !== userId) {
+        throw new Error("Unauthorized: Cannot clock out another user's timesheet");
+      }
+
+      if (!timesheet.isActive) {
+        return timesheet;
+      }
+
+      const now = new Date();
+      const endTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      
+      // Calculate duration in hours
+      let duration = 0;
+      if (timesheet.clockInTime) {
+        const diffMs = now.getTime() - new Date(timesheet.clockInTime).getTime();
+        duration = diffMs / (1000 * 60 * 60); // Convert to hours
+      }
+
+      const result = await db.update(schema.timesheets)
+        .set({
+          endTime,
+          duration: duration.toFixed(2),
+          isActive: false,
+          updatedAt: now,
+        })
+        .where(and(
+          eq(schema.timesheets.id, timesheetId),
+          eq(schema.timesheets.userId, userId)
+        ))
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      console.error("Database error in clockOut:", error);
+      throw error;
+    }
+  }
+
   // Schedule CRUD
   async getSchedule(projectId: string): Promise<Schedule | undefined> {
     try {

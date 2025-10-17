@@ -4683,6 +4683,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Clock-in/out routes
+  app.get("/api/timesheets/active", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const activeTimesheet = await storage.getActiveTimesheet(req.user.id);
+      res.json(activeTimesheet || null);
+    } catch (error) {
+      console.error("Error fetching active timesheet:", error);
+      res.status(500).json({ error: "Failed to fetch active timesheet" });
+    }
+  });
+
+  app.post("/api/timesheets/clock-in", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const { projectId, costCodeId } = req.body;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      const timesheet = await storage.clockIn(projectId, req.user.id, costCodeId);
+      res.status(201).json(timesheet);
+    } catch (error) {
+      console.error("Error clocking in:", error);
+      res.status(500).json({ error: "Failed to clock in" });
+    }
+  });
+
+  app.post("/api/timesheets/clock-out", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const { timesheetId } = req.body;
+      if (!timesheetId) {
+        return res.status(400).json({ error: "timesheetId is required" });
+      }
+      const timesheet = await storage.clockOut(timesheetId, req.user.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error) {
+      console.error("Error clocking out:", error);
+      if (error instanceof Error && error.message.includes("Unauthorized")) {
+        return res.status(403).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to clock out" });
+    }
+  });
+
   // Timesheet Allowances routes
   app.get("/api/timesheets/:timesheetId/allowances", async (req, res) => {
     try {
