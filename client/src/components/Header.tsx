@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
+import { TimeClockWidget } from "./TimeClockWidget";
 
 // Project sections base configuration (from AppSidebar)
 const projectItemsBase = [
@@ -164,6 +165,9 @@ export default function Header() {
         >
           <Users className="h-4 w-4" />
         </Button>
+
+        {/* Time Clock Widget */}
+        <TimeClockWidget />
 
         <ThemeToggle />
         
