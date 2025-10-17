@@ -44,6 +44,7 @@ import { SectionEditor } from "@/components/proposals/SectionEditor";
 
 interface ProposalDetailParams {
   id?: string;
+  projectId?: string;
 }
 
 const SECTION_TYPES = [
@@ -92,13 +93,16 @@ export default function ProposalDetail() {
     queryKey: ["/api/company-settings"],
   });
 
+  // Determine if we're in project context
+  const isProjectContext = !!params.projectId;
+
   // Form for proposal details
   const form = useForm<InsertProposal>({
     resolver: zodResolver(insertProposalSchema),
     defaultValues: proposal || {
       name: "",
       proposalNumber: `PROP-${Date.now()}`,
-      projectId: "",
+      projectId: params.projectId || "",
       status: "draft",
       subtotal: 0,
       gstAmount: 0,
@@ -114,7 +118,11 @@ export default function ProposalDetail() {
         const result = await apiRequest("/api/proposals", "POST", data);
         // Navigate to the edit page after creation
         if (result.id) {
-          setLocation(`/proposals/${result.id}`);
+          if (isProjectContext) {
+            setLocation(`/projects/${params.projectId}/proposals/${result.id}`);
+          } else {
+            setLocation(`/proposals/${result.id}`);
+          }
         }
         return result;
       } else {
@@ -266,7 +274,13 @@ export default function ProposalDetail() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setLocation('/proposals')}
+              onClick={() => {
+                if (isProjectContext) {
+                  setLocation(`/projects/${params.projectId}/proposals`);
+                } else {
+                  setLocation('/proposals');
+                }
+              }}
               data-testid="button-back"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -329,6 +343,7 @@ export default function ProposalDetail() {
                   <Select
                     value={field.value || ''}
                     onValueChange={field.onChange}
+                    disabled={isProjectContext}
                   >
                     <FormControl>
                       <SelectTrigger data-testid="select-project">
