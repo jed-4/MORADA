@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, integer, boolean, pgEnum, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -517,6 +517,13 @@ export const companySettings = pgTable("company_settings", {
   // Timesheet defaults
   standardWorkStart: text("standard_work_start").default("07:00"), // Default work start time (e.g., "07:00")
   standardWorkEnd: text("standard_work_end").default("15:30"), // Default work end time (e.g., "15:30")
+  
+  // Proposal branding
+  proposalPrimaryColor: text("proposal_primary_color").default("#3B82F6"), // Primary brand color for proposals
+  proposalSecondaryColor: text("proposal_secondary_color").default("#10B981"), // Secondary color
+  proposalFontFamily: text("proposal_font_family").default("Inter"), // Font family for proposals
+  proposalHeaderText: text("proposal_header_text"), // Default header text for proposals
+  proposalFooterText: text("proposal_footer_text"), // Default footer text for proposals
   
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1435,6 +1442,11 @@ export const proposalSections = pgTable("proposal_sections", {
   descriptionHtml: text("description_html"), // Rich text description
   order: integer("order").notNull().default(0),
   isCollapsed: boolean("is_collapsed").notNull().default(false),
+  
+  // PDF Builder fields
+  sectionType: text("section_type").notNull().default('custom'), // 'cover_page', 'cover_letter', 'estimate', 'summary', 'allowances', 'closing_letter', 'attachments', 'terms_conditions', 'signature', 'custom'
+  templateId: varchar("template_id"), // Reference to section template
+  content: jsonb("content"), // Flexible JSON content for section data
   
   // Section-level pricing visibility
   showPricing: boolean("show_pricing").notNull().default(true),
