@@ -96,6 +96,7 @@ export default function AllowanceDetail() {
   // PC pricing breakdown state
   const [pcQuantity, setPcQuantity] = useState("1");
   const [pcUnitCostExTax, setPcUnitCostExTax] = useState("");
+  const [pcUnitCostIncTax, setPcUnitCostIncTax] = useState("");
   const [pcMarkupPercent, setPcMarkupPercent] = useState("");
   const [useSimpleEntry, setUseSimpleEntry] = useState(false);
 
@@ -244,6 +245,7 @@ export default function AllowanceDetail() {
         await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
         setPcQuantity("1");
         setPcUnitCostExTax("");
+        setPcUnitCostIncTax("");
         setPcMarkupPercent("");
       } else if (selectedLineItems.size > 0) {
         // Bill line items selected
@@ -605,21 +607,21 @@ export default function AllowanceDetail() {
                         </Button>
                       </div>
                       
+                      <div className="space-y-2">
+                        <Label htmlFor="pcQuantity">Quantity</Label>
+                        <Input
+                          id="pcQuantity"
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="1"
+                          value={pcQuantity}
+                          onChange={(e) => setPcQuantity(e.target.value)}
+                          data-testid="input-pc-quantity"
+                        />
+                      </div>
+                      
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="pcQuantity">Quantity</Label>
-                          <Input
-                            id="pcQuantity"
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            placeholder="1"
-                            value={pcQuantity}
-                            onChange={(e) => setPcQuantity(e.target.value)}
-                            data-testid="input-pc-quantity"
-                          />
-                        </div>
-                        
                         <div className="space-y-2">
                           <Label htmlFor="pcUnitCostExTax">Unit Cost (Ex Tax)</Label>
                           <Input
@@ -629,8 +631,44 @@ export default function AllowanceDetail() {
                             min="0"
                             placeholder="0.00"
                             value={pcUnitCostExTax}
-                            onChange={(e) => setPcUnitCostExTax(e.target.value)}
-                            data-testid="input-pc-unit-cost"
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setPcUnitCostExTax(value);
+                              // Calculate inc tax from ex tax
+                              if (value) {
+                                const exTax = parseFloat(value);
+                                const incTax = exTax * 1.1; // Add 10% GST
+                                setPcUnitCostIncTax(incTax.toFixed(2));
+                              } else {
+                                setPcUnitCostIncTax("");
+                              }
+                            }}
+                            data-testid="input-pc-unit-cost-ex-tax"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="pcUnitCostIncTax">Unit Cost (Inc Tax)</Label>
+                          <Input
+                            id="pcUnitCostIncTax"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={pcUnitCostIncTax}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setPcUnitCostIncTax(value);
+                              // Calculate ex tax from inc tax
+                              if (value) {
+                                const incTax = parseFloat(value);
+                                const exTax = incTax / 1.1; // Remove 10% GST
+                                setPcUnitCostExTax(exTax.toFixed(2));
+                              } else {
+                                setPcUnitCostExTax("");
+                              }
+                            }}
+                            data-testid="input-pc-unit-cost-inc-tax"
                           />
                         </div>
                       </div>
