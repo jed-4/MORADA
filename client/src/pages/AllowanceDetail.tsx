@@ -49,13 +49,44 @@ type BillLineItem = {
   total: number;
 };
 
+type Timesheet = {
+  id: string;
+  projectId: string;
+  userId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  description: string;
+  status: string;
+  total: number;
+};
+
+type CustomLine = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+};
+
 export default function AllowanceDetail() {
   const { projectId, allowanceId } = useParams<{ projectId: string; allowanceId: string }>();
   const [, setLocation] = useLocation();
   const { getStatusInfo } = useAllowanceStatusOptions();
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
+  const [isPsBillModalOpen, setIsPsBillModalOpen] = useState(false);
+  const [isTimesheetModalOpen, setIsTimesheetModalOpen] = useState(false);
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
+  const [expandedPsBills, setExpandedPsBills] = useState<Set<string>>(new Set());
   const [selectedLineItems, setSelectedLineItems] = useState<Set<string>>(new Set());
+  const [selectedPsLineItems, setSelectedPsLineItems] = useState<Set<string>>(new Set());
+  const [selectedTimesheets, setSelectedTimesheets] = useState<Set<string>>(new Set());
+  const [customLines, setCustomLines] = useState<CustomLine[]>([]);
+  const [isCustomLineDialogOpen, setIsCustomLineDialogOpen] = useState(false);
+  const [customLineDescription, setCustomLineDescription] = useState("");
+  const [customLineQuantity, setCustomLineQuantity] = useState("1");
+  const [customLineUnitPrice, setCustomLineUnitPrice] = useState("");
 
   // Fetch all allowances for the project
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
@@ -67,16 +98,34 @@ export default function AllowanceDetail() {
     },
   });
 
-  // Fetch bills for the project
+  // Fetch bills for the project (PC modal)
   const { data: bills = [] } = useQuery<Bill[]>({
-    queryKey: ["/api/bills", { projectId }],
+    queryKey: ["/api/projects", projectId, "bills"],
     enabled: isBillModalOpen,
   });
 
-  // Fetch bill line items for the project
+  // Fetch bill line items for the project (PC modal)
   const { data: billLineItems = [] } = useQuery<BillLineItem[]>({
-    queryKey: ["/api/bill-line-items", { projectId }],
+    queryKey: ["/api/projects", projectId, "bill-line-items"],
     enabled: isBillModalOpen,
+  });
+
+  // Fetch bills for the project (PS modal)
+  const { data: psBills = [] } = useQuery<Bill[]>({
+    queryKey: ["/api/projects", projectId, "bills"],
+    enabled: isPsBillModalOpen,
+  });
+
+  // Fetch bill line items for the project (PS modal)
+  const { data: psBillLineItems = [] } = useQuery<BillLineItem[]>({
+    queryKey: ["/api/projects", projectId, "bill-line-items"],
+    enabled: isPsBillModalOpen,
+  });
+
+  // Fetch timesheets for the project (PS modal)
+  const { data: timesheets = [] } = useQuery<Timesheet[]>({
+    queryKey: ["/api/projects", projectId, "timesheets"],
+    enabled: isTimesheetModalOpen,
   });
 
   const formatCurrency = (cents: number) => {
@@ -111,6 +160,62 @@ export default function AllowanceDetail() {
       newSelected.add(lineItemId);
     }
     setSelectedLineItems(newSelected);
+  };
+
+  const togglePsBillExpanded = (billId: string) => {
+    const newExpanded = new Set(expandedPsBills);
+    if (newExpanded.has(billId)) {
+      newExpanded.delete(billId);
+    } else {
+      newExpanded.add(billId);
+    }
+    setExpandedPsBills(newExpanded);
+  };
+
+  const togglePsLineItemSelection = (lineItemId: string) => {
+    const newSelected = new Set(selectedPsLineItems);
+    if (newSelected.has(lineItemId)) {
+      newSelected.delete(lineItemId);
+    } else {
+      newSelected.add(lineItemId);
+    }
+    setSelectedPsLineItems(newSelected);
+  };
+
+  const toggleTimesheetSelection = (timesheetId: string) => {
+    const newSelected = new Set(selectedTimesheets);
+    if (newSelected.has(timesheetId)) {
+      newSelected.delete(timesheetId);
+    } else {
+      newSelected.add(timesheetId);
+    }
+    setSelectedTimesheets(newSelected);
+  };
+
+  const handleAddCustomLine = () => {
+    if (!customLineDescription || !customLineUnitPrice) return;
+    
+    const quantity = parseInt(customLineQuantity) || 1;
+    const unitPrice = Math.round(parseFloat(customLineUnitPrice) * 100); // Convert to cents
+    const total = quantity * unitPrice;
+    
+    const newLine: CustomLine = {
+      id: `custom-${Date.now()}`,
+      description: customLineDescription,
+      quantity,
+      unitPrice,
+      total,
+    };
+    
+    setCustomLines([...customLines, newLine]);
+    setCustomLineDescription("");
+    setCustomLineQuantity("1");
+    setCustomLineUnitPrice("");
+    setIsCustomLineDialogOpen(false);
+  };
+
+  const handleRemoveCustomLine = (id: string) => {
+    setCustomLines(customLines.filter(line => line.id !== id));
   };
 
   if (isLoading) {
@@ -352,17 +457,322 @@ export default function AllowanceDetail() {
             </Card>
           </div>
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>PS Item Cost Breakdown</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Build up the final allowance price from bills, timesheets, and custom lines
-              </p>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">PS item interface will go here</p>
-            </CardContent>
-          </Card>
+          <div className="space-y-6">
+            {/* Bills Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Bills</CardTitle>
+                    <CardDescription>
+                      Bill line items allocated to this allowance
+                    </CardDescription>
+                  </div>
+                  <Dialog open={isPsBillModalOpen} onOpenChange={setIsPsBillModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        data-testid="button-add-bills"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Bills
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+                      <DialogHeader>
+                        <DialogTitle>Add Bill Line Items</DialogTitle>
+                        <DialogDescription>
+                          Select bill line items to add to this PS allowance
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="flex-1 overflow-auto">
+                        {psBills.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            No bills found for this project
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {psBills.map((bill) => {
+                              const lineItems = psBillLineItems.filter(item => item.billId === bill.id);
+                              const isExpanded = expandedPsBills.has(bill.id);
+                              
+                              return (
+                                <Card key={bill.id}>
+                                  <CardHeader 
+                                    className="cursor-pointer hover-elevate py-3"
+                                    onClick={() => togglePsBillExpanded(bill.id)}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        {isExpanded ? (
+                                          <ChevronDown className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4" />
+                                        )}
+                                        <div>
+                                          <p className="font-semibold">{bill.billNumber}</p>
+                                          <p className="text-sm text-muted-foreground">
+                                            {new Date(bill.billDate).toLocaleDateString("en-AU")}
+                                            {bill.billReference && ` • ${bill.billReference}`}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <p className="font-semibold">{formatCurrency(bill.total)}</p>
+                                    </div>
+                                  </CardHeader>
+                                  {isExpanded && lineItems.length > 0 && (
+                                    <CardContent className="pt-0">
+                                      <div className="space-y-2">
+                                        {lineItems.map((lineItem) => (
+                                          <div 
+                                            key={lineItem.id}
+                                            className="flex items-center justify-between p-2 rounded border hover-elevate"
+                                          >
+                                            <div className="flex items-center gap-3 flex-1">
+                                              <Checkbox
+                                                checked={selectedPsLineItems.has(lineItem.id)}
+                                                onCheckedChange={() => togglePsLineItemSelection(lineItem.id)}
+                                                data-testid={`checkbox-ps-line-item-${lineItem.id}`}
+                                              />
+                                              <div className="flex-1">
+                                                <p className="text-sm font-medium">{lineItem.description}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                  {lineItem.quantity} × {formatCurrency(lineItem.unitPrice)}
+                                                </p>
+                                              </div>
+                                            </div>
+                                            <p className="text-sm font-semibold">
+                                              {formatCurrency(lineItem.total)}
+                                            </p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-end gap-2 pt-4 border-t">
+                        <Button variant="outline" onClick={() => setIsPsBillModalOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button data-testid="button-save-ps-bills">
+                          Add Selected
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">No bills allocated</p>
+              </CardContent>
+            </Card>
+
+            {/* Timesheets Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Timesheets</CardTitle>
+                    <CardDescription>
+                      Timesheet entries allocated to this allowance
+                    </CardDescription>
+                  </div>
+                  <Dialog open={isTimesheetModalOpen} onOpenChange={setIsTimesheetModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        data-testid="button-add-timesheets"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Timesheets
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+                      <DialogHeader>
+                        <DialogTitle>Add Timesheets</DialogTitle>
+                        <DialogDescription>
+                          Select timesheet entries to add to this PS allowance
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="flex-1 overflow-auto">
+                        {timesheets.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            No timesheets found for this project
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {timesheets.map((timesheet) => (
+                              <div
+                                key={timesheet.id}
+                                className="flex items-center justify-between p-3 rounded border hover-elevate"
+                              >
+                                <div className="flex items-center gap-3 flex-1">
+                                  <Checkbox
+                                    checked={selectedTimesheets.has(timesheet.id)}
+                                    onCheckedChange={() => toggleTimesheetSelection(timesheet.id)}
+                                    data-testid={`checkbox-timesheet-${timesheet.id}`}
+                                  />
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <p className="text-sm font-medium">
+                                        {new Date(timesheet.date).toLocaleDateString("en-AU")}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {timesheet.startTime} - {timesheet.endTime} ({timesheet.duration}h)
+                                      </p>
+                                    </div>
+                                    {timesheet.description && (
+                                      <p className="text-xs text-muted-foreground">{timesheet.description}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-sm font-semibold">
+                                  {formatCurrency(timesheet.total)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-end gap-2 pt-4 border-t">
+                        <Button variant="outline" onClick={() => setIsTimesheetModalOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button data-testid="button-save-timesheets">
+                          Add Selected
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">No timesheets allocated</p>
+              </CardContent>
+            </Card>
+
+            {/* Custom Lines Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Custom Lines</CardTitle>
+                    <CardDescription>
+                      Additional line items for this allowance
+                    </CardDescription>
+                  </div>
+                  <Dialog open={isCustomLineDialogOpen} onOpenChange={setIsCustomLineDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        data-testid="button-add-custom-line"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Line
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add Custom Line</DialogTitle>
+                        <DialogDescription>
+                          Add a custom line item to this allowance
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="description">Description</Label>
+                          <Input
+                            id="description"
+                            value={customLineDescription}
+                            onChange={(e) => setCustomLineDescription(e.target.value)}
+                            placeholder="Enter description"
+                            data-testid="input-custom-description"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="quantity">Quantity</Label>
+                            <Input
+                              id="quantity"
+                              type="number"
+                              value={customLineQuantity}
+                              onChange={(e) => setCustomLineQuantity(e.target.value)}
+                              placeholder="1"
+                              data-testid="input-custom-quantity"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="unitPrice">Unit Price</Label>
+                            <Input
+                              id="unitPrice"
+                              type="number"
+                              step="0.01"
+                              value={customLineUnitPrice}
+                              onChange={(e) => setCustomLineUnitPrice(e.target.value)}
+                              placeholder="0.00"
+                              data-testid="input-custom-unit-price"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-4">
+                        <Button variant="outline" onClick={() => setIsCustomLineDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handleAddCustomLine}
+                          disabled={!customLineDescription || !customLineUnitPrice}
+                          data-testid="button-save-custom-line"
+                        >
+                          Add Line
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {customLines.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No custom lines added</p>
+                ) : (
+                  <div className="space-y-2">
+                    {customLines.map((line) => (
+                      <div
+                        key={line.id}
+                        className="flex items-center justify-between p-2 rounded border"
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{line.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {line.quantity} × {formatCurrency(line.unitPrice)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold">{formatCurrency(line.total)}</p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveCustomLine(line.id)}
+                            data-testid={`button-remove-custom-line-${line.id}`}
+                          >
+                            <Plus className="h-4 w-4 rotate-45" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
     </div>
