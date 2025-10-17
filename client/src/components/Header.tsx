@@ -63,11 +63,14 @@ export default function Header() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "same-origin", // Ensure cookies are sent
       });
 
       if (response.ok) {
-        // Reload the page to reset app state and show login
-        window.location.href = "/";
+        // Small delay to ensure session is destroyed
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // Force a full page reload to clear all state
+        window.location.replace("/");
       } else {
         throw new Error("Logout failed");
       }

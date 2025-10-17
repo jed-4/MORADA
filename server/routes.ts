@@ -1650,22 +1650,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Logout route
   app.post("/api/auth/logout", (req, res) => {
-    if (req.session) {
-      req.session.destroy((err) => {
-        if (err) {
-          console.error('Logout error:', err);
-          return res.status(500).json({ error: "Logout failed" });
-        }
-        res.clearCookie('buildpro.session', { 
-          httpOnly: true, 
-          sameSite: 'lax', 
-          secure: process.env.NODE_ENV === 'production' 
-        }); // Clear correct session cookie
-        res.json({ message: "Logout successful" });
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('Logout error:', err);
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      res.clearCookie('buildpro.session', { 
+        path: '/',
+        httpOnly: true, 
+        sameSite: 'lax', 
+        secure: process.env.NODE_ENV === 'production' 
       });
-    } else {
-      res.json({ message: "Already logged out" });
-    }
+      res.json({ message: "Logout successful" });
+    });
   });
 
   // Current user route
