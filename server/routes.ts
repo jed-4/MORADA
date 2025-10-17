@@ -55,7 +55,9 @@ import {
   insertScheduleItemSchema,
   updateScheduleItemSchema,
   insertScheduleTemplateSchema,
-  updateScheduleTemplateSchema
+  updateScheduleTemplateSchema,
+  insertTimesheetAllowanceSchema,
+  insertAllowanceItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -4734,6 +4736,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete timesheet allowance" });
+    }
+  });
+
+  // Allowance Items (custom lines for PS allowances)
+  app.get("/api/estimate-items/:estimateItemId/allowance-items", async (req, res) => {
+    try {
+      const items = await storage.getAllowanceItems(req.params.estimateItemId);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch allowance items" });
+    }
+  });
+
+  app.post("/api/allowance-items", async (req, res) => {
+    try {
+      const validationResult = insertAllowanceItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createAllowanceItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create allowance item" });
+    }
+  });
+
+  app.patch("/api/allowance-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertAllowanceItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateAllowanceItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Allowance item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update allowance item" });
+    }
+  });
+
+  app.delete("/api/allowance-items/:id", async (req, res) => {
+    try {
+      await storage.deleteAllowanceItem(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete allowance item" });
     }
   });
 

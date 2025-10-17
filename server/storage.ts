@@ -5929,6 +5929,64 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getAllowanceItems(estimateItemId: string): Promise<AllowanceItem[]> {
+    try {
+      const items = await db.select()
+        .from(schema.allowanceItems)
+        .where(eq(schema.allowanceItems.estimateItemId, estimateItemId))
+        .orderBy(schema.allowanceItems.sortOrder);
+      return items;
+    } catch (error) {
+      console.error("Database error in getAllowanceItems:", error);
+      throw error;
+    }
+  }
+
+  async createAllowanceItem(item: InsertAllowanceItem): Promise<AllowanceItem> {
+    try {
+      const [newItem] = await db.insert(schema.allowanceItems)
+        .values(item)
+        .returning();
+      return newItem;
+    } catch (error) {
+      console.error("Database error in createAllowanceItem:", error);
+      throw error;
+    }
+  }
+
+  async updateAllowanceItem(id: string, item: Partial<InsertAllowanceItem>): Promise<AllowanceItem | undefined> {
+    try {
+      const [updated] = await db.update(schema.allowanceItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.allowanceItems.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateAllowanceItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteAllowanceItem(id: string): Promise<void> {
+    try {
+      await db.delete(schema.allowanceItems)
+        .where(eq(schema.allowanceItems.id, id));
+    } catch (error) {
+      console.error("Database error in deleteAllowanceItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteAllowanceItemsByEstimateItemId(estimateItemId: string): Promise<void> {
+    try {
+      await db.delete(schema.allowanceItems)
+        .where(eq(schema.allowanceItems.estimateItemId, estimateItemId));
+    } catch (error) {
+      console.error("Database error in deleteAllowanceItemsByEstimateItemId:", error);
+      throw error;
+    }
+  }
+
   async getBillApprovals(billId: string): Promise<BillApproval[]> {
     try {
       const approvals = await db
