@@ -148,6 +148,13 @@ export function TimesheetDialog({
     },
   });
 
+  // Auto-select project when dialog opens if on a project page
+  useEffect(() => {
+    if (open && defaultProjectId && !timesheet) {
+      form.setValue("projectId", defaultProjectId);
+    }
+  }, [open, defaultProjectId, timesheet, form]);
+
   // Calculate duration from start/end time
   useEffect(() => {
     if (timeEntryMode === "time") {

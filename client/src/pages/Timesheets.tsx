@@ -647,6 +647,7 @@ export default function Timesheets() {
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         timesheet={selectedTimesheet}
+        defaultProjectId={projectId}
       />
     </div>
   );
