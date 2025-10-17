@@ -88,9 +88,11 @@ export default function ProposalDetail() {
     queryKey: ["/api/projects"],
   });
 
-  // Fetch company settings
+  // Fetch company settings (optional - for branding)
   const { data: companySettings } = useQuery({
     queryKey: ["/api/company-settings"],
+    retry: false,
+    throwOnError: false,
   });
 
   // Determine if we're in project context
