@@ -90,6 +90,8 @@ export default function AllowanceDetail() {
   const [customLineQuantity, setCustomLineQuantity] = useState("1");
   const [customLineUnitPrice, setCustomLineUnitPrice] = useState("");
   const [enteredActualCost, setEnteredActualCost] = useState("");
+  const [isSavingPc, setIsSavingPc] = useState(false);
+  const [isSavingPs, setIsSavingPs] = useState(false);
 
   // Fetch all allowances for the project
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
@@ -171,27 +173,153 @@ export default function AllowanceDetail() {
     },
   });
 
+  // Mutation to create timesheet allowances
+  const createTimesheetAllowanceMutation = useMutation({
+    mutationFn: async ({ timesheetId, amount }: { timesheetId: string; amount: number }) => {
+      return apiRequest("/api/timesheet-allowances", {
+        method: "POST",
+        body: JSON.stringify({
+          timesheetId,
+          estimateItemId: allowanceId,
+          amount,
+        }),
+      });
+    },
+  });
+
+  // Mutation to create allowance items (custom lines)
+  const createAllowanceItemMutation = useMutation({
+    mutationFn: async (item: { description: string; quantity: number; unitPrice: number; totalPrice: number; sortOrder: number }) => {
+      return apiRequest("/api/allowance-items", {
+        method: "POST",
+        body: JSON.stringify({
+          estimateItemId: allowanceId,
+          ...item,
+        }),
+      });
+    },
+  });
+
   // Handle saving PC item
   const handleSavePcItem = async () => {
-    if (enteredActualCost) {
-      // Simple cost entry
-      const costInCents = Math.round(parseFloat(enteredActualCost) * 100);
-      await updateAllowanceMutation.mutateAsync({ actualCost: costInCents });
-    } else if (selectedLineItems.size > 0) {
-      // Bill line items selected
-      const selectedItems = billLineItems.filter(item => selectedLineItems.has(item.id));
-      const totalCost = selectedItems.reduce((sum, item) => sum + item.total, 0);
-      
-      // Create all bill line item allowances
-      for (const item of selectedItems) {
-        await createBillLineItemAllowanceMutation.mutateAsync({
-          billLineItemId: item.id,
-          amount: item.total,
-        });
+    if (isSavingPc) return; // Prevent concurrent saves
+    
+    setIsSavingPc(true);
+    try {
+      const currentActualCost = allowance?.actualCost || 0;
+
+      if (enteredActualCost) {
+        // Simple cost entry - add to existing cost
+        const additionalCost = Math.round(parseFloat(enteredActualCost) * 100);
+        const newActualCost = currentActualCost + additionalCost;
+        await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
+        
+        // Refetch to ensure fresh data for next save
+        await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+        setEnteredActualCost("");
+      } else if (selectedLineItems.size > 0) {
+        // Bill line items selected
+        const selectedItems = billLineItems.filter(item => selectedLineItems.has(item.id));
+        const additionalCost = selectedItems.reduce((sum, item) => sum + item.total, 0);
+        
+        // Create all bill line item allowances
+        for (const item of selectedItems) {
+          await createBillLineItemAllowanceMutation.mutateAsync({
+            billLineItemId: item.id,
+            amount: item.total,
+          });
+        }
+        
+        // Add to existing actual cost
+        const newActualCost = currentActualCost + additionalCost;
+        await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
+        
+        // Refetch to ensure fresh data for next save
+        await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+        setSelectedLineItems(new Set());
       }
-      
-      // Update allowance with total cost
-      await updateAllowanceMutation.mutateAsync({ actualCost: totalCost });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to save PC allowance. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingPc(false);
+    }
+  };
+
+  // Handle saving PS item
+  const handleSavePsItem = async () => {
+    // Early return if nothing selected or already saving
+    if (selectedPsLineItems.size === 0 && selectedTimesheets.size === 0 && customLines.length === 0) {
+      return;
+    }
+    if (isSavingPs) return; // Prevent concurrent saves
+    
+    setIsSavingPs(true);
+    try {
+      let additionalCost = 0;
+
+      // 1. Create bill line item allowances
+      if (selectedPsLineItems.size > 0) {
+        const selectedItems = psBillLineItems.filter(item => selectedPsLineItems.has(item.id));
+        for (const item of selectedItems) {
+          await createBillLineItemAllowanceMutation.mutateAsync({
+            billLineItemId: item.id,
+            amount: item.total,
+          });
+          additionalCost += item.total;
+        }
+      }
+
+      // 2. Create timesheet allowances
+      if (selectedTimesheets.size > 0) {
+        const selectedItems = timesheets.filter(ts => selectedTimesheets.has(ts.id));
+        for (const timesheet of selectedItems) {
+          await createTimesheetAllowanceMutation.mutateAsync({
+            timesheetId: timesheet.id,
+            amount: timesheet.total,
+          });
+          additionalCost += timesheet.total;
+        }
+      }
+
+      // 3. Create custom line items
+      if (customLines.length > 0) {
+        for (let i = 0; i < customLines.length; i++) {
+          const line = customLines[i];
+          await createAllowanceItemMutation.mutateAsync({
+            description: line.description,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            totalPrice: line.total,
+            sortOrder: i,
+          });
+          additionalCost += line.total;
+        }
+      }
+
+      // 4. Add to existing actual cost
+      const currentActualCost = allowance?.actualCost || 0;
+      const newActualCost = currentActualCost + additionalCost;
+      await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
+
+      // 5. Refetch to ensure fresh data for next save
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+
+      // 6. Clear all selections after successful save and refetch
+      setSelectedPsLineItems(new Set());
+      setSelectedTimesheets(new Set());
+      setCustomLines([]);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to save PS allowance. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingPs(false);
     }
   };
 
@@ -416,10 +544,10 @@ export default function AllowanceDetail() {
                 <div className="flex justify-end">
                   <Button 
                     onClick={handleSavePcItem}
-                    disabled={!enteredActualCost && selectedLineItems.size === 0}
+                    disabled={(!enteredActualCost && selectedLineItems.size === 0) || isSavingPc}
                     data-testid="button-save-pc-item"
                   >
-                    Save
+                    {isSavingPc ? "Saving..." : "Save"}
                   </Button>
                 </div>
                 <Dialog open={isBillModalOpen} onOpenChange={setIsBillModalOpen}>
@@ -669,7 +797,10 @@ export default function AllowanceDetail() {
                         <Button variant="outline" onClick={() => setIsPsBillModalOpen(false)}>
                           Cancel
                         </Button>
-                        <Button data-testid="button-save-ps-bills">
+                        <Button 
+                          onClick={() => setIsPsBillModalOpen(false)}
+                          data-testid="button-save-ps-bills"
+                        >
                           Add Selected
                         </Button>
                       </div>
@@ -754,7 +885,10 @@ export default function AllowanceDetail() {
                         <Button variant="outline" onClick={() => setIsTimesheetModalOpen(false)}>
                           Cancel
                         </Button>
-                        <Button data-testid="button-save-timesheets">
+                        <Button 
+                          onClick={() => setIsTimesheetModalOpen(false)}
+                          data-testid="button-save-timesheets"
+                        >
                           Add Selected
                         </Button>
                       </div>
@@ -881,6 +1015,22 @@ export default function AllowanceDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Save Button for PS Items */}
+            <div className="flex justify-end pt-4">
+              <Button
+                onClick={handleSavePsItem}
+                disabled={
+                  (selectedPsLineItems.size === 0 &&
+                  selectedTimesheets.size === 0 &&
+                  customLines.length === 0) ||
+                  isSavingPs
+                }
+                data-testid="button-save-ps-item"
+              >
+                {isSavingPs ? "Saving..." : "Save"}
+              </Button>
+            </div>
           </div>
         )}
       </div>
