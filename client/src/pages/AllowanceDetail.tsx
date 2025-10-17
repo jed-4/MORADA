@@ -634,11 +634,11 @@ export default function AllowanceDetail() {
                             onChange={(e) => {
                               const value = e.target.value;
                               setPcUnitCostExTax(value);
-                              // Calculate inc tax from ex tax
+                              // Calculate inc tax from ex tax using cents to avoid rounding errors
                               if (value) {
-                                const exTax = parseFloat(value);
-                                const incTax = exTax * 1.1; // Add 10% GST
-                                setPcUnitCostIncTax(incTax.toFixed(2));
+                                const exTaxCents = Math.round(parseFloat(value) * 100);
+                                const incTaxCents = Math.round((exTaxCents * 11) / 10); // Add 10% GST
+                                setPcUnitCostIncTax((incTaxCents / 100).toFixed(2));
                               } else {
                                 setPcUnitCostIncTax("");
                               }
@@ -659,11 +659,11 @@ export default function AllowanceDetail() {
                             onChange={(e) => {
                               const value = e.target.value;
                               setPcUnitCostIncTax(value);
-                              // Calculate ex tax from inc tax
+                              // Calculate ex tax from inc tax using cents to avoid rounding errors
                               if (value) {
-                                const incTax = parseFloat(value);
-                                const exTax = incTax / 1.1; // Remove 10% GST
-                                setPcUnitCostExTax(exTax.toFixed(2));
+                                const incTaxCents = Math.round(parseFloat(value) * 100);
+                                const exTaxCents = Math.round((incTaxCents * 10) / 11); // Remove 10% GST
+                                setPcUnitCostExTax((exTaxCents / 100).toFixed(2));
                               } else {
                                 setPcUnitCostExTax("");
                               }
