@@ -29,7 +29,10 @@ export function TimeClockWidget() {
   // Fetch active timesheet
   const { data: activeTimesheet, isLoading: loadingActive } = useQuery<Timesheet | null>({
     queryKey: ["/api/timesheets/active"],
-    refetchInterval: 1000, // Update every second for live timer
+    refetchInterval: (query) => {
+      // Only poll if there's an active timesheet
+      return query.state.data ? 1000 : false;
+    },
   });
 
   // Fetch projects
