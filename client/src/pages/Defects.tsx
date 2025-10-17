@@ -7,6 +7,7 @@ import { Plus, LayoutList, LayoutGrid } from "lucide-react";
 import type { Defect } from "@shared/schema";
 import { DefectFormDialog } from "@/components/defects/DefectFormDialog";
 import { DefectTableView } from "@/components/defects/DefectTableView";
+import { DefectBoardView } from "@/components/defects/DefectBoardView";
 
 export default function Defects() {
   const { id: projectId } = useParams<{ id: string }>();
@@ -73,8 +74,22 @@ export default function Defects() {
         )}
         
         {activeView === "board" && (
-          <div className="p-6">
-            <div className="text-muted-foreground">Board view coming soon...</div>
+          <div className="p-6 h-full">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-muted-foreground">Loading defects...</p>
+              </div>
+            ) : defects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 gap-4">
+                <p className="text-muted-foreground">No defects found</p>
+                <Button onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add First Defect
+                </Button>
+              </div>
+            ) : (
+              <DefectBoardView defects={defects} />
+            )}
           </div>
         )}
       </div>
