@@ -51,7 +51,11 @@ import {
   type LabourHoursBudget, type InsertLabourHoursBudget,
   type Schedule, type InsertSchedule,
   type ScheduleItem, type InsertScheduleItem,
-  type ScheduleTemplate, type InsertScheduleTemplate
+  type ScheduleTemplate, type InsertScheduleTemplate,
+  type Proposal, type InsertProposal,
+  type ProposalSection, type InsertProposalSection,
+  type ProposalItem, type InsertProposalItem,
+  type ProposalAcceptance, type InsertProposalAcceptance
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -373,6 +377,30 @@ export interface IStorage {
   getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]>;
   createInvoiceBill(data: InsertInvoiceBill): Promise<InvoiceBill>;
   deleteInvoiceBill(id: string): Promise<boolean>;
+
+  // Proposals CRUD
+  getProposals(projectId?: string, status?: string): Promise<Proposal[]>;
+  getProposal(id: string): Promise<Proposal | undefined>;
+  createProposal(proposal: InsertProposal): Promise<Proposal>;
+  updateProposal(id: string, proposal: Partial<InsertProposal>): Promise<Proposal | undefined>;
+  deleteProposal(id: string): Promise<boolean>;
+
+  // Proposal Sections CRUD
+  getProposalSections(proposalId: string): Promise<ProposalSection[]>;
+  createProposalSection(section: InsertProposalSection): Promise<ProposalSection>;
+  updateProposalSection(id: string, section: Partial<InsertProposalSection>): Promise<ProposalSection | undefined>;
+  deleteProposalSection(id: string): Promise<boolean>;
+
+  // Proposal Items CRUD
+  getProposalItems(proposalId: string): Promise<ProposalItem[]>;
+  createProposalItem(item: InsertProposalItem): Promise<ProposalItem>;
+  updateProposalItem(id: string, item: Partial<InsertProposalItem>): Promise<ProposalItem | undefined>;
+  deleteProposalItem(id: string): Promise<boolean>;
+
+  // Proposal Acceptances CRUD
+  getProposalAcceptances(proposalId: string): Promise<ProposalAcceptance[]>;
+  createProposalAcceptance(acceptance: InsertProposalAcceptance): Promise<ProposalAcceptance>;
+  getLatestProposalAcceptance(proposalId: string): Promise<ProposalAcceptance | undefined>;
 
   // Activity Feed CRUD
   getActivities(projectId: string, limit?: number): Promise<schema.Activity[]>;
@@ -6534,6 +6562,215 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteInvoiceBill:", error);
       return false;
+    }
+  }
+
+  // Proposals CRUD operations
+  async getProposals(projectId?: string, status?: string): Promise<Proposal[]> {
+    try {
+      let query = db.select().from(schema.proposals);
+
+      const conditions = [];
+      if (projectId) {
+        conditions.push(eq(schema.proposals.projectId, projectId));
+      }
+      if (status) {
+        conditions.push(eq(schema.proposals.status, status));
+      }
+
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions));
+      }
+
+      return await query.orderBy(desc(schema.proposals.createdAt));
+    } catch (error) {
+      console.error("Database error in getProposals:", error);
+      throw error;
+    }
+  }
+
+  async getProposal(id: string): Promise<Proposal | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.proposals)
+        .where(eq(schema.proposals.id, id));
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getProposal:", error);
+      throw error;
+    }
+  }
+
+  async createProposal(proposal: InsertProposal): Promise<Proposal> {
+    try {
+      const result = await db.insert(schema.proposals)
+        .values(proposal)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createProposal:", error);
+      throw error;
+    }
+  }
+
+  async updateProposal(id: string, proposal: Partial<InsertProposal>): Promise<Proposal | undefined> {
+    try {
+      const result = await db.update(schema.proposals)
+        .set({ ...proposal, updatedAt: new Date() })
+        .where(eq(schema.proposals.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateProposal:", error);
+      throw error;
+    }
+  }
+
+  async deleteProposal(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.proposals)
+        .where(eq(schema.proposals.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteProposal:", error);
+      return false;
+    }
+  }
+
+  // Proposal Sections CRUD operations
+  async getProposalSections(proposalId: string): Promise<ProposalSection[]> {
+    try {
+      return await db.select()
+        .from(schema.proposalSections)
+        .where(eq(schema.proposalSections.proposalId, proposalId))
+        .orderBy(schema.proposalSections.order);
+    } catch (error) {
+      console.error("Database error in getProposalSections:", error);
+      throw error;
+    }
+  }
+
+  async createProposalSection(section: InsertProposalSection): Promise<ProposalSection> {
+    try {
+      const result = await db.insert(schema.proposalSections)
+        .values(section)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createProposalSection:", error);
+      throw error;
+    }
+  }
+
+  async updateProposalSection(id: string, section: Partial<InsertProposalSection>): Promise<ProposalSection | undefined> {
+    try {
+      const result = await db.update(schema.proposalSections)
+        .set({ ...section, updatedAt: new Date() })
+        .where(eq(schema.proposalSections.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateProposalSection:", error);
+      throw error;
+    }
+  }
+
+  async deleteProposalSection(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.proposalSections)
+        .where(eq(schema.proposalSections.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteProposalSection:", error);
+      return false;
+    }
+  }
+
+  // Proposal Items CRUD operations
+  async getProposalItems(proposalId: string): Promise<ProposalItem[]> {
+    try {
+      return await db.select()
+        .from(schema.proposalItems)
+        .where(eq(schema.proposalItems.proposalId, proposalId))
+        .orderBy(schema.proposalItems.order);
+    } catch (error) {
+      console.error("Database error in getProposalItems:", error);
+      throw error;
+    }
+  }
+
+  async createProposalItem(item: InsertProposalItem): Promise<ProposalItem> {
+    try {
+      const result = await db.insert(schema.proposalItems)
+        .values(item)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createProposalItem:", error);
+      throw error;
+    }
+  }
+
+  async updateProposalItem(id: string, item: Partial<InsertProposalItem>): Promise<ProposalItem | undefined> {
+    try {
+      const result = await db.update(schema.proposalItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.proposalItems.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateProposalItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteProposalItem(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.proposalItems)
+        .where(eq(schema.proposalItems.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteProposalItem:", error);
+      return false;
+    }
+  }
+
+  // Proposal Acceptances CRUD operations
+  async getProposalAcceptances(proposalId: string): Promise<ProposalAcceptance[]> {
+    try {
+      return await db.select()
+        .from(schema.proposalAcceptances)
+        .where(eq(schema.proposalAcceptances.proposalId, proposalId))
+        .orderBy(desc(schema.proposalAcceptances.signedAt));
+    } catch (error) {
+      console.error("Database error in getProposalAcceptances:", error);
+      throw error;
+    }
+  }
+
+  async createProposalAcceptance(acceptance: InsertProposalAcceptance): Promise<ProposalAcceptance> {
+    try {
+      const result = await db.insert(schema.proposalAcceptances)
+        .values(acceptance)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createProposalAcceptance:", error);
+      throw error;
+    }
+  }
+
+  async getLatestProposalAcceptance(proposalId: string): Promise<ProposalAcceptance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.proposalAcceptances)
+        .where(eq(schema.proposalAcceptances.proposalId, proposalId))
+        .orderBy(desc(schema.proposalAcceptances.signedAt))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getLatestProposalAcceptance:", error);
+      throw error;
     }
   }
 

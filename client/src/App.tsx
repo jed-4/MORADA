@@ -44,6 +44,8 @@ import Timesheets from "@/pages/Timesheets";
 import Allowances from "@/pages/Allowances";
 import AllowanceDetail from "@/pages/AllowanceDetail";
 import Defects from "@/pages/Defects";
+import Proposals from "@/pages/Proposals";
+import ProposalDetail from "@/pages/ProposalDetail";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -109,7 +111,9 @@ function Router() {
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/rfi" component={() => <ComingSoonPage section="rfi" />} />
-      <Route path="/proposal" component={() => <ComingSoonPage section="proposal" />} />
+      <Route path="/proposals" component={Proposals} />
+      <Route path="/proposals/new" component={ProposalDetail} />
+      <Route path="/proposals/:id" component={ProposalDetail} />
       <Route path="/schedule" component={() => <ComingSoonPage section="schedule" />} />
       <Route path="/selections" component={Selections} />
       <Route path="/selections/:id" component={SelectionDetail} />

@@ -71,7 +71,7 @@ import { ProjectIcon } from "./ProjectIcon";
 // Coming soon items that should have strikeout styling
 const comingSoonItems = new Set([
   "Messages", "Take off", 
-  "Request For Quotes", "Request For Information", "Proposal", 
+  "Request For Quotes", "Request For Information", 
   "Allowances", "Purchase Orders", 
   "Site Diary", "Timesheets", 
   "Files", "Team"
@@ -89,7 +89,7 @@ const projectItemsBase = [
   { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
   { title: "Request For Quotes", baseUrl: "/rfq", icon: FileSearch },
   { title: "Request For Information", baseUrl: "/rfi", icon: HelpCircle },
-  { title: "Proposal", baseUrl: "/proposal", icon: File },
+  { title: "Proposals", baseUrl: "/proposals", icon: File },
   { title: "Selections", baseUrl: "/selections", icon: CheckCircle },
   { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
   { title: "Defects", baseUrl: "/defects", icon: AlertCircle },

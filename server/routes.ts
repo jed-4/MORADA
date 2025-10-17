@@ -40,6 +40,10 @@ import {
   insertClientInvoiceItemSchema,
   insertClientInvoicePaymentSchema,
   insertInvoiceEstimateSchema,
+  insertProposalSchema,
+  insertProposalSectionSchema,
+  insertProposalItemSchema,
+  insertProposalAcceptanceSchema,
   insertInvoiceVariationSchema,
   insertInvoiceBillSchema,
   insertSiteDiaryTemplateSchema,
@@ -3192,6 +3196,376 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invoice bill" });
+    }
+  });
+
+  // Proposals API Routes
+  app.get("/api/proposals", async (req, res) => {
+    try {
+      const { projectId, status } = req.query;
+      const proposals = await storage.getProposals(
+        projectId as string | undefined,
+        status as string | undefined
+      );
+      res.json(proposals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch proposals" });
+    }
+  });
+
+  app.get("/api/proposals/:id", async (req, res) => {
+    try {
+      const proposal = await storage.getProposal(req.params.id);
+      if (!proposal) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+      res.json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch proposal" });
+    }
+  });
+
+  app.post("/api/proposals", async (req, res) => {
+    try {
+      const validationResult = insertProposalSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const proposal = await storage.createProposal(validationResult.data);
+      res.status(201).json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create proposal" });
+    }
+  });
+
+  app.patch("/api/proposals/:id", async (req, res) => {
+    try {
+      const validationResult = insertProposalSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const proposal = await storage.updateProposal(req.params.id, validationResult.data);
+      if (!proposal) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+      res.json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update proposal" });
+    }
+  });
+
+  app.delete("/api/proposals/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteProposal(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete proposal" });
+    }
+  });
+
+  // Proposal Sections API Routes
+  app.get("/api/proposals/:id/sections", async (req, res) => {
+    try {
+      const sections = await storage.getProposalSections(req.params.id);
+      res.json(sections);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch proposal sections" });
+    }
+  });
+
+  app.post("/api/proposals/:id/sections", async (req, res) => {
+    try {
+      const validationResult = insertProposalSectionSchema.safeParse({
+        ...req.body,
+        proposalId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const section = await storage.createProposalSection(validationResult.data);
+      res.status(201).json(section);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create proposal section" });
+    }
+  });
+
+  app.patch("/api/proposal-sections/:id", async (req, res) => {
+    try {
+      const validationResult = insertProposalSectionSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const section = await storage.updateProposalSection(req.params.id, validationResult.data);
+      if (!section) {
+        return res.status(404).json({ error: "Proposal section not found" });
+      }
+      res.json(section);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update proposal section" });
+    }
+  });
+
+  app.delete("/api/proposal-sections/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteProposalSection(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Proposal section not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete proposal section" });
+    }
+  });
+
+  // Proposal Items API Routes
+  app.get("/api/proposals/:id/items", async (req, res) => {
+    try {
+      const items = await storage.getProposalItems(req.params.id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch proposal items" });
+    }
+  });
+
+  app.post("/api/proposals/:id/items", async (req, res) => {
+    try {
+      const validationResult = insertProposalItemSchema.safeParse({
+        ...req.body,
+        proposalId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const item = await storage.createProposalItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create proposal item" });
+    }
+  });
+
+  app.patch("/api/proposal-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertProposalItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const item = await storage.updateProposalItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Proposal item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update proposal item" });
+    }
+  });
+
+  app.delete("/api/proposal-items/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteProposalItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Proposal item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete proposal item" });
+    }
+  });
+
+  // Proposal Acceptances API Routes
+  app.get("/api/proposals/:id/acceptances", async (req, res) => {
+    try {
+      const acceptances = await storage.getProposalAcceptances(req.params.id);
+      res.json(acceptances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch proposal acceptances" });
+    }
+  });
+
+  app.post("/api/proposals/:id/acceptances", async (req, res) => {
+    try {
+      const validationResult = insertProposalAcceptanceSchema.safeParse({
+        ...req.body,
+        proposalId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const acceptance = await storage.createProposalAcceptance(validationResult.data);
+      res.status(201).json(acceptance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create proposal acceptance" });
+    }
+  });
+
+  app.get("/api/proposals/:id/latest-acceptance", async (req, res) => {
+    try {
+      const acceptance = await storage.getLatestProposalAcceptance(req.params.id);
+      res.json(acceptance || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch latest proposal acceptance" });
+    }
+  });
+
+  // Proposal Status Transition Routes
+  app.post("/api/proposals/:id/send", async (req, res) => {
+    try {
+      const existing = await storage.getProposal(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+      
+      // Validate state transition
+      if (existing.status !== "draft") {
+        return res.status(400).json({ error: "Only draft proposals can be sent" });
+      }
+
+      const { sentTo, sentBy, sentAt } = req.body;
+      const proposal = await storage.updateProposal(req.params.id, {
+        status: "sent",
+        sentAt: sentAt || new Date(),
+        sentBy: sentBy || null,
+        sentTo: sentTo || null
+      });
+      res.json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to send proposal" });
+    }
+  });
+
+  app.post("/api/proposals/:id/accept", async (req, res) => {
+    try {
+      const existing = await storage.getProposal(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+
+      // Validate state transition
+      if (existing.status !== "sent") {
+        return res.status(400).json({ error: "Only sent proposals can be accepted" });
+      }
+
+      const { acceptedBy, signatureData, notes } = req.body;
+      
+      // Create acceptance record
+      const acceptance = await storage.createProposalAcceptance({
+        proposalId: req.params.id,
+        acceptedBy: acceptedBy || null,
+        signatureData: signatureData || null,
+        notes: notes || null
+      });
+
+      // Update proposal status atomically
+      const proposal = await storage.updateProposal(req.params.id, {
+        status: "accepted",
+        acceptedAt: acceptance.acceptedAt
+      });
+
+      res.json({ proposal, acceptance });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to accept proposal" });
+    }
+  });
+
+  app.post("/api/proposals/:id/reject", async (req, res) => {
+    try {
+      const existing = await storage.getProposal(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+
+      // Validate state transition  
+      if (existing.status !== "sent") {
+        return res.status(400).json({ error: "Only sent proposals can be rejected" });
+      }
+
+      const { rejectedBy, notes } = req.body;
+      const proposal = await storage.updateProposal(req.params.id, {
+        status: "rejected",
+        rejectedAt: new Date(),
+        rejectedBy: rejectedBy || null,
+        rejectionNotes: notes || null
+      });
+      res.json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reject proposal" });
+    }
+  });
+
+  // Proposal to Invoice Conversion
+  app.post("/api/proposals/:id/convert-to-invoice", async (req, res) => {
+    try {
+      const proposal = await storage.getProposal(req.params.id);
+      if (!proposal) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+
+      if (proposal.status !== "accepted") {
+        return res.status(400).json({ error: "Only accepted proposals can be converted to invoices" });
+      }
+
+      // Get proposal items
+      const items = await storage.getProposalItems(req.params.id);
+
+      // Create client invoice
+      const invoice = await storage.createClientInvoice({
+        projectId: proposal.projectId,
+        invoiceNumber: `INV-${Date.now()}`, // Generate invoice number
+        issueDate: new Date(),
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        status: "draft",
+        subtotal: proposal.totalAmount,
+        taxAmount: proposal.taxAmount,
+        total: proposal.totalAmount + proposal.taxAmount,
+        notes: `Converted from proposal: ${proposal.title}`,
+        termsAndConditions: proposal.termsAndConditions
+      });
+
+      // Create invoice items from proposal items
+      for (const item of items) {
+        await storage.createClientInvoiceItem({
+          invoiceId: invoice.id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          taxRate: item.taxRate,
+          amount: item.totalAmount
+        });
+      }
+
+      // Update proposal to mark as converted
+      await storage.updateProposal(req.params.id, {
+        convertedToInvoiceAt: new Date(),
+        invoiceId: invoice.id
+      });
+
+      res.json({ invoice, proposal });
+    } catch (error) {
+      console.error("Error converting proposal to invoice:", error);
+      res.status(500).json({ error: "Failed to convert proposal to invoice" });
     }
   });
 
