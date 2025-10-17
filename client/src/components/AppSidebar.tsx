@@ -68,15 +68,6 @@ import { useState, useEffect } from "react";
 import CreateProjectDialog from "./CreateProjectDialog";
 import { ProjectIcon } from "./ProjectIcon";
 
-// Coming soon items that should have strikeout styling
-const comingSoonItems = new Set([
-  "Messages", "Take off", 
-  "Request For Quotes", "Request For Information", 
-  "Allowances", "Purchase Orders", 
-  "Site Diary", "Timesheets", 
-  "Files", "Team"
-]);
-
 // Project sections base configuration
 const projectItemsBase = [
   { title: "Overview", baseUrl: "", icon: Home },
@@ -103,17 +94,6 @@ const projectItemsBase = [
   { title: "Files", baseUrl: "/files", icon: FolderOpen },
   { title: "Team", baseUrl: "/team", icon: Users },
 ];
-
-// Coming soon business items
-const comingSoonBusinessItems = new Set([
-  "Team",
-  "Messages", "Sick Days & Leave"
-]);
-
-// Coming soon system items
-const comingSoonSystemItems = new Set([
-  "Templates", "Checklists", "Emails", "CRM"
-]);
 
 // Business sections
 const businessItems = [
@@ -142,16 +122,11 @@ const settingsItems = [
   { title: "User Settings", url: "/user-settings", icon: Users },
 ];
 
-interface AppSidebarProps {
-  sidebarWidth?: number;
-}
-
-export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
+export function AppSidebar() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const { currentProject, setCurrentProject } = useProject();
   const isBusinessContext = location.startsWith('/business');
-  const showComingSoon = sidebarWidth >= 280; // Hide "coming soon" text when sidebar is narrow
   
   // Collapsible states with localStorage persistence
   const [isCompanyOpen, setIsCompanyOpen] = useState(() => {
@@ -307,9 +282,6 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                         <Link href={item.url}>
                           <item.icon className="h-4 w-4" />
                           <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                          {showComingSoon && comingSoonBusinessItems.has(item.title) && (
-                            <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
-                          )}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -427,9 +399,6 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                         <Link href={item.url}>
                           <item.icon className="h-4 w-4" />
                           <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                          {showComingSoon && comingSoonItems.has(item.title) && (
-                            <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
-                          )}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -471,9 +440,6 @@ export function AppSidebar({ sidebarWidth = 320 }: AppSidebarProps) {
                         <Link href={item.url}>
                           <item.icon className="h-4 w-4" />
                           <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                          {showComingSoon && comingSoonSystemItems.has(item.title) && (
-                            <span className="text-xs text-muted-foreground/60 ml-2 group-data-[collapsible=icon]:hidden">coming soon</span>
-                          )}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
