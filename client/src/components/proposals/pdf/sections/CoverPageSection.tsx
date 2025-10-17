@@ -148,7 +148,7 @@ export function CoverPageSection({
         
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Proposal Number</Text>
-          <Text style={styles.detailValue}>{proposal.proposalNumber}</Text>
+          <Text style={styles.detailValue}>{proposal.proposalNumber || 'N/A'}</Text>
         </View>
         
         <View style={styles.detailRow}>

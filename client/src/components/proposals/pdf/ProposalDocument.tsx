@@ -2,7 +2,7 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 import type { Proposal, ProposalSection, Project } from '@shared/schema';
 import { CoverPageSection } from './sections/CoverPageSection';
 
-const styles = StyleSheet.create({
+const createStyles = (primaryColor: string = '#3B82F6') => StyleSheet.create({
   page: {
     padding: 40,
     fontSize: 11,
@@ -12,7 +12,7 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 20,
     paddingBottom: 10,
-    borderBottom: '2px solid #3B82F6',
+    borderBottom: `2px solid ${primaryColor}`,
   },
   title: {
     fontSize: 24,
@@ -46,9 +46,10 @@ const styles = StyleSheet.create({
     left: 40,
     right: 40,
     paddingTop: 10,
-    borderTop: '1px solid #E5E7EB',
+    borderTop: `1px solid ${primaryColor}`,
     fontSize: 9,
-    color: '#9CA3AF',
+    color: primaryColor,
+    opacity: 0.6,
   },
 });
 
@@ -69,6 +70,9 @@ export function ProposalDocument({
   companyName,
   primaryColor = '#3B82F6',
 }: ProposalDocumentProps) {
+  // Create styles with the custom color
+  const styles = createStyles(primaryColor);
+  
   // Sort sections by order
   const sortedSections = [...sections].sort((a, b) => a.order - b.order);
 
@@ -123,7 +127,6 @@ export function ProposalDocument({
           {/* Footer */}
           <View style={styles.footer}>
             <Text>{companyName || 'Company Name'}</Text>
-            <Text>Page 1</Text>
           </View>
         </Page>
       )}
