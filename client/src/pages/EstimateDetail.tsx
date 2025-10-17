@@ -3385,7 +3385,7 @@ export default function EstimateDetail() {
                   name="unitCostExTax"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Builder's Cost (Ex Tax)</FormLabel>
+                      <FormLabel>Unit Cost (Ex Tax)</FormLabel>
                       <FormControl>
                         <Input 
                           type="number" 
@@ -3395,9 +3395,14 @@ export default function EstimateDetail() {
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
                           onChange={(e) => {
-                            const cost = parseFloat(e.target.value) || 0;
-                            const rounded = Math.round(cost * 100) / 100;
-                            field.onChange(rounded);
+                            const value = e.target.value;
+                            if (value === '' || value === '0') {
+                              field.onChange(0);
+                            } else {
+                              const cost = parseFloat(value) || 0;
+                              const rounded = Math.round(cost * 100) / 100;
+                              field.onChange(rounded);
+                            }
                           }}
                           data-testid="input-item-builder-cost"
                         />
@@ -3418,7 +3423,7 @@ export default function EstimateDetail() {
                           type="number" 
                           step="0.1" 
                           min="0"
-                          placeholder="0% (default)"
+                          placeholder="0"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           {...field}
                           value={field.value ?? ''}
@@ -3851,7 +3856,7 @@ export default function EstimateDetail() {
                       name="unitCostExTax"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Builder's Cost (Ex Tax)</FormLabel>
+                          <FormLabel>Unit Cost (Ex Tax)</FormLabel>
                           <FormControl>
                             <Input 
                               type="number" 
@@ -3861,9 +3866,14 @@ export default function EstimateDetail() {
                               className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               {...field}
                               onChange={(e) => {
-                                const cost = parseFloat(e.target.value) || 0;
-                                const rounded = Math.round(cost * 100) / 100;
-                                field.onChange(rounded);
+                                const value = e.target.value;
+                                if (value === '' || value === '0') {
+                                  field.onChange(0);
+                                } else {
+                                  const cost = parseFloat(value) || 0;
+                                  const rounded = Math.round(cost * 100) / 100;
+                                  field.onChange(rounded);
+                                }
                               }}
                               data-testid="input-edit-item-builder-cost"
                             />
@@ -3884,7 +3894,7 @@ export default function EstimateDetail() {
                               type="number" 
                               step="0.1" 
                               min="0"
-                              placeholder="0% (default)"
+                              placeholder="0"
                               className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               {...field}
                               value={field.value ?? ''}
@@ -3900,6 +3910,55 @@ export default function EstimateDetail() {
                       )}
                     />
                   </div>
+
+                  {/* Calculated Totals */}
+                  {(() => {
+                    const qty = editForm.watch("quantity") || 0;
+                    const unitCost = editForm.watch("unitCostExTax") || 0;
+                    const markup = editForm.watch("markupPercent") || 0;
+                    const taxRate = 10; // 10% GST
+                    
+                    const builderCostExTax = Math.round(qty * unitCost * 100); // in cents
+                    const builderCostTax = Math.round((builderCostExTax * taxRate) / 100);
+                    const builderCostIncTax = builderCostExTax + builderCostTax;
+                    
+                    const markupAmount = Math.round((builderCostExTax * markup) / 100);
+                    const clientPriceExTax = builderCostExTax + markupAmount;
+                    const clientTax = Math.round((clientPriceExTax * taxRate) / 100);
+                    const clientPriceIncTax = clientPriceExTax + clientTax;
+                    
+                    return (qty > 0 && unitCost > 0) ? (
+                      <div className="p-4 bg-muted/30 rounded-lg border space-y-2">
+                        <h4 className="text-sm font-semibold mb-2">Calculated Totals</h4>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground">Builder's Cost ex Tax</p>
+                            <p className="font-semibold">
+                              {formatCurrency(builderCostExTax)}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground">Builder's Cost inc Tax</p>
+                            <p className="font-semibold">
+                              {formatCurrency(builderCostIncTax)}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground">Client Price ex Tax</p>
+                            <p className="font-semibold">
+                              {formatCurrency(clientPriceExTax)}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground">Client Price inc Tax</p>
+                            <p className="font-semibold text-primary">
+                              {formatCurrency(clientPriceIncTax)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
 
                   <Separator className="my-4" />
 

@@ -92,6 +92,12 @@ export default function AllowanceDetail() {
   const [enteredActualCost, setEnteredActualCost] = useState("");
   const [isSavingPc, setIsSavingPc] = useState(false);
   const [isSavingPs, setIsSavingPs] = useState(false);
+  
+  // PC pricing breakdown state
+  const [pcQuantity, setPcQuantity] = useState("1");
+  const [pcUnitCostExTax, setPcUnitCostExTax] = useState("");
+  const [pcMarkupPercent, setPcMarkupPercent] = useState("");
+  const [useSimpleEntry, setUseSimpleEntry] = useState(true);
 
   // Fetch all allowances for the project
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
@@ -208,15 +214,37 @@ export default function AllowanceDetail() {
     try {
       const currentActualCost = allowance?.actualCost || 0;
 
-      if (enteredActualCost) {
+      if (useSimpleEntry && enteredActualCost) {
         // Simple cost entry - add to existing cost
-        const additionalCost = Math.round(parseFloat(enteredActualCost) * 100);
+        // Use toFixed to avoid floating point precision issues (e.g., 720 → 719.99)
+        const additionalCost = Math.round(parseFloat(parseFloat(enteredActualCost).toFixed(2)) * 100);
         const newActualCost = currentActualCost + additionalCost;
         await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
         
         // Refetch to ensure fresh data for next save
         await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
         setEnteredActualCost("");
+      } else if (!useSimpleEntry && pcUnitCostExTax) {
+        // Detailed pricing breakdown - calculate and save
+        const qty = parseFloat(pcQuantity) || 1;
+        const unitCost = parseFloat(parseFloat(pcUnitCostExTax).toFixed(2)) || 0;
+        const markup = parseFloat(pcMarkupPercent) || 0;
+        
+        const builderCostExTax = Math.round(qty * unitCost * 100); // in cents
+        const markupAmount = Math.round((builderCostExTax * markup) / 100);
+        const amountExTax = builderCostExTax + markupAmount;
+        const taxRate = 10; // 10% GST
+        const amountTax = Math.round((amountExTax * taxRate) / 100);
+        const amountIncTax = amountExTax + amountTax;
+        
+        const newActualCost = currentActualCost + amountIncTax;
+        await updateAllowanceMutation.mutateAsync({ actualCost: newActualCost });
+        
+        // Refetch to ensure fresh data for next save
+        await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+        setPcQuantity("1");
+        setPcUnitCostExTax("");
+        setPcMarkupPercent("");
       } else if (selectedLineItems.size > 0) {
         // Bill line items selected
         const selectedItems = billLineItems.filter(item => selectedLineItems.has(item.id));
@@ -529,27 +557,158 @@ export default function AllowanceDetail() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="actualCost">Actual Cost (excl. markup)</Label>
-                  <Input
-                    id="actualCost"
-                    type="number"
-                    step="0.01"
-                    placeholder="Enter cost"
-                    value={enteredActualCost}
-                    onChange={(e) => setEnteredActualCost(e.target.value)}
-                    data-testid="input-actual-cost"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <Button 
-                    onClick={handleSavePcItem}
-                    disabled={(!enteredActualCost && selectedLineItems.size === 0) || isSavingPc}
-                    data-testid="button-save-pc-item"
-                  >
-                    {isSavingPc ? "Saving..." : "Save"}
-                  </Button>
-                </div>
+                {useSimpleEntry ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="actualCost">Actual Cost (excl. markup)</Label>
+                      <Input
+                        id="actualCost"
+                        type="number"
+                        step="0.01"
+                        placeholder="Enter cost"
+                        value={enteredActualCost}
+                        onChange={(e) => setEnteredActualCost(e.target.value)}
+                        data-testid="input-actual-cost"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Button 
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUseSimpleEntry(false)}
+                        data-testid="button-show-breakdown"
+                      >
+                        Show pricing breakdown
+                      </Button>
+                      <Button 
+                        onClick={handleSavePcItem}
+                        disabled={(!enteredActualCost && selectedLineItems.size === 0) || isSavingPc}
+                        data-testid="button-save-pc-item"
+                      >
+                        {isSavingPc ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Pricing Breakdown Table */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold">Pricing Breakdown</h4>
+                        <Button 
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setUseSimpleEntry(true)}
+                          data-testid="button-hide-breakdown"
+                        >
+                          Use simple entry
+                        </Button>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="pcQuantity">Quantity</Label>
+                          <Input
+                            id="pcQuantity"
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            placeholder="1"
+                            value={pcQuantity}
+                            onChange={(e) => setPcQuantity(e.target.value)}
+                            data-testid="input-pc-quantity"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="pcUnitCostExTax">Unit Cost (Ex Tax)</Label>
+                          <Input
+                            id="pcUnitCostExTax"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={pcUnitCostExTax}
+                            onChange={(e) => setPcUnitCostExTax(e.target.value)}
+                            data-testid="input-pc-unit-cost"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="pcMarkupPercent">Markup % (Optional)</Label>
+                        <Input
+                          id="pcMarkupPercent"
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          placeholder="0"
+                          value={pcMarkupPercent}
+                          onChange={(e) => setPcMarkupPercent(e.target.value)}
+                          data-testid="input-pc-markup"
+                        />
+                      </div>
+
+                      {/* Calculated Values */}
+                      {(() => {
+                        const qty = parseFloat(pcQuantity) || 0;
+                        const unitCost = parseFloat(pcUnitCostExTax) || 0;
+                        const markup = parseFloat(pcMarkupPercent) || 0;
+                        const taxRate = 10; // 10% GST
+                        
+                        const builderCostExTax = Math.round(qty * unitCost * 100); // in cents
+                        const builderCostTax = Math.round((builderCostExTax * taxRate) / 100);
+                        const builderCostIncTax = builderCostExTax + builderCostTax;
+                        
+                        const markupAmount = Math.round((builderCostExTax * markup) / 100);
+                        const amountExTax = builderCostExTax + markupAmount;
+                        const amountTax = Math.round((amountExTax * taxRate) / 100);
+                        const amountIncTax = amountExTax + amountTax;
+                        
+                        return (
+                          <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div className="space-y-1">
+                                <p className="text-muted-foreground">Builder's Cost ex Tax</p>
+                                <p className="font-semibold" data-testid="text-builder-cost-ex-tax">
+                                  {formatCurrency(builderCostExTax)}
+                                </p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-muted-foreground">Builder's Cost inc Tax</p>
+                                <p className="font-semibold" data-testid="text-builder-cost-inc-tax">
+                                  {formatCurrency(builderCostIncTax)}
+                                </p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-muted-foreground">Amount ex Tax</p>
+                                <p className="font-semibold" data-testid="text-amount-ex-tax">
+                                  {formatCurrency(amountExTax)}
+                                </p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-muted-foreground">Amount inc Tax</p>
+                                <p className="font-semibold text-primary" data-testid="text-amount-inc-tax">
+                                  {formatCurrency(amountIncTax)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button 
+                        onClick={handleSavePcItem}
+                        disabled={(!pcUnitCostExTax && selectedLineItems.size === 0) || isSavingPc}
+                        data-testid="button-save-pc-item"
+                      >
+                        {isSavingPc ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                  </>
+                )}
                 <Dialog open={isBillModalOpen} onOpenChange={setIsBillModalOpen}>
                   <DialogTrigger asChild>
                     <Button
