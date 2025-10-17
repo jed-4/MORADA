@@ -1,6 +1,8 @@
 import { useParams, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +89,7 @@ export default function AllowanceDetail() {
   const [customLineDescription, setCustomLineDescription] = useState("");
   const [customLineQuantity, setCustomLineQuantity] = useState("1");
   const [customLineUnitPrice, setCustomLineUnitPrice] = useState("");
+  const [enteredActualCost, setEnteredActualCost] = useState("");
 
   // Fetch all allowances for the project
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
@@ -127,6 +130,70 @@ export default function AllowanceDetail() {
     queryKey: ["/api/projects", projectId, "timesheets"],
     enabled: isTimesheetModalOpen,
   });
+
+  const { toast } = useToast();
+
+  // Mutation to update allowance (for simple cost entry)
+  const updateAllowanceMutation = useMutation({
+    mutationFn: async ({ actualCost }: { actualCost: number }) => {
+      return apiRequest(`/api/estimate-items/${allowanceId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ actualCost }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
+      toast({
+        title: "Success",
+        description: "Allowance updated successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update allowance",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation to create bill line item allowances (for bill selection)
+  const createBillLineItemAllowanceMutation = useMutation({
+    mutationFn: async ({ billLineItemId, amount }: { billLineItemId: string; amount: number }) => {
+      return apiRequest("/api/bill-line-item-allowances", {
+        method: "POST",
+        body: JSON.stringify({
+          billLineItemId,
+          estimateItemId: allowanceId,
+          amount,
+        }),
+      });
+    },
+  });
+
+  // Handle saving PC item
+  const handleSavePcItem = async () => {
+    if (enteredActualCost) {
+      // Simple cost entry
+      const costInCents = Math.round(parseFloat(enteredActualCost) * 100);
+      await updateAllowanceMutation.mutateAsync({ actualCost: costInCents });
+    } else if (selectedLineItems.size > 0) {
+      // Bill line items selected
+      const selectedItems = billLineItems.filter(item => selectedLineItems.has(item.id));
+      const totalCost = selectedItems.reduce((sum, item) => sum + item.total, 0);
+      
+      // Create all bill line item allowances
+      for (const item of selectedItems) {
+        await createBillLineItemAllowanceMutation.mutateAsync({
+          billLineItemId: item.id,
+          amount: item.total,
+        });
+      }
+      
+      // Update allowance with total cost
+      await updateAllowanceMutation.mutateAsync({ actualCost: totalCost });
+    }
+  };
 
   const formatCurrency = (cents: number) => {
     const dollars = cents / 100;
@@ -341,8 +408,19 @@ export default function AllowanceDetail() {
                     type="number"
                     step="0.01"
                     placeholder="Enter cost"
+                    value={enteredActualCost}
+                    onChange={(e) => setEnteredActualCost(e.target.value)}
                     data-testid="input-actual-cost"
                   />
+                </div>
+                <div className="flex justify-end">
+                  <Button 
+                    onClick={handleSavePcItem}
+                    disabled={!enteredActualCost && selectedLineItems.size === 0}
+                    data-testid="button-save-pc-item"
+                  >
+                    Save
+                  </Button>
                 </div>
                 <Dialog open={isBillModalOpen} onOpenChange={setIsBillModalOpen}>
                   <DialogTrigger asChild>
@@ -435,8 +513,11 @@ export default function AllowanceDetail() {
                       <Button variant="outline" onClick={() => setIsBillModalOpen(false)}>
                         Cancel
                       </Button>
-                      <Button data-testid="button-save-selections">
-                        Save Selections
+                      <Button 
+                        onClick={() => setIsBillModalOpen(false)}
+                        data-testid="button-save-selections"
+                      >
+                        Add Selected
                       </Button>
                     </div>
                   </DialogContent>
@@ -452,7 +533,35 @@ export default function AllowanceDetail() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">No bill line items selected</p>
+                {selectedLineItems.size === 0 ? (
+                  <p className="text-sm text-muted-foreground">No bill line items selected</p>
+                ) : (
+                  <div className="space-y-2">
+                    {billLineItems
+                      .filter(item => selectedLineItems.has(item.id))
+                      .map(item => (
+                        <div key={item.id} className="flex items-center justify-between p-2 rounded border">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{item.description}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.quantity} × {formatCurrency(item.unitPrice)}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold">{formatCurrency(item.total)}</p>
+                        </div>
+                      ))}
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <p className="font-semibold">Total</p>
+                      <p className="font-semibold">
+                        {formatCurrency(
+                          billLineItems
+                            .filter(item => selectedLineItems.has(item.id))
+                            .reduce((sum, item) => sum + item.total, 0)
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
