@@ -1,8 +1,6 @@
-import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
-import type { Proposal, ProposalSection } from '@shared/schema';
-
-// Register fonts if needed
-// Font.register({ family: 'Inter', src: '/fonts/Inter-Regular.ttf' });
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import type { Proposal, ProposalSection, Project } from '@shared/schema';
+import { CoverPageSection } from './sections/CoverPageSection';
 
 const styles = StyleSheet.create({
   page: {
@@ -57,6 +55,7 @@ const styles = StyleSheet.create({
 interface ProposalDocumentProps {
   proposal: Proposal;
   sections: ProposalSection[];
+  project?: Project;
   companyLogo?: string;
   companyName?: string;
   primaryColor?: string;
@@ -65,6 +64,7 @@ interface ProposalDocumentProps {
 export function ProposalDocument({
   proposal,
   sections,
+  project,
   companyLogo,
   companyName,
   primaryColor = '#3B82F6',
@@ -72,42 +72,61 @@ export function ProposalDocument({
   // Sort sections by order
   const sortedSections = [...sections].sort((a, b) => a.order - b.order);
 
+  // Check if we have a cover page section
+  const coverPageSection = sortedSections.find(s => s.sectionType === 'cover_page');
+  const otherSections = sortedSections.filter(s => s.sectionType !== 'cover_page');
+
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          {companyLogo && (
-            <Image
-              src={companyLogo}
-              style={{ width: 120, height: 40, marginBottom: 10 }}
-            />
-          )}
-          <Text style={styles.title}>{proposal.name}</Text>
-          <Text style={styles.subtitle}>Proposal #{proposal.proposalNumber}</Text>
-          {proposal.expiryDate && (
-            <Text style={styles.subtitle}>
-              Valid until: {new Date(proposal.expiryDate).toLocaleDateString()}
-            </Text>
-          )}
-        </View>
+      {/* Render cover page as first page if it exists */}
+      {coverPageSection && (
+        <CoverPageSection
+          proposal={proposal}
+          section={coverPageSection}
+          project={project}
+          companyLogo={companyLogo}
+          companyName={companyName}
+          primaryColor={primaryColor}
+        />
+      )}
 
-        {/* Render sections */}
-        {sortedSections.map((section) => (
-          <View key={section.id} style={styles.section}>
-            <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
-            {section.description && section.description.trim() !== '' && (
-              <Text style={styles.text}>{section.description}</Text>
+      {/* Render other sections on subsequent pages */}
+      {otherSections.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          {/* Header */}
+          <View style={styles.header}>
+            {companyLogo && (
+              <Image
+                src={companyLogo}
+                style={{ width: 120, height: 40, marginBottom: 10 }}
+              />
+            )}
+            <Text style={styles.title}>{proposal.name}</Text>
+            <Text style={styles.subtitle}>Proposal #{proposal.proposalNumber}</Text>
+            {proposal.expiryDate && (
+              <Text style={styles.subtitle}>
+                Valid until: {new Date(proposal.expiryDate).toLocaleDateString()}
+              </Text>
             )}
           </View>
-        ))}
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text>{companyName || 'Company Name'}</Text>
-          <Text>Page 1</Text>
-        </View>
-      </Page>
+          {/* Render sections */}
+          {otherSections.map((section) => (
+            <View key={section.id} style={styles.section}>
+              <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
+              {section.description && section.description.trim() !== '' && (
+                <Text style={styles.text}>{section.description}</Text>
+              )}
+            </View>
+          ))}
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text>{companyName || 'Company Name'}</Text>
+            <Text>Page 1</Text>
+          </View>
+        </Page>
+      )}
     </Document>
   );
 }
