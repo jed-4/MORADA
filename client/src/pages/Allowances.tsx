@@ -1,9 +1,10 @@
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import {
   Table,
   TableBody,
@@ -45,21 +46,11 @@ type AllowanceWithCosts = {
   variance: number;
 };
 
-const statusOptions = [
-  { value: "pending", label: "Pending" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "finalized", label: "Finalized" },
-];
-
-const statusColors = {
-  pending: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100",
-  in_progress: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100",
-  finalized: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100",
-};
-
 export default function Allowances() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { statusOptions, getStatusInfo } = useAllowanceStatusOptions();
   const [editingMarkup, setEditingMarkup] = useState<string | null>(null);
   const [markupValue, setMarkupValue] = useState<string>("");
   const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
@@ -217,26 +208,27 @@ export default function Allowances() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Estimate</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Original Amount</TableHead>
-                        <TableHead className="text-right">PC Markup</TableHead>
-                        <TableHead className="text-right">Actual Cost</TableHead>
-                        <TableHead className="text-right">Variance</TableHead>
+                        <TableHead className="w-[35%]">Description</TableHead>
+                        <TableHead className="w-[15%] text-right">Estimate Price</TableHead>
+                        <TableHead className="w-[12%]">Status</TableHead>
+                        <TableHead className="w-[12%] text-right">PC Markup</TableHead>
+                        <TableHead className="w-[13%] text-right">Actual Price</TableHead>
+                        <TableHead className="w-[13%] text-right">Variance</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {pcItems.map(({ item, actualCost, variance }) => (
-                        <TableRow key={item.id}>
+                        <TableRow 
+                          key={item.id}
+                          className="cursor-pointer hover-elevate"
+                          onClick={() => setLocation(`/projects/${projectId}/allowances/${item.id}`)}
+                          data-testid={`row-allowance-${item.id}`}
+                        >
                           <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              <div>{item.estimateName}</div>
-                              <div className="text-muted-foreground">v{item.estimateVersion}</div>
-                            </div>
+                          <TableCell className="text-right" data-testid={`text-estimate-${item.id}`}>
+                            {formatCurrency(item.priceIncTax)}
                           </TableCell>
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <Select
                               value={item.allowanceStatus}
                               onValueChange={(value) =>
@@ -245,24 +237,36 @@ export default function Allowances() {
                               disabled={updateStatusMutation.isPending}
                             >
                               <SelectTrigger
-                                className="w-[140px]"
+                                className="w-fit border-0 p-0 h-auto"
                                 data-testid={`select-status-${item.id}`}
                               >
-                                <SelectValue />
+                                {(() => {
+                                  const statusInfo = getStatusInfo(item.allowanceStatus);
+                                  const color = statusInfo.color || "#6B7280";
+                                  return (
+                                    <Badge
+                                      style={{
+                                        backgroundColor: `${color}15`,
+                                        color: color,
+                                      }}
+                                      className="border-0"
+                                      data-testid={`badge-status-${item.id}`}
+                                    >
+                                      {statusInfo.name}
+                                    </Badge>
+                                  );
+                                })()}
                               </SelectTrigger>
                               <SelectContent>
                                 {statusOptions.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                  <SelectItem key={opt.key} value={opt.key}>
+                                    {opt.name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
                           </TableCell>
-                          <TableCell className="text-right" data-testid={`text-original-${item.id}`}>
-                            {formatCurrency(item.priceIncTax)}
-                          </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             {editingMarkup === item.id ? (
                               <div className="flex items-center gap-2 justify-end">
                                 <Input
@@ -334,25 +338,26 @@ export default function Allowances() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Estimate</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Original Amount</TableHead>
-                        <TableHead className="text-right">Actual Cost</TableHead>
-                        <TableHead className="text-right">Variance</TableHead>
+                        <TableHead className="w-[35%]">Description</TableHead>
+                        <TableHead className="w-[15%] text-right">Estimate Price</TableHead>
+                        <TableHead className="w-[12%]">Status</TableHead>
+                        <TableHead className="w-[25%] text-right">Actual Price</TableHead>
+                        <TableHead className="w-[13%] text-right">Variance</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {psItems.map(({ item, actualCost, variance }) => (
-                        <TableRow key={item.id}>
+                        <TableRow 
+                          key={item.id}
+                          className="cursor-pointer hover-elevate"
+                          onClick={() => setLocation(`/projects/${projectId}/allowances/${item.id}`)}
+                          data-testid={`row-allowance-${item.id}`}
+                        >
                           <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              <div>{item.estimateName}</div>
-                              <div className="text-muted-foreground">v{item.estimateVersion}</div>
-                            </div>
+                          <TableCell className="text-right" data-testid={`text-estimate-${item.id}`}>
+                            {formatCurrency(item.priceIncTax)}
                           </TableCell>
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <Select
                               value={item.allowanceStatus}
                               onValueChange={(value) =>
@@ -361,22 +366,34 @@ export default function Allowances() {
                               disabled={updateStatusMutation.isPending}
                             >
                               <SelectTrigger
-                                className="w-[140px]"
+                                className="w-fit border-0 p-0 h-auto"
                                 data-testid={`select-status-${item.id}`}
                               >
-                                <SelectValue />
+                                {(() => {
+                                  const statusInfo = getStatusInfo(item.allowanceStatus);
+                                  const color = statusInfo.color || "#6B7280";
+                                  return (
+                                    <Badge
+                                      style={{
+                                        backgroundColor: `${color}15`,
+                                        color: color,
+                                      }}
+                                      className="border-0"
+                                      data-testid={`badge-status-${item.id}`}
+                                    >
+                                      {statusInfo.name}
+                                    </Badge>
+                                  );
+                                })()}
                               </SelectTrigger>
                               <SelectContent>
                                 {statusOptions.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                  <SelectItem key={opt.key} value={opt.key}>
+                                    {opt.name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                          </TableCell>
-                          <TableCell className="text-right" data-testid={`text-original-${item.id}`}>
-                            {formatCurrency(item.priceIncTax)}
                           </TableCell>
                           <TableCell className="text-right" data-testid={`text-actual-${item.id}`}>
                             {formatCurrency(actualCost)}

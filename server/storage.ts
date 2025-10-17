@@ -1052,6 +1052,45 @@ export class MemStorage implements IStorage {
       };
       this.fieldOptions.set(option.id, option);
     });
+
+    // Allowance Status Category
+    const allowanceStatusCategory: FieldCategory = {
+      id: "cat-allowance-status",
+      key: "allowance.status",
+      label: "Allowance Statuses",
+      entity: "allowance",
+      description: "Status options for PC and PS allowances",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 7,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(allowanceStatusCategory.id, allowanceStatusCategory);
+
+    // Add default options for Allowance Status
+    const allowanceStatusOptions = [
+      { key: "pending", name: "Pending", color: "#F59E0B", isDefault: true },
+      { key: "in_progress", name: "In Progress", color: "#3B82F6", isDefault: false },
+      { key: "finalized", name: "Finalized", color: "#10B981", isDefault: false },
+    ];
+
+    allowanceStatusOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-allowance-status-${opt.key}`,
+        categoryId: allowanceStatusCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        isCompleted: opt.key === "finalized",
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
   }
 
   // Initialize default projects including business project
