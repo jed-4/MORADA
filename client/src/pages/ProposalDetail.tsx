@@ -88,8 +88,11 @@ export default function ProposalDetail() {
     queryKey: ["/api/projects"],
   });
 
+  // Get the project for this proposal
+  const project = proposal ? projects.find(p => p.id === proposal.projectId) : undefined;
+
   // Fetch company settings (optional - for branding)
-  const { data: companySettings } = useQuery<{ logoUrl?: string; companyName?: string } | null>({
+  const { data: companySettings } = useQuery<{ logoUrl?: string; companyName?: string; primaryColor?: string } | null>({
     queryKey: ["/api/company-settings"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
@@ -408,11 +411,13 @@ export default function ProposalDetail() {
           <ProposalBuilder
             proposal={proposal!}
             sections={localSections}
+            project={project}
             onSectionsReorder={handleSectionsReorder}
             onSectionEdit={handleSectionEdit}
             onAddSection={handleAddSection}
             companyLogo={companySettings?.logoUrl}
             companyName={companySettings?.companyName}
+            primaryColor={companySettings?.primaryColor || project?.color || undefined}
           />
         )}
       </div>

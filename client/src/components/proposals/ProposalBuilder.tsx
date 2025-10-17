@@ -7,7 +7,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
-import type { Proposal, ProposalSection } from '@shared/schema';
+import type { Proposal, ProposalSection, Project } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 
 interface SortableSectionItemProps {
@@ -49,21 +49,25 @@ function SortableSectionItem({ section, onEdit }: SortableSectionItemProps) {
 interface ProposalBuilderProps {
   proposal: Proposal;
   sections: ProposalSection[];
+  project?: Project;
   onSectionsReorder: (sections: ProposalSection[]) => void;
   onSectionEdit: (section: ProposalSection) => void;
   onAddSection: () => void;
   companyLogo?: string;
   companyName?: string;
+  primaryColor?: string;
 }
 
 export function ProposalBuilder({
   proposal,
   sections,
+  project,
   onSectionsReorder,
   onSectionEdit,
   onAddSection,
   companyLogo,
   companyName,
+  primaryColor,
 }: ProposalBuilderProps) {
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -98,8 +102,10 @@ export function ProposalBuilder({
           <ProposalDocument
             proposal={proposal}
             sections={sections}
+            project={project}
             companyLogo={companyLogo}
             companyName={companyName}
+            primaryColor={primaryColor}
           />
         ).toBlob();
         
@@ -133,7 +139,7 @@ export function ProposalBuilder({
         pdfUrlRef.current = null;
       }
     };
-  }, [proposal, sections, companyLogo, companyName, showPreview]);
+  }, [proposal, sections, project, companyLogo, companyName, primaryColor, showPreview]);
 
   function handleDragEnd(event: any) {
     const { active, over } = event;
@@ -170,8 +176,10 @@ export function ProposalBuilder({
                 <ProposalDocument
                   proposal={proposal}
                   sections={sections}
+                  project={project}
                   companyLogo={companyLogo}
                   companyName={companyName}
+                  primaryColor={primaryColor}
                 />
               }
               fileName={`${proposal.proposalNumber}.pdf`}
