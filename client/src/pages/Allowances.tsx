@@ -75,13 +75,38 @@ export default function Allowances() {
     },
   });
 
-  // Set default estimate (working estimate or first estimate)
+  // Reset selectedEstimateId when project changes
+  useEffect(() => {
+    setSelectedEstimateId(null);
+  }, [projectId]);
+
+  // Initialize from localStorage or set default estimate (working estimate or first estimate)
   useEffect(() => {
     if (estimates.length > 0 && !selectedEstimateId) {
-      const workingEstimate = estimates.find(e => e.status === 'working');
-      setSelectedEstimateId(workingEstimate?.id || estimates[0].id);
+      const storageKey = `allowances-selected-estimate-${projectId}`;
+      const storedEstimateId = localStorage.getItem(storageKey);
+      
+      // Check if stored estimate still exists in current estimates
+      const storedEstimateExists = storedEstimateId && estimates.some(e => e.id === storedEstimateId);
+      
+      if (storedEstimateExists) {
+        setSelectedEstimateId(storedEstimateId);
+      } else {
+        // Fall back to working estimate or first estimate
+        const workingEstimate = estimates.find(e => e.status === 'working');
+        const defaultEstimateId = workingEstimate?.id || estimates[0].id;
+        setSelectedEstimateId(defaultEstimateId);
+        localStorage.setItem(storageKey, defaultEstimateId);
+      }
     }
-  }, [estimates, selectedEstimateId]);
+  }, [estimates, selectedEstimateId, projectId]);
+
+  // Save to localStorage when estimate selection changes
+  const handleEstimateChange = (estimateId: string) => {
+    setSelectedEstimateId(estimateId);
+    const storageKey = `allowances-selected-estimate-${projectId}`;
+    localStorage.setItem(storageKey, estimateId);
+  };
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
@@ -172,7 +197,7 @@ export default function Allowances() {
             </label>
             <Select
               value={selectedEstimateId || ""}
-              onValueChange={setSelectedEstimateId}
+              onValueChange={handleEstimateChange}
               disabled={estimatesLoading || estimates.length === 0}
             >
               <SelectTrigger className="w-[250px]" id="estimate-selector" data-testid="select-estimate">
