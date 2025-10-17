@@ -97,7 +97,7 @@ export default function AllowanceDetail() {
   const [pcQuantity, setPcQuantity] = useState("1");
   const [pcUnitCostExTax, setPcUnitCostExTax] = useState("");
   const [pcMarkupPercent, setPcMarkupPercent] = useState("");
-  const [useSimpleEntry, setUseSimpleEntry] = useState(true);
+  const [useSimpleEntry, setUseSimpleEntry] = useState(false);
 
   // Fetch all allowances for the project
   const { data: allowances = [], isLoading } = useQuery<AllowanceWithCosts[]>({
@@ -224,10 +224,10 @@ export default function AllowanceDetail() {
         // Refetch to ensure fresh data for next save
         await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
         setEnteredActualCost("");
-      } else if (!useSimpleEntry && pcUnitCostExTax) {
-        // Detailed pricing breakdown - calculate and save
-        const qty = parseFloat(pcQuantity) || 1;
-        const unitCost = parseFloat(parseFloat(pcUnitCostExTax).toFixed(2)) || 0;
+      } else if (!useSimpleEntry && (pcQuantity || pcUnitCostExTax)) {
+        // Detailed pricing breakdown - calculate and save (requires at least quantity or unit cost)
+        const qty = parseFloat(pcQuantity) || 0;
+        const unitCost = parseFloat(parseFloat(pcUnitCostExTax || "0").toFixed(2)) || 0;
         const markup = parseFloat(pcMarkupPercent) || 0;
         
         const builderCostExTax = Math.round(qty * unitCost * 100); // in cents
