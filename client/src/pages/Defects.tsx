@@ -10,13 +10,21 @@ import { DefectTableView } from "@/components/defects/DefectTableView";
 import { DefectBoardView } from "@/components/defects/DefectBoardView";
 
 export default function Defects() {
-  const { id: projectId } = useParams<{ id: string }>();
+  const { projectId } = useParams<{ projectId: string }>();
   const [activeView, setActiveView] = useState<"table" | "board">("table");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   // Fetch defects for this project
   const { data: defects = [], isLoading } = useQuery<Defect[]>({
-    queryKey: ["/api/defects", { projectId }],
+    queryKey: ["/api/defects", projectId],
+    queryFn: async () => {
+      const url = projectId 
+        ? `/api/defects?projectId=${projectId}` 
+        : "/api/defects";
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to fetch defects");
+      return response.json();
+    },
   });
 
   return (
