@@ -1043,6 +1043,33 @@ export const insertTimesheetAllowanceSchema = createInsertSchema(timesheetAllowa
 export type InsertTimesheetAllowance = z.infer<typeof insertTimesheetAllowanceSchema>;
 export type TimesheetAllowance = typeof timesheetAllowances.$inferSelect;
 
+// Allowance Items (custom line items for PS allowances)
+export const allowanceItems = pgTable("allowance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }), // The PS allowance
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
+  totalPrice: integer("total_price").notNull().default(0), // Total price in cents
+  sortOrder: integer("sort_order").notNull().default(0), // For ordering
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertAllowanceItemSchema = createInsertSchema(allowanceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.number().default(1),
+  unitPrice: z.number().default(0),
+  totalPrice: z.number().default(0),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertAllowanceItem = z.infer<typeof insertAllowanceItemSchema>;
+export type AllowanceItem = typeof allowanceItems.$inferSelect;
+
 // Xero Connections
 export const xeroConnections = pgTable("xero_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

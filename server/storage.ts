@@ -315,6 +315,13 @@ export interface IStorage {
   deleteTimesheetAllowance(id: string): Promise<void>;
   deleteTimesheetAllowancesByTimesheetId(timesheetId: string): Promise<void>;
 
+  // Allowance Items (custom lines for PS allowances)
+  getAllowanceItems(estimateItemId: string): Promise<AllowanceItem[]>;
+  createAllowanceItem(item: InsertAllowanceItem): Promise<AllowanceItem>;
+  updateAllowanceItem(id: string, item: Partial<InsertAllowanceItem>): Promise<AllowanceItem | undefined>;
+  deleteAllowanceItem(id: string): Promise<void>;
+  deleteAllowanceItemsByEstimateItemId(estimateItemId: string): Promise<void>;
+
   // Bill Approvals
   getBillApprovals(billId: string): Promise<BillApproval[]>;
   createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
