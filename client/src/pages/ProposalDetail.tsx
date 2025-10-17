@@ -1,6 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
@@ -98,20 +98,31 @@ export default function ProposalDetail() {
   // Determine if we're in project context
   const isProjectContext = !!params.projectId;
 
+  // Stable default values for new proposals
+  const newProposalDefaults = useMemo(() => ({
+    name: "",
+    proposalNumber: `PROP-${Date.now()}`,
+    projectId: params.projectId || "",
+    status: "draft" as const,
+    subtotal: 0,
+    gstAmount: 0,
+    totalAmount: 0,
+    showPricing: true,
+  }), [params.projectId]);
+
   // Form for proposal details
   const form = useForm<InsertProposal>({
     resolver: zodResolver(insertProposalSchema),
-    defaultValues: proposal || {
-      name: "",
-      proposalNumber: `PROP-${Date.now()}`,
-      projectId: params.projectId || "",
-      status: "draft",
-      subtotal: 0,
-      gstAmount: 0,
-      totalAmount: 0,
-      showPricing: true,
-    },
+    defaultValues: newProposalDefaults,
   });
+
+  // Reset form when proposal loads
+  useEffect(() => {
+    if (proposal && !isNewProposal) {
+      form.reset(proposal as InsertProposal);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposal, isNewProposal]);
 
   // Update proposal mutation
   const updateProposalMutation = useMutation({
