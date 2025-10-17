@@ -30,6 +30,7 @@ import {
   Truck,
   Tag,
   Archive,
+  AlertCircle,
 } from "lucide-react";
 
 import {
@@ -91,6 +92,7 @@ const projectItemsBase = [
   { title: "Proposal", baseUrl: "/proposal", icon: File },
   { title: "Selections", baseUrl: "/selections", icon: CheckCircle },
   { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
+  { title: "Defects", baseUrl: "/defects", icon: AlertCircle },
   { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
   { title: "Variations", baseUrl: "/variations", icon: FileText },
   { title: "Bills", baseUrl: "/bills", icon: Receipt },

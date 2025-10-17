@@ -59,6 +59,7 @@ import { db } from "./db";
 import { eq, or, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
+import type { Defect, InsertDefect } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -469,6 +470,13 @@ export interface IStorage {
   createScheduleTemplate(template: InsertScheduleTemplate): Promise<ScheduleTemplate>;
   updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>): Promise<ScheduleTemplate | undefined>;
   deleteScheduleTemplate(id: string): Promise<boolean>;
+
+  // Defects CRUD
+  getDefects(projectId?: string, status?: string): Promise<Defect[]>;
+  getDefectById(id: string): Promise<Defect | null>;
+  createDefect(defect: InsertDefect): Promise<Defect>;
+  updateDefect(id: string, defect: Partial<InsertDefect>): Promise<Defect>;
+  deleteDefect(id: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -3767,6 +3775,46 @@ export class DbStorage implements IStorage {
         isActive: true,
         sortOrder: 8,
       },
+      {
+        id: 'cat-defect-status',
+        key: 'defect.status',
+        label: 'Defect Statuses',
+        entity: 'defect',
+        description: 'Status options for defects',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 9,
+      },
+      {
+        id: 'cat-defect-priority',
+        key: 'defect.priority',
+        label: 'Defect Priorities',
+        entity: 'defect',
+        description: 'Priority levels for defects',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 10,
+      },
+      {
+        id: 'cat-defect-type',
+        key: 'defect.type',
+        label: 'Defect Types',
+        entity: 'defect',
+        description: 'Type/source of defects',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 11,
+      },
+      {
+        id: 'cat-defect-trade',
+        key: 'defect.trade',
+        label: 'Defect Trades',
+        entity: 'defect',
+        description: 'Trade categories for defects',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 12,
+      },
     ];
 
     for (const categoryData of requiredCategories) {
@@ -3895,6 +3943,37 @@ export class DbStorage implements IStorage {
           { id: 'opt-estimate-status-working', categoryId, key: 'working', name: 'Working', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
           { id: 'opt-estimate-status-locked', categoryId, key: 'locked', name: 'Locked', color: '#3B82F6', isDefault: false, isCompleted: false, sortOrder: 2 },
           { id: 'opt-estimate-status-approved', categoryId, key: 'approved', name: 'Approved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 3 },
+        ];
+      case 'defect.status':
+        return [
+          { id: 'opt-defect-status-open', categoryId, key: 'open', name: 'Open', color: '#EF4444', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-defect-status-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-defect-status-resolved', categoryId, key: 'resolved', name: 'Resolved', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-defect-status-closed', categoryId, key: 'closed', name: 'Closed', color: '#6B7280', isDefault: false, isCompleted: true, sortOrder: 3 },
+        ];
+      case 'defect.priority':
+        return [
+          { id: 'opt-defect-priority-critical', categoryId, key: 'critical', name: 'Critical', color: '#DC2626', isDefault: false, sortOrder: 0 },
+          { id: 'opt-defect-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 2 },
+          { id: 'opt-defect-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 3 },
+        ];
+      case 'defect.type':
+        return [
+          { id: 'opt-defect-type-builder', categoryId, key: 'builder', name: 'Builder Defect', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-defect-type-subcontractor', categoryId, key: 'subcontractor', name: 'Subcontractor', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-type-client', categoryId, key: 'client', name: 'Client Reported', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
+          { id: 'opt-defect-type-warranty', categoryId, key: 'warranty', name: 'Warranty', color: '#EF4444', isDefault: false, sortOrder: 3 },
+        ];
+      case 'defect.trade':
+        return [
+          { id: 'opt-defect-trade-general', categoryId, key: 'general', name: 'General', color: '#6B7280', isDefault: true, sortOrder: 0 },
+          { id: 'opt-defect-trade-carpentry', categoryId, key: 'carpentry', name: 'Carpentry', color: '#D97706', isDefault: false, sortOrder: 1 },
+          { id: 'opt-defect-trade-plumbing', categoryId, key: 'plumbing', name: 'Plumbing', color: '#06B6D4', isDefault: false, sortOrder: 2 },
+          { id: 'opt-defect-trade-electrical', categoryId, key: 'electrical', name: 'Electrical', color: '#3B82F6', isDefault: false, sortOrder: 3 },
+          { id: 'opt-defect-trade-painting', categoryId, key: 'painting', name: 'Painting', color: '#7C3AED', isDefault: false, sortOrder: 4 },
+          { id: 'opt-defect-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 5 },
+          { id: 'opt-defect-trade-tiling', categoryId, key: 'tiling', name: 'Tiling', color: '#0891B2', isDefault: false, sortOrder: 6 },
         ];
       default:
         return [];
@@ -7735,6 +7814,84 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteScheduleTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Defects CRUD
+  async getDefects(projectId?: string, status?: string): Promise<Defect[]> {
+    try {
+      let query = db.select().from(schema.defects);
+      const conditions = [];
+      
+      if (projectId) {
+        conditions.push(eq(schema.defects.projectId, projectId));
+      }
+      if (status) {
+        conditions.push(eq(schema.defects.status, status));
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+
+      const defects = await query.orderBy(desc(schema.defects.dateIdentified));
+      return defects as Defect[];
+    } catch (error) {
+      console.error("Database error in getDefects:", error);
+      throw error;
+    }
+  }
+
+  async getDefectById(id: string): Promise<Defect | null> {
+    try {
+      const result = await db.select()
+        .from(schema.defects)
+        .where(eq(schema.defects.id, id))
+        .limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in getDefectById:", error);
+      throw error;
+    }
+  }
+
+  async createDefect(defect: InsertDefect): Promise<Defect> {
+    try {
+      const result = await db.insert(schema.defects)
+        .values(defect)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createDefect:", error);
+      throw error;
+    }
+  }
+
+  async updateDefect(id: string, defect: Partial<InsertDefect>): Promise<Defect> {
+    try {
+      const result = await db.update(schema.defects)
+        .set({ ...defect, updatedAt: new Date() })
+        .where(eq(schema.defects.id, id))
+        .returning();
+      
+      if (result.length === 0) {
+        throw new Error("Defect not found");
+      }
+      
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateDefect:", error);
+      throw error;
+    }
+  }
+
+  async deleteDefect(id: string): Promise<void> {
+    try {
+      await db.delete(schema.defects)
+        .where(eq(schema.defects.id, id));
+    } catch (error) {
+      console.error("Database error in deleteDefect:", error);
       throw error;
     }
   }

@@ -57,7 +57,8 @@ import {
   insertScheduleTemplateSchema,
   updateScheduleTemplateSchema,
   insertTimesheetAllowanceSchema,
-  insertAllowanceItemSchema
+  insertAllowanceItemSchema,
+  insertDefectSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -5131,6 +5132,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to delete schedule template",
         details: error.message 
       });
+    }
+  });
+
+  // Defects API Routes
+  app.get("/api/defects", async (req, res) => {
+    try {
+      const { projectId, status } = req.query;
+      const defects = await storage.getDefects(
+        projectId as string | undefined, 
+        status as string | undefined
+      );
+      res.json(defects);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch defects" });
+    }
+  });
+
+  app.get("/api/defects/:id", async (req, res) => {
+    try {
+      const defect = await storage.getDefectById(req.params.id);
+      if (!defect) {
+        return res.status(404).json({ error: "Defect not found" });
+      }
+      res.json(defect);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch defect" });
+    }
+  });
+
+  app.post("/api/defects", async (req, res) => {
+    try {
+      const validationResult = insertDefectSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const defect = await storage.createDefect(validationResult.data);
+      res.status(201).json(defect);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create defect" });
+    }
+  });
+
+  app.patch("/api/defects/:id", async (req, res) => {
+    try {
+      const validationResult = insertDefectSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const defect = await storage.updateDefect(req.params.id, validationResult.data);
+      res.json(defect);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Defect not found") {
+        return res.status(404).json({ error: "Defect not found" });
+      }
+      res.status(500).json({ error: "Failed to update defect" });
+    }
+  });
+
+  app.delete("/api/defects/:id", async (req, res) => {
+    try {
+      await storage.deleteDefect(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete defect" });
     }
   });
 

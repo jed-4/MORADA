@@ -43,6 +43,7 @@ import Schedule from "@/pages/Schedule";
 import Timesheets from "@/pages/Timesheets";
 import Allowances from "@/pages/Allowances";
 import AllowanceDetail from "@/pages/AllowanceDetail";
+import Defects from "@/pages/Defects";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -82,6 +83,7 @@ function Router() {
       <Route path="/projects/:projectId/proposal" component={() => <ComingSoonPage section="proposal" />} />
       <Route path="/projects/:projectId/allowances/:allowanceId" component={AllowanceDetail} />
       <Route path="/projects/:projectId/allowances" component={Allowances} />
+      <Route path="/projects/:projectId/defects" component={Defects} />
       <Route path="/projects/:projectId/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
       <Route path="/projects/:projectId/variations" component={Variations} />
       <Route path="/projects/:projectId/variations/new" component={VariationDetail} />

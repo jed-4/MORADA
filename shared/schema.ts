@@ -1866,3 +1866,69 @@ export type UpdateScheduleItem = z.infer<typeof updateScheduleItemSchema>;
 
 export const updateScheduleTemplateSchema = insertScheduleTemplateSchema.partial();
 export type UpdateScheduleTemplate = z.infer<typeof updateScheduleTemplateSchema>;
+
+// Defects (tracking construction defects and issues)
+export const defects = pgTable("defects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Core defect information
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"), // Room/area where defect is located
+  
+  // Categorization using field settings
+  type: text("type").notNull().default("builder"), // "builder" | "subcontractor" | "client" | "warranty" - from field settings
+  priority: text("priority").notNull().default("medium"), // "critical" | "high" | "medium" | "low" - from field settings
+  status: text("status").notNull().default("open"), // "open" | "in_progress" | "resolved" | "closed" - from field settings
+  trade: text("trade"), // Trade/category from field settings (e.g., "Carpentry", "Plumbing", etc.)
+  
+  // Assignment and responsibility
+  assignedContactId: varchar("assigned_contact_id").references(() => contacts.id),
+  assignedContactName: text("assigned_contact_name"), // Cached for performance
+  
+  // Dates
+  dateIdentified: timestamp("date_identified").notNull().defaultNow(),
+  dueDate: timestamp("due_date"),
+  dateResolved: timestamp("date_resolved"),
+  
+  // Additional information
+  notes: text("notes"),
+  costImpact: integer("cost_impact"), // Cost to fix in cents (optional)
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id), // Link to cost code if repair has budget impact
+  
+  // Photos/attachments (future feature)
+  attachments: json("attachments").default([]), // Array of attachment objects [{url, name, type}]
+  
+  // Audit
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  resolvedByName: text("resolved_by_name"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDefectSchema = createInsertSchema(defects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["builder", "subcontractor", "client", "warranty"]).default("builder"),
+  priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
+  status: z.enum(["open", "in_progress", "resolved", "closed"]).default("open"),
+  dateIdentified: z.coerce.date().optional(),
+  dueDate: z.coerce.date().optional(),
+  dateResolved: z.coerce.date().optional(),
+  costImpact: z.number().optional(),
+  attachments: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertDefect = z.infer<typeof insertDefectSchema>;
+export type Defect = typeof defects.$inferSelect;
