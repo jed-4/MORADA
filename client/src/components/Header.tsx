@@ -14,6 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
+import { useToast } from "@/hooks/use-toast";
 
 // Project sections base configuration (from AppSidebar)
 const projectItemsBase = [
@@ -53,6 +54,31 @@ const allItemsMenuItems = projectItemsBase.filter(item => !excludedItems.has(ite
 export default function Header() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const { toast } = useToast();
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        // Reload the page to reset app state and show login
+        window.location.href = "/";
+      } else {
+        throw new Error("Logout failed");
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Logout failed",
+        description: "Please try again",
+      });
+    }
+  };
 
   const handleNewNote = () => {
     navigate('/notes');
@@ -193,7 +219,7 @@ export default function Header() {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem data-testid="menu-logout">
+            <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
               <LogOut className="h-4 w-4 mr-2" />
               Log out
             </DropdownMenuItem>
