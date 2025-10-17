@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,12 +30,26 @@ import { format } from "date-fns";
 
 export default function Proposals() {
   const [, setLocation] = useLocation();
+  const params = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
 
+  // Auto-select project if accessed from project context
+  useEffect(() => {
+    if (params.projectId) {
+      setSelectedProject(params.projectId);
+    }
+  }, [params.projectId]);
+
+  const isProjectContext = !!params.projectId;
+
   const handleNewProposal = () => {
-    setLocation('/proposals/new');
+    if (isProjectContext) {
+      setLocation(`/projects/${params.projectId}/proposals/new`);
+    } else {
+      setLocation('/proposals/new');
+    }
   };
 
   // Fetch all proposals
@@ -156,19 +170,21 @@ export default function Proposals() {
                 data-testid="input-search-proposals"
               />
             </div>
-            <Select value={selectedProject} onValueChange={setSelectedProject}>
-              <SelectTrigger className="w-full sm:w-48" data-testid="select-project-filter">
-                <SelectValue placeholder="All Projects" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All Projects</SelectItem>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!isProjectContext && (
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger className="w-full sm:w-48" data-testid="select-project-filter">
+                  <SelectValue placeholder="All Projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All Projects</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
               <SelectTrigger className="w-full sm:w-40" data-testid="select-status-filter">
                 <SelectValue placeholder="All Statuses" />
@@ -215,7 +231,13 @@ export default function Proposals() {
                 <Card 
                   key={proposal.id}
                   className="hover-elevate cursor-pointer transition-all"
-                  onClick={() => setLocation(`/proposals/${proposal.id}`)}
+                  onClick={() => {
+                    if (isProjectContext) {
+                      setLocation(`/projects/${params.projectId}/proposals/${proposal.id}`);
+                    } else {
+                      setLocation(`/proposals/${proposal.id}`);
+                    }
+                  }}
                   data-testid={`card-proposal-${proposal.id}`}
                 >
                   <CardHeader className="pb-3">
