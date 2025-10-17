@@ -82,7 +82,9 @@ function Router() {
       <Route path="/projects/:projectId/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
       <Route path="/projects/:projectId/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/projects/:projectId/rfi" component={() => <ComingSoonPage section="rfi" />} />
-      <Route path="/projects/:projectId/proposal" component={() => <ComingSoonPage section="proposal" />} />
+      <Route path="/projects/:projectId/proposals" component={Proposals} />
+      <Route path="/projects/:projectId/proposals/new" component={ProposalDetail} />
+      <Route path="/projects/:projectId/proposals/:id" component={ProposalDetail} />
       <Route path="/projects/:projectId/allowances/:allowanceId" component={AllowanceDetail} />
       <Route path="/projects/:projectId/allowances" component={Allowances} />
       <Route path="/projects/:projectId/defects" component={Defects} />
