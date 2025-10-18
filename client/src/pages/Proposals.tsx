@@ -221,7 +221,7 @@ export default function Proposals() {
             )}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-col gap-4 max-w-5xl">
             {filteredProposals.map((proposal) => {
               const project = projects.find(p => p.id === proposal.projectId);
               const statusColor = getStatusColor(proposal.status);
@@ -240,84 +240,85 @@ export default function Proposals() {
                   }}
                   data-testid={`card-proposal-${proposal.id}`}
                 >
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-6 p-6">
+                    {/* Left: Title and Project */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {project && (
+                        <ProjectIcon 
+                          icon={project.icon} 
+                          color={project.color} 
+                          className="w-6 h-6 shrink-0" 
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-semibold text-base" data-testid={`text-proposal-title-${proposal.id}`}>
+                          {proposal.name}
+                        </h3>
                         {project && (
-                          <ProjectIcon 
-                            icon={project.icon} 
-                            color={project.color} 
-                            className="w-5 h-5 shrink-0" 
-                          />
+                          <p className="text-sm text-muted-foreground">
+                            {project.name}
+                          </p>
                         )}
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-medium truncate" data-testid={`text-proposal-title-${proposal.id}`}>
-                            {proposal.name}
-                          </h3>
-                          {project && (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {project.name}
-                            </p>
-                          )}
-                        </div>
+                        {proposal.notes && (
+                          <p className="text-sm text-muted-foreground line-clamp-1 mt-1">
+                            {proposal.notes}
+                          </p>
+                        )}
                       </div>
-                      <Badge 
-                        variant={getStatusBadgeVariant(proposal.status)}
-                        className="shrink-0 gap-1"
-                        style={statusColor ? {
-                          backgroundColor: `${statusColor}15`,
-                          color: statusColor,
-                          borderColor: `${statusColor}30`
-                        } : undefined}
-                        data-testid={`badge-proposal-status-${proposal.id}`}
-                      >
-                        {getStatusIcon(proposal.status)}
-                        {statusOption?.name || proposal.status}
-                      </Badge>
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {proposal.notes && (
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {proposal.notes}
-                      </p>
-                    )}
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-1 text-muted-foreground">
+
+                    {/* Middle: Metadata */}
+                    <div className="flex items-center gap-6 text-sm shrink-0">
+                      <div className="flex items-center gap-2 text-muted-foreground">
                         <DollarSign className="w-4 h-4" />
-                        <span data-testid={`text-proposal-amount-${proposal.id}`}>
+                        <span className="font-medium" data-testid={`text-proposal-amount-${proposal.id}`}>
                           {formatCurrency(proposal.totalAmount)}
                         </span>
                       </div>
+                      
                       {proposal.expiryDate && (
-                        <div className="flex items-center gap-1 text-muted-foreground">
+                        <div className="flex items-center gap-2 text-muted-foreground">
                           <Calendar className="w-4 h-4" />
-                          <span className="text-xs">
+                          <span className="text-sm">
                             Valid until {format(new Date(proposal.expiryDate), 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                      )}
+
+                      {proposal.sentDate && !proposal.acceptedDate && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Send className="w-4 h-4" />
+                          <span className="text-sm">
+                            Sent {format(new Date(proposal.sentDate), 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                      )}
+
+                      {proposal.acceptedDate && (
+                        <div className="flex items-center gap-2 text-green-600">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm font-medium">
+                            Accepted {format(new Date(proposal.acceptedDate), 'MMM d, yyyy')}
                           </span>
                         </div>
                       )}
                     </div>
 
-                    {proposal.sentDate && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Send className="w-3 h-3" />
-                        <span>
-                          Sent {format(new Date(proposal.sentDate), 'MMM d, yyyy')}
-                        </span>
-                      </div>
-                    )}
-
-                    {proposal.acceptedDate && (
-                      <div className="flex items-center gap-1 text-xs text-green-600">
-                        <CheckCircle className="w-3 h-3" />
-                        <span>
-                          Accepted {format(new Date(proposal.acceptedDate), 'MMM d, yyyy')}
-                        </span>
-                      </div>
-                    )}
-                  </CardContent>
+                    {/* Right: Status Badge */}
+                    <Badge 
+                      variant={getStatusBadgeVariant(proposal.status)}
+                      className="shrink-0 gap-1.5 px-3 py-1.5"
+                      style={statusColor ? {
+                        backgroundColor: `${statusColor}15`,
+                        color: statusColor,
+                        borderColor: `${statusColor}30`
+                      } : undefined}
+                      data-testid={`badge-proposal-status-${proposal.id}`}
+                    >
+                      {getStatusIcon(proposal.status)}
+                      <span className="font-medium">{statusOption?.name || proposal.status}</span>
+                    </Badge>
+                  </div>
                 </Card>
               );
             })}
