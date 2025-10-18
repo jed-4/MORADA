@@ -130,8 +130,31 @@ export default function ProposalDetail() {
     mutationFn: async (data: Partial<InsertProposal>) => {
       if (isNewProposal) {
         const result = await apiRequest("/api/proposals", "POST", data);
-        // Navigate to the edit page after creation
+        // Create all default sections after creating the proposal
         if (result.id) {
+          const defaultSections = [
+            { sectionType: 'cover_page', name: 'Cover Page', order: 0 },
+            { sectionType: 'cover_letter', name: 'Cover Letter', order: 1 },
+            { sectionType: 'estimate', name: 'Estimate', order: 2 },
+            { sectionType: 'summary', name: 'Summary', order: 3 },
+            { sectionType: 'allowances', name: 'Allowances', order: 4 },
+            { sectionType: 'closing_letter', name: 'Closing Letter', order: 5 },
+            { sectionType: 'attachments', name: 'Attachments', order: 6 },
+            { sectionType: 'terms_conditions', name: 'Terms & Conditions', order: 7 },
+            { sectionType: 'signature', name: 'Signature', order: 8 },
+          ];
+          
+          await Promise.all(
+            defaultSections.map(section =>
+              apiRequest(`/api/proposals/${result.id}/sections`, "POST", {
+                ...section,
+                proposalId: result.id,
+                description: '',
+              })
+            )
+          );
+          
+          // Navigate to the edit page after creation
           if (isProjectContext) {
             setLocation(`/projects/${params.projectId}/proposals/${result.id}`);
           } else {
