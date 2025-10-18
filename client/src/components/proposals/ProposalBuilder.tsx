@@ -77,13 +77,11 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-4">
             <GripVertical className="w-4 h-4 text-muted-foreground" />
           </div>
-          <AccordionTrigger className="flex-1 hover:no-underline py-4">
-            <div className="flex items-start justify-between w-full pr-2">
-              <div className="text-left">
-                <p className="font-medium text-sm">{section.name}</p>
-                <p className="text-xs text-muted-foreground">{sectionTypeLabel}</p>
-              </div>
-            </div>
+          <div className="flex-1 min-w-0 py-4">
+            <p className="font-medium text-sm">{section.name}</p>
+            <p className="text-xs text-muted-foreground">{sectionTypeLabel}</p>
+          </div>
+          <AccordionTrigger className="hover:no-underline py-4 px-2">
           </AccordionTrigger>
         </div>
         <AccordionContent className="px-4 pb-4">
