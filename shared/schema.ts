@@ -346,6 +346,11 @@ export const projects = pgTable("projects", {
   projectType: text("project_type"), // References PROJECT_TYPES
   color: text("color").default("#3b82f6"), // Default blue
   icon: text("icon").default("Building2"), // Lucide icon name
+  location: text("location"), // Project address/location
+  status: text("status").notNull().default("active"), // "active" | "on_hold" | "completed"
+  startDate: text("start_date"), // ISO date string
+  endDate: text("end_date"), // ISO date string
+  budget: integer("budget"), // Budget in cents
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business project flag
@@ -361,6 +366,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   updatedAt: true,
 }).extend({
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
+  status: z.enum(["active", "on_hold", "completed"]).default("active"),
 });
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;

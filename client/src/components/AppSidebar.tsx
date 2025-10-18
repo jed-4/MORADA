@@ -98,6 +98,7 @@ const projectItemsBase = [
 // Business sections
 const businessItems = [
   { title: "Business Overview", url: "/business", icon: Home },
+  { title: "Projects", url: "/business/projects", icon: FolderOpen },
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
   { title: "Messages", url: "/business/messages", icon: MessageSquare },

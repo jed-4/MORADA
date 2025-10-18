@@ -46,6 +46,7 @@ import AllowanceDetail from "@/pages/AllowanceDetail";
 import Defects from "@/pages/Defects";
 import Proposals from "@/pages/Proposals";
 import ProposalDetail from "@/pages/ProposalDetail";
+import BusinessProjects from "@/pages/BusinessProjects";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -62,6 +63,7 @@ function Router() {
       
       {/* Business Project */}
       <Route path="/business" component={BusinessOverviewPage} />
+      <Route path="/business/projects" component={BusinessProjects} />
       <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
       <Route path="/business/timesheets" component={Timesheets} />
       <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
