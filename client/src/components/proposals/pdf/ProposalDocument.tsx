@@ -73,8 +73,9 @@ export function ProposalDocument({
   // Create styles with the custom color
   const styles = createStyles(primaryColor);
   
-  // Sort sections by order
-  const sortedSections = [...sections].sort((a, b) => a.order - b.order);
+  // Filter out disabled sections and sort by order
+  const enabledSections = sections.filter(s => s.isEnabled !== false);
+  const sortedSections = [...enabledSections].sort((a, b) => a.order - b.order);
 
   // Check if we have a cover page section
   const coverPageSection = sortedSections.find(s => s.sectionType === 'cover_page');

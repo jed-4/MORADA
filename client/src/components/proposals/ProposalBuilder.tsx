@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
 import type { Proposal, ProposalSection, Project } from '@shared/schema';
@@ -50,6 +51,7 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
   const [localName, setLocalName] = useState(section.name);
   const [localDescription, setLocalDescription] = useState(section.description || "");
   const [localContent, setLocalContent] = useState<Record<string, any>>(section.content || {});
+  const [localIsEnabled, setLocalIsEnabled] = useState(section.isEnabled !== false);
 
   // Only reset local state when the section ID changes (switching to a different section)
   // This prevents infinite loops while still allowing updates from the server
@@ -57,8 +59,15 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
     setLocalName(section.name);
     setLocalDescription(section.description || "");
     setLocalContent(section.content || {});
+    setLocalIsEnabled(section.isEnabled !== false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section.id]);
+  
+  const handleToggleEnabled = (enabled: boolean) => {
+    setLocalIsEnabled(enabled);
+    // Auto-save the enabled state
+    onSectionUpdate(section.id, { isEnabled: enabled });
+  };
 
   const handleSave = () => {
     onSectionUpdate(section.id, {
@@ -81,8 +90,21 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
             <p className="font-medium text-sm">{section.name}</p>
             <p className="text-xs text-muted-foreground">{sectionTypeLabel}</p>
           </div>
-          <AccordionTrigger className="hover:no-underline py-4 px-2">
-          </AccordionTrigger>
+          <div className="flex items-center gap-3 py-4">
+            <div className="flex items-center gap-2">
+              <Switch 
+                checked={localIsEnabled}
+                onCheckedChange={handleToggleEnabled}
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`switch-section-enabled-${section.id}`}
+              />
+              <span className="text-sm text-muted-foreground">
+                {localIsEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+            <AccordionTrigger className="hover:no-underline px-2">
+            </AccordionTrigger>
+          </div>
         </div>
         <AccordionContent className="px-4 pb-4">
           <div className="space-y-4 pt-2">

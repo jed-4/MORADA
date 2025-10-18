@@ -1448,6 +1448,7 @@ export const proposalSections = pgTable("proposal_sections", {
   descriptionHtml: text("description_html"), // Rich text description
   order: integer("order").notNull().default(0),
   isCollapsed: boolean("is_collapsed").notNull().default(false),
+  isEnabled: boolean("is_enabled").notNull().default(true),
   
   // PDF Builder fields
   sectionType: text("section_type").notNull().default('custom'), // 'cover_page', 'cover_letter', 'estimate', 'summary', 'allowances', 'closing_letter', 'attachments', 'terms_conditions', 'signature', 'custom'
