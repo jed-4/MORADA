@@ -91,17 +91,12 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
             <p className="text-xs text-muted-foreground">{sectionTypeLabel}</p>
           </div>
           <div className="flex items-center gap-3 py-4">
-            <div className="flex items-center gap-2">
-              <Switch 
-                checked={localIsEnabled}
-                onCheckedChange={handleToggleEnabled}
-                onClick={(e) => e.stopPropagation()}
-                data-testid={`switch-section-enabled-${section.id}`}
-              />
-              <span className="text-sm text-muted-foreground">
-                {localIsEnabled ? 'Enabled' : 'Disabled'}
-              </span>
-            </div>
+            <Switch 
+              checked={localIsEnabled}
+              onCheckedChange={handleToggleEnabled}
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`switch-section-enabled-${section.id}`}
+            />
             <AccordionTrigger className="hover:no-underline px-2">
             </AccordionTrigger>
           </div>
