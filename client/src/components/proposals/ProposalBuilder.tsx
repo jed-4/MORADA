@@ -6,16 +6,34 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
 import type { Proposal, ProposalSection, Project } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 
+const SECTION_TYPE_LABELS: Record<string, string> = {
+  cover_page: "Cover Page",
+  cover_letter: "Cover Letter",
+  estimate: "Estimate",
+  summary: "Summary",
+  allowances: "Allowances",
+  closing_letter: "Closing Letter",
+  attachments: "Attachments",
+  terms_conditions: "Terms & Conditions",
+  signature: "Signature",
+  custom: "Custom Section",
+};
+
 interface SortableSectionItemProps {
   section: ProposalSection;
-  onEdit: (section: ProposalSection) => void;
+  onSectionUpdate: (sectionId: string, updates: Partial<ProposalSection>) => void;
+  value: string;
 }
 
-function SortableSectionItem({ section, onEdit }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -29,19 +47,174 @@ function SortableSectionItem({ section, onEdit }: SortableSectionItemProps) {
     transition,
   };
 
+  const [localName, setLocalName] = useState(section.name);
+  const [localDescription, setLocalDescription] = useState(section.description || "");
+  const [localContent, setLocalContent] = useState<Record<string, any>>(section.content || {});
+
+  // Only reset local state when the section ID changes (switching to a different section)
+  // This prevents infinite loops while still allowing updates from the server
+  useEffect(() => {
+    setLocalName(section.name);
+    setLocalDescription(section.description || "");
+    setLocalContent(section.content || {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section.id]);
+
+  const handleSave = () => {
+    onSectionUpdate(section.id, {
+      name: localName,
+      description: localDescription,
+      content: localContent,
+    });
+  };
+
+  const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 p-3 bg-background border rounded-md mb-2"
-    >
-      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
-        <GripVertical className="w-4 h-4 text-muted-foreground" />
-      </div>
-      <div className="flex-1" onClick={() => onEdit(section)}>
-        <p className="font-medium text-sm">{section.name}</p>
-        <p className="text-xs text-muted-foreground">{section.sectionType}</p>
-      </div>
+    <div ref={setNodeRef} style={style}>
+      <AccordionItem value={value} className="border rounded-md mb-2 bg-background">
+        <div className="flex items-center gap-2 px-3">
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-4">
+            <GripVertical className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <AccordionTrigger className="flex-1 hover:no-underline py-4">
+            <div className="flex items-start justify-between w-full pr-2">
+              <div className="text-left">
+                <p className="font-medium text-sm">{section.name}</p>
+                <p className="text-xs text-muted-foreground">{sectionTypeLabel}</p>
+              </div>
+            </div>
+          </AccordionTrigger>
+        </div>
+        <AccordionContent className="px-4 pb-4">
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor={`section-name-${section.id}`}>Section Name</Label>
+              <Input
+                id={`section-name-${section.id}`}
+                value={localName}
+                onChange={(e) => setLocalName(e.target.value)}
+                placeholder="Enter section name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor={`section-description-${section.id}`}>Description</Label>
+              <Textarea
+                id={`section-description-${section.id}`}
+                value={localDescription}
+                onChange={(e) => setLocalDescription(e.target.value)}
+                placeholder="Optional description"
+                rows={3}
+              />
+            </div>
+
+            {/* Section-specific content editors */}
+            {section.sectionType === "cover_letter" && (
+              <div className="space-y-2">
+                <Label htmlFor={`letter-content-${section.id}`}>Letter Content</Label>
+                <Textarea
+                  id={`letter-content-${section.id}`}
+                  value={localContent.letterText || ""}
+                  onChange={(e) => setLocalContent({ ...localContent, letterText: e.target.value })}
+                  placeholder="Enter your cover letter text..."
+                  rows={8}
+                />
+              </div>
+            )}
+
+            {section.sectionType === "closing_letter" && (
+              <div className="space-y-2">
+                <Label htmlFor={`closing-content-${section.id}`}>Closing Letter Content</Label>
+                <Textarea
+                  id={`closing-content-${section.id}`}
+                  value={localContent.closingText || ""}
+                  onChange={(e) => setLocalContent({ ...localContent, closingText: e.target.value })}
+                  placeholder="Enter your closing letter text..."
+                  rows={8}
+                />
+              </div>
+            )}
+
+            {section.sectionType === "summary" && (
+              <div className="space-y-2">
+                <Label htmlFor={`summary-content-${section.id}`}>Summary Content</Label>
+                <Textarea
+                  id={`summary-content-${section.id}`}
+                  value={localContent.summaryText || ""}
+                  onChange={(e) => setLocalContent({ ...localContent, summaryText: e.target.value })}
+                  placeholder="Enter project summary..."
+                  rows={8}
+                />
+              </div>
+            )}
+
+            {section.sectionType === "terms_conditions" && (
+              <div className="space-y-2">
+                <Label htmlFor={`terms-content-${section.id}`}>Terms & Conditions</Label>
+                <Textarea
+                  id={`terms-content-${section.id}`}
+                  value={localContent.termsText || ""}
+                  onChange={(e) => setLocalContent({ ...localContent, termsText: e.target.value })}
+                  placeholder="Enter terms and conditions..."
+                  rows={10}
+                />
+              </div>
+            )}
+
+            {section.sectionType === "custom" && (
+              <div className="space-y-2">
+                <Label htmlFor={`custom-content-${section.id}`}>Content</Label>
+                <Textarea
+                  id={`custom-content-${section.id}`}
+                  value={localContent.customText || ""}
+                  onChange={(e) => setLocalContent({ ...localContent, customText: e.target.value })}
+                  placeholder="Enter section content..."
+                  rows={8}
+                />
+              </div>
+            )}
+
+            {section.sectionType === "cover_page" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor={`project-title-${section.id}`}>Project Title</Label>
+                  <Input
+                    id={`project-title-${section.id}`}
+                    value={localContent.projectTitle || ""}
+                    onChange={(e) => setLocalContent({ ...localContent, projectTitle: e.target.value })}
+                    placeholder="Enter project title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`client-name-${section.id}`}>Client Name</Label>
+                  <Input
+                    id={`client-name-${section.id}`}
+                    value={localContent.clientName || ""}
+                    onChange={(e) => setLocalContent({ ...localContent, clientName: e.target.value })}
+                    placeholder="Enter client name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`subtitle-${section.id}`}>Subtitle</Label>
+                  <Input
+                    id={`subtitle-${section.id}`}
+                    value={localContent.subtitle || ""}
+                    onChange={(e) => setLocalContent({ ...localContent, subtitle: e.target.value })}
+                    placeholder="Optional subtitle"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button onClick={handleSave} size="sm">
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </AccordionContent>
+      </AccordionItem>
     </div>
   );
 }
@@ -51,7 +224,7 @@ interface ProposalBuilderProps {
   sections: ProposalSection[];
   project?: Project;
   onSectionsReorder: (sections: ProposalSection[]) => void;
-  onSectionEdit: (section: ProposalSection) => void;
+  onSectionUpdate: (sectionId: string, updates: Partial<ProposalSection>) => void;
   onAddSection: () => void;
   companyLogo?: string;
   companyName?: string;
@@ -63,7 +236,7 @@ export function ProposalBuilder({
   sections,
   project,
   onSectionsReorder,
-  onSectionEdit,
+  onSectionUpdate,
   onAddSection,
   companyLogo,
   companyName,
@@ -255,13 +428,16 @@ export function ProposalBuilder({
               items={sections.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
-              {sections.map((section) => (
-                <SortableSectionItem
-                  key={section.id}
-                  section={section}
-                  onEdit={onSectionEdit}
-                />
-              ))}
+              <Accordion type="single" collapsible className="w-full">
+                {sections.map((section) => (
+                  <SortableSectionItem
+                    key={section.id}
+                    section={section}
+                    onSectionUpdate={onSectionUpdate}
+                    value={section.id}
+                  />
+                ))}
+              </Accordion>
             </SortableContext>
           </DndContext>
 

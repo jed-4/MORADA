@@ -40,7 +40,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ProposalBuilder } from "@/components/proposals/ProposalBuilder";
-import { SectionEditor } from "@/components/proposals/SectionEditor";
 
 interface ProposalDetailParams {
   id?: string;
@@ -64,7 +63,6 @@ export default function ProposalDetail() {
   const params = useParams<ProposalDetailParams>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [isAddingSectionOpen, setIsAddingSectionOpen] = useState(false);
   const [newSectionType, setNewSectionType] = useState('custom');
   const [newSectionName, setNewSectionName] = useState('');
@@ -223,7 +221,6 @@ export default function ProposalDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
-      setEditingSectionId(null);
       toast({
         title: "Success",
         description: "Section updated successfully.",
@@ -231,11 +228,7 @@ export default function ProposalDetail() {
     },
   });
 
-  const handleSectionEdit = (section: ProposalSection) => {
-    setEditingSectionId(section.id);
-  };
-
-  const handleSectionSave = (sectionId: string, updates: Partial<ProposalSection>) => {
+  const handleSectionUpdate = (sectionId: string, updates: Partial<ProposalSection>) => {
     updateSectionMutation.mutate({ sectionId, updates });
   };
 
@@ -413,7 +406,7 @@ export default function ProposalDetail() {
             sections={localSections}
             project={project}
             onSectionsReorder={handleSectionsReorder}
-            onSectionEdit={handleSectionEdit}
+            onSectionUpdate={handleSectionUpdate}
             onAddSection={handleAddSection}
             companyLogo={companySettings?.logoUrl}
             companyName={companySettings?.companyName}
@@ -475,15 +468,6 @@ export default function ProposalDetail() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Section Editor Dialog */}
-      <SectionEditor
-        section={localSections.find(s => s.id === editingSectionId) || null}
-        isOpen={!!editingSectionId}
-        onClose={() => setEditingSectionId(null)}
-        onSave={handleSectionSave}
-        isSaving={updateSectionMutation.isPending}
-      />
     </div>
   );
 }
