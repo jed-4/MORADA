@@ -116,14 +116,34 @@ export function ProposalDocument({
           </View>
 
           {/* Render sections */}
-          {otherSections.map((section) => (
-            <View key={section.id} style={styles.section}>
-              <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
-              {section.description && section.description.trim() !== '' && (
-                <Text style={styles.text}>{section.description}</Text>
-              )}
-            </View>
-          ))}
+          {otherSections.map((section) => {
+            const content = section.content as Record<string, any> || {};
+            
+            // Determine which content to display based on section type
+            let mainContent = '';
+            if (section.sectionType === 'cover_letter' && content.letterText) {
+              mainContent = content.letterText;
+            } else if (section.sectionType === 'closing_letter' && content.closingText) {
+              mainContent = content.closingText;
+            } else if (section.sectionType === 'summary' && content.summaryText) {
+              mainContent = content.summaryText;
+            } else if (section.sectionType === 'terms_conditions' && content.termsText) {
+              mainContent = content.termsText;
+            } else if (section.sectionType === 'custom' && content.customText) {
+              mainContent = content.customText;
+            } else if (section.description) {
+              mainContent = section.description;
+            }
+
+            return (
+              <View key={section.id} style={styles.section}>
+                <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
+                {mainContent && mainContent.trim() !== '' && (
+                  <Text style={styles.text}>{mainContent}</Text>
+                )}
+              </View>
+            );
+          })}
 
           {/* Footer */}
           <View style={styles.footer}>
