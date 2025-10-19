@@ -83,7 +83,62 @@ export function ProposalDocument({
 
   return (
     <Document>
-      {/* Render cover page as first page if it exists */}
+      {/* Render content sections on page 1 */}
+      <Page size="A4" style={styles.page}>
+        {/* Header */}
+        <View style={styles.header}>
+          {companyLogo && (
+            <Image
+              src={companyLogo}
+              style={{ width: 120, height: 40, marginBottom: 10 }}
+            />
+          )}
+          <Text style={styles.title}>{proposal.name}</Text>
+          <Text style={styles.subtitle}>Proposal #{proposal.proposalNumber}</Text>
+          {proposal.expiryDate && (
+            <Text style={styles.subtitle}>
+              Valid until: {new Date(proposal.expiryDate).toLocaleDateString()}
+            </Text>
+          )}
+        </View>
+
+        {/* Render sections */}
+        {otherSections.map((section) => {
+          const content = section.content as Record<string, any> || {};
+          
+          // Determine which content to display based on section type
+          let mainContent = '';
+          if (section.sectionType === 'cover_letter' && content.letterText) {
+            mainContent = content.letterText;
+          } else if (section.sectionType === 'closing_letter' && content.closingText) {
+            mainContent = content.closingText;
+          } else if (section.sectionType === 'summary' && content.summaryText) {
+            mainContent = content.summaryText;
+          } else if (section.sectionType === 'terms_conditions' && content.termsText) {
+            mainContent = content.termsText;
+          } else if (section.sectionType === 'custom' && content.customText) {
+            mainContent = content.customText;
+          } else if (section.description) {
+            mainContent = section.description;
+          }
+
+          return (
+            <View key={section.id} style={styles.section}>
+              <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
+              {mainContent && mainContent.trim() !== '' && (
+                <Text style={styles.text}>{mainContent}</Text>
+              )}
+            </View>
+          );
+        })}
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text>{companyName || 'Company Name'}</Text>
+        </View>
+      </Page>
+
+      {/* Render cover page as second page if it exists */}
       {coverPageSection && (
         <CoverPageSection
           proposal={proposal}
@@ -93,63 +148,6 @@ export function ProposalDocument({
           companyName={companyName}
           primaryColor={primaryColor}
         />
-      )}
-
-      {/* Render other sections on subsequent pages */}
-      {otherSections.length > 0 && (
-        <Page size="A4" style={styles.page}>
-          {/* Header */}
-          <View style={styles.header}>
-            {companyLogo && (
-              <Image
-                src={companyLogo}
-                style={{ width: 120, height: 40, marginBottom: 10 }}
-              />
-            )}
-            <Text style={styles.title}>{proposal.name}</Text>
-            <Text style={styles.subtitle}>Proposal #{proposal.proposalNumber}</Text>
-            {proposal.expiryDate && (
-              <Text style={styles.subtitle}>
-                Valid until: {new Date(proposal.expiryDate).toLocaleDateString()}
-              </Text>
-            )}
-          </View>
-
-          {/* Render sections */}
-          {otherSections.map((section) => {
-            const content = section.content as Record<string, any> || {};
-            
-            // Determine which content to display based on section type
-            let mainContent = '';
-            if (section.sectionType === 'cover_letter' && content.letterText) {
-              mainContent = content.letterText;
-            } else if (section.sectionType === 'closing_letter' && content.closingText) {
-              mainContent = content.closingText;
-            } else if (section.sectionType === 'summary' && content.summaryText) {
-              mainContent = content.summaryText;
-            } else if (section.sectionType === 'terms_conditions' && content.termsText) {
-              mainContent = content.termsText;
-            } else if (section.sectionType === 'custom' && content.customText) {
-              mainContent = content.customText;
-            } else if (section.description) {
-              mainContent = section.description;
-            }
-
-            return (
-              <View key={section.id} style={styles.section}>
-                <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
-                {mainContent && mainContent.trim() !== '' && (
-                  <Text style={styles.text}>{mainContent}</Text>
-                )}
-              </View>
-            );
-          })}
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text>{companyName || 'Company Name'}</Text>
-          </View>
-        </Page>
       )}
     </Document>
   );
