@@ -1235,6 +1235,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Import full estimate with groups and items
+  app.post("/api/projects/:projectId/estimates/import", async (req, res) => {
+    try {
+      const { name, groups, items } = req.body;
+      const projectId = req.params.projectId;
+
+      if (!name || typeof name !== "string") {
+        return res.status(400).json({ error: "Estimate name is required" });
+      }
+
+      if (!Array.isArray(groups) || groups.length === 0) {
+        return res.status(400).json({ error: "Groups array is required and must not be empty" });
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "Items array is required and must not be empty" });
+      }
+
+      // 1. Create the estimate
+      const estimateData = {
+        projectId,
+        name,
+        description: `Imported estimate with ${groups.length} groups and ${items.length} items`,
+        projectMarkupPercent: 0, // Can be updated later
+        taxRate: 10, // Default GST
+        isLocked: false,
+      };
+
+      const estimate = await storage.createEstimate(estimateData);
+
+      // 2. Create groups with proper sort order
+      const createdGroups: any[] = [];
+      const groupNameToId = new Map<string, string>();
+
+      for (const group of groups) {
+        const groupData = {
+          estimateId: estimate.id,
+          name: group.name,
+          costCode: group.costCode || null,
+          sortOrder: group.sortOrder ?? createdGroups.length,
+        };
+        const createdGroup = await storage.createEstimateGroup(groupData);
+        createdGroups.push(createdGroup);
+        groupNameToId.set(group.name, createdGroup.id);
+      }
+
+      // 3. Create items with pricing calculations
+      const createdItems: any[] = [];
+      const errors: Array<{ row: number; errors: string[] }> = [];
+
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+
+        try {
+          // Find the group ID
+          const groupId = groupNameToId.get(item.groupName);
+          if (!groupId) {
+            errors.push({
+              row: index + 1,
+              errors: [`Group "${item.groupName}" not found`]
+            });
+            continue;
+          }
+
+          // Convert dollar amounts to cents
+          const unitCostExTaxCents = Math.round((item.unitCostExTax || 0) * 100);
+          const quantityCents = Math.round((item.quantity || 1) * 100);
+          const markupPercent = item.markupPercent ?? 0;
+
+          // Calculate pricing
+          const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
+          const markupAmount = Math.round((builderCostExTax * markupPercent) / 100);
+          const clientPriceExTax = builderCostExTax + markupAmount;
+          const taxRate = estimate.taxRate ?? 10;
+          const taxAmount = Math.round((clientPriceExTax * taxRate) / 100);
+          const clientPriceIncTax = clientPriceExTax + taxAmount;
+
+          const itemData = {
+            estimateId: estimate.id,
+            groupId,
+            name: item.name,
+            type: item.type || "Material",
+            description: item.description || "",
+            quantity: quantityCents,
+            unitType: item.unitType || "each",
+            unitCostExTax: unitCostExTaxCents,
+            markupPercent,
+            taxAmount,
+            priceIncTax: clientPriceIncTax,
+            allowance: item.allowance || "None",
+            notes: item.notes || "",
+            costCode: item.costCode || null,
+            status: item.status || "incomplete",
+            proposalVisible: true,
+            sortOrder: index,
+          };
+
+          const createdItem = await storage.createEstimateItem(itemData);
+          createdItems.push(createdItem);
+        } catch (error: any) {
+          errors.push({
+            row: index + 1,
+            errors: [error.message || "Failed to create item"]
+          });
+        }
+      }
+
+      res.status(201).json({
+        success: true,
+        estimate,
+        groupCount: createdGroups.length,
+        itemCount: createdItems.length,
+        errorCount: errors.length,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (error: any) {
+      console.error("Error importing full estimate:", error);
+      res.status(500).json({ error: error.message || "Failed to import estimate" });
+    }
+  });
+
   app.patch("/api/estimate-items/:id", async (req, res) => {
     try {
       // Get existing item to access estimate

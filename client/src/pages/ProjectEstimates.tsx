@@ -42,7 +42,8 @@ import {
   LayoutGrid,
   Columns3,
   Download,
-  Trash2
+  Trash2,
+  Upload
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -69,6 +70,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { type Estimate, type EstimateSummary, type Project, type FieldOption } from "@shared/schema";
+import { ImportFullEstimateDialog } from "@/components/estimates/ImportFullEstimateDialog";
 
 interface ProjectEstimatesParams {
   projectId: string;
@@ -84,6 +86,7 @@ export default function ProjectEstimates() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -589,6 +592,10 @@ export default function ProjectEstimates() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="button-import-estimate">
+              <Upload className="w-4 h-4 mr-2" />
+              Import
+            </Button>
             <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
               <Plus className="w-4 h-4 mr-2" />
               New Estimate
@@ -750,6 +757,17 @@ export default function ProjectEstimates() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Estimate Dialog */}
+      <ImportFullEstimateDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        projectId={projectId!}
+        onImportComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/estimates", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+        }}
+      />
     </div>
   );
 }
