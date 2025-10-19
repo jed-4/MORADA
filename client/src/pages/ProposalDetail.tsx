@@ -198,7 +198,7 @@ export default function ProposalDetail() {
       // Update each section's order
       await Promise.all(
         reorderedSections.map((section) =>
-          apiRequest(`/api/proposals/${params.id}/sections/${section.id}`, "PATCH", {
+          apiRequest(`/api/proposal-sections/${section.id}`, "PATCH", {
             order: section.order,
           })
         )
@@ -240,7 +240,7 @@ export default function ProposalDetail() {
   // Update section mutation
   const updateSectionMutation = useMutation({
     mutationFn: async ({ sectionId, updates }: { sectionId: string; updates: Partial<ProposalSection> }) => {
-      return await apiRequest(`/api/proposals/${params.id}/sections/${sectionId}`, "PATCH", updates);
+      return await apiRequest(`/api/proposal-sections/${sectionId}`, "PATCH", updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/proposals", params.id, "sections"] });
