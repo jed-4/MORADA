@@ -399,7 +399,8 @@ export function ProposalBuilder({
             ) : null}
             {pdfUrl ? (
               <embed
-                src={pdfUrl}
+                key={pdfUrl}
+                src={`${pdfUrl}#toolbar=0`}
                 type="application/pdf"
                 width="100%"
                 height="100%"
