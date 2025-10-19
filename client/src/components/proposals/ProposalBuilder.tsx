@@ -288,6 +288,26 @@ export function ProposalBuilder({
       setIsGenerating(true);
       
       try {
+        // Collect all estimate IDs from sections
+        const estimateIds = sections
+          .filter(s => s.sectionType === 'estimate' && s.content?.estimateId)
+          .map(s => (s.content as any).estimateId);
+
+        // Fetch all estimate data in parallel
+        const estimatesDataMap: Record<string, any> = {};
+        await Promise.all(
+          estimateIds.map(async (estimateId) => {
+            try {
+              const response = await fetch(`/api/estimates/${estimateId}/full`);
+              if (response.ok) {
+                estimatesDataMap[estimateId] = await response.json();
+              }
+            } catch (error) {
+              console.error(`Failed to fetch estimate ${estimateId}:`, error);
+            }
+          })
+        );
+
         const blob = await pdf(
           <ProposalDocument
             proposal={proposal}
@@ -296,6 +316,7 @@ export function ProposalBuilder({
             companyLogo={companyLogo}
             companyName={companyName}
             primaryColor={primaryColor}
+            estimatesData={estimatesDataMap}
           />
         ).toBlob();
         

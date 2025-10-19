@@ -5,8 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
-import type { ProposalSection } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import type { ProposalSection, Estimate } from "@shared/schema";
 
 interface SectionEditorProps {
   section: ProposalSection | null;
@@ -162,6 +164,8 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: Se
             </div>
           )}
 
+          {section.sectionType === "estimate" && <EstimateEditor content={content} setContent={setContent} />}
+
           {section.sectionType === "cover_page" && (
             <div className="space-y-4">
               <div className="space-y-2">
@@ -218,5 +222,166 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: Se
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface EstimateEditorProps {
+  content: Record<string, any>;
+  setContent: (content: Record<string, any>) => void;
+}
+
+function EstimateEditor({ content, setContent }: EstimateEditorProps) {
+  const { data: estimates } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates"],
+  });
+
+  const toggles = content.columnToggles || {
+    description: true,
+    quantity: false,
+    unitCostExTax: false,
+    unitCostIncTax: false,
+    markup: false,
+    amountExTax: false,
+    amountIncTax: false,
+    showSubtotals: true,
+    showZeroLines: false,
+  };
+
+  const updateToggle = (key: string, value: boolean) => {
+    setContent({
+      ...content,
+      columnToggles: { ...toggles, [key]: value },
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="estimate-id">Select Estimate</Label>
+        <Select
+          value={content.estimateId || ""}
+          onValueChange={(value) => setContent({ ...content, estimateId: value })}
+        >
+          <SelectTrigger id="estimate-id" data-testid="select-estimate">
+            <SelectValue placeholder="Select an estimate" />
+          </SelectTrigger>
+          <SelectContent>
+            {estimates?.map((estimate) => (
+              <SelectItem key={estimate.id} value={estimate.id}>
+                {estimate.name} (v{estimate.version})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="estimate-description">Description</Label>
+        <Textarea
+          id="estimate-description"
+          value={content.estimateDescription || ""}
+          onChange={(e) => setContent({ ...content, estimateDescription: e.target.value })}
+          placeholder="Optional description to show above the estimate"
+          rows={3}
+          data-testid="textarea-estimate-description"
+        />
+      </div>
+
+      <div className="space-y-3 border rounded-md p-4">
+        <h4 className="font-semibold text-sm">Column Visibility</h4>
+        
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-description" className="cursor-pointer">Description</Label>
+          <Switch
+            id="toggle-description"
+            checked={toggles.description}
+            onCheckedChange={(checked) => updateToggle("description", checked)}
+            data-testid="toggle-description"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-quantity" className="cursor-pointer">Quantity</Label>
+          <Switch
+            id="toggle-quantity"
+            checked={toggles.quantity}
+            onCheckedChange={(checked) => updateToggle("quantity", checked)}
+            data-testid="toggle-quantity"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-unitCostExTax" className="cursor-pointer">Unit Cost (ex. tax)</Label>
+          <Switch
+            id="toggle-unitCostExTax"
+            checked={toggles.unitCostExTax}
+            onCheckedChange={(checked) => updateToggle("unitCostExTax", checked)}
+            data-testid="toggle-unitCostExTax"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-unitCostIncTax" className="cursor-pointer">Unit Cost (inc. tax)</Label>
+          <Switch
+            id="toggle-unitCostIncTax"
+            checked={toggles.unitCostIncTax}
+            onCheckedChange={(checked) => updateToggle("unitCostIncTax", checked)}
+            data-testid="toggle-unitCostIncTax"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-markup" className="cursor-pointer">Markup %</Label>
+          <Switch
+            id="toggle-markup"
+            checked={toggles.markup}
+            onCheckedChange={(checked) => updateToggle("markup", checked)}
+            data-testid="toggle-markup"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-amountExTax" className="cursor-pointer">Amount (ex. tax)</Label>
+          <Switch
+            id="toggle-amountExTax"
+            checked={toggles.amountExTax}
+            onCheckedChange={(checked) => updateToggle("amountExTax", checked)}
+            data-testid="toggle-amountExTax"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label htmlFor="toggle-amountIncTax" className="cursor-pointer">Amount (inc. tax)</Label>
+          <Switch
+            id="toggle-amountIncTax"
+            checked={toggles.amountIncTax}
+            onCheckedChange={(checked) => updateToggle("amountIncTax", checked)}
+            data-testid="toggle-amountIncTax"
+          />
+        </div>
+
+        <div className="border-t pt-3 mt-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="toggle-showSubtotals" className="cursor-pointer">Show subtotals</Label>
+            <Switch
+              id="toggle-showSubtotals"
+              checked={toggles.showSubtotals}
+              onCheckedChange={(checked) => updateToggle("showSubtotals", checked)}
+              data-testid="toggle-showSubtotals"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Label htmlFor="toggle-showZeroLines" className="cursor-pointer">Show $0 lines</Label>
+            <Switch
+              id="toggle-showZeroLines"
+              checked={toggles.showZeroLines}
+              onCheckedChange={(checked) => updateToggle("showZeroLines", checked)}
+              data-testid="toggle-showZeroLines"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

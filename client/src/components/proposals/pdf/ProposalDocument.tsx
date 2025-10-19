@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
-import type { Proposal, ProposalSection, Project } from '@shared/schema';
+import type { Proposal, ProposalSection, Project, Estimate, EstimateGroup, EstimateItem } from '@shared/schema';
 import { CoverPageSection } from './sections/CoverPageSection';
+import { EstimateSection } from './sections/EstimateSection';
 
 const createStyles = (primaryColor: string = '#3B82F6') => StyleSheet.create({
   page: {
@@ -60,6 +61,11 @@ interface ProposalDocumentProps {
   companyLogo?: string;
   companyName?: string;
   primaryColor?: string;
+  estimatesData?: Record<string, {
+    estimate: Estimate;
+    groups: EstimateGroup[];
+    items: EstimateItem[];
+  }>;
 }
 
 export function ProposalDocument({
@@ -69,6 +75,7 @@ export function ProposalDocument({
   companyLogo,
   companyName,
   primaryColor = '#3B82F6',
+  estimatesData = {},
 }: ProposalDocumentProps) {
   // Create styles with the custom color
   const styles = createStyles(primaryColor);
@@ -92,6 +99,31 @@ export function ProposalDocument({
               companyLogo={companyLogo}
               companyName={companyName}
               primaryColor={primaryColor}
+            />
+          );
+        }
+
+        // Render estimate section
+        if (section.sectionType === 'estimate') {
+          const content = section.content as Record<string, any> || {};
+          const estimateId = content.estimateId;
+          const estimateData = estimateId ? estimatesData[estimateId] : undefined;
+          
+          if (!estimateData) {
+            return null; // Skip if no estimate selected or data not loaded
+          }
+
+          return (
+            <EstimateSection
+              key={section.id}
+              section={section}
+              estimateData={estimateData}
+              companyLogo={companyLogo}
+              companyName={companyName}
+              primaryColor={primaryColor}
+              proposalName={proposal.name}
+              proposalNumber={proposal.proposalNumber}
+              expiryDate={proposal.expiryDate}
             />
           );
         }

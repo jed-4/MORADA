@@ -1602,6 +1602,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get full estimate data (estimate + groups + items) for proposals
+  app.get("/api/estimates/:id/full", async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      
+      const groups = await storage.getEstimateGroups(req.params.id);
+      const items = await storage.getEstimateItems(req.params.id);
+      
+      res.json({
+        estimate,
+        groups,
+        items
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate data" });
+    }
+  });
+
   // ============================================================
   // USER ROLE SYSTEM API ROUTES
   // ============================================================
