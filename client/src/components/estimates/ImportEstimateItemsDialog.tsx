@@ -131,7 +131,7 @@ export function ImportEstimateItemsDialog({
   const handleColumnMappingChange = (field: keyof ImportEstimateItem, columnName: string) => {
     setColumnMapping(prev => ({
       ...prev,
-      [field]: columnName === "" ? undefined : columnName,
+      [field]: columnName === "not-mapped" ? undefined : columnName,
     }));
   };
 
@@ -325,14 +325,14 @@ export function ImportEstimateItemsDialog({
                     {FIELD_LABELS[field]}{field === "name" && "*"}
                   </Label>
                   <Select
-                    value={(columnMapping[field] as string) || ""}
+                    value={(columnMapping[field] as string) || "not-mapped"}
                     onValueChange={(value) => handleColumnMappingChange(field, value)}
                   >
                     <SelectTrigger className="h-9" data-testid={`select-column-${field}`}>
                       <SelectValue placeholder="Not mapped" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Not mapped</SelectItem>
+                      <SelectItem value="not-mapped">Not mapped</SelectItem>
                       {headers.map(header => (
                         <SelectItem key={header} value={header}>
                           {header}
