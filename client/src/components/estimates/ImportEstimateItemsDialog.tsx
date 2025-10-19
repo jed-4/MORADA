@@ -284,7 +284,7 @@ export function ImportEstimateItemsDialog({
             )}
 
             {/* Column mapping dropdowns */}
-            <div className="grid grid-cols-8 gap-3 py-3 border-b overflow-x-auto">
+            <div className="grid grid-cols-8 gap-3 py-3 border-b overflow-x-auto relative z-20 bg-background">
               {CORE_MAPPING_FIELDS.map(field => (
                 <div key={field} className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
@@ -311,10 +311,10 @@ export function ImportEstimateItemsDialog({
             </div>
 
             {/* Data preview table */}
-            <div className="flex-1 min-h-0 py-3">
+            <div className="flex-1 min-h-0 py-3 relative">
               <ScrollArea className="h-full border rounded-md">
                 <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
+                <TableHeader className="sticky top-0 bg-background z-10 border-b">
                   <TableRow>
                     <TableHead className="w-8"></TableHead>
                     <TableHead className="w-[200px]">{columnMapping.name || "Name"}</TableHead>
