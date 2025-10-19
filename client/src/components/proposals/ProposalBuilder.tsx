@@ -398,13 +398,11 @@ export function ProposalBuilder({
               </div>
             ) : null}
             {pdfUrl ? (
-              <embed
+              <iframe
                 key={pdfUrl}
-                src={`${pdfUrl}#toolbar=0`}
-                type="application/pdf"
-                width="100%"
-                height="100%"
-                className="w-full h-full"
+                src={pdfUrl}
+                className="w-full h-full border-0"
+                title="PDF Preview"
               />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
