@@ -91,6 +91,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -307,6 +317,9 @@ export default function EstimateDetail() {
   
   // Import items modal state
   const [isImportOpen, setIsImportOpen] = useState(false);
+  
+  // Delete confirmation dialog state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   
   // New estimate creation state
   const [newEstimateName, setNewEstimateName] = useState("");
@@ -946,6 +959,46 @@ export default function EstimateDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to toggle estimate lock status.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation for deleting estimate
+  const deleteEstimateMutation = useMutation({
+    mutationFn: async () => {
+      if (!effectiveEstimateId) {
+        throw new Error("No estimate ID provided");
+      }
+      const response = await apiRequest(`/api/estimates/${effectiveEstimateId}`, "DELETE");
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate estimate caches
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      if (estimate?.projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", estimate.projectId, "estimates"] });
+      }
+      
+      toast({
+        title: "Success",
+        description: "Estimate deleted successfully.",
+      });
+      
+      // Close dialog
+      setIsDeleteDialogOpen(false);
+      
+      // Navigate back to estimates list
+      if (estimate?.projectId) {
+        setLocation(`/projects/${estimate.projectId}/estimates`);
+      } else {
+        setLocation("/estimates");
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete estimate.",
         variant: "destructive",
       });
     },
@@ -2714,6 +2767,17 @@ export default function EstimateDetail() {
                 )}
               </Button>
             )}
+            {estimate && (
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                data-testid="button-delete-estimate"
+                onClick={() => setIsDeleteDialogOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -4265,6 +4329,31 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Delete Estimate Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Estimate</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this estimate? This action cannot be undone and will permanently delete all estimate items and groups.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-estimate" disabled={deleteEstimateMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteEstimateMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-estimate"
+              disabled={deleteEstimateMutation.isPending}
+            >
+              {deleteEstimateMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
