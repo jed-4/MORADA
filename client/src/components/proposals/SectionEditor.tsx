@@ -62,6 +62,12 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: Se
 
   const sectionTypeLabel = SECTION_TYPE_LABELS[section.sectionType || "custom"] || "Section";
 
+  console.log('SectionEditor rendering:', { 
+    sectionType: section.sectionType, 
+    sectionName: section.name,
+    content: content 
+  });
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
