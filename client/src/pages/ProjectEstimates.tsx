@@ -247,18 +247,12 @@ export default function ProjectEstimates() {
           </div>
           <div className="flex flex-wrap items-center gap-6">
             {summary && (
-              <>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Total Value</p>
-                  <p className="text-lg font-semibold" data-testid={`text-estimate-total-${estimate.id}`}>
-                    {formatCurrency(summary.total)}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Items</p>
-                  <p className="text-base font-medium">{summary.itemCount}</p>
-                </div>
-              </>
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">Total Value</p>
+                <p className="text-lg font-semibold" data-testid={`text-estimate-total-${estimate.id}`}>
+                  {formatCurrency(summary.total)}
+                </p>
+              </div>
             )}
             {!summary && (
               <div className="text-muted-foreground text-sm">Loading...</div>
