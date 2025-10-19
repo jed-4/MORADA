@@ -73,13 +73,16 @@ export function EstimateSection({
     return (cents / 100).toFixed(2);
   };
 
-  // Calculate group subtotal
-  const calculateGroupSubtotal = (groupItems: EstimateItem[]) => {
-    return groupItems.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
+  // Calculate group subtotals
+  const calculateGroupSubtotals = (groupItems: EstimateItem[]) => {
+    const incTax = groupItems.reduce((sum, item) => sum + (item.priceIncTax ?? 0), 0);
+    const exTax = groupItems.reduce((sum, item) => sum + ((item.priceIncTax ?? 0) - (item.taxAmount ?? 0)), 0);
+    return { incTax, exTax };
   };
 
-  // Calculate grand total
-  const grandTotal = items.reduce((sum, item) => sum + (item.priceIncTax || 0), 0);
+  // Calculate grand totals
+  const grandTotalIncTax = items.reduce((sum, item) => sum + (item.priceIncTax ?? 0), 0);
+  const grandTotalExTax = items.reduce((sum, item) => sum + ((item.priceIncTax ?? 0) - (item.taxAmount ?? 0)), 0);
 
   // Create styles
   const styles = StyleSheet.create({
@@ -198,7 +201,7 @@ export function EstimateSection({
   // Render table row
   const renderTableRow = (item: EstimateItem) => {
     // Skip zero-price items if toggle is off
-    if (!toggles.showZeroLines && item.priceIncTax === 0) {
+    if (!toggles.showZeroLines && (item.priceIncTax ?? 0) === 0) {
       return null;
     }
 
@@ -207,13 +210,13 @@ export function EstimateSection({
     return (
       <View key={item.id} style={styles.tableRow}>
         <Text style={[styles.col, { width: colWidths.item }]}>{item.name || "Untitled"}</Text>
-        {toggles.description && <Text style={[styles.col, { width: colWidths.description }]}>{item.description || ""}</Text>}
+        {toggles.description && <Text style={[styles.col, { width: colWidths.description }]}>{item.description || "-"}</Text>}
         {toggles.quantity && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatQuantity(item.quantity)}</Text>}
         {toggles.unitCostExTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(item.unitCostExTax)}</Text>}
         {toggles.unitCostIncTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(unitCostIncTax)}</Text>}
         {toggles.markup && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{item.markupPercent ?? estimate.projectMarkupPercent ?? 0}%</Text>}
-        {toggles.amountExTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(item.priceIncTax - (item.taxAmount || 0))}</Text>}
-        {toggles.amountIncTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(item.priceIncTax)}</Text>}
+        {toggles.amountExTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency((item.priceIncTax ?? 0) - (item.taxAmount ?? 0))}</Text>}
+        {toggles.amountIncTax && <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(item.priceIncTax ?? 0)}</Text>}
       </View>
     );
   };
@@ -221,7 +224,7 @@ export function EstimateSection({
   // Render group
   const renderGroup = (group: EstimateGroup) => {
     const groupItems = itemsByGroup[group.id] || [];
-    const subtotal = calculateGroupSubtotal(groupItems);
+    const { incTax, exTax } = calculateGroupSubtotals(groupItems);
 
     return (
       <View key={group.id}>
@@ -231,10 +234,26 @@ export function EstimateSection({
         {renderTableHeader()}
         {groupItems.map(renderTableRow)}
         {toggles.showSubtotals && (
-          <View style={styles.subtotalRow}>
-            <Text style={[styles.col, { flex: 1 }]}>Subtotal - {group.name}</Text>
-            <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(subtotal)}</Text>
-          </View>
+          <>
+            {toggles.amountExTax && (
+              <View style={styles.subtotalRow}>
+                <Text style={[styles.col, { flex: 1 }]}>Subtotal (ex. tax) - {group.name}</Text>
+                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(exTax)}</Text>
+              </View>
+            )}
+            {toggles.amountIncTax && (
+              <View style={styles.subtotalRow}>
+                <Text style={[styles.col, { flex: 1 }]}>Subtotal (inc. tax) - {group.name}</Text>
+                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(incTax)}</Text>
+              </View>
+            )}
+            {!toggles.amountExTax && !toggles.amountIncTax && (
+              <View style={styles.subtotalRow}>
+                <Text style={[styles.col, { flex: 1 }]}>Subtotal - {group.name}</Text>
+                <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(incTax)}</Text>
+              </View>
+            )}
+          </>
         )}
       </View>
     );
@@ -276,10 +295,24 @@ export function EstimateSection({
       )}
 
       {/* Grand Total */}
-      <View style={styles.totalRow}>
-        <Text style={[styles.col, { flex: 1 }]}>Total Price</Text>
-        <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotal)}</Text>
-      </View>
+      {toggles.amountExTax && (
+        <View style={styles.totalRow}>
+          <Text style={[styles.col, { flex: 1 }]}>Total Price (ex. tax)</Text>
+          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotalExTax)}</Text>
+        </View>
+      )}
+      {toggles.amountIncTax && (
+        <View style={styles.totalRow}>
+          <Text style={[styles.col, { flex: 1 }]}>Total Price (inc. tax)</Text>
+          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotalIncTax)}</Text>
+        </View>
+      )}
+      {!toggles.amountExTax && !toggles.amountIncTax && (
+        <View style={styles.totalRow}>
+          <Text style={[styles.col, { flex: 1 }]}>Total Price</Text>
+          <Text style={[styles.col, styles.textRight, { width: colWidths.numeric }]}>{formatCurrency(grandTotalIncTax)}</Text>
+        </View>
+      )}
     </Page>
   );
 }
