@@ -9,6 +9,7 @@ export const importEstimateItemSchema = z.object({
   quantity: z.number().min(0, "Quantity must be 0 or greater").default(1),
   unitType: z.string().default("each"),
   unitCostExTax: z.number().min(0, "Price must be 0 or greater").default(0),
+  markupPercent: z.number().min(0).default(0),
   allowance: z.enum(["None", "Prime Cost", "Provisional Sum"]).default("None"),
   notes: z.string().optional(),
   costCode: z.string().optional(),
@@ -76,6 +77,13 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   // Allowance variations
   "allowance": "allowance",
   "allowance type": "allowance",
+  
+  // Markup variations
+  "markup": "markupPercent",
+  "markup %": "markupPercent",
+  "markup percent": "markupPercent",
+  "margin": "markupPercent",
+  "margin %": "markupPercent",
   
   // Notes variations
   "notes": "notes",
@@ -165,6 +173,8 @@ export function parseImportRow(
           data[fieldKey] = typeof value === "string" ? parseCurrency(value) : (value || 0);
         } else if (fieldKey === "quantity") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 1 : (value || 1);
+        } else if (fieldKey === "markupPercent") {
+          data[fieldKey] = typeof value === "string" ? parseFloat(value) || 0 : (value || 0);
         } else if (fieldKey === "proposalVisible") {
           // Parse boolean values from various formats
           if (value === undefined || value === null || value === "") {

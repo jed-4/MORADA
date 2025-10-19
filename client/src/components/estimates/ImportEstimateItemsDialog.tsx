@@ -1,10 +1,9 @@
-import { useState } from "react";
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, X } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { Upload, FileSpreadsheet, ChevronDown, ChevronRight, X, AlertCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -24,18 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
   ImportEstimateItem,
   ColumnMapping,
   autoDetectColumnMapping,
   parseImportRow,
-  ImportRowResult,
 } from "@shared/import";
-
-type Step = "upload" | "map" | "preview";
 
 interface ImportEstimateItemsDialogProps {
   open: boolean;
@@ -46,21 +43,31 @@ interface ImportEstimateItemsDialogProps {
 
 const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   name: "Name",
-  type: "Type",
+  type: "Cost Type",
   description: "Description",
   quantity: "Quantity",
   unitType: "Unit",
-  unitCostExTax: "Price (Ex Tax)",
+  unitCostExTax: "Unit Cost (ex. tax)",
+  markupPercent: "Markup",
   allowance: "Allowance",
   notes: "Notes",
-  costCode: "Cost Code",
+  costCode: "Group",
   status: "Status",
   proposalVisible: "Proposal Visible",
   shownAs: "Shown As",
 };
 
-const ITEM_TYPES = ["Material", "Labour", "Subcontractor", "Fee"];
-const ALLOWANCE_TYPES = ["None", "Prime Cost", "Provisional Sum"];
+// Core mapping fields to display at the top
+const CORE_MAPPING_FIELDS: (keyof ImportEstimateItem)[] = [
+  "name",
+  "type",
+  "costCode",
+  "quantity",
+  "unitType",
+  "unitCostExTax",
+  "markupPercent",
+  "description"
+];
 
 export function ImportEstimateItemsDialog({
   open,
@@ -68,18 +75,29 @@ export function ImportEstimateItemsDialog({
   estimateId,
   onImportComplete,
 }: ImportEstimateItemsDialogProps) {
-  const [step, setStep] = useState<Step>("upload");
+  const [fileName, setFileName] = useState<string>("");
   const [fileData, setFileData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
-  const [parsedRows, setParsedRows] = useState<ImportRowResult[]>([]);
+  const [taxIncluded, setTaxIncluded] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Compute parsed results whenever data or mapping changes
+  const parsedResults = useMemo(() => {
+    if (!fileData.length || !columnMapping.name) return [];
+    return fileData.map((row, index) => parseImportRow(row, columnMapping, index));
+  }, [fileData, columnMapping]);
+
+  const validCount = parsedResults.filter(r => r.data).length;
+  const errorCount = parsedResults.filter(r => r.errors).length;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
+      setFileName(file.name);
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -104,8 +122,6 @@ export function ImportEstimateItemsDialog({
       // Auto-detect column mapping
       const detectedMapping = autoDetectColumnMapping(headerRow);
       setColumnMapping(detectedMapping);
-
-      setStep("map");
     } catch (error) {
       console.error("Error reading file:", error);
       alert("Failed to read file. Please ensure it's a valid Excel or CSV file.");
@@ -119,27 +135,54 @@ export function ImportEstimateItemsDialog({
     }));
   };
 
-  const handlePreview = () => {
-    // Parse all rows using the column mapping
-    const results = fileData.map((row, index) =>
-      parseImportRow(row, columnMapping, index)
-    );
-    setParsedRows(results);
-    setStep("preview");
+  const toggleGroup = (groupName: string) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupName)) {
+        newSet.delete(groupName);
+      } else {
+        newSet.add(groupName);
+      }
+      return newSet;
+    });
   };
+
+  // Group data by cost code/group with parsed results
+  const groupedData = useMemo(() => {
+    if (!fileData.length || !columnMapping.costCode) {
+      return { ungrouped: fileData.map((row, idx) => ({ row, parsed: parsedResults[idx] })) };
+    }
+
+    const groups: Record<string, any[]> = {};
+    fileData.forEach((row, idx) => {
+      const groupName = row[columnMapping.costCode] || "Ungrouped";
+      if (!groups[groupName]) {
+        groups[groupName] = [];
+      }
+      groups[groupName].push({ row, parsed: parsedResults[idx] });
+    });
+
+    return groups;
+  }, [fileData, columnMapping.costCode, parsedResults]);
 
   const handleImport = async () => {
     setIsImporting(true);
     
     try {
       // Get only valid rows
-      const validRows = parsedRows
+      const validRows = parsedResults
         .filter(row => row.data)
-        .map(row => ({
-          ...row.data!,
-          estimateId,
-          // unitCostExTax is already in dollars (backend expects dollars)
-        }));
+        .map(row => {
+          const item = { ...row.data!, estimateId };
+          
+          // If tax is included, convert to ex-tax (GST rate: 10%)
+          // Round to 2 decimal places to avoid floating-point artifacts
+          if (taxIncluded && item.unitCostExTax) {
+            item.unitCostExTax = Math.round((item.unitCostExTax / 1.1) * 100) / 100;
+          }
+          
+          return item;
+        });
 
       const response = await fetch(`/api/estimates/${estimateId}/items/import`, {
         method: "POST",
@@ -165,43 +208,38 @@ export function ImportEstimateItemsDialog({
   };
 
   const handleClose = () => {
-    setStep("upload");
+    setFileName("");
     setFileData([]);
     setHeaders([]);
     setColumnMapping({});
-    setParsedRows([]);
+    setTaxIncluded(false);
+    setCollapsedGroups(new Set());
     onClose();
   };
 
-  const validCount = parsedRows.filter(row => row.data).length;
-  const errorCount = parsedRows.filter(row => row.errors).length;
-
-  const downloadTemplate = () => {
-    const templateData = [
-      ["Name", "Type", "Description", "Quantity", "Unit", "Price Ex Tax", "Allowance", "Notes", "Cost Code", "Status"],
-      ["Example Item", "Material", "Sample description", "10", "m2", "25.50", "None", "Sample notes", "CODE-001", "incomplete"],
-    ];
-
-    const worksheet = XLSX.utils.aoa_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
-    XLSX.writeFile(workbook, "estimate_items_template.xlsx");
+  const getCellValue = (row: any, field: keyof ImportEstimateItem) => {
+    const columnName = columnMapping[field];
+    if (!columnName) return "";
+    return row[columnName] ?? "";
   };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle>Import Estimate Items</DialogTitle>
-          <DialogDescription>
-            {step === "upload" && "Upload an Excel or CSV file containing estimate items"}
-            {step === "map" && "Map your file columns to estimate fields"}
-            {step === "preview" && "Review and confirm import"}
-          </DialogDescription>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[1200px]">
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <DialogTitle className="text-xl">Import estimation</DialogTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleClose}
+            className="h-6 w-6"
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </DialogHeader>
 
-        {step === "upload" && (
-          <div className="space-y-6">
+        {!fileData.length ? (
+          <div className="space-y-6 py-8">
             <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-12 hover-elevate">
               <Upload className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium mb-2">Upload File</h3>
@@ -225,137 +263,172 @@ export function ImportEstimateItemsDialog({
                 </Button>
               </label>
             </div>
-
-            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-md">
-              <div>
-                <p className="text-sm font-medium">Need a template?</p>
-                <p className="text-xs text-muted-foreground">Download our Excel template to get started</p>
-              </div>
-              <Button variant="outline" onClick={downloadTemplate} data-testid="button-download-template">
-                Download Template
-              </Button>
-            </div>
           </div>
-        )}
-
-        {step === "map" && (
+        ) : (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {fileData.length} rows detected. Map columns to fields below.
-              </p>
-              <Button onClick={handlePreview} data-testid="button-next-preview">
-                Next: Preview
-              </Button>
+            {/* File info and tax toggle */}
+            <div className="flex items-center justify-between pb-2 border-b flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <span className="text-muted-foreground">Import file to</span>
+                <span className="font-medium">{fileName}</span>
+                <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
+                  Working
+                </span>
+                <span className="text-muted-foreground">and match your columns to BuildPro</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-primary"
+                  onClick={() => {
+                    setFileData([]);
+                    setHeaders([]);
+                    setColumnMapping({});
+                    setFileName("");
+                  }}
+                  data-testid="button-change-file"
+                >
+                  Change file
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="tax-toggle" className="text-sm cursor-pointer">
+                  Tax excluded
+                </Label>
+                <Switch
+                  id="tax-toggle"
+                  checked={taxIncluded}
+                  onCheckedChange={setTaxIncluded}
+                  data-testid="switch-tax-included"
+                />
+                <Label htmlFor="tax-toggle" className="text-sm cursor-pointer">
+                  Tax included
+                </Label>
+              </div>
             </div>
 
-            <ScrollArea className="h-[400px] border rounded-md p-4">
-              <div className="space-y-4">
-                {Object.entries(FIELD_LABELS).map(([field, label]) => (
-                  <div key={field} className="flex items-center gap-4">
-                    <div className="w-40">
-                      <span className="text-sm font-medium">{label}</span>
-                      {field === "name" && <Badge variant="secondary" className="ml-2">Required</Badge>}
-                    </div>
-                    <Select
-                      value={(columnMapping[field as keyof ImportEstimateItem] as string) || "none"}
-                      onValueChange={(value) => handleColumnMappingChange(field as keyof ImportEstimateItem, value)}
-                    >
-                      <SelectTrigger className="flex-1" data-testid={`select-column-${field}`}>
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">-- Not mapped --</SelectItem>
-                        {headers.map(header => (
-                          <SelectItem key={header} value={header}>
-                            {header}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
-        )}
-
-        {step === "preview" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex gap-4">
-                <Badge variant="default" className="gap-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  {validCount} Valid
-                </Badge>
+            {/* Validation status */}
+            {parsedResults.length > 0 && (
+              <div className="flex items-center gap-2 pb-2">
+                <span className="text-sm text-muted-foreground">{validCount} valid rows</span>
                 {errorCount > 0 && (
-                  <Badge variant="destructive" className="gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {errorCount} Errors
-                  </Badge>
+                  <span className="text-sm text-destructive">{errorCount} rows with errors</span>
                 )}
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep("map")} data-testid="button-back-mapping">
-                  Back to Mapping
-                </Button>
-                <Button
-                  onClick={handleImport}
-                  disabled={validCount === 0 || isImporting}
-                  data-testid="button-import-confirm"
-                >
-                  {isImporting ? "Importing..." : `Import ${validCount} Items`}
-                </Button>
-              </div>
+            )}
+
+            {/* Column mapping dropdowns */}
+            <div className="grid grid-cols-4 gap-3 pb-4 border-b">
+              {CORE_MAPPING_FIELDS.map(field => (
+                <div key={field} className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    {FIELD_LABELS[field]}{field === "name" && "*"}
+                  </Label>
+                  <Select
+                    value={(columnMapping[field] as string) || "none"}
+                    onValueChange={(value) => handleColumnMappingChange(field, value)}
+                  >
+                    <SelectTrigger className="h-9" data-testid={`select-column-${field}`}>
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select column</SelectItem>
+                      {headers.map(header => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
             </div>
 
-            <ScrollArea className="h-[500px] border rounded-md">
+            {/* Data preview table */}
+            <ScrollArea className="h-[calc(95vh-320px)] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="w-8"></TableHead>
+                    <TableHead className="w-[200px]">{columnMapping.name || "Name"}</TableHead>
+                    <TableHead className="w-[120px]">{columnMapping.type || "Cost Type"}</TableHead>
+                    <TableHead className="w-[150px]">{columnMapping.costCode || "Group"}</TableHead>
+                    <TableHead className="w-[100px]">{columnMapping.quantity || "Quantity"}</TableHead>
+                    <TableHead className="w-[80px]">{columnMapping.unitType || "Unit"}</TableHead>
+                    <TableHead className="w-[120px]">{columnMapping.unitCostExTax || "Unit Cost"}</TableHead>
+                    <TableHead className="w-[100px]">{columnMapping.markupPercent || "Markup"}</TableHead>
+                    <TableHead>{columnMapping.description || "Description"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {parsedRows.map((row, index) => (
-                    <TableRow
-                      key={index}
-                      className={cn(row.errors && "bg-destructive/10")}
-                      data-testid={`row-preview-${index}`}
-                    >
-                      <TableCell className="font-mono text-xs">{index + 1}</TableCell>
-                      {row.errors ? (
-                        <TableCell colSpan={6}>
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4 text-destructive" />
-                            <span className="text-sm text-destructive">
-                              {row.errors.join(", ")}
-                            </span>
-                          </div>
-                        </TableCell>
-                      ) : (
-                        <>
-                          <TableCell>{row.data?.name}</TableCell>
-                          <TableCell>{row.data?.type}</TableCell>
-                          <TableCell>{row.data?.quantity}</TableCell>
-                          <TableCell>{row.data?.unitType}</TableCell>
-                          <TableCell>${row.data?.unitCostExTax.toFixed(2)}</TableCell>
+                  {Object.entries(groupedData).map(([groupName, rows]) => (
+                    <React.Fragment key={groupName}>
+                      {columnMapping.costCode && (
+                        <TableRow
+                          className="bg-muted/50 font-medium cursor-pointer hover-elevate"
+                          onClick={() => toggleGroup(groupName)}
+                        >
                           <TableCell>
-                            <Badge variant="secondary">{row.data?.status}</Badge>
+                            {collapsedGroups.has(groupName) ? (
+                              <ChevronRight className="h-4 w-4" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" />
+                            )}
                           </TableCell>
-                        </>
+                          <TableCell colSpan={8}>
+                            {groupName}
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableRow>
+                      {!collapsedGroups.has(groupName) && rows.map((item, index) => {
+                        const { row, parsed } = item;
+                        const hasError = parsed?.errors && parsed.errors.length > 0;
+                        
+                        return (
+                          <TableRow 
+                            key={`${groupName}-${index}`}
+                            className={cn(hasError && "bg-destructive/10")}
+                          >
+                            <TableCell>
+                              {hasError && <AlertCircle className="h-4 w-4 text-destructive" />}
+                            </TableCell>
+                            {hasError ? (
+                              <TableCell colSpan={8} className="text-sm text-destructive">
+                                {parsed.errors.join(", ")}
+                              </TableCell>
+                            ) : (
+                              <>
+                                <TableCell>{getCellValue(row, "name")}</TableCell>
+                                <TableCell>{getCellValue(row, "type")}</TableCell>
+                                <TableCell>{getCellValue(row, "costCode")}</TableCell>
+                                <TableCell>{getCellValue(row, "quantity")}</TableCell>
+                                <TableCell>{getCellValue(row, "unitType")}</TableCell>
+                                <TableCell>{getCellValue(row, "unitCostExTax")}</TableCell>
+                                <TableCell>{getCellValue(row, "markupPercent")}</TableCell>
+                                <TableCell className="max-w-[200px] truncate">
+                                  {getCellValue(row, "description")}
+                                </TableCell>
+                              </>
+                            )}
+                          </TableRow>
+                        );
+                      })}
+                    </React.Fragment>
                   ))}
                 </TableBody>
               </Table>
             </ScrollArea>
+
+            {/* Footer with Continue button */}
+            <div className="flex justify-end pt-4 border-t">
+              <Button
+                onClick={handleImport}
+                disabled={!columnMapping.name || validCount === 0 || isImporting}
+                size="lg"
+                data-testid="button-import-continue"
+              >
+                {isImporting ? "Importing..." : `Continue (${validCount} items)`}
+              </Button>
+            </div>
           </div>
         )}
       </DialogContent>
