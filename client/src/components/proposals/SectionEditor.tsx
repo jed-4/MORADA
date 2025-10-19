@@ -231,9 +231,11 @@ interface EstimateEditorProps {
 }
 
 function EstimateEditor({ content, setContent }: EstimateEditorProps) {
-  const { data: estimates } = useQuery<Estimate[]>({
+  const { data: estimates, isLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
   });
+
+  console.log('EstimateEditor rendering:', { content, estimates, isLoading });
 
   const toggles = content.columnToggles || {
     description: true,
@@ -255,7 +257,7 @@ function EstimateEditor({ content, setContent }: EstimateEditorProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="estimate-editor">
       <div className="space-y-2">
         <Label htmlFor="estimate-id">Select Estimate</Label>
         <Select
