@@ -185,11 +185,24 @@ export default function ProposalDetail() {
   // Local state for optimistic updates
   const [localSections, setLocalSections] = useState<ProposalSection[]>([]);
 
-  // Sync local sections with server data
+  // Sync local sections with server data only when the data actually changes
   useEffect(() => {
-    if (sections) {
-      setLocalSections(sections);
+    if (sections && sections.length > 0) {
+      // Only update if the data is actually different
+      const isDifferent = localSections.length !== sections.length || 
+        sections.some((section, idx) => 
+          !localSections[idx] || 
+          localSections[idx].id !== section.id || 
+          localSections[idx].updatedAt !== section.updatedAt
+        );
+      
+      if (isDifferent) {
+        setLocalSections(sections);
+      }
+    } else if (sections && sections.length === 0 && localSections.length > 0) {
+      setLocalSections([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sections]);
 
   // Reorder sections mutation
