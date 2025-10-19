@@ -183,12 +183,12 @@ export default function ProjectEstimates() {
             borderColor: statusOption.color
           }}
         >
-          {statusOption.name} v{estimate.version}
+          {statusOption.name}
         </Badge>
       );
     }
     // Fallback for estimates without status or color
-    return <Badge variant="outline">{statusOption?.name || estimate.status || 'Unknown'} v{estimate.version}</Badge>;
+    return <Badge variant="outline">{statusOption?.name || estimate.status || 'Unknown'}</Badge>;
   };
 
   // Filter estimates based on search and filters
@@ -253,18 +253,6 @@ export default function ProjectEstimates() {
                   <p className="text-lg font-semibold" data-testid={`text-estimate-total-${estimate.id}`}>
                     {formatCurrency(summary.total)}
                   </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Subtotal</p>
-                  <p className="text-base font-medium">{formatCurrency(summary.subtotal)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Markup</p>
-                  <p className="text-base font-medium">{formatCurrency(summary.markupAmount)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">GST</p>
-                  <p className="text-base font-medium">{formatCurrency(summary.taxAmount)}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Items</p>
