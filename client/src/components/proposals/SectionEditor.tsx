@@ -16,6 +16,7 @@ interface SectionEditorProps {
   onClose: () => void;
   onSave: (sectionId: string, updates: Partial<ProposalSection>) => void;
   isSaving?: boolean;
+  projectId?: string;
 }
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
@@ -31,7 +32,7 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   custom: "Custom Section",
 };
 
-export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: SectionEditorProps) {
+export function SectionEditor({ section, isOpen, onClose, onSave, isSaving, projectId }: SectionEditorProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState<Record<string, any>>({});
@@ -170,7 +171,7 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: Se
             </div>
           )}
 
-          {section.sectionType === "estimate" && <EstimateEditor content={content} setContent={setContent} />}
+          {section.sectionType === "estimate" && <EstimateEditor content={content} setContent={setContent} projectId={projectId} />}
 
           {section.sectionType === "cover_page" && (
             <div className="space-y-4">
