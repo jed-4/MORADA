@@ -45,7 +45,7 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
-      return await apiRequest("PATCH", `/api/tasks/${task.id}`, updates);
+      return await apiRequest(`/api/tasks/${task.id}`, "PATCH", updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.projectId] });
@@ -137,7 +137,7 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
-      return await apiRequest("PATCH", `/api/tasks/${taskId}`, updates);
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });

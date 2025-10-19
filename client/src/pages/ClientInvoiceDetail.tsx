@@ -432,13 +432,13 @@ export default function ClientInvoiceDetail() {
         status: "draft",
       };
 
-      const invoiceRes = await apiRequest("POST", "/api/client-invoices", invoiceData);
+      const invoiceRes = await apiRequest("/api/client-invoices", "POST", invoiceData);
       const newInvoice = await invoiceRes.json() as ClientInvoice;
 
       // Create custom line items
       for (let i = 0; i < customLines.length; i++) {
         const item = customLines[i];
-        await apiRequest("POST", `/api/client-invoices/${newInvoice.id}/items`, {
+        await apiRequest(`/api/client-invoices/${newInvoice.id}/items`, "POST", {
           invoiceId: newInvoice.id,
           description: item.description,
           quantity: item.quantity,
@@ -451,7 +451,7 @@ export default function ClientInvoiceDetail() {
 
       // Link estimate if progress payments
       if (selectedEstimateId && currentProject?.invoicingMethod === "progress_payments") {
-        await apiRequest("POST", `/api/client-invoices/${newInvoice.id}/estimates`, {
+        await apiRequest(`/api/client-invoices/${newInvoice.id}/estimates`, "POST", {
           invoiceId: newInvoice.id,
           estimateId: selectedEstimateId,
           progressPercent: progressPercent,
@@ -460,7 +460,7 @@ export default function ClientInvoiceDetail() {
 
       // Link variations
       for (const variationId of selectedVariationIds) {
-        await apiRequest("POST", `/api/client-invoices/${newInvoice.id}/variations`, {
+        await apiRequest(`/api/client-invoices/${newInvoice.id}/variations`, "POST", {
           invoiceId: newInvoice.id,
           variationId,
         });
@@ -469,7 +469,7 @@ export default function ClientInvoiceDetail() {
       // Link bills if cost plus
       if (currentProject?.invoicingMethod === "cost_plus") {
         for (const billId of selectedBillIds) {
-          await apiRequest("POST", `/api/client-invoices/${newInvoice.id}/bills`, {
+          await apiRequest(`/api/client-invoices/${newInvoice.id}/bills`, "POST", {
             invoiceId: newInvoice.id,
             billId,
           });
@@ -527,7 +527,7 @@ export default function ClientInvoiceDetail() {
         balanceAmount: Math.round(calculateTotal() * 100) - (invoice?.paidAmount || 0),
       };
 
-      const invoiceRes = await apiRequest("PATCH", `/api/client-invoices/${effectiveInvoiceId}`, invoiceData);
+      const invoiceRes = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", invoiceData);
       const updatedInvoice = await invoiceRes.json() as ClientInvoice;
 
       // Handle custom line items
@@ -536,7 +536,7 @@ export default function ClientInvoiceDetail() {
       
       const toDelete = existingIds.filter((id) => !currentIds.includes(id));
       for (const itemId of toDelete) {
-        await apiRequest("DELETE", `/api/client-invoice-items/${itemId}`);
+        await apiRequest(`/api/client-invoice-items/${itemId}`, "DELETE");
       }
 
       for (let i = 0; i < customLines.length; i++) {
@@ -552,9 +552,9 @@ export default function ClientInvoiceDetail() {
         };
 
         if (item.id) {
-          await apiRequest("PATCH", `/api/client-invoice-items/${item.id}`, itemData);
+          await apiRequest(`/api/client-invoice-items/${item.id}`, "PATCH", itemData);
         } else {
-          await apiRequest("POST", `/api/client-invoices/${effectiveInvoiceId}/items`, itemData);
+          await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/items`, "POST", itemData);
         }
       }
 
@@ -602,7 +602,7 @@ export default function ClientInvoiceDetail() {
         notes: data.notes,
       };
 
-      const paymentRes = await apiRequest("POST", `/api/client-invoices/${effectiveInvoiceId}/payments`, paymentData);
+      const paymentRes = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/payments`, "POST", paymentData);
       const newPayment = await paymentRes.json() as ClientInvoicePayment;
 
       const currentPaidAmount = invoice?.paidAmount || 0;
@@ -617,7 +617,7 @@ export default function ClientInvoiceDetail() {
         newStatus = "partial";
       }
 
-      await apiRequest("PATCH", `/api/client-invoices/${effectiveInvoiceId}`, {
+      await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", {
         paidAmount: newPaidAmount,
         balanceAmount: newBalanceAmount,
         status: newStatus,
@@ -669,7 +669,7 @@ export default function ClientInvoiceDetail() {
 
   const sendInvoiceMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PATCH", `/api/client-invoices/${effectiveInvoiceId}`, {
+      await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", {
         status: "sent",
       });
     },

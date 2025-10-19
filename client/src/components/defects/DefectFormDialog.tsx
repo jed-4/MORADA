@@ -66,7 +66,7 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertDefect) => {
-      return apiRequest("POST", "/api/defects", data);
+      return apiRequest("/api/defects", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
@@ -88,7 +88,7 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertDefect) => {
-      return apiRequest("PATCH", `/api/defects/${defect?.id}`, data);
+      return apiRequest(`/api/defects/${defect?.id}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });

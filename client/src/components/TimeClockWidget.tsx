@@ -76,7 +76,7 @@ export function TimeClockWidget() {
       if (!selectedProjectId) {
         throw new Error("Please select a project");
       }
-      return apiRequest("POST", "/api/timesheets/clock-in", {
+      return apiRequest("/api/timesheets/clock-in", "POST", {
         projectId: selectedProjectId,
         costCodeId: selectedCostCodeId || undefined,
       });
@@ -104,7 +104,7 @@ export function TimeClockWidget() {
       if (!activeTimesheet) {
         throw new Error("No active timesheet");
       }
-      return apiRequest("POST", "/api/timesheets/clock-out", {
+      return apiRequest("/api/timesheets/clock-out", "POST", {
         timesheetId: activeTimesheet.id,
       });
     },

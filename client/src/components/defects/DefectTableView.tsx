@@ -52,7 +52,7 @@ export function DefectTableView({ defects }: DefectTableViewProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/defects/${id}`, null);
+      return apiRequest(`/api/defects/${id}`, "DELETE", null);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });

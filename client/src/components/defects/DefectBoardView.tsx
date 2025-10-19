@@ -54,7 +54,7 @@ export function DefectBoardView({ defects }: DefectBoardViewProps) {
 
   const updateDefectStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      return apiRequest("PATCH", `/api/defects/${id}`, { status });
+      return apiRequest(`/api/defects/${id}`, "PATCH", { status });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
@@ -74,7 +74,7 @@ export function DefectBoardView({ defects }: DefectBoardViewProps) {
 
   const deleteDefect = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/defects/${id}`, null);
+      return apiRequest(`/api/defects/${id}`, "DELETE", null);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });

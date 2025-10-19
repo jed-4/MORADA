@@ -119,7 +119,7 @@ export default function AddContactDialog({
       // Auto-generate full name from firstName and lastName
       const fullName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim() || cleanData.name;
       const payload = { ...cleanData, name: fullName };
-      const response = await apiRequest("POST", "/api/contacts", payload);
+      const response = await apiRequest("/api/contacts", "POST", payload);
       return response.json();
     },
     onSuccess: () => {

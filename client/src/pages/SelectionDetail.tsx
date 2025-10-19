@@ -71,7 +71,7 @@ export default function SelectionDetail() {
   // Create option mutation
   const createOptionMutation = useMutation({
     mutationFn: async (option: InsertSelectionOption) => {
-      const response = await apiRequest("POST", `/api/selections/${id}/options`, option);
+      const response = await apiRequest(`/api/selections/${id}/options`, "POST", option);
       return response.json();
     },
     onSuccess: () => {
@@ -94,7 +94,7 @@ export default function SelectionDetail() {
   // Update option mutation
   const updateOptionMutation = useMutation({
     mutationFn: async ({ optionId, data }: { optionId: string; data: Partial<InsertSelectionOption> }) => {
-      const response = await apiRequest("PATCH", `/api/selection-options/${optionId}`, data);
+      const response = await apiRequest(`/api/selection-options/${optionId}`, "PATCH", data);
       return response.json();
     },
     onSuccess: () => {
@@ -117,7 +117,7 @@ export default function SelectionDetail() {
   // Delete option mutation
   const deleteOptionMutation = useMutation({
     mutationFn: async (optionId: string) => {
-      await apiRequest("DELETE", `/api/selection-options/${optionId}`);
+      await apiRequest(`/api/selection-options/${optionId}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });

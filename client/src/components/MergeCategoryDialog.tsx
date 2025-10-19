@@ -47,7 +47,7 @@ export default function MergeCategoryDialog({
 
   const mergeMutation = useMutation({
     mutationFn: (data: { sourceId: string; targetId: string }) =>
-      apiRequest("POST", "/api/cost-categories/merge", data),
+      apiRequest("/api/cost-categories/merge", "POST", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-categories"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });

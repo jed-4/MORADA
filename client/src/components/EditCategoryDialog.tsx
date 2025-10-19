@@ -44,7 +44,7 @@ export default function EditCategoryDialog({ open, onOpenChange, category }: Edi
   const updateCategoryMutation = useMutation({
     mutationFn: async (data: FormData) => {
       if (!category) throw new Error("No category selected");
-      const response = await apiRequest("PATCH", `/api/cost-categories/${category.id}`, data);
+      const response = await apiRequest(`/api/cost-categories/${category.id}`, "PATCH", data);
       return response.json() as Promise<CostCategory>;
     },
     onSuccess: () => {

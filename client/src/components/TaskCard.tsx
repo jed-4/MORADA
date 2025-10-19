@@ -78,7 +78,7 @@ export default function TaskCard({
   // Mutation to update task status
   const updateTaskStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
-      return await apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
+      return await apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });

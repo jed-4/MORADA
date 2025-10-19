@@ -260,7 +260,7 @@ function EntryForm({
         shareWithClient: false,
       };
 
-      const response = await apiRequest("POST", "/api/site-diary-entries", entryData);
+      const response = await apiRequest("/api/site-diary-entries", "POST", entryData);
       return response.json();
     },
     onSuccess: () => {

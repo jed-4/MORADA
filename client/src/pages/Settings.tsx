@@ -219,7 +219,7 @@ export default function Settings() {
   // Company info mutation 
   const updateCompanyMutation = useMutation({
     mutationFn: async (data: z.infer<typeof companyInfoSchema>) => {
-      const response = await apiRequest("PATCH", "/api/company-settings", data);
+      const response = await apiRequest("/api/company-settings", "PATCH", data);
       return response.json();
     },
     onSuccess: () => {
@@ -1015,7 +1015,7 @@ function FieldSettingsSection() {
   // Create custom field mutation
   const createFieldMutation = useMutation({
     mutationFn: async (data: InsertCustomFieldDef) => {
-      const response = await apiRequest("POST", "/api/custom-field-defs", data);
+      const response = await apiRequest("/api/custom-field-defs", "POST", data);
       return response.json();
     },
     onSuccess: () => {
@@ -1036,7 +1036,7 @@ function FieldSettingsSection() {
   // Update custom field mutation
   const updateFieldMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertCustomFieldDef> }) => {
-      const response = await apiRequest("PATCH", `/api/custom-field-defs/${id}`, data);
+      const response = await apiRequest(`/api/custom-field-defs/${id}`, "PATCH", data);
       return response.json();
     },
     onSuccess: () => {
@@ -1057,7 +1057,7 @@ function FieldSettingsSection() {
   // Delete custom field mutation
   const deleteFieldMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await apiRequest("DELETE", `/api/custom-field-defs/${id}`);
+      const response = await apiRequest(`/api/custom-field-defs/${id}`, "DELETE");
       return response.ok;
     },
     onSuccess: () => {
@@ -1791,7 +1791,7 @@ function FieldCategoriesSection() {
   const updateOptionsMutation = useMutation({
     mutationFn: async (optionsData: any[]) => {
       if (!selectedCategoryId) throw new Error("No category selected");
-      const response = await apiRequest("POST", `/api/field-categories/${selectedCategoryId}/options/batch`, optionsData);
+      const response = await apiRequest(`/api/field-categories/${selectedCategoryId}/options/batch`, "POST", optionsData);
       return response.json();
     },
     onSuccess: () => {

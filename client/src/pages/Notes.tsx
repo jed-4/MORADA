@@ -194,7 +194,7 @@ export default function Notes() {
 
   const createNoteMutation = useMutation({
     mutationFn: async (data: InsertNote) => {
-      const response = await apiRequest("POST", "/api/notes", data);
+      const response = await apiRequest("/api/notes", "POST", data);
       return response.json();
     },
     onSuccess: () => {
@@ -214,7 +214,7 @@ export default function Notes() {
 
   const updateNoteMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertNote> }) => {
-      const response = await apiRequest("PATCH", `/api/notes/${id}`, data);
+      const response = await apiRequest(`/api/notes/${id}`, "PATCH", data);
       return response.json();
     },
     onSuccess: () => {
@@ -234,7 +234,7 @@ export default function Notes() {
 
   const deleteNoteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/notes/${id}`);
+      await apiRequest(`/api/notes/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });

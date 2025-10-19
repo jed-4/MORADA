@@ -47,7 +47,7 @@ export default function MergeCostCodeDialog({
 
   const mergeMutation = useMutation({
     mutationFn: (data: { sourceId: string; targetId: string }) =>
-      apiRequest("POST", "/api/cost-codes/merge", data),
+      apiRequest("/api/cost-codes/merge", "POST", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
       toast({

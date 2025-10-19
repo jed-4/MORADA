@@ -336,12 +336,12 @@ export default function BillDetail() {
         createdById: "temp-user-id",
       };
 
-      const billRes = await apiRequest("POST", "/api/bills", billData);
+      const billRes = await apiRequest("/api/bills", "POST", billData);
       const newBill = await billRes.json() as Bill;
 
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i];
-        const lineItemRes = await apiRequest("POST", `/api/bills/${newBill.id}/line-items`, {
+        const lineItemRes = await apiRequest(`/api/bills/${newBill.id}/line-items`, "POST", {
           billId: newBill.id,
           lineType: item.lineType,
           description: item.description,
@@ -356,7 +356,7 @@ export default function BillDetail() {
         const createdLineItem = await lineItemRes.json();
 
         if (item.appliesToAllowances && item.allowanceItemId) {
-          await apiRequest("POST", "/api/bill-line-item-allowances", {
+          await apiRequest("/api/bill-line-item-allowances", "POST", {
             billLineItemId: createdLineItem.id,
             estimateItemId: item.allowanceItemId,
             amount: Math.round(item.total * 100),
@@ -396,7 +396,7 @@ export default function BillDetail() {
         paidAmount: Math.round((data.paidAmount || 0) * 100),
       };
 
-      const billRes = await apiRequest("PATCH", `/api/bills/${id}`, billData);
+      const billRes = await apiRequest(`/api/bills/${id}`, "PATCH", billData);
       const updatedBill = await billRes.json() as Bill;
 
       const existingIds = existingLineItems.map((item) => item.id);
@@ -404,7 +404,7 @@ export default function BillDetail() {
       
       const toDelete = existingIds.filter((id) => !currentIds.includes(id));
       for (const itemId of toDelete) {
-        await apiRequest("DELETE", `/api/bills/${id}/line-items/${itemId}`);
+        await apiRequest(`/api/bills/${id}/line-items/${itemId}`, "DELETE");
       }
 
       for (let i = 0; i < lineItems.length; i++) {
@@ -424,9 +424,9 @@ export default function BillDetail() {
 
         let lineItemId = item.id;
         if (item.id) {
-          await apiRequest("PATCH", `/api/bills/${id}/line-items/${item.id}`, itemData);
+          await apiRequest(`/api/bills/${id}/line-items/${item.id}`, "PATCH", itemData);
         } else {
-          const lineItemRes = await apiRequest("POST", `/api/bills/${id}/line-items`, itemData);
+          const lineItemRes = await apiRequest(`/api/bills/${id}/line-items`, "POST", itemData);
           const createdLineItem = await lineItemRes.json();
           lineItemId = createdLineItem.id;
         }
@@ -435,19 +435,19 @@ export default function BillDetail() {
         
         if (item.appliesToAllowances && item.allowanceItemId) {
           if (existingAllowance) {
-            await apiRequest("PATCH", `/api/bill-line-item-allowances/${existingAllowance.id}`, {
+            await apiRequest(`/api/bill-line-item-allowances/${existingAllowance.id}`, "PATCH", {
               estimateItemId: item.allowanceItemId,
               amount: Math.round(item.total * 100),
             });
           } else {
-            await apiRequest("POST", "/api/bill-line-item-allowances", {
+            await apiRequest("/api/bill-line-item-allowances", "POST", {
               billLineItemId: lineItemId,
               estimateItemId: item.allowanceItemId,
               amount: Math.round(item.total * 100),
             });
           }
         } else if (existingAllowance) {
-          await apiRequest("DELETE", `/api/bill-line-item-allowances/${existingAllowance.id}`);
+          await apiRequest(`/api/bill-line-item-allowances/${existingAllowance.id}`, "DELETE");
         }
       }
 
@@ -490,7 +490,7 @@ export default function BillDetail() {
         throw new Error("Please set cost codes for all line items");
       }
       
-      const response = await apiRequest("PATCH", `/api/bills/${id}`, {
+      const response = await apiRequest(`/api/bills/${id}`, "PATCH", {
         status: "awaiting_approval"
       });
       return response.json();
@@ -514,7 +514,7 @@ export default function BillDetail() {
 
   const approveMutation = useMutation({
     mutationFn: async (comments?: string) => {
-      const response = await apiRequest("POST", `/api/bills/${id}/approve`, {
+      const response = await apiRequest(`/api/bills/${id}/approve`, "POST", {
         comments: comments || null,
       });
       return response.json();
@@ -539,7 +539,7 @@ export default function BillDetail() {
 
   const rejectMutation = useMutation({
     mutationFn: async (comments: string) => {
-      const response = await apiRequest("POST", `/api/bills/${id}/reject`, {
+      const response = await apiRequest(`/api/bills/${id}/reject`, "POST", {
         comments,
       });
       return response.json();
@@ -579,7 +579,7 @@ export default function BillDetail() {
         reader.readAsDataURL(file);
       });
 
-      const response = await apiRequest("POST", "/api/ocr/process-invoice", {
+      const response = await apiRequest("/api/ocr/process-invoice", "POST", {
         fileData: base64Data,
         fileName: file.name,
       });

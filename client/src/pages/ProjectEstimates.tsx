@@ -167,7 +167,7 @@ export default function ProjectEstimates() {
   // Mutation for updating estimate status
   const updateEstimateStatusMutation = useMutation({
     mutationFn: async ({ estimateId, status }: { estimateId: string; status: string }) => {
-      const response = await apiRequest("PATCH", `/api/estimates/${estimateId}`, { status });
+      const response = await apiRequest(`/api/estimates/${estimateId}`, "PATCH", { status });
       return response.json();
     },
     onSuccess: () => {

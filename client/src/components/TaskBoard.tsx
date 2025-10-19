@@ -296,7 +296,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   // Move task to different column
   const moveTaskMutation = useMutation({
     mutationFn: async ({ taskId, newStatus }: { taskId: string; newStatus: string }) => {
-      const response = await apiRequest("PATCH", `/api/tasks/${taskId}/status`, { status: newStatus });
+      const response = await apiRequest(`/api/tasks/${taskId}/status`, "PATCH", { status: newStatus });
       return response.json();
     },
     onSuccess: () => {

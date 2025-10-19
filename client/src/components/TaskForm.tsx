@@ -167,7 +167,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   const { data: parentTasks = [] } = useQuery({
     queryKey: ["/api/tasks", projectId, "parents"],
     queryFn: async () => {
-      const response = await apiRequest("GET", `/api/tasks?projectId=${projectId}`);
+      const response = await apiRequest(`/api/tasks?projectId=${projectId}`, "GET");
       return Array.isArray(response) ? response.filter((t: Task) => t.id !== task?.id) : [];
     },
     enabled: open && !!projectId,
@@ -200,7 +200,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         recurringStartDate: data.isRecurring && data.recurringStartDate ? new Date(data.recurringStartDate) : undefined,
         recurringEndDate: data.isRecurring && data.recurringEndDate ? new Date(data.recurringEndDate) : undefined,
       };
-      return await apiRequest("POST", `/api/tasks`, payload);
+      return await apiRequest(`/api/tasks`, "POST", payload);
     },
     onSuccess: (createdTask: Task) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
@@ -257,7 +257,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         recurringStartDate: data.isRecurring && data.recurringStartDate ? new Date(data.recurringStartDate) : undefined,
         recurringEndDate: data.isRecurring && data.recurringEndDate ? new Date(data.recurringEndDate) : undefined,
       };
-      return await apiRequest("PATCH", `/api/tasks/${task.id}`, payload);
+      return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
     },
     onSuccess: (updatedTask: Task) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });

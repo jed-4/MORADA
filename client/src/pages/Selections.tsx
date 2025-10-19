@@ -71,7 +71,7 @@ function SelectionOptionsDropdown({ selectionId, onNavigate }: SelectionOptionsD
   const { data: selectionWithOptions, isLoading } = useQuery<SelectionWithOptions>({
     queryKey: ["/api/selections", selectionId, "with-options"],
     queryFn: async () => {
-      const response = await apiRequest("GET", `/api/selections/${selectionId}`);
+      const response = await apiRequest(`/api/selections/${selectionId}`, "GET");
       return response.json();
     },
     enabled: isOpen, // Only fetch when dropdown is open
@@ -173,7 +173,7 @@ export default function Selections() {
   // Fetch selections for the current project
   const { data: selections = [], isLoading } = useQuery<Selection[]>({
     queryKey: ["/api/selections", currentProject?.id],
-    queryFn: () => apiRequest("GET", `/api/selections?projectId=${currentProject?.id}`).then(res => res.json()),
+    queryFn: () => apiRequest(`/api/selections?projectId=${currentProject?.id}`, "GET").then(res => res.json()),
     enabled: !!currentProject?.id,
   });
 
@@ -190,7 +190,7 @@ export default function Selections() {
   // Create selection mutation
   const createSelectionMutation = useMutation({
     mutationFn: async (selection: InsertSelection) => {
-      const response = await apiRequest("POST", "/api/selections", selection);
+      const response = await apiRequest("/api/selections", "POST", selection);
       return response.json();
     },
     onSuccess: () => {
@@ -213,7 +213,7 @@ export default function Selections() {
   // Update selection mutation
   const updateSelectionMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertSelection> }) => {
-      const response = await apiRequest("PATCH", `/api/selections/${id}`, data);
+      const response = await apiRequest(`/api/selections/${id}`, "PATCH", data);
       return response.json();
     },
     onSuccess: () => {
@@ -236,7 +236,7 @@ export default function Selections() {
   // Delete selection mutation
   const deleteSelectionMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/selections/${id}`);
+      await apiRequest(`/api/selections/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", currentProject?.id] });

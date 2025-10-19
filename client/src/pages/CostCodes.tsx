@@ -72,7 +72,7 @@ export default function CostCodes() {
 
   const archiveMutation = useMutation({
     mutationFn: (codeId: string) =>
-      apiRequest("POST", `/api/cost-codes/${codeId}/archive`),
+      apiRequest(`/api/cost-codes/${codeId}/archive`, "POST"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
       toast({
@@ -91,7 +91,7 @@ export default function CostCodes() {
 
   const archiveCategoryMutation = useMutation({
     mutationFn: (categoryId: string) =>
-      apiRequest("POST", `/api/cost-categories/${categoryId}/archive`),
+      apiRequest(`/api/cost-categories/${categoryId}/archive`, "POST"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-categories"] });
       toast({
@@ -110,7 +110,7 @@ export default function CostCodes() {
 
   const toggleTimesheetMutation = useMutation({
     mutationFn: ({ id, availableInTimesheets }: { id: string; availableInTimesheets: boolean }) =>
-      apiRequest("PATCH", `/api/cost-codes/${id}`, { availableInTimesheets }),
+      apiRequest(`/api/cost-codes/${id}`, "PATCH", { availableInTimesheets }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
     },
@@ -126,7 +126,7 @@ export default function CostCodes() {
   const bulkToggleTimesheetMutation = useMutation({
     mutationFn: async ({ codeIds, availableInTimesheets }: { codeIds: string[]; availableInTimesheets: boolean }) => {
       await Promise.all(
-        codeIds.map(id => apiRequest("PATCH", `/api/cost-codes/${id}`, { availableInTimesheets }))
+        codeIds.map(id => apiRequest(`/api/cost-codes/${id}`, "PATCH", { availableInTimesheets }))
       );
     },
     onSuccess: () => {
@@ -149,7 +149,7 @@ export default function CostCodes() {
   const bulkMoveCategoryMutation = useMutation({
     mutationFn: async ({ codeIds, categoryId }: { codeIds: string[]; categoryId: string | null }) => {
       await Promise.all(
-        codeIds.map(id => apiRequest("PATCH", `/api/cost-codes/${id}`, { categoryId }))
+        codeIds.map(id => apiRequest(`/api/cost-codes/${id}`, "PATCH", { categoryId }))
       );
     },
     onSuccess: () => {
@@ -172,7 +172,7 @@ export default function CostCodes() {
   const bulkArchiveMutation = useMutation({
     mutationFn: async (codeIds: string[]) => {
       await Promise.all(
-        codeIds.map(id => apiRequest("POST", `/api/cost-codes/${id}/archive`))
+        codeIds.map(id => apiRequest(`/api/cost-codes/${id}/archive`, "POST"))
       );
     },
     onSuccess: () => {

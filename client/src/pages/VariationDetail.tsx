@@ -246,12 +246,12 @@ export default function VariationDetail() {
         balanceAmount: Math.round(calculateTotal() * 100),
       };
 
-      const variationRes = await apiRequest("POST", "/api/variations", variationData);
+      const variationRes = await apiRequest("/api/variations", "POST", variationData);
       const newVariation = await variationRes.json() as Variation;
 
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
-        await apiRequest("POST", `/api/variations/${newVariation.id}/items`, {
+        await apiRequest(`/api/variations/${newVariation.id}/items`, "POST", {
           variationId: newVariation.id,
           description: item.description,
           quantity: item.quantity,
@@ -306,7 +306,7 @@ export default function VariationDetail() {
         balanceAmount: Math.round(calculateTotal() * 100),
       };
 
-      const variationRes = await apiRequest("PATCH", `/api/variations/${effectiveVariationId}`, variationData);
+      const variationRes = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", variationData);
       const updatedVariation = await variationRes.json() as Variation;
 
       const existingIds = existingCostLines.map((item) => item.id);
@@ -314,7 +314,7 @@ export default function VariationDetail() {
       
       const toDelete = existingIds.filter((id) => !currentIds.includes(id));
       for (const itemId of toDelete) {
-        await apiRequest("DELETE", `/api/variation-items/${itemId}`);
+        await apiRequest(`/api/variation-items/${itemId}`, "DELETE");
       }
 
       for (let i = 0; i < costLines.length; i++) {
@@ -330,9 +330,9 @@ export default function VariationDetail() {
         };
 
         if (item.id) {
-          await apiRequest("PATCH", `/api/variation-items/${item.id}`, itemData);
+          await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
         } else {
-          await apiRequest("POST", `/api/variations/${effectiveVariationId}/items`, itemData);
+          await apiRequest(`/api/variations/${effectiveVariationId}/items`, "POST", itemData);
         }
       }
 
@@ -370,7 +370,7 @@ export default function VariationDetail() {
 
   const moveToActionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("PATCH", `/api/variations/${effectiveVariationId}`, {
+      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "action"
       });
       return response.json();
@@ -394,7 +394,7 @@ export default function VariationDetail() {
 
   const sendForApprovalMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("PATCH", `/api/variations/${effectiveVariationId}`, {
+      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "pending"
       });
       return response.json();
@@ -418,7 +418,7 @@ export default function VariationDetail() {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("PATCH", `/api/variations/${effectiveVariationId}`, {
+      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "approved",
         approvedBy: "current-user-id",
         approvedDate: new Date().toISOString(),
@@ -456,7 +456,7 @@ export default function VariationDetail() {
 
   const rejectMutation = useMutation({
     mutationFn: async (reason: string) => {
-      const response = await apiRequest("PATCH", `/api/variations/${effectiveVariationId}`, {
+      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "rejected",
         rejectionReason: reason,
       });

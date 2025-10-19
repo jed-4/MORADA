@@ -122,7 +122,7 @@ export default function EditContactDialog({
       if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
       if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
       
-      return await apiRequest("PATCH", `/api/contacts/${contact.id}`, cleanData);
+      return await apiRequest(`/api/contacts/${contact.id}`, "PATCH", cleanData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });

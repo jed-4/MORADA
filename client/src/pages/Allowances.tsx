@@ -110,7 +110,7 @@ export default function Allowances() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
-      return apiRequest("PATCH", `/api/estimate-items/${itemId}`, { allowanceStatus: status });
+      return apiRequest(`/api/estimate-items/${itemId}`, "PATCH", { allowanceStatus: status });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
@@ -120,7 +120,7 @@ export default function Allowances() {
 
   const updateMarkupMutation = useMutation({
     mutationFn: async ({ itemId, markup }: { itemId: string; markup: number }) => {
-      return apiRequest("PATCH", `/api/estimate-items/${itemId}`, { pcMarkupPercent: markup });
+      return apiRequest(`/api/estimate-items/${itemId}`, "PATCH", { pcMarkupPercent: markup });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });

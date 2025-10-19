@@ -15,7 +15,7 @@ export function useSubtasks(parentTaskId: string | undefined) {
 export function useCreateSubtask() {
   return useMutation({
     mutationFn: async ({ parentTaskId, subtask }: { parentTaskId: string; subtask: InsertTask }) => {
-      const response = await apiRequest("POST", `/api/tasks/${parentTaskId}/subtasks`, subtask);
+      const response = await apiRequest(`/api/tasks/${parentTaskId}/subtasks`, "POST", subtask);
       return response.json();
     },
     onSuccess: (task: Task, { parentTaskId }) => {
@@ -45,7 +45,7 @@ export function useCreateSubtask() {
 export function useUpdateSubtask() {
   return useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
-      const response = await apiRequest("PATCH", `/api/tasks/${taskId}`, updates);
+      const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
       return response.json();
     },
     onSuccess: (updatedTask: Task) => {
@@ -78,7 +78,7 @@ export function useUpdateSubtask() {
 export function useDeleteSubtask() {
   return useMutation({
     mutationFn: async ({ taskId, parentTaskId, task }: { taskId: string; parentTaskId?: string; task?: Task }) => {
-      await apiRequest("DELETE", `/api/tasks/${taskId}`);
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
       return { taskId, parentTaskId, task };
     },
     onSuccess: ({ taskId, parentTaskId, task }) => {

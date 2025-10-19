@@ -52,7 +52,7 @@ export default function Contacts() {
 
   const archiveMutation = useMutation({
     mutationFn: (contactId: string) =>
-      apiRequest("POST", `/api/contacts/${contactId}/archive`),
+      apiRequest(`/api/contacts/${contactId}/archive`, "POST"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       toast({
@@ -70,7 +70,7 @@ export default function Contacts() {
 
   const restoreMutation = useMutation({
     mutationFn: (contactId: string) =>
-      apiRequest("POST", `/api/contacts/${contactId}/restore`),
+      apiRequest(`/api/contacts/${contactId}/restore`, "POST"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       toast({

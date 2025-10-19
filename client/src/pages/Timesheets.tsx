@@ -68,7 +68,7 @@ export default function Timesheets() {
   // Status workflow mutations
   const submitMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest("POST", `/api/timesheets/${timesheetId}/submit`, {});
+      const res = await apiRequest(`/api/timesheets/${timesheetId}/submit`, "POST", {});
       return await res.json();
     },
     onSuccess: () => {
@@ -86,7 +86,7 @@ export default function Timesheets() {
 
   const approveMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest("POST", `/api/timesheets/${timesheetId}/approve`, {});
+      const res = await apiRequest(`/api/timesheets/${timesheetId}/approve`, "POST", {});
       return await res.json();
     },
     onSuccess: () => {
@@ -105,7 +105,7 @@ export default function Timesheets() {
 
   const rejectMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest("POST", `/api/timesheets/${timesheetId}/reject`, {});
+      const res = await apiRequest(`/api/timesheets/${timesheetId}/reject`, "POST", {});
       return await res.json();
     },
     onSuccess: () => {
