@@ -131,7 +131,7 @@ export function ImportEstimateItemsDialog({
   const handleColumnMappingChange = (field: keyof ImportEstimateItem, columnName: string) => {
     setColumnMapping(prev => ({
       ...prev,
-      [field]: columnName === "none" ? undefined : columnName,
+      [field]: columnName === "" ? undefined : columnName,
     }));
   };
 
@@ -154,8 +154,9 @@ export function ImportEstimateItemsDialog({
     }
 
     const groups: Record<string, any[]> = {};
+    const costCodeColumn = columnMapping.costCode as string;
     fileData.forEach((row, idx) => {
-      const groupName = row[columnMapping.costCode] || "Ungrouped";
+      const groupName = row[costCodeColumn] || "Ungrouped";
       if (!groups[groupName]) {
         groups[groupName] = [];
       }
@@ -276,9 +277,9 @@ export function ImportEstimateItemsDialog({
                 </span>
                 <span className="text-muted-foreground">and match your columns to BuildPro</span>
                 <Button
-                  variant="link"
+                  variant="ghost"
                   size="sm"
-                  className="h-auto p-0 text-primary"
+                  className="h-auto p-0 text-primary hover:underline"
                   onClick={() => {
                     setFileData([]);
                     setHeaders([]);
@@ -317,21 +318,21 @@ export function ImportEstimateItemsDialog({
             )}
 
             {/* Column mapping dropdowns */}
-            <div className="grid grid-cols-4 gap-3 pb-4 border-b">
+            <div className="grid grid-cols-8 gap-3 pb-4 border-b">
               {CORE_MAPPING_FIELDS.map(field => (
                 <div key={field} className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
                     {FIELD_LABELS[field]}{field === "name" && "*"}
                   </Label>
                   <Select
-                    value={(columnMapping[field] as string) || "none"}
+                    value={(columnMapping[field] as string) || ""}
                     onValueChange={(value) => handleColumnMappingChange(field, value)}
                   >
                     <SelectTrigger className="h-9" data-testid={`select-column-${field}`}>
-                      <SelectValue placeholder="Select column" />
+                      <SelectValue placeholder="Not mapped" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Select column</SelectItem>
+                      <SelectItem value="">Not mapped</SelectItem>
                       {headers.map(header => (
                         <SelectItem key={header} value={header}>
                           {header}

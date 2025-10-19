@@ -8,7 +8,7 @@ export const importEstimateItemSchema = z.object({
   description: z.string().optional(),
   quantity: z.number().min(0, "Quantity must be 0 or greater").default(1),
   unitType: z.string().default("each"),
-  unitCostExTax: z.number().min(0, "Price must be 0 or greater").default(0),
+  unitCostExTax: z.number().default(0),
   markupPercent: z.number().min(0).default(0),
   allowance: z.enum(["None", "Prime Cost", "Provisional Sum"]).default("None"),
   notes: z.string().optional(),
@@ -175,6 +175,9 @@ export function parseImportRow(
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 1 : (value || 1);
         } else if (fieldKey === "markupPercent") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 0 : (value || 0);
+        } else if (fieldKey === "costCode") {
+          // Convert number to string if necessary
+          data[fieldKey] = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
         } else if (fieldKey === "proposalVisible") {
           // Parse boolean values from various formats
           if (value === undefined || value === null || value === "") {
