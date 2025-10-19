@@ -234,14 +234,20 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: Se
 export interface EstimateEditorProps {
   content: Record<string, any>;
   setContent: (content: Record<string, any>) => void;
+  projectId?: string;
 }
 
-export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
-  const { data: estimates, isLoading } = useQuery<Estimate[]>({
+export function EstimateEditor({ content, setContent, projectId }: EstimateEditorProps) {
+  const { data: allEstimates, isLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
   });
 
-  console.log('EstimateEditor rendering:', { content, estimates, isLoading });
+  // Filter estimates by projectId if provided
+  const estimates = projectId 
+    ? allEstimates?.filter(est => est.projectId === projectId)
+    : allEstimates;
+
+  console.log('EstimateEditor rendering:', { content, estimates, isLoading, projectId });
 
   const toggles = content.columnToggles || {
     description: true,

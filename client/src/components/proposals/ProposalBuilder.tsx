@@ -34,9 +34,10 @@ interface SortableSectionItemProps {
   section: ProposalSection;
   onSectionUpdate: (sectionId: string, updates: Partial<ProposalSection>) => void;
   value: string;
+  projectId: string;
 }
 
-function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectionItemProps) {
+function SortableSectionItem({ section, onSectionUpdate, value, projectId }: SortableSectionItemProps) {
   const {
     attributes,
     listeners,
@@ -193,7 +194,11 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
             )}
 
             {section.sectionType === "estimate" && (
-              <EstimateEditor content={localContent} setContent={setLocalContent} />
+              <EstimateEditor 
+                content={localContent} 
+                setContent={setLocalContent}
+                projectId={projectId}
+              />
             )}
 
             {section.sectionType === "cover_page" && (
@@ -295,7 +300,7 @@ export function ProposalBuilder({
       try {
         // Collect all estimate IDs from sections
         const estimateIds = sections
-          .filter(s => s.sectionType === 'estimate' && s.content?.estimateId)
+          .filter(s => s.sectionType === 'estimate' && (s.content as any)?.estimateId)
           .map(s => (s.content as any).estimateId);
 
         // Fetch all estimate data in parallel
@@ -475,6 +480,7 @@ export function ProposalBuilder({
                     section={section}
                     onSectionUpdate={onSectionUpdate}
                     value={section.id}
+                    projectId={proposal.projectId}
                   />
                 ))}
               </Accordion>
