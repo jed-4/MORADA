@@ -260,6 +260,7 @@ export function ProposalBuilder({
 }: ProposalBuilderProps) {
   const [showPreview, setShowPreview] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
@@ -304,10 +305,13 @@ export function ProposalBuilder({
             URL.revokeObjectURL(pdfUrlRef.current);
           }
           
-          // Create and store new URL
+          // Create and store new URL for download
           const url = URL.createObjectURL(blob);
           pdfUrlRef.current = url;
           setPdfUrl(url);
+          
+          // Store blob directly for preview
+          setPdfBlob(blob);
         }
       } catch (error) {
         console.error('Error generating PDF:', error);
@@ -398,8 +402,8 @@ export function ProposalBuilder({
                 </div>
               </div>
             ) : null}
-            {pdfUrl ? (
-              <PDFPreview pdfUrl={pdfUrl} />
+            {pdfBlob ? (
+              <PDFPreview pdfBlob={pdfBlob} />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <p>Loading preview...</p>

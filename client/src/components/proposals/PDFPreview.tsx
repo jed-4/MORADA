@@ -10,10 +10,10 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 interface PDFPreviewProps {
-  pdfUrl: string;
+  pdfBlob: Blob;
 }
 
-export function PDFPreview({ pdfUrl }: PDFPreviewProps) {
+export function PDFPreview({ pdfBlob }: PDFPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
@@ -72,7 +72,7 @@ export function PDFPreview({ pdfUrl }: PDFPreviewProps) {
       {/* PDF Document */}
       <div className="flex-1 overflow-auto bg-gray-100 flex items-start justify-center p-4">
         <Document
-          file={pdfUrl}
+          file={pdfBlob}
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
           loading={
