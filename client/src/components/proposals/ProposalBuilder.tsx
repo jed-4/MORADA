@@ -14,6 +14,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
 import type { Proposal, ProposalSection, Project } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
+import { PDFPreview } from './PDFPreview';
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
@@ -398,13 +399,7 @@ export function ProposalBuilder({
               </div>
             ) : null}
             {pdfUrl ? (
-              <iframe
-                key={pdfUrl}
-                src={pdfUrl}
-                className="w-full h-full border-0"
-                sandbox="allow-same-origin"
-                title="PDF Preview"
-              />
+              <PDFPreview pdfUrl={pdfUrl} />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <p>Loading preview...</p>
