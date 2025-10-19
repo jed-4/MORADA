@@ -122,12 +122,15 @@ export function ProposalDocument({
             mainContent = section.description;
           }
 
+          // Skip sections with no content to avoid PDF errors
+          if (!mainContent || mainContent.trim() === '') {
+            return null;
+          }
+
           return (
             <View key={section.id} style={styles.section}>
               <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
-              {mainContent && mainContent.trim() !== '' && (
-                <Text style={styles.text}>{mainContent}</Text>
-              )}
+              <Text style={styles.text}>{mainContent}</Text>
             </View>
           );
         })}
