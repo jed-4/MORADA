@@ -15,6 +15,7 @@ import { GripVertical, Plus, Download, Eye, Loader2 } from 'lucide-react';
 import type { Proposal, ProposalSection, Project } from '@shared/schema';
 import { ProposalDocument } from './pdf/ProposalDocument';
 import { PDFPreview } from './PDFPreview';
+import { EstimateEditor } from './SectionEditor';
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   cover_page: "Cover Page",
@@ -189,6 +190,10 @@ function SortableSectionItem({ section, onSectionUpdate, value }: SortableSectio
                   rows={8}
                 />
               </div>
+            )}
+
+            {section.sectionType === "estimate" && (
+              <EstimateEditor content={localContent} setContent={setLocalContent} />
             )}
 
             {section.sectionType === "cover_page" && (

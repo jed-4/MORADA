@@ -231,12 +231,12 @@ export function SectionEditor({ section, isOpen, onClose, onSave, isSaving }: Se
   );
 }
 
-interface EstimateEditorProps {
+export interface EstimateEditorProps {
   content: Record<string, any>;
   setContent: (content: Record<string, any>) => void;
 }
 
-function EstimateEditor({ content, setContent }: EstimateEditorProps) {
+export function EstimateEditor({ content, setContent }: EstimateEditorProps) {
   const { data: estimates, isLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
   });
