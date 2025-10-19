@@ -77,81 +77,81 @@ export function ProposalDocument({
   const enabledSections = sections.filter(s => s.isEnabled !== false);
   const sortedSections = [...enabledSections].sort((a, b) => a.order - b.order);
 
-  // Check if we have a cover page section
-  const coverPageSection = sortedSections.find(s => s.sectionType === 'cover_page');
-  const otherSections = sortedSections.filter(s => s.sectionType !== 'cover_page');
-
   return (
     <Document>
-      {/* Render content sections on page 1 */}
-      <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          {companyLogo && (
-            <Image
-              src={companyLogo}
-              style={{ width: 120, height: 40, marginBottom: 10 }}
-            />
-          )}
-          <Text style={styles.title}>{proposal.name}</Text>
-          <Text style={styles.subtitle}>Proposal #{proposal.proposalNumber}</Text>
-          {proposal.expiryDate && (
-            <Text style={styles.subtitle}>
-              Valid until: {new Date(proposal.expiryDate).toLocaleDateString()}
-            </Text>
-          )}
-        </View>
-
-        {/* Render sections */}
-        {otherSections.map((section) => {
-          const content = section.content as Record<string, any> || {};
-          
-          // Determine which content to display based on section type
-          let mainContent = '';
-          if (section.sectionType === 'cover_letter' && content.letterText) {
-            mainContent = content.letterText;
-          } else if (section.sectionType === 'closing_letter' && content.closingText) {
-            mainContent = content.closingText;
-          } else if (section.sectionType === 'summary' && content.summaryText) {
-            mainContent = content.summaryText;
-          } else if (section.sectionType === 'terms_conditions' && content.termsText) {
-            mainContent = content.termsText;
-          } else if (section.sectionType === 'custom' && content.customText) {
-            mainContent = content.customText;
-          } else if (section.description) {
-            mainContent = section.description;
-          }
-
-          // Skip sections with no content to avoid PDF errors
-          if (!mainContent || mainContent.trim() === '') {
-            return null;
-          }
-
+      {/* Render all sections in order */}
+      {sortedSections.map((section) => {
+        // Render cover page separately
+        if (section.sectionType === 'cover_page') {
           return (
-            <View key={section.id} style={styles.section}>
+            <CoverPageSection
+              key={section.id}
+              proposal={proposal}
+              section={section}
+              project={project}
+              companyLogo={companyLogo}
+              companyName={companyName}
+              primaryColor={primaryColor}
+            />
+          );
+        }
+
+        // Render text-based sections
+        const content = section.content as Record<string, any> || {};
+        
+        // Determine which content to display based on section type
+        let mainContent = '';
+        if (section.sectionType === 'cover_letter' && content.letterText) {
+          mainContent = content.letterText;
+        } else if (section.sectionType === 'closing_letter' && content.closingText) {
+          mainContent = content.closingText;
+        } else if (section.sectionType === 'summary' && content.summaryText) {
+          mainContent = content.summaryText;
+        } else if (section.sectionType === 'terms_conditions' && content.termsText) {
+          mainContent = content.termsText;
+        } else if (section.sectionType === 'custom' && content.customText) {
+          mainContent = content.customText;
+        } else if (section.description) {
+          mainContent = section.description;
+        }
+
+        // Skip sections with no content to avoid PDF errors
+        if (!mainContent || mainContent.trim() === '') {
+          return null;
+        }
+
+        return (
+          <Page key={section.id} size="A4" style={styles.page}>
+            {/* Header */}
+            <View style={styles.header}>
+              {companyLogo && (
+                <Image
+                  src={companyLogo}
+                  style={{ width: 120, height: 40, marginBottom: 10 }}
+                />
+              )}
+              <Text style={styles.title}>{proposal.name}</Text>
+              <Text style={styles.subtitle}>Proposal #{proposal.proposalNumber}</Text>
+              {proposal.expiryDate && (
+                <Text style={styles.subtitle}>
+                  Valid until: {new Date(proposal.expiryDate).toLocaleDateString()}
+                </Text>
+              )}
+            </View>
+
+            {/* Section content */}
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>{section.name || 'Untitled Section'}</Text>
               <Text style={styles.text}>{mainContent}</Text>
             </View>
-          );
-        })}
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text>{companyName || 'Company Name'}</Text>
-        </View>
-      </Page>
-
-      {/* Render cover page as second page if it exists */}
-      {coverPageSection && (
-        <CoverPageSection
-          proposal={proposal}
-          section={coverPageSection}
-          project={project}
-          companyLogo={companyLogo}
-          companyName={companyName}
-          primaryColor={primaryColor}
-        />
-      )}
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text>{companyName || 'Company Name'}</Text>
+            </View>
+          </Page>
+        );
+      })}
     </Document>
   );
 }
