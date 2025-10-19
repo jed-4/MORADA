@@ -173,7 +173,7 @@ export default function ProjectEstimates() {
 
   const getStatusBadge = (estimate: Estimate) => {
     const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption) {
+    if (statusOption && statusOption.color) {
       return (
         <Badge 
           variant="secondary" 
@@ -187,8 +187,8 @@ export default function ProjectEstimates() {
         </Badge>
       );
     }
-    // Fallback for estimates without status
-    return <Badge variant="outline">{estimate.status || 'Unknown'} v{estimate.version}</Badge>;
+    // Fallback for estimates without status or color
+    return <Badge variant="outline">{statusOption?.name || estimate.status || 'Unknown'} v{estimate.version}</Badge>;
   };
 
   // Filter estimates based on search and filters
@@ -236,111 +236,110 @@ export default function ProjectEstimates() {
         onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
         data-testid={`card-estimate-${estimate.id}`}
       >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="flex-1">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0 pb-4">
+          <div className="flex-1 min-w-0">
             <CardTitle 
-              className="text-lg" 
+              className="text-lg truncate" 
               data-testid={`link-estimate-title-${estimate.id}`}
             >
               {estimate.name}
             </CardTitle>
           </div>
-          <div className="flex items-center space-x-2">
-            {getStatusBadge(estimate)}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="icon" data-testid={`button-estimate-menu-${estimate.id}`}>
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  data-testid={`button-open-estimate-${estimate.id}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
-                  }}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Open estimate
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  data-testid={`button-clone-estimate-${estimate.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Create Version
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  data-testid={`button-toggle-lock-${estimate.id}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked });
-                  }}
-                  disabled={toggleLockMutation.isPending}
-                >
-                  {estimate.isLocked ? (
-                    <>
-                      <Unlock className="w-4 h-4 mr-2" />
-                      Unlock
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-4 h-4 mr-2" />
-                      Lock
-                    </>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  data-testid={`button-delete-estimate-${estimate.id}`}
-                  className="text-destructive focus:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEstimateToDelete(estimate.id);
-                    setDeleteDialogOpen(true);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div className="flex flex-wrap items-center gap-6">
+            {summary && (
+              <>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Total Value</p>
+                  <p className="text-lg font-semibold" data-testid={`text-estimate-total-${estimate.id}`}>
+                    {formatCurrency(summary.total)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Subtotal</p>
+                  <p className="text-base font-medium">{formatCurrency(summary.subtotal)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Markup</p>
+                  <p className="text-base font-medium">{formatCurrency(summary.markupAmount)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">GST</p>
+                  <p className="text-base font-medium">{formatCurrency(summary.taxAmount)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Items</p>
+                  <p className="text-base font-medium">{summary.itemCount}</p>
+                </div>
+              </>
+            )}
+            {!summary && (
+              <div className="text-muted-foreground text-sm">Loading...</div>
+            )}
+            <div className="flex items-center gap-2">
+              {getStatusBadge(estimate)}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="icon" data-testid={`button-estimate-menu-${estimate.id}`}>
+                    <MoreHorizontal className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem 
+                    data-testid={`button-open-estimate-${estimate.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
+                    }}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Open estimate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    data-testid={`button-clone-estimate-${estimate.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Create Version
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    data-testid={`button-toggle-lock-${estimate.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked });
+                    }}
+                    disabled={toggleLockMutation.isPending}
+                  >
+                    {estimate.isLocked ? (
+                      <>
+                        <Unlock className="w-4 h-4 mr-2" />
+                        Unlock
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4 mr-2" />
+                        Lock
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    data-testid={`button-delete-estimate-${estimate.id}`}
+                    className="text-destructive focus:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEstimateToDelete(estimate.id);
+                      setDeleteDialogOpen(true);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex justify-between items-center">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Total Value</p>
-              <p className="text-lg font-semibold" data-testid={`text-estimate-total-${estimate.id}`}>
-                {summary ? formatCurrency(summary.total) : 'Loading...'}
-              </p>
-            </div>
-            <div className="space-y-1 text-right">
-              <p className="text-sm text-muted-foreground">Items</p>
-              <p className="text-lg font-medium">
-                {summary ? summary.itemCount : '-'}
-              </p>
-            </div>
-          </div>
-          {summary && (
-            <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-              <div>
-                <p className="text-muted-foreground">Subtotal</p>
-                <p className="font-medium">{formatCurrency(summary.subtotal)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Markup</p>
-                <p className="font-medium">{formatCurrency(summary.markupAmount)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">GST</p>
-                <p className="font-medium">{formatCurrency(summary.taxAmount)}</p>
-              </div>
-            </div>
-          )}
-        </CardContent>
       </Card>
     );
   };
@@ -454,7 +453,7 @@ export default function ProjectEstimates() {
           )}
         </Card>
       ) : (
-        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 space-y-4">
           {filteredEstimates.map((estimate) => (
             <EstimateCard key={estimate.id} estimate={estimate} />
           ))}
