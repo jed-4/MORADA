@@ -398,26 +398,13 @@ export function ProposalBuilder({
               </div>
             ) : null}
             {pdfUrl ? (
-              <object
+              <iframe
                 key={pdfUrl}
-                data={pdfUrl}
-                type="application/pdf"
-                className="w-full h-full"
-                aria-label="PDF Preview"
-              >
-                <div className="flex items-center justify-center h-full text-muted-foreground p-8">
-                  <div className="text-center">
-                    <p className="mb-4">Unable to display PDF preview in browser.</p>
-                    <Button
-                      variant="outline"
-                      onClick={() => window.open(pdfUrl, '_blank')}
-                      data-testid="button-open-pdf"
-                    >
-                      Open in New Tab
-                    </Button>
-                  </div>
-                </div>
-              </object>
+                src={pdfUrl}
+                className="w-full h-full border-0"
+                sandbox="allow-same-origin"
+                title="PDF Preview"
+              />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <p>Loading preview...</p>
