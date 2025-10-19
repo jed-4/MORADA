@@ -7,27 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  DndContext,
-  DragOverlay,
-  closestCorners,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragStartEvent,
-  DragEndEvent,
-  DragOverEvent,
-  useDroppable,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { 
   Plus, 
   FileText, 
@@ -36,14 +15,8 @@ import {
   Copy, 
   MoreHorizontal,
   DollarSign,
-  Calculator,
   Search,
-  ArrowLeft,
-  LayoutGrid,
-  Columns3,
-  Download,
-  Trash2,
-  Upload
+  Trash2
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -70,7 +43,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { type Estimate, type EstimateSummary, type Project, type FieldOption } from "@shared/schema";
-import { ImportFullEstimateDialog } from "@/components/estimates/ImportFullEstimateDialog";
 
 interface ProjectEstimatesParams {
   projectId: string;
@@ -82,23 +54,8 @@ export default function ProjectEstimates() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All");
-  const [currentView, setCurrentView] = useState("grid");
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
-
-  // Drag and drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
 
   if (!projectId) {
     return <div>Invalid project ID</div>;
@@ -106,10 +63,6 @@ export default function ProjectEstimates() {
 
   const handleNewEstimate = () => {
     setLocation(`/projects/${projectId}/estimates/new`);
-  };
-
-  const handleBackToAllEstimates = () => {
-    setLocation('/estimates');
   };
 
 
@@ -202,24 +155,6 @@ export default function ProjectEstimates() {
         throw new Error(`${response.status}: ${response.statusText}`);
       }
       return response.json();
-    },
-  });
-
-  // Mutation for updating estimate status
-  const updateEstimateStatusMutation = useMutation({
-    mutationFn: async ({ estimateId, status }: { estimateId: string; status: string }) => {
-      const response = await apiRequest(`/api/estimates/${estimateId}`, "PATCH", { status });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", projectId] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update estimate status.",
-        variant: "destructive",
-      });
     },
   });
 
@@ -410,192 +345,20 @@ export default function ProjectEstimates() {
     );
   };
 
-  // Drag handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-
-    if (!over) return;
-
-    const estimateId = active.id as string;
-    
-    // Determine the target status key
-    // If dropped on a column directly, over.id is the status key
-    // If dropped on a card, get the containerId from sortable data
-    let newStatus: string;
-    
-    if (over.data.current?.sortable) {
-      // Dropped on a card - get the container (column) ID
-      newStatus = over.data.current.sortable.containerId as string;
-    } else {
-      // Dropped on empty column space - over.id is the status key
-      newStatus = over.id as string;
-    }
-
-    // Find the estimate being dragged
-    const estimate = estimates.find(e => e.id === estimateId);
-    if (!estimate || estimate.status === newStatus) return;
-
-    // Update the status
-    updateEstimateStatusMutation.mutate({ estimateId, status: newStatus });
-  };
-
-  // Sortable Estimate Card Component
-  const SortableEstimateCard = ({ estimate }: { estimate: Estimate }) => {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: estimate.id });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
-    };
-
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
-        data-testid={`kanban-estimate-card-${estimate.id}`}
-      >
-        <div onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}>
-          <EstimateCard estimate={estimate} />
-        </div>
-      </div>
-    );
-  };
-
-  // Droppable Column Component
-  const DroppableColumn = ({ status, estimates }: { status: FieldOption; estimates: Estimate[] }) => {
-    const { setNodeRef, isOver } = useDroppable({ id: status.key });
-
-    return (
-      <div
-        ref={setNodeRef}
-        className={`flex-shrink-0 w-80 ${isOver ? 'bg-accent/20 rounded-lg' : ''}`}
-        data-testid={`kanban-column-${status.key}`}
-      >
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold flex items-center">
-              <div 
-                className="w-3 h-3 rounded-full mr-2" 
-                style={{ backgroundColor: status.color || '#6B7280' }}
-              />
-              {status.name}
-            </h3>
-            <Badge variant="secondary">{estimates.length}</Badge>
-          </div>
-        </div>
-        <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-3 min-h-[200px]">
-            {estimates.map(estimate => (
-              <SortableEstimateCard key={estimate.id} estimate={estimate} />
-            ))}
-            {estimates.length === 0 && (
-              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                Drop estimates here
-              </div>
-            )}
-          </div>
-        </SortableContext>
-      </div>
-    );
-  };
-
-  // Kanban Board Component
-  const KanbanBoard = () => {
-    // Group estimates by status
-    const estimatesByStatus = useMemo(() => {
-      const grouped: Record<string, Estimate[]> = {};
-      
-      // Initialize with all active statuses
-      estimateStatuses.filter(status => status.isActive).forEach(status => {
-        grouped[status.key] = [];
-      });
-
-      // Group filtered estimates by status
-      filteredEstimates.forEach(estimate => {
-        const statusKey = estimate.status || 'draft';
-        if (grouped[statusKey]) {
-          grouped[statusKey].push(estimate);
-        } else {
-          grouped[statusKey] = [estimate];
-        }
-      });
-
-      return grouped;
-    }, [filteredEstimates, estimateStatuses]);
-
-    // Get active estimate for drag overlay
-    const activeEstimate = activeId ? estimates.find(e => e.id === activeId) : null;
-
-    return (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {estimateStatuses
-            .filter(status => status.isActive)
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map(status => {
-              const statusEstimates = estimatesByStatus[status.key] || [];
-              return <DroppableColumn key={status.key} status={status} estimates={statusEstimates} />;
-            })}
-        </div>
-        <DragOverlay>
-          {activeEstimate ? (
-            <div className="opacity-80">
-              <EstimateCard estimate={activeEstimate} />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-    );
-  };
-
   return (
     <div className="p-6 space-y-6" data-testid="project-estimates-page">
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button 
-              variant="outline" 
-              onClick={handleBackToAllEstimates}
-              data-testid="button-back-to-all-estimates"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              All Estimates
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold">
-                {project ? `${project.name} Estimates` : 'Project Estimates'}
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Manage estimates for this project
-              </p>
-            </div>
+          <div>
+            <h1 className="text-3xl font-bold">
+              {project ? `${project.name} Estimates` : 'Project Estimates'}
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Manage estimates for this project
+            </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="button-import-estimate">
-              <Upload className="w-4 h-4 mr-2" />
-              Import
-            </Button>
             <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
               <Plus className="w-4 h-4 mr-2" />
               New Estimate
@@ -666,61 +429,37 @@ export default function ProjectEstimates() {
         </div>
       </div>
 
-      {/* View Tabs */}
-      <Tabs value={currentView} onValueChange={setCurrentView}>
-        <div className="border-b border-border">
-          <TabsList data-testid="tabs-estimate-views">
-            <TabsTrigger value="grid" data-testid="tab-grid-view">
-              <LayoutGrid className="h-4 w-4 mr-2" />
-              Grid View
-            </TabsTrigger>
-            <TabsTrigger value="kanban" data-testid="tab-kanban-view">
-              <Columns3 className="h-4 w-4 mr-2" />
-              Kanban
-            </TabsTrigger>
-          </TabsList>
+      {/* Estimates Display */}
+      {estimatesLoading ? (
+        <div className="text-center py-8">
+          <div className="text-muted-foreground">Loading estimates...</div>
         </div>
-
-        {/* Estimates Display */}
-        {estimatesLoading ? (
-          <div className="text-center py-8">
-            <div className="text-muted-foreground">Loading estimates...</div>
-          </div>
-        ) : filteredEstimates.length === 0 ? (
-          <Card className="p-8 text-center mt-6">
-            <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {searchTerm || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm || selectedStatus !== "All" 
-                ? "Try adjusting your search or filter criteria"
-                : `Start by creating your first estimate for ${project?.name || 'this project'}`
-              }
-            </p>
-            {!searchTerm && selectedStatus === "All" && (
-              <Button onClick={handleNewEstimate} data-testid="button-create-first-project-estimate">
-                <Plus className="h-4 w-4 mr-2" />
-                Create First Estimate
-              </Button>
-            )}
-          </Card>
-        ) : (
-          <>
-            <TabsContent value="grid" className="mt-6">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {filteredEstimates.map((estimate) => (
-                  <EstimateCard key={estimate.id} estimate={estimate} />
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="kanban" className="mt-6">
-              <KanbanBoard />
-            </TabsContent>
-          </>
-        )}
-      </Tabs>
+      ) : filteredEstimates.length === 0 ? (
+        <Card className="p-8 text-center mt-6">
+          <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">
+            {searchTerm || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
+          </h3>
+          <p className="text-muted-foreground mb-4">
+            {searchTerm || selectedStatus !== "All" 
+              ? "Try adjusting your search or filter criteria"
+              : `Start by creating your first estimate for ${project?.name || 'this project'}`
+            }
+          </p>
+          {!searchTerm && selectedStatus === "All" && (
+            <Button onClick={handleNewEstimate} data-testid="button-create-first-project-estimate">
+              <Plus className="h-4 w-4 mr-2" />
+              Create First Estimate
+            </Button>
+          )}
+        </Card>
+      ) : (
+        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredEstimates.map((estimate) => (
+            <EstimateCard key={estimate.id} estimate={estimate} />
+          ))}
+        </div>
+      )}
 
       {/* Delete Estimate Confirmation Dialog */}
       <AlertDialog 
@@ -757,17 +496,6 @@ export default function ProjectEstimates() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Import Estimate Dialog */}
-      <ImportFullEstimateDialog
-        open={importDialogOpen}
-        onClose={() => setImportDialogOpen(false)}
-        projectId={projectId!}
-        onImportComplete={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/estimates", projectId] });
-          queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-        }}
-      />
     </div>
   );
 }

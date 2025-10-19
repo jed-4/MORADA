@@ -3,6 +3,14 @@
 ## Overview
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. Key capabilities include a customizable widget-based dashboard, comprehensive task management with Kanban boards and calendar integration, and business operations tracking. The platform aims to streamline project workflows, enhance collaboration, and provide robust tools for financial oversight like budget tracking.
 
+## Recent Changes (2025-10-19)
+- Fixed codebase-wide apiRequest parameter order bug (url, method, data) across 40+ files.
+- Implemented delete estimate functionality with confirmation dialog in estimates list dropdown menu.
+- Built comprehensive estimate import system supporting buildern and wunderbuild CSV/Excel formats.
+- Created column mapping interface matching buildern's UI style with dropdown selectors.
+- Added backend API route for full estimate imports with groups and items.
+- **Project Estimates Page**: Simplified to grid view only. Removed Kanban view, import dialog, and drag-and-drop functionality. Kanban view remains available on the All Estimates page (`/estimates`). Import functionality relocated to estimate detail page.
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
