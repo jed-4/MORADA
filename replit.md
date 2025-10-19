@@ -11,6 +11,7 @@ BuildPro is a project management software for Australian residential builders, o
 - Added backend API route for full estimate imports with groups and items.
 - **Project Estimates Page**: Simplified to grid view only. Removed Kanban view, import dialog, and drag-and-drop functionality. Kanban view remains available on the All Estimates page (`/estimates`). Import functionality relocated to estimate detail page.
 - **Full-Width Card Layout**: Converted estimate cards from 3-column grid to full-width horizontal layout. Each card displays estimate name, total value, subtotal, markup, GST, item count, status badge, and actions in a single responsive row with flex-wrap for mobile compatibility.
+- **Estimate Status Badges**: Updated EstimateDetail page to use field settings for status badges (consistent with ProjectEstimates), enabling customizable status names and colors. Removed non-functional Edit button from header (inline editing still available).
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

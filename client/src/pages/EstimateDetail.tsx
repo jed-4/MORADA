@@ -47,7 +47,7 @@ import {
   Download,
   Upload
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type CompanySettings } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -705,6 +705,11 @@ export default function EstimateDetail() {
   const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
     enabled: isNewEstimate && !effectiveProjectId,
+  });
+
+  // Fetch estimate statuses from field settings
+  const { data: estimateStatuses = [] } = useQuery<FieldOption[]>({
+    queryKey: ["/api/field-categories/estimate.status/options"],
   });
 
   // Mutation for creating new estimate
@@ -2568,6 +2573,33 @@ export default function EstimateDetail() {
     );
   }
 
+  // Helper function to get status badge
+  const getStatusBadge = (estimate: Estimate) => {
+    if (estimate.isLocked) {
+      return <Badge variant="secondary" className="bg-blue-100 text-blue-700"><Lock className="w-3 h-3 mr-1" />Locked v{estimate.version}</Badge>;
+    }
+    
+    // Use field settings for status
+    const statusOption = estimateStatuses.find(s => s.key === estimate.status);
+    if (statusOption && statusOption.color) {
+      return (
+        <Badge 
+          variant="secondary" 
+          style={{ 
+            backgroundColor: `${statusOption.color}20`,
+            color: statusOption.color,
+            borderColor: statusOption.color
+          }}
+        >
+          {statusOption.name} v{estimate.version}
+        </Badge>
+      );
+    }
+    
+    // Fallback
+    return <Badge variant="outline">{statusOption?.name || estimate.status || 'Draft'} v{estimate.version}</Badge>;
+  };
+
   // Handle new estimate creation
   if (isNewEstimate) {
     return (
@@ -2635,13 +2667,6 @@ export default function EstimateDetail() {
     );
   }
 
-  const getStatusBadge = (estimate: Estimate) => {
-    if (estimate.isLocked) {
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-700"><Lock className="w-3 h-3 mr-1" />Locked v{estimate.version}</Badge>;
-    }
-    return <Badge variant="outline"><FileText className="w-3 h-3 mr-1" />Draft v{estimate.version}</Badge>;
-  };
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -2679,10 +2704,6 @@ export default function EstimateDetail() {
           </div>
           <div className="flex items-center space-x-2">
             {estimate && getStatusBadge(estimate)}
-            <Button variant="outline" size="sm" data-testid="button-edit-estimate">
-              <Edit className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
             <Button 
               variant="outline" 
               size="sm" 
