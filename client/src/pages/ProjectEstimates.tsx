@@ -41,7 +41,8 @@ import {
   ArrowLeft,
   LayoutGrid,
   Columns3,
-  Download
+  Download,
+  Trash2
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -57,6 +58,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { type Estimate, type EstimateSummary, type Project, type FieldOption } from "@shared/schema";
 
 interface ProjectEstimatesParams {
@@ -71,6 +82,8 @@ export default function ProjectEstimates() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [currentView, setCurrentView] = useState("grid");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -131,7 +144,7 @@ export default function ProjectEstimates() {
   const toggleLockMutation = useMutation({
     mutationFn: async ({ estimateId, isLocked }: { estimateId: string; isLocked: boolean }) => {
       const endpoint = isLocked ? `/api/estimates/${estimateId}/unlock` : `/api/estimates/${estimateId}/lock`;
-      const response = await apiRequest("POST", endpoint, {});
+      const response = await apiRequest(endpoint, "POST", {});
       return response.json();
     },
     onSuccess: () => {
@@ -145,6 +158,31 @@ export default function ProjectEstimates() {
       toast({
         title: "Error",
         description: error.message || "Failed to update estimate lock status.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation for deleting estimate
+  const deleteEstimateMutation = useMutation({
+    mutationFn: async (estimateId: string) => {
+      const response = await apiRequest(`/api/estimates/${estimateId}`, "DELETE");
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "Estimate deleted successfully.",
+      });
+      setDeleteDialogOpen(false);
+      setEstimateToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete estimate.",
         variant: "destructive",
       });
     },
@@ -315,6 +353,19 @@ export default function ProjectEstimates() {
                       Lock
                     </>
                   )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  data-testid={`button-delete-estimate-${estimate.id}`}
+                  className="text-destructive focus:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEstimateToDelete(estimate.id);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -663,6 +714,42 @@ export default function ProjectEstimates() {
           </>
         )}
       </Tabs>
+
+      {/* Delete Estimate Confirmation Dialog */}
+      <AlertDialog 
+        open={deleteDialogOpen} 
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setEstimateToDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Estimate</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this estimate? This action cannot be undone and will permanently delete all estimate items and groups.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              data-testid="button-cancel-delete-estimate"
+              disabled={deleteEstimateMutation.isPending}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => estimateToDelete && deleteEstimateMutation.mutate(estimateToDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-estimate"
+              disabled={deleteEstimateMutation.isPending}
+            >
+              {deleteEstimateMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
