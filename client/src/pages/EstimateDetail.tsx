@@ -2706,32 +2706,37 @@ export default function EstimateDetail() {
             {estimate && getStatusBadge(estimate)}
             <Button 
               variant="outline" 
-              size="sm" 
+              size="icon" 
+              onClick={() => setIsImportOpen(true)}
+              disabled={estimate?.isLocked}
+              data-testid="button-import-estimate"
+              aria-label="Import items"
+            >
+              <Upload className="w-4 h-4" />
+            </Button>
+            <Button 
+              variant="outline" 
+              size="icon" 
               onClick={handleExportEstimate}
               disabled={!items || items.length === 0}
               data-testid="button-export-estimate"
+              aria-label="Export estimate"
             >
-              <Download className="w-4 h-4 mr-2" />
-              Export
+              <Download className="w-4 h-4" />
             </Button>
             {estimate && (
               <Button 
                 variant={estimate.isLocked ? "destructive" : "outline"} 
-                size="sm" 
+                size="icon" 
                 data-testid="button-toggle-lock"
                 onClick={handleToggleLock}
                 disabled={toggleLockMutation.isPending}
+                aria-label={estimate.isLocked ? "Unlock estimate" : "Lock estimate"}
               >
                 {estimate.isLocked ? (
-                <>
-                  <Unlock className="w-4 h-4 mr-2" />
-                  {toggleLockMutation.isPending ? "Unlocking..." : "Unlock"}
-                </>
-              ) : (
-                <>
-                  <Lock className="w-4 h-4 mr-2" />
-                  {toggleLockMutation.isPending ? "Locking..." : "Lock"}
-                </>
+                  <Unlock className="w-4 h-4" />
+                ) : (
+                  <Lock className="w-4 h-4" />
                 )}
               </Button>
             )}
