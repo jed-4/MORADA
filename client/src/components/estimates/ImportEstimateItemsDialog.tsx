@@ -24,7 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
@@ -79,7 +78,6 @@ export function ImportEstimateItemsDialog({
   const [fileData, setFileData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
-  const [taxIncluded, setTaxIncluded] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -175,13 +173,6 @@ export function ImportEstimateItemsDialog({
         .filter(row => row.data)
         .map(row => {
           const item = { ...row.data!, estimateId };
-          
-          // If tax is included, convert to ex-tax (GST rate: 10%)
-          // Round to 2 decimal places to avoid floating-point artifacts
-          if (taxIncluded && item.unitCostExTax) {
-            item.unitCostExTax = Math.round((item.unitCostExTax / 1.1) * 100) / 100;
-          }
-          
           return item;
         });
 
@@ -213,7 +204,6 @@ export function ImportEstimateItemsDialog({
     setFileData([]);
     setHeaders([]);
     setColumnMapping({});
-    setTaxIncluded(false);
     setCollapsedGroups(new Set());
     onClose();
   };
@@ -226,21 +216,13 @@ export function ImportEstimateItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[1200px]">
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[1200px] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b">
           <DialogTitle className="text-xl">Import estimation</DialogTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClose}
-            className="h-6 w-6"
-          >
-            <X className="h-4 w-4" />
-          </Button>
         </DialogHeader>
 
         {!fileData.length ? (
-          <div className="space-y-6 py-8">
+          <div className="space-y-6 py-8 px-6">
             <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-12 hover-elevate">
               <Upload className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium mb-2">Upload File</h3>
@@ -266,50 +248,34 @@ export function ImportEstimateItemsDialog({
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* File info and tax toggle */}
-            <div className="flex items-center justify-between pb-2 border-b flex-wrap gap-2">
-              <div className="flex items-center gap-2 text-sm flex-wrap">
-                <span className="text-muted-foreground">Import file to</span>
-                <span className="font-medium">{fileName}</span>
-                <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
-                  Working
-                </span>
-                <span className="text-muted-foreground">and match your columns to BuildPro</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto p-0 text-primary hover:underline"
-                  onClick={() => {
-                    setFileData([]);
-                    setHeaders([]);
-                    setColumnMapping({});
-                    setFileName("");
-                  }}
-                  data-testid="button-change-file"
-                >
-                  Change file
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="tax-toggle" className="text-sm cursor-pointer">
-                  Tax excluded
-                </Label>
-                <Switch
-                  id="tax-toggle"
-                  checked={taxIncluded}
-                  onCheckedChange={setTaxIncluded}
-                  data-testid="switch-tax-included"
-                />
-                <Label htmlFor="tax-toggle" className="text-sm cursor-pointer">
-                  Tax included
-                </Label>
-              </div>
+          <div className="flex-1 flex flex-col min-h-0 px-6">
+            {/* File info */}
+            <div className="flex items-center gap-2 text-sm flex-wrap pb-3 border-b">
+              <span className="text-muted-foreground">Import file to</span>
+              <span className="font-medium">{fileName}</span>
+              <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
+                Working
+              </span>
+              <span className="text-muted-foreground">and match your columns to BuildPro</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-auto p-0 text-primary hover:underline"
+                onClick={() => {
+                  setFileData([]);
+                  setHeaders([]);
+                  setColumnMapping({});
+                  setFileName("");
+                }}
+                data-testid="button-change-file"
+              >
+                Change file
+              </Button>
             </div>
 
             {/* Validation status */}
             {parsedResults.length > 0 && (
-              <div className="flex items-center gap-2 pb-2">
+              <div className="flex items-center gap-2 py-3">
                 <span className="text-sm text-muted-foreground">{validCount} valid rows</span>
                 {errorCount > 0 && (
                   <span className="text-sm text-destructive">{errorCount} rows with errors</span>
@@ -318,7 +284,7 @@ export function ImportEstimateItemsDialog({
             )}
 
             {/* Column mapping dropdowns */}
-            <div className="grid grid-cols-8 gap-3 pb-4 border-b">
+            <div className="grid grid-cols-8 gap-3 py-3 border-b overflow-x-auto">
               {CORE_MAPPING_FIELDS.map(field => (
                 <div key={field} className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
@@ -345,8 +311,9 @@ export function ImportEstimateItemsDialog({
             </div>
 
             {/* Data preview table */}
-            <ScrollArea className="h-[calc(95vh-320px)] border rounded-md">
-              <Table>
+            <div className="flex-1 min-h-0 py-3">
+              <ScrollArea className="h-full border rounded-md">
+                <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-8"></TableHead>
@@ -417,14 +384,22 @@ export function ImportEstimateItemsDialog({
                   ))}
                 </TableBody>
               </Table>
-            </ScrollArea>
+              </ScrollArea>
+            </div>
 
             {/* Footer with Continue button */}
-            <div className="flex justify-end pt-4 border-t">
+            <div className="flex justify-end gap-2 py-4 border-t">
+              <Button
+                variant="outline"
+                onClick={handleClose}
+                disabled={isImporting}
+                data-testid="button-cancel-import"
+              >
+                Cancel
+              </Button>
               <Button
                 onClick={handleImport}
                 disabled={!columnMapping.name || validCount === 0 || isImporting}
-                size="lg"
                 data-testid="button-import-continue"
               >
                 {isImporting ? "Importing..." : `Continue (${validCount} items)`}
