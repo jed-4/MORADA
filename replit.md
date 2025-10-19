@@ -13,6 +13,7 @@ BuildPro is a project management software for Australian residential builders, o
 - **Full-Width Card Layout**: Converted estimate cards from 3-column grid to full-width horizontal layout. Each card displays estimate name, total value, subtotal, markup, GST, item count, status badge, and actions in a single responsive row with flex-wrap for mobile compatibility.
 - **Estimate Status Badges**: Updated EstimateDetail page to use field settings for status badges (consistent with ProjectEstimates), enabling customizable status names and colors. Removed non-functional Edit button from header (inline editing still available).
 - **Icon-Only Action Buttons**: Converted import, export, and lock/unlock buttons in EstimateDetail header to icon-only design with proper aria-labels for accessibility. Import button added next to export button.
+- **Buildern-Style Import Modal**: Redesigned ImportEstimateItemsDialog to match Buildern's interface with large centered modal (1200px × 95vh), column mapping dropdowns at top (8 core fields in 4-column grid), live data preview table with grouped/collapsible rows by cost code, functional tax toggle (converts tax-inclusive to tax-exclusive with 10% GST), filename display, row-level validation error indicators (red backgrounds, AlertCircle icons, error messages), and valid item count on Continue button. Added markupPercent field support throughout the import pipeline (schema, auto-detection, parsing, UI, backend).
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
