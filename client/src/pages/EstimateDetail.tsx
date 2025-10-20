@@ -229,7 +229,7 @@ function SortableGroupRow({
         className="bg-muted/50 hover:bg-muted/70 border-t-2 border-b"
         data-testid={`row-group-${group.id}`}
       >
-        <TableCell colSpan={columns.filter(col => col.visible).length + 2} className="py-2 px-4">
+        <TableCell colSpan={columns.filter(col => col.visible).length + 3} className="py-2 px-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div
@@ -1904,6 +1904,16 @@ export default function EstimateDetail() {
     const rows = [
       // Parent item row
       <SortableRow key={item.id} id={item.id} className="min-h-8" isDraggable={!isLocked}>
+        <TableCell className="py-0.5" style={{ width: '40px' }}>
+          <Checkbox
+            checked={selectedItems.has(item.id)}
+            onCheckedChange={() => handleToggleSelection(item.id)}
+            aria-label={`Select ${item.name}`}
+            data-testid={`checkbox-item-${item.id}`}
+            disabled={estimate?.isLocked}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </TableCell>
         {visibleColumns.map(column => (
           <React.Fragment key={column.id}>
             {renderCell(item, column.id)}
@@ -1983,6 +1993,16 @@ export default function EstimateDetail() {
       subItems.forEach(subItem => {
         rows.push(
           <SortableRow key={subItem.id} id={subItem.id} className="min-h-8 bg-muted/20" isDraggable={!isLocked}>
+            <TableCell className="py-0.5" style={{ width: '40px' }}>
+              <Checkbox
+                checked={selectedItems.has(subItem.id)}
+                onCheckedChange={() => handleToggleSelection(subItem.id)}
+                aria-label={`Select ${subItem.name}`}
+                data-testid={`checkbox-item-${subItem.id}`}
+                disabled={estimate?.isLocked}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </TableCell>
             {columns.filter(col => col.visible).map(column => (
               <React.Fragment key={column.id}>
                 {renderCell(subItem, column.id)}
@@ -3150,7 +3170,15 @@ export default function EstimateDetail() {
                             </colgroup>
                             <TableHeader>
                               <TableRow className="h-8">
-                                <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}></TableHead>
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}>
+                                  <Checkbox
+                                    checked={selectedItems.size > 0 && selectedItems.size === items.length}
+                                    onCheckedChange={handleSelectAll}
+                                    aria-label="Select all items"
+                                    data-testid="checkbox-select-all"
+                                    disabled={estimate?.isLocked}
+                                  />
+                                </TableHead>
                                 {columns.filter(col => col.visible).map(column => (
                                   <TableHead 
                                     key={column.id}
