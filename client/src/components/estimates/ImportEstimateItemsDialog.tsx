@@ -247,10 +247,12 @@ export function ImportEstimateItemsDialog({
               </label>
             </div>
           </div>
-        ) : (
-          <div className="flex-1 flex flex-col min-h-0 px-6">
+        ) : null}
+        
+        {fileData.length > 0 && (
+          <div className="flex-1 flex flex-col min-h-0 px-6 overflow-hidden">
             {/* File info */}
-            <div className="flex items-center gap-2 text-sm flex-wrap pb-3 border-b">
+            <div className="flex items-center gap-2 text-sm flex-wrap pb-3 border-b flex-shrink-0">
               <span className="text-muted-foreground">Import file to</span>
               <span className="font-medium">{fileName}</span>
               <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
@@ -275,7 +277,7 @@ export function ImportEstimateItemsDialog({
 
             {/* Validation status */}
             {parsedResults.length > 0 && (
-              <div className="flex items-center gap-2 py-3">
+              <div className="flex items-center gap-2 py-3 flex-shrink-0">
                 <span className="text-sm text-muted-foreground">{validCount} valid rows</span>
                 {errorCount > 0 && (
                   <span className="text-sm text-destructive">{errorCount} rows with errors</span>
@@ -284,7 +286,7 @@ export function ImportEstimateItemsDialog({
             )}
 
             {/* Column mapping dropdowns */}
-            <div className="grid grid-cols-8 gap-3 py-3 border-b overflow-x-auto relative z-20 bg-background">
+            <div className="grid grid-cols-8 gap-3 py-3 border-b overflow-x-auto relative z-20 bg-background flex-shrink-0">
               {CORE_MAPPING_FIELDS.map(field => (
                 <div key={field} className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
@@ -386,25 +388,26 @@ export function ImportEstimateItemsDialog({
               </Table>
               </ScrollArea>
             </div>
+          </div>
+        )}
 
-            {/* Footer with Continue button */}
-            <div className="flex justify-end gap-2 py-4 border-t">
-              <Button
-                variant="outline"
-                onClick={handleClose}
-                disabled={isImporting}
-                data-testid="button-cancel-import"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleImport}
-                disabled={!columnMapping.name || validCount === 0 || isImporting}
-                data-testid="button-import-continue"
-              >
-                {isImporting ? "Importing..." : `Continue (${validCount} items)`}
-              </Button>
-            </div>
+        {fileData.length > 0 && (
+          <div className="flex justify-end gap-2 px-6 py-4 border-t flex-shrink-0 bg-background">
+            <Button
+              variant="outline"
+              onClick={handleClose}
+              disabled={isImporting}
+              data-testid="button-cancel-import"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={!columnMapping.name || validCount === 0 || isImporting}
+              data-testid="button-import-continue"
+            >
+              {isImporting ? "Importing..." : `Continue (${validCount} items)`}
+            </Button>
           </div>
         )}
       </DialogContent>
