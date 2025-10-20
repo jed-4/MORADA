@@ -5005,7 +5005,35 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async deleteEstimateItem(id: string): Promise<boolean> { return false; }
+  async deleteEstimateItem(id: string): Promise<boolean> {
+    try {
+      // Get the item first to check if it exists and get estimateId
+      const item = await db.query.estimateItems.findFirst({
+        where: eq(schema.estimateItems.id, id),
+      });
+
+      if (!item) {
+        return false;
+      }
+
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(item.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot delete item in locked estimate. Unlock the estimate first.");
+      }
+
+      // Delete the item
+      const result = await db
+        .delete(schema.estimateItems)
+        .where(eq(schema.estimateItems.id, id))
+        .returning();
+
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteEstimateItem:", error);
+      throw error;
+    }
+  }
   
   async getProjectAllowances(projectId: string): Promise<any[]> {
     try {
