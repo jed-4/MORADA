@@ -1158,6 +1158,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const errors: Array<{ row: number; errors: string[] }> = [];
       
       items.forEach((item, index) => {
+        console.log(`[Import] Processing item ${index}:`, {
+          name: item.name,
+          rawQuantity: item.quantity,
+          rawUnitCostExTax: item.unitCostExTax,
+          rawMarkupPercent: item.markupPercent
+        });
+        
         // Convert dollar amounts to cents with proper rounding
         const unitCostExTaxCents = item.unitCostExTax ? Math.round(item.unitCostExTax * 100) : 0;
         const quantity = item.quantity ? Math.round(item.quantity * 100) : 100; // Quantity stored as whole number * 100
