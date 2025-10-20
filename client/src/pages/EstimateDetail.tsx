@@ -1782,6 +1782,10 @@ export default function EstimateDetail() {
   const [isBulkGroupDialogOpen, setIsBulkGroupDialogOpen] = useState(false);
   const [bulkActionStatus, setBulkActionStatus] = useState<string>('');
   const [bulkActionGroup, setBulkActionGroup] = useState<string>('');
+  
+  // Single item delete dialog
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -1866,14 +1870,17 @@ export default function EstimateDetail() {
   };
 
   // Single item delete handler
-  const handleDeleteItem = async (itemId: string) => {
-    if (!effectiveEstimateId) return;
+  const confirmDeleteItem = async () => {
+    if (!effectiveEstimateId || !itemToDelete) return;
     
     try {
-      await apiRequest(`/api/estimate-items/${itemId}`, 'DELETE');
+      await apiRequest(`/api/estimate-items/${itemToDelete}`, 'DELETE');
       
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+      
+      setIsDeleteDialogOpen(false);
+      setItemToDelete(null);
       
       toast({
         title: "Item deleted",
@@ -2152,7 +2159,10 @@ export default function EstimateDetail() {
                 Edit Item
               </DropdownMenuItem>
               <DropdownMenuItem 
-                onClick={() => handleDeleteItem(item.id)}
+                onClick={() => {
+                  setItemToDelete(item.id);
+                  setIsDeleteDialogOpen(true);
+                }}
                 data-testid={`button-delete-item-${item.id}`} 
                 className="text-destructive"
                 disabled={estimate?.isLocked}
@@ -2212,7 +2222,10 @@ export default function EstimateDetail() {
                     Edit Item
                   </DropdownMenuItem>
                   <DropdownMenuItem 
-                    onClick={() => handleDeleteItem(subItem.id)}
+                    onClick={() => {
+                      setItemToDelete(subItem.id);
+                      setIsDeleteDialogOpen(true);
+                    }}
                     data-testid={`button-delete-item-${subItem.id}`} 
                     className="text-destructive"
                     disabled={estimate?.isLocked}
@@ -4577,6 +4590,37 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Single Item Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Item</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete this item? This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setItemToDelete(null);
+              }}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteItem}
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk Delete Confirmation Dialog */}
       <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
