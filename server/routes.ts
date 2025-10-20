@@ -1153,17 +1153,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
-      // Validate all items
+      // Get existing groups for this estimate
+      const existingGroups = await storage.getEstimateGroups(estimateId);
+      const groupMap = new Map<string, string>(); // costCode -> groupId
+      
+      // Build map of existing groups (case-insensitive)
+      for (const group of existingGroups) {
+        groupMap.set(group.name.toLowerCase(), group.id);
+      }
+
+      // Collect unique costCodes from items
+      const newGroupNames = new Set<string>();
+      for (const item of items) {
+        if (item.costCode && !groupMap.has(item.costCode.toLowerCase())) {
+          newGroupNames.add(item.costCode);
+        }
+      }
+
+      // Validate all items first (before creating any groups)
       const validatedItems: any[] = [];
+      const itemCostCodes = new Map<number, string>(); // index -> costCode
       const errors: Array<{ row: number; errors: string[] }> = [];
       
       items.forEach((item, index) => {
         console.log(`[Import] Processing item ${index}:`, {
           name: item.name,
+          costCode: item.costCode,
           rawQuantity: item.quantity,
           rawUnitCostExTax: item.unitCostExTax,
           rawMarkupPercent: item.markupPercent
         });
+        
+        // Store costCode for later group mapping (after groups are created)
+        if (item.costCode) {
+          itemCostCodes.set(index, item.costCode);
+        }
+        
+        // For existing groups, map costCode to groupId now
+        let groupId = null;
+        if (item.costCode && groupMap.has(item.costCode.toLowerCase())) {
+          groupId = groupMap.get(item.costCode.toLowerCase()) || null;
+        }
         
         // Convert dollar amounts to cents with proper rounding
         const unitCostExTaxCents = item.unitCostExTax ? Math.round(item.unitCostExTax * 100) : 0;
@@ -1191,12 +1221,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const itemData = {
           ...item,
           estimateId,
+          groupId,
           unitCostExTax: unitCostExTaxCents,
           quantity,
           markupPercent,
           taxAmount,
           priceIncTax: clientPriceIncTax,
         };
+        
+        // Remove costCode from itemData as it's not a valid field in the schema
+        delete itemData.costCode;
         
         const validationResult = insertEstimateItemSchema.safeParse(itemData);
         
@@ -1227,6 +1261,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errorCount: errors.length
         });
       }
+
+      // Now that validation passed, create any new groups needed
+      const newGroupNamesArray = Array.from(newGroupNames);
+      // Find max order from existing groups (or start at 0)
+      const maxOrder = existingGroups.length > 0
+        ? Math.max(...existingGroups.map(g => g.order))
+        : 0;
+      
+      for (const groupName of newGroupNamesArray) {
+        const newGroup = await storage.createEstimateGroup({
+          estimateId,
+          name: groupName,
+          order: maxOrder + 1 + newGroupNamesArray.indexOf(groupName),
+        });
+        groupMap.set(groupName.toLowerCase(), newGroup.id);
+      }
+
+      // Update validated items with their groupIds (for items that needed new groups)
+      validatedItems.forEach((item, index) => {
+        const costCode = itemCostCodes.get(index);
+        if (costCode && !item.groupId) {
+          const groupId = groupMap.get(costCode.toLowerCase());
+          if (groupId) {
+            item.groupId = groupId;
+          }
+        }
+      });
 
       console.log(`[Import] Creating ${validatedItems.length} items for estimate ${estimateId}`);
       console.log('[Import] Sample item:', validatedItems[0]);
