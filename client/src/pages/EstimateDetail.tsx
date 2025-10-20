@@ -1934,8 +1934,9 @@ export default function EstimateDetail() {
     try {
       await apiRequest(`/api/estimate-groups/${groupToDelete}`, 'DELETE');
       
-      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'groups'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      // Force refetch instead of just invalidating
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'groups'] });
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
       
       setIsDeleteGroupDialogOpen(false);
       setGroupToDelete(null);
