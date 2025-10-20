@@ -263,35 +263,30 @@ function SortableGroupRow({
                 <span className="text-xs text-muted-foreground">- {group.description}</span>
               )}
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground">
-                {groupedItems[group.id]?.length || 0} items
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-6 w-6"
-                    data-testid={`button-group-menu-${group.id}`}
-                    disabled={isLocked}
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem 
-                    onClick={() => onDeleteGroup(group.id)}
-                    data-testid={`button-delete-group-${group.id}`} 
-                    className="text-destructive"
-                    disabled={isLocked}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete Group
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6"
+                  data-testid={`button-group-menu-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => onDeleteGroup(group.id)}
+                  data-testid={`button-delete-group-${group.id}`} 
+                  className="text-destructive"
+                  disabled={isLocked}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Group
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </TableCell>
       </TableRow>
