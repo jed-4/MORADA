@@ -1775,6 +1775,13 @@ export default function EstimateDetail() {
 
   // State for bulk selection
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  
+  // Bulk action dialogs
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
+  const [isBulkGroupDialogOpen, setIsBulkGroupDialogOpen] = useState(false);
+  const [bulkActionStatus, setBulkActionStatus] = useState<string>('');
+  const [bulkActionGroup, setBulkActionGroup] = useState<string>('');
 
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -1856,6 +1863,92 @@ export default function EstimateDetail() {
 
   const handleClearSelection = () => {
     setSelectedItems(new Set());
+  };
+
+  // Bulk action handlers
+  const handleBulkDelete = async () => {
+    if (!effectiveEstimateId) return;
+    
+    try {
+      await Promise.all(
+        Array.from(selectedItems).map(itemId =>
+          apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'DELETE')
+        )
+      );
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+      setSelectedItems(new Set());
+      setIsBulkDeleteDialogOpen(false);
+      toast({
+        title: "Items deleted",
+        description: `Successfully deleted ${selectedItems.size} items`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete items",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkChangeStatus = async () => {
+    if (!effectiveEstimateId || !bulkActionStatus) return;
+    
+    try {
+      await Promise.all(
+        Array.from(selectedItems).map(itemId =>
+          apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'PATCH', {
+            status: bulkActionStatus
+          })
+        )
+      );
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      setSelectedItems(new Set());
+      setIsBulkStatusDialogOpen(false);
+      setBulkActionStatus('');
+      toast({
+        title: "Status updated",
+        description: `Successfully updated ${selectedItems.size} items`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkChangeGroup = async () => {
+    if (!effectiveEstimateId) return;
+    
+    try {
+      await Promise.all(
+        Array.from(selectedItems).map(itemId =>
+          apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'PATCH', {
+            groupId: bulkActionGroup === 'none' ? null : bulkActionGroup
+          })
+        )
+      );
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      setSelectedItems(new Set());
+      setIsBulkGroupDialogOpen(false);
+      setBulkActionGroup('');
+      toast({
+        title: "Group updated",
+        description: `Successfully moved ${selectedItems.size} items`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to change group",
+        variant: "destructive",
+      });
+    }
   };
 
   // Column reordering functions
@@ -3155,7 +3248,7 @@ export default function EstimateDetail() {
                               variant="outline"
                               size="sm"
                               className="h-7"
-                              onClick={() => {/* Implement bulk change status */}}
+                              onClick={() => setIsBulkStatusDialogOpen(true)}
                               data-testid="button-bulk-change-status"
                             >
                               Change Status
@@ -3164,7 +3257,7 @@ export default function EstimateDetail() {
                               variant="outline"
                               size="sm"
                               className="h-7"
-                              onClick={() => {/* Implement bulk change group */}}
+                              onClick={() => setIsBulkGroupDialogOpen(true)}
                               data-testid="button-bulk-change-group"
                             >
                               Move to Group
@@ -3173,7 +3266,7 @@ export default function EstimateDetail() {
                               variant="destructive"
                               size="sm"
                               className="h-7"
-                              onClick={() => {/* Implement bulk delete */}}
+                              onClick={() => setIsBulkDeleteDialogOpen(true)}
                               data-testid="button-bulk-delete"
                             >
                               <Trash2 className="w-3 h-3 mr-1" />
@@ -4396,6 +4489,101 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Items</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''}? This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkDeleteDialogOpen(false)} data-testid="button-cancel-bulk-delete">
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDelete} data-testid="button-confirm-bulk-delete">
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Change Status Dialog */}
+      <Dialog open={isBulkStatusDialogOpen} onOpenChange={setIsBulkStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Status</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Select a status for {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''}:
+            </p>
+            <Select value={bulkActionStatus} onValueChange={setBulkActionStatus}>
+              <SelectTrigger data-testid="select-bulk-status">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.name}
+                  </SelectItem>
+                )) || (
+                  <>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="quoted">Quoted</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkStatusDialogOpen(false)} data-testid="button-cancel-bulk-status">
+              Cancel
+            </Button>
+            <Button onClick={handleBulkChangeStatus} disabled={!bulkActionStatus} data-testid="button-confirm-bulk-status">
+              Update Status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Change Group Dialog */}
+      <Dialog open={isBulkGroupDialogOpen} onOpenChange={setIsBulkGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move to Group</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Select a group for {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''}:
+            </p>
+            <Select value={bulkActionGroup} onValueChange={setBulkActionGroup}>
+              <SelectTrigger data-testid="select-bulk-group">
+                <SelectValue placeholder="Select group" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (ungrouped)</SelectItem>
+                {groups.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkGroupDialogOpen(false)} data-testid="button-cancel-bulk-group">
+              Cancel
+            </Button>
+            <Button onClick={handleBulkChangeGroup} disabled={!bulkActionGroup} data-testid="button-confirm-bulk-group">
+              Move Items
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
