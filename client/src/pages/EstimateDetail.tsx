@@ -3133,6 +3133,55 @@ export default function EstimateDetail() {
                 ) : (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                     <div className="space-y-4">
+                      {/* Bulk Actions Toolbar */}
+                      {selectedItems.size > 0 && (
+                        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-md px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7"
+                              onClick={handleClearSelection}
+                              data-testid="button-clear-selection"
+                            >
+                              Clear Selection
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7"
+                              onClick={() => {/* Implement bulk change status */}}
+                              data-testid="button-bulk-change-status"
+                            >
+                              Change Status
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7"
+                              onClick={() => {/* Implement bulk change group */}}
+                              data-testid="button-bulk-change-group"
+                            >
+                              Move to Group
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7"
+                              onClick={() => {/* Implement bulk delete */}}
+                              data-testid="button-bulk-delete"
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 {(() => {
                       const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
                       
