@@ -1870,20 +1870,41 @@ export default function EstimateDetail() {
     if (!effectiveEstimateId) return;
     
     try {
-      await Promise.all(
-        Array.from(selectedItems).map(itemId =>
+      const itemIds = Array.from(selectedItems);
+      const results = await Promise.allSettled(
+        itemIds.map(itemId =>
           apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'DELETE')
         )
       );
       
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Always invalidate to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
       setSelectedItems(new Set());
       setIsBulkDeleteDialogOpen(false);
-      toast({
-        title: "Items deleted",
-        description: `Successfully deleted ${selectedItems.size} items`,
-      });
+      
+      if (failed === 0) {
+        toast({
+          title: "Items deleted",
+          description: `Successfully deleted ${succeeded} items`,
+        });
+      } else if (succeeded > 0) {
+        toast({
+          title: "Partial success",
+          description: `Deleted ${succeeded} items, ${failed} failed`,
+          variant: "destructive",
+        });
+      } else {
+        const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+        toast({
+          title: "Delete failed",
+          description: firstError?.reason?.message || "Failed to delete items",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Error",
