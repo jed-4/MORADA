@@ -5171,7 +5171,45 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async deleteEstimateGroup(id: string): Promise<boolean> { return false; }
+  async deleteEstimateGroup(id: string): Promise<boolean> {
+    try {
+      // First check if group exists
+      const group = await db
+        .select()
+        .from(schema.estimateGroups)
+        .where(eq(schema.estimateGroups.id, id))
+        .limit(1);
+      
+      if (!group[0]) {
+        return false;
+      }
+
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(group[0].estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot delete group in locked estimate. Unlock the estimate first.");
+      }
+
+      // Set groupId to null for all items in this group
+      await db
+        .update(schema.estimateItems)
+        .set({ 
+          groupId: null, 
+          updatedAt: new Date() 
+        })
+        .where(eq(schema.estimateItems.groupId, id));
+
+      // Delete the group
+      await db
+        .delete(schema.estimateGroups)
+        .where(eq(schema.estimateGroups.id, id));
+
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEstimateGroup:", error);
+      throw error;
+    }
+  }
 
   // Cost Categories CRUD operations (business-wide)
   async getCostCategories(): Promise<CostCategory[]> {
