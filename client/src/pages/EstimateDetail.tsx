@@ -1865,6 +1865,29 @@ export default function EstimateDetail() {
     setSelectedItems(new Set());
   };
 
+  // Single item delete handler
+  const handleDeleteItem = async (itemId: string) => {
+    if (!effectiveEstimateId) return;
+    
+    try {
+      await apiRequest(`/api/estimate-items/${itemId}`, 'DELETE');
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+      
+      toast({
+        title: "Item deleted",
+        description: "Successfully deleted the item",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete item",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Bulk action handlers
   const handleBulkDelete = async () => {
     if (!effectiveEstimateId) return;
@@ -2129,6 +2152,7 @@ export default function EstimateDetail() {
                 Edit Item
               </DropdownMenuItem>
               <DropdownMenuItem 
+                onClick={() => handleDeleteItem(item.id)}
                 data-testid={`button-delete-item-${item.id}`} 
                 className="text-destructive"
                 disabled={estimate?.isLocked}
@@ -2188,6 +2212,7 @@ export default function EstimateDetail() {
                     Edit Item
                   </DropdownMenuItem>
                   <DropdownMenuItem 
+                    onClick={() => handleDeleteItem(subItem.id)}
                     data-testid={`button-delete-item-${subItem.id}`} 
                     className="text-destructive"
                     disabled={estimate?.isLocked}
