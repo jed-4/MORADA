@@ -1873,7 +1873,7 @@ export default function EstimateDetail() {
       const itemIds = Array.from(selectedItems);
       const results = await Promise.allSettled(
         itemIds.map(itemId =>
-          apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'DELETE')
+          apiRequest(`/api/estimate-items/${itemId}`, 'DELETE')
         )
       );
       
@@ -1918,22 +1918,42 @@ export default function EstimateDetail() {
     if (!effectiveEstimateId || !bulkActionStatus) return;
     
     try {
-      await Promise.all(
-        Array.from(selectedItems).map(itemId =>
-          apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'PATCH', {
+      const itemIds = Array.from(selectedItems);
+      const results = await Promise.allSettled(
+        itemIds.map(itemId =>
+          apiRequest(`/api/estimate-items/${itemId}`, 'PATCH', {
             status: bulkActionStatus
           })
         )
       );
       
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
       setSelectedItems(new Set());
       setIsBulkStatusDialogOpen(false);
       setBulkActionStatus('');
-      toast({
-        title: "Status updated",
-        description: `Successfully updated ${selectedItems.size} items`,
-      });
+      
+      if (failed === 0) {
+        toast({
+          title: "Status updated",
+          description: `Successfully updated ${succeeded} items`,
+        });
+      } else if (succeeded > 0) {
+        toast({
+          title: "Partial success",
+          description: `Updated ${succeeded} items, ${failed} failed`,
+          variant: "destructive",
+        });
+      } else {
+        const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+        toast({
+          title: "Update failed",
+          description: firstError?.reason?.message || "Failed to update status",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -1947,22 +1967,42 @@ export default function EstimateDetail() {
     if (!effectiveEstimateId) return;
     
     try {
-      await Promise.all(
-        Array.from(selectedItems).map(itemId =>
-          apiRequest(`/api/estimates/${effectiveEstimateId}/items/${itemId}`, 'PATCH', {
+      const itemIds = Array.from(selectedItems);
+      const results = await Promise.allSettled(
+        itemIds.map(itemId =>
+          apiRequest(`/api/estimate-items/${itemId}`, 'PATCH', {
             groupId: bulkActionGroup === 'none' ? null : bulkActionGroup
           })
         )
       );
       
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
       setSelectedItems(new Set());
       setIsBulkGroupDialogOpen(false);
       setBulkActionGroup('');
-      toast({
-        title: "Group updated",
-        description: `Successfully moved ${selectedItems.size} items`,
-      });
+      
+      if (failed === 0) {
+        toast({
+          title: "Group updated",
+          description: `Successfully moved ${succeeded} items`,
+        });
+      } else if (succeeded > 0) {
+        toast({
+          title: "Partial success",
+          description: `Moved ${succeeded} items, ${failed} failed`,
+          variant: "destructive",
+        });
+      } else {
+        const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+        toast({
+          title: "Move failed",
+          description: firstError?.reason?.message || "Failed to change group",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Error",
