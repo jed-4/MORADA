@@ -36,6 +36,7 @@ import {
   Edit,
   Trash2,
   MoreHorizontal,
+  MoreVertical,
   FolderPlus,
   Loader2,
   ChevronDown,
@@ -198,13 +199,17 @@ function SortableGroupRow({
   groupedItems,
   columns,
   handleToggleGroupCollapse,
-  renderItemWithSubItems 
+  renderItemWithSubItems,
+  onDeleteGroup,
+  isLocked 
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
   columns: Array<{ id: string; label: string; visible: boolean; widthPx: number }>;
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
   renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
+  onDeleteGroup: (groupId: string) => void;
+  isLocked: boolean;
 }) {
   const {
     attributes,
@@ -258,9 +263,35 @@ function SortableGroupRow({
                 <span className="text-xs text-muted-foreground">- {group.description}</span>
               )}
             </div>
-            <span className="text-xs text-muted-foreground">
-              {groupedItems[group.id]?.length || 0} items
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                {groupedItems[group.id]?.length || 0} items
+              </span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6"
+                    data-testid={`button-group-menu-${group.id}`}
+                    disabled={isLocked}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem 
+                    onClick={() => onDeleteGroup(group.id)}
+                    data-testid={`button-delete-group-${group.id}`} 
+                    className="text-destructive"
+                    disabled={isLocked}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete Group
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </TableCell>
       </TableRow>
@@ -1786,6 +1817,10 @@ export default function EstimateDetail() {
   // Single item delete dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  
+  // Group delete dialog
+  const [isDeleteGroupDialogOpen, setIsDeleteGroupDialogOpen] = useState(false);
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
 
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -1890,6 +1925,32 @@ export default function EstimateDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete item",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Group delete handler
+  const confirmDeleteGroup = async () => {
+    if (!effectiveEstimateId || !groupToDelete) return;
+    
+    try {
+      await apiRequest(`/api/estimate-groups/${groupToDelete}`, 'DELETE');
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'groups'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      
+      setIsDeleteGroupDialogOpen(false);
+      setGroupToDelete(null);
+      
+      toast({
+        title: "Group deleted",
+        description: "Successfully deleted the group and moved items to Ungrouped",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete group",
         variant: "destructive",
       });
     }
@@ -3459,6 +3520,11 @@ export default function EstimateDetail() {
                                   columns={columns}
                                   handleToggleGroupCollapse={handleToggleGroupCollapse}
                                   renderItemWithSubItems={renderItemWithSubItems}
+                                  onDeleteGroup={(groupId) => {
+                                    setGroupToDelete(groupId);
+                                    setIsDeleteGroupDialogOpen(true);
+                                  }}
+                                  isLocked={estimate?.isLocked || false}
                                 />
                               ))}
                             </TableBody>
@@ -4590,6 +4656,37 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Group Delete Confirmation Dialog */}
+      <Dialog open={isDeleteGroupDialogOpen} onOpenChange={setIsDeleteGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Group</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete this group? All items in this group will be moved to "Ungrouped". This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDeleteGroupDialogOpen(false);
+                setGroupToDelete(null);
+              }}
+              data-testid="button-cancel-delete-group"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteGroup}
+              data-testid="button-confirm-delete-group"
+            >
+              Delete Group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Single Item Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
