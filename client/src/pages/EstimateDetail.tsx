@@ -1816,6 +1816,7 @@ export default function EstimateDetail() {
   // Group delete dialog
   const [isDeleteGroupDialogOpen, setIsDeleteGroupDialogOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
 
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -1927,8 +1928,9 @@ export default function EstimateDetail() {
   
   // Group delete handler
   const confirmDeleteGroup = async () => {
-    if (!effectiveEstimateId || !groupToDelete) return;
+    if (!effectiveEstimateId || !groupToDelete || isDeletingGroup) return;
     
+    setIsDeletingGroup(true);
     try {
       await apiRequest(`/api/estimate-groups/${groupToDelete}`, 'DELETE');
       
@@ -1948,6 +1950,8 @@ export default function EstimateDetail() {
         description: error.message || "Failed to delete group",
         variant: "destructive",
       });
+    } finally {
+      setIsDeletingGroup(false);
     }
   };
 
@@ -4676,8 +4680,9 @@ export default function EstimateDetail() {
               variant="destructive" 
               onClick={confirmDeleteGroup}
               data-testid="button-confirm-delete-group"
+              disabled={isDeletingGroup}
             >
-              Delete Group
+              {isDeletingGroup ? "Deleting..." : "Delete Group"}
             </Button>
           </DialogFooter>
         </DialogContent>
