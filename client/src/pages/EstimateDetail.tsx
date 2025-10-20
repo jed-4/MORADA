@@ -1773,6 +1773,9 @@ export default function EstimateDetail() {
   // State to track collapsed parent items
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
+  // State for bulk selection
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -1828,6 +1831,31 @@ export default function EstimateDetail() {
       }
       return newSet;
     });
+  };
+
+  // Selection handlers
+  const handleToggleSelection = (itemId: string) => {
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedItems.size === items.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(items.map(item => item.id)));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedItems(new Set());
   };
 
   // Column reordering functions
