@@ -3292,7 +3292,7 @@ export default function EstimateDetail() {
                       
                       const allSortableIds = [...groupIds, ...allItemIds];
                       
-                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40;
+                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40 + 32;
                       
                       return (
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
@@ -3304,6 +3304,7 @@ export default function EstimateDetail() {
                             minWidth: `${tableWidth}px`
                           }} data-testid="table-estimate-items">
                             <colgroup>
+                              <col style={{ width: '32px' }} />
                               <col style={{ width: '40px' }} />
                               {columns.filter(col => col.visible).map(column => (
                                 <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
@@ -3312,6 +3313,7 @@ export default function EstimateDetail() {
                             </colgroup>
                             <TableHeader>
                               <TableRow className="h-8">
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '32px' }}></TableHead>
                                 <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}>
                                   <Checkbox
                                     checked={selectedItems.size > 0 && selectedItems.size === items.length}
