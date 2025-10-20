@@ -1160,12 +1160,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       items.forEach((item, index) => {
         // Convert dollar amounts to cents with proper rounding
         const unitCostExTaxCents = item.unitCostExTax ? Math.round(item.unitCostExTax * 100) : 0;
-        const quantityCents = item.quantity ? Math.round(item.quantity * 100) : 100;
+        const quantity = item.quantity ? Math.round(item.quantity * 100) : 100; // Quantity stored as whole number * 100
         const markupPercent = item.markupPercent ?? null;
         
         // Calculate pricing
-        // 1. Builder cost = unitCost × quantity
-        const builderCostExTax = Math.round((unitCostExTaxCents * quantityCents) / 100);
+        // 1. Builder cost = unitCost × quantity (both already in cents/hundredths)
+        const builderCostExTax = Math.round((unitCostExTaxCents * quantity) / 100);
         
         // 2. Apply markup (item-specific or project-level)
         const effectiveMarkupPercent = markupPercent ?? estimate.projectMarkupPercent ?? 0;
@@ -1185,7 +1185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ...item,
           estimateId,
           unitCostExTax: unitCostExTaxCents,
-          quantity: quantityCents,
+          quantity,
           markupPercent,
           taxAmount,
           priceIncTax: clientPriceIncTax,
@@ -1221,7 +1221,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      console.log(`[Import] Creating ${validatedItems.length} items for estimate ${estimateId}`);
+      console.log('[Import] Sample item:', validatedItems[0]);
+      
       const createdItems = await storage.bulkCreateEstimateItems(validatedItems);
+      
+      console.log(`[Import] Successfully created ${createdItems.length} items`);
+      console.log('[Import] Sample created item:', createdItems[0]);
+      
       res.status(201).json({
         success: true,
         count: createdItems.length,
