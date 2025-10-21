@@ -55,7 +55,8 @@ import {
   type Proposal, type InsertProposal,
   type ProposalSection, type InsertProposalSection,
   type ProposalItem, type InsertProposalItem,
-  type ProposalAcceptance, type InsertProposalAcceptance
+  type ProposalAcceptance, type InsertProposalAcceptance,
+  type Minute, type InsertMinute
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -505,6 +506,13 @@ export interface IStorage {
   createDefect(defect: InsertDefect): Promise<Defect>;
   updateDefect(id: string, defect: Partial<InsertDefect>): Promise<Defect>;
   deleteDefect(id: string): Promise<void>;
+
+  // Minutes CRUD operations
+  getMinutes(projectId?: string): Promise<Minute[]>;
+  getMinute(id: string): Promise<Minute | undefined>;
+  createMinute(minute: InsertMinute): Promise<Minute>;
+  updateMinute(id: string, minute: Partial<InsertMinute>): Promise<Minute | undefined>;
+  deleteMinute(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -8195,6 +8203,71 @@ export class DbStorage implements IStorage {
         .where(eq(schema.defects.id, id));
     } catch (error) {
       console.error("Database error in deleteDefect:", error);
+      throw error;
+    }
+  }
+
+  // Minutes CRUD operations
+  async getMinutes(projectId?: string): Promise<Minute[]> {
+    try {
+      let query = db.select().from(schema.minutes).orderBy(desc(schema.minutes.meetingDate));
+      
+      if (projectId) {
+        query = query.where(eq(schema.minutes.projectId, projectId)) as any;
+      }
+      
+      const minutes = await query;
+      return minutes as Minute[];
+    } catch (error) {
+      console.error("Database error in getMinutes:", error);
+      throw error;
+    }
+  }
+
+  async getMinute(id: string): Promise<Minute | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.minutes)
+        .where(eq(schema.minutes.id, id));
+      return result[0] as Minute | undefined;
+    } catch (error) {
+      console.error("Database error in getMinute:", error);
+      throw error;
+    }
+  }
+
+  async createMinute(minute: InsertMinute): Promise<Minute> {
+    try {
+      const result = await db.insert(schema.minutes)
+        .values(minute)
+        .returning();
+      return result[0] as Minute;
+    } catch (error) {
+      console.error("Database error in createMinute:", error);
+      throw error;
+    }
+  }
+
+  async updateMinute(id: string, minute: Partial<InsertMinute>): Promise<Minute | undefined> {
+    try {
+      const result = await db.update(schema.minutes)
+        .set({ ...minute, updatedAt: new Date() })
+        .where(eq(schema.minutes.id, id))
+        .returning();
+      return result[0] as Minute | undefined;
+    } catch (error) {
+      console.error("Database error in updateMinute:", error);
+      throw error;
+    }
+  }
+
+  async deleteMinute(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.minutes)
+        .where(eq(schema.minutes.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteMinute:", error);
       throw error;
     }
   }
