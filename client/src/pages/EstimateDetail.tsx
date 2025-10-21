@@ -1920,9 +1920,10 @@ export default function EstimateDetail() {
 
   const handleToggleGroupSelection = (groupId: string) => {
     console.log('[GROUP SELECTION] Toggling group:', groupId);
-    const groupItems = items.filter(item => item.groupId === groupId);
+    // Filter only parent items (not sub-items) that belong to this group
+    const groupItems = items.filter(item => !item.parentItemId && item.groupId === groupId);
     console.log('[GROUP SELECTION] Found items:', groupItems.length);
-    const allGroupItemsSelected = groupItems.every(item => selectedItems.has(item.id));
+    const allGroupItemsSelected = groupItems.length > 0 && groupItems.every(item => selectedItems.has(item.id));
     console.log('[GROUP SELECTION] All selected?', allGroupItemsSelected);
     
     setSelectedItems(prev => {
