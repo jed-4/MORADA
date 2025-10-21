@@ -1919,8 +1919,11 @@ export default function EstimateDetail() {
   };
 
   const handleToggleGroupSelection = (groupId: string) => {
+    console.log('[GROUP SELECTION] Toggling group:', groupId);
     const groupItems = items.filter(item => item.groupId === groupId);
+    console.log('[GROUP SELECTION] Found items:', groupItems.length);
     const allGroupItemsSelected = groupItems.every(item => selectedItems.has(item.id));
+    console.log('[GROUP SELECTION] All selected?', allGroupItemsSelected);
     
     setSelectedItems(prev => {
       const newSet = new Set(prev);
@@ -1931,6 +1934,7 @@ export default function EstimateDetail() {
         // Select all items in group
         groupItems.forEach(item => newSet.add(item.id));
       }
+      console.log('[GROUP SELECTION] New selection size:', newSet.size);
       return newSet;
     });
   };
