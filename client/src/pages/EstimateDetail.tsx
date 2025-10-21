@@ -254,14 +254,13 @@ function SortableGroupRow({
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
         </TableCell>
-        <TableCell className="py-2" style={{ width: '24px' }}>
+        <TableCell className="py-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={groupCheckboxState}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
             aria-label={`Select all items in ${group.name}`}
             data-testid={`checkbox-group-${group.id}`}
             disabled={isLocked}
-            onClick={(e) => e.stopPropagation()}
           />
         </TableCell>
         <TableCell colSpan={columns.filter(col => col.visible).length + 1} className="py-2 px-4">
