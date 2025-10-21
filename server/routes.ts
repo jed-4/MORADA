@@ -1355,6 +1355,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const group of existingGroups) {
         groupMap.set(group.name.toLowerCase().trim(), group.id);
       }
+      
+      console.log('[IMPORT] Existing groups for matching:', 
+        Array.from(groupMap.entries()).map(([name, id]) => `${name} -> ${id}`)
+      );
 
       // Validate all items first (before creating any groups)
       const validatedItems: any[] = [];
@@ -1386,11 +1390,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let groupIdToStore = null;
         
         if (item.group) {
-          const matchedGroupId = groupMap.get(item.group.toLowerCase().trim());
+          const groupNameToMatch = item.group.toLowerCase().trim();
+          const matchedGroupId = groupMap.get(groupNameToMatch);
           if (matchedGroupId) {
             groupIdToStore = matchedGroupId;
+            console.log(`[IMPORT] Item "${item.name}" - Matched group "${item.group}" to group ID ${matchedGroupId}`);
+          } else {
+            console.log(`[IMPORT] Item "${item.name}" - No match for group "${item.group}" (normalized: "${groupNameToMatch}")`);
           }
-          // If no match found, item will be ungrouped
+        } else {
+          console.log(`[IMPORT] Item "${item.name}" - No group specified in import data`);
         }
         
         // Convert dollar amounts to cents with proper rounding
