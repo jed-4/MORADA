@@ -473,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Configure multer for audio/video file uploads
-  const upload = multer({
+  const recordingUpload = multer({
     storage: multer.memoryStorage(),
     limits: {
       fileSize: 25 * 1024 * 1024, // 25MB limit (OpenAI Whisper limit)
@@ -492,7 +492,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Transcribe audio/video endpoint for minutes
-  app.post("/api/minutes/:id/transcribe", upload.single('recording'), async (req, res) => {
+  app.post("/api/minutes/:id/transcribe", recordingUpload.single('recording'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });

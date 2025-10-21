@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { HybridAttendeeSelector, type Attendee } from "@/components/HybridAttendeeSelector";
 import type { Minute } from "@shared/schema";
 import {
   ArrowLeft,
@@ -21,6 +22,10 @@ import {
   Edit3,
   Check,
   X,
+  Upload,
+  Mic,
+  FileAudio,
+  Link as LinkIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -34,7 +39,9 @@ export default function MinuteDetail() {
   const [editedTitle, setEditedTitle] = useState("");
   const [editedDate, setEditedDate] = useState("");
   const [editedLocation, setEditedLocation] = useState("");
-  const [editedAttendees, setEditedAttendees] = useState<string[]>([]);
+  const [editedRecordingUrl, setEditedRecordingUrl] = useState("");
+  const [editedAttendees, setEditedAttendees] = useState<Attendee[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch minute
   const { data: minute, isLoading } = useQuery<Minute>({
@@ -55,7 +62,8 @@ export default function MinuteDetail() {
       setEditedTitle(minute.title);
       setEditedDate(new Date(minute.meetingDate).toISOString().slice(0, 16));
       setEditedLocation(minute.location || "");
-      setEditedAttendees((minute.attendees as string[]) || []);
+      setEditedRecordingUrl(minute.recordingUrl || "");
+      setEditedAttendees((minute.attendees as Attendee[]) || []);
     }
   }, [minute]);
 
@@ -78,7 +86,7 @@ export default function MinuteDetail() {
   // Generate AI summary mutation
   const generateSummaryMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/minutes/${id}/summary`, "POST", {});
+      const response = await apiRequest(`/api/minutes/${id}/summarize`, "POST", {});
       return response.json();
     },
     onSuccess: () => {
@@ -88,6 +96,38 @@ export default function MinuteDetail() {
     onError: (error: any) => {
       toast({ 
         title: "Failed to generate summary", 
+        description: error.message || "An error occurred",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Transcribe audio mutation
+  const transcribeMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('recording', file);
+      
+      const response = await fetch(`/api/minutes/${id}/transcribe`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to transcribe audio');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/minutes", id] });
+      setContentHtml(data.transcription);
+      setContentText(data.transcription);
+      toast({ title: "Recording transcribed successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to transcribe recording", 
         description: error.message || "An error occurred",
         variant: "destructive" 
       });
@@ -115,6 +155,7 @@ export default function MinuteDetail() {
       title: editedTitle,
       meetingDate: new Date(editedDate),
       location: editedLocation,
+      recordingUrl: editedRecordingUrl,
       attendees: editedAttendees,
     });
     setIsEditing(false);
@@ -125,9 +166,17 @@ export default function MinuteDetail() {
       setEditedTitle(minute.title);
       setEditedDate(new Date(minute.meetingDate).toISOString().slice(0, 16));
       setEditedLocation(minute.location || "");
-      setEditedAttendees((minute.attendees as string[]) || []);
+      setEditedRecordingUrl(minute.recordingUrl || "");
+      setEditedAttendees((minute.attendees as Attendee[]) || []);
     }
     setIsEditing(false);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      transcribeMutation.mutate(file);
+    }
   };
 
   const handleGenerateSummary = () => {
@@ -219,11 +268,21 @@ export default function MinuteDetail() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium mb-2 block">Attendees (comma-separated)</label>
+                <label className="text-sm font-medium mb-2 block">Attendees</label>
+                <HybridAttendeeSelector
+                  value={editedAttendees}
+                  onChange={setEditedAttendees}
+                  projectId={minute.projectId || undefined}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Recording Link (Optional)</label>
                 <Input 
-                  value={editedAttendees.join(", ")}
-                  onChange={(e) => setEditedAttendees(e.target.value.split(",").map(s => s.trim()).filter(s => s))}
-                  data-testid="input-edit-attendees"
+                  type="url"
+                  placeholder="https://zoom.us/rec/... or https://meet.google.com/..."
+                  value={editedRecordingUrl}
+                  onChange={(e) => setEditedRecordingUrl(e.target.value)}
+                  data-testid="input-edit-recording-url"
                 />
               </div>
               <div className="flex gap-2">
@@ -251,10 +310,22 @@ export default function MinuteDetail() {
                     <span data-testid="text-location">{minute.location}</span>
                   </div>
                 )}
-                {((minute.attendees as string[]) || []).length > 0 && (
+                {((minute.attendees as Attendee[]) || []).length > 0 && (
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4" />
-                    <span data-testid="text-attendees">{((minute.attendees as string[]) || []).join(", ")}</span>
+                    <span data-testid="text-attendees">
+                      {((minute.attendees as Attendee[]) || []).map((attendee, idx) => (
+                        typeof attendee === "string" ? attendee : attendee.name
+                      )).join(", ")}
+                    </span>
+                  </div>
+                )}
+                {minute.recordingUrl && (
+                  <div className="flex items-center gap-2">
+                    <LinkIcon className="h-4 w-4" />
+                    <a href={minute.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" data-testid="link-recording">
+                      Recording Link
+                    </a>
                   </div>
                 )}
               </div>
@@ -262,6 +333,64 @@ export default function MinuteDetail() {
           )}
         </CardHeader>
         <CardContent className="space-y-6">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Upload & Transcribe Recording</h3>
+              <div className="flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*,video/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  data-testid="input-file-upload"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={transcribeMutation.isPending}
+                  data-testid="button-upload-recording"
+                >
+                  {transcribeMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Transcribing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Recording
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            {minute.recordingFileName && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
+                <FileAudio className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm" data-testid="text-recording-filename">{minute.recordingFileName}</span>
+                {minute.transcriptionStatus && (
+                  <Badge variant={minute.transcriptionStatus === 'completed' ? 'default' : minute.transcriptionStatus === 'failed' ? 'destructive' : 'secondary'}>
+                    {minute.transcriptionStatus}
+                  </Badge>
+                )}
+              </div>
+            )}
+            {minute.transcription && (
+              <Card className="bg-muted/50 mt-4">
+                <CardContent className="pt-6">
+                  <h4 className="font-medium mb-2">Transcription</h4>
+                  <p className="whitespace-pre-wrap text-sm" data-testid="text-transcription">
+                    {minute.transcription}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <Separator />
+
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Meeting Notes</h3>
