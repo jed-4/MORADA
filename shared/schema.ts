@@ -2149,3 +2149,43 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
 
 export type InsertDefect = z.infer<typeof insertDefectSchema>;
 export type Defect = typeof defects.$inferSelect;
+
+// Meeting Minutes
+export const minutes = pgTable("minutes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  meetingDate: timestamp("meeting_date").notNull(),
+  location: text("location"), // Meeting location (physical or virtual link)
+  attendees: json("attendees").default([]), // Array of attendee names
+  content: text("content").notNull(), // Meeting minutes content
+  contentHtml: text("content_html"), // Rich text HTML content
+  contentText: text("content_text"), // Plain text for searching
+  aiSummary: text("ai_summary"), // AI-generated summary
+  actionItems: json("action_items").default([]), // Array of action items [{description, assignee, dueDate, completed}]
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  ownerId: varchar("owner_id").references(() => users.id),
+  ownerName: text("owner_name"), // Cached for performance
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMinuteSchema = createInsertSchema(minutes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  meetingDate: z.coerce.date(),
+  contentHtml: z.string().optional(),
+  contentText: z.string().optional(),
+  aiSummary: z.string().optional(),
+  attendees: z.array(z.string()).optional(),
+  actionItems: z.array(z.object({
+    description: z.string(),
+    assignee: z.string().optional(),
+    dueDate: z.coerce.date().optional(),
+    completed: z.boolean().default(false),
+  })).optional(),
+});
+
+export type InsertMinute = z.infer<typeof insertMinuteSchema>;
+export type Minute = typeof minutes.$inferSelect;
