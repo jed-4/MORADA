@@ -31,6 +31,7 @@ import {
   Tag,
   Archive,
   AlertCircle,
+  ClipboardList,
 } from "lucide-react";
 
 import {
@@ -73,6 +74,7 @@ const projectItemsBase = [
   { title: "Overview", baseUrl: "", icon: Home },
   { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
   { title: "Notes", baseUrl: "/notes", icon: FileText },
+  { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
   { title: "Calendar", baseUrl: "/calendar", icon: Calendar },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
@@ -102,6 +104,7 @@ const businessItems = [
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
   { title: "Messages", url: "/business/messages", icon: MessageSquare },
+  { title: "Minutes", url: "/business/minutes", icon: ClipboardList },
   { title: "Sick Days & Leave", url: "/business/leave", icon: Calendar },
   { title: "Bills", url: "/bills", icon: Receipt },
   { title: "Team", url: "/business-team", icon: Users },
