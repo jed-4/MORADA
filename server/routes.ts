@@ -1369,7 +1369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Create any missing groups
-      for (const groupName of uniqueGroupNames) {
+      for (const groupName of Array.from(uniqueGroupNames)) {
         const normalizedName = groupName.toLowerCase().trim();
         if (!groupMap.has(normalizedName)) {
           console.log(`[IMPORT] Creating new group: "${groupName}"`);
