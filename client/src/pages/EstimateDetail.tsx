@@ -1744,7 +1744,7 @@ export default function EstimateDetail() {
   });
 
   // Fetch cost codes
-  const { data: costCodes = [] } = useQuery<CostCode[]>({
+  const { data: costCodes = [], isLoading: isLoadingCostCodes } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
   });
 
@@ -1923,13 +1923,35 @@ export default function EstimateDetail() {
   };
 
   const handleToggleGroupSelection = (groupId: string) => {
+    // Get all items in this group
+    const groupItems = items.filter(item => item.groupId === groupId);
+    const groupItemIds = groupItems.map(item => item.id);
+    
     setSelectedGroups(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(groupId)) {
-        newSet.delete(groupId);
-      } else {
+      const isSelecting = !newSet.has(groupId);
+      
+      if (isSelecting) {
         newSet.add(groupId);
+      } else {
+        newSet.delete(groupId);
       }
+      
+      // Cascade selection to items in the group
+      setSelectedItems(prevItems => {
+        const newItemSet = new Set(prevItems);
+        
+        if (isSelecting) {
+          // Add all group items to selection
+          groupItemIds.forEach(itemId => newItemSet.add(itemId));
+        } else {
+          // Remove all group items from selection
+          groupItemIds.forEach(itemId => newItemSet.delete(itemId));
+        }
+        
+        return newItemSet;
+      });
+      
       return newSet;
     });
   };
@@ -2027,22 +2049,28 @@ export default function EstimateDetail() {
       setIsBulkDeleteDialogOpen(false);
       
       if (failed === 0) {
+        const totalCount = itemIds.length + groupIds.length;
+        const itemWord = totalCount === 1 ? 'item' : 'items';
         toast({
-          title: "Items deleted",
-          description: `Successfully deleted ${succeeded} items`,
+          title: "Deleted successfully",
+          description: `Successfully deleted ${totalCount} ${itemWord}`,
         });
       } else if (succeeded > 0) {
         toast({
           title: "Partial success",
-          description: `Deleted ${succeeded} items, ${failed} failed`,
+          description: `Deleted ${succeeded} of ${itemIds.length + groupIds.length} items. ${failed} failed.`,
           variant: "destructive",
         });
       } else {
+        // All deletions failed - find first error message
         const allResults = [...itemResults, ...groupResults];
-        const firstError = allResults.find((r: any) => r.status === 'rejected') as PromiseRejectedResult;
+        const firstRejection = allResults.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        const errorMessage = firstRejection?.reason?.message || 
+                            (firstRejection?.reason && String(firstRejection.reason)) ||
+                            "All deletions failed";
         toast({
           title: "Delete failed",
-          description: firstError?.reason?.message || "Failed to delete items and groups",
+          description: errorMessage,
           variant: "destructive",
         });
       }
@@ -3676,15 +3704,16 @@ export default function EstimateDetail() {
                       <Select 
                         onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
                         value={field.value || "none"}
+                        disabled={isLoadingCostCodes}
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-item-costcode">
-                            <SelectValue placeholder="None" />
+                            <SelectValue placeholder={isLoadingCostCodes ? "Loading..." : "None"} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="none">None</SelectItem>
-                          {costCodes.map((code) => (
+                          {!isLoadingCostCodes && costCodes.map((code) => (
                             <SelectItem key={code.id} value={code.id}>
                               {code.code} - {code.title}
                             </SelectItem>
@@ -4155,15 +4184,16 @@ export default function EstimateDetail() {
                           <Select 
                             onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
                             value={field.value || "none"}
+                            disabled={isLoadingCostCodes}
                           >
                             <FormControl>
                               <SelectTrigger data-testid="select-edit-item-costcode">
-                                <SelectValue placeholder="None" />
+                                <SelectValue placeholder={isLoadingCostCodes ? "Loading..." : "None"} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="none">None</SelectItem>
-                              {costCodes.map((code) => (
+                              {!isLoadingCostCodes && costCodes.map((code) => (
                                 <SelectItem key={code.id} value={code.id}>
                                   {code.code} - {code.title}
                                 </SelectItem>
