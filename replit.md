@@ -4,6 +4,7 @@
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. Key capabilities include a customizable widget-based dashboard, comprehensive task management with Kanban boards and calendar integration, and business operations tracking. The platform aims to streamline project workflows, enhance collaboration, and provide robust tools for financial oversight like budget tracking.
 
 ## Recent Changes (2025-10-21)
+- **Cost Code Inline Editing**: Changed inline editing from text input to dropdown select. Double-clicking a cost code cell now opens a dropdown showing all available cost codes plus "None" option. Auto-saves selection immediately.
 - **Add Item Modal Enhancements**: Redesigned pricing section with Buildern-style interface:
   - **Three-field pricing row**: Unit cost ex tax (editable), Unit tax (auto-calculated 10% GST display), Unit cost inc tax (editable with bidirectional updates)
   - **Markup field**: Moved to separate row with % suffix and proper formatting
