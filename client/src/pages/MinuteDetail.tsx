@@ -70,8 +70,7 @@ export default function MinuteDetail() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<Minute>) => {
-      const response = await apiRequest(`/api/minutes/${id}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/minutes/${id}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
@@ -86,8 +85,7 @@ export default function MinuteDetail() {
   // Generate AI summary mutation
   const generateSummaryMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/minutes/${id}/summarize`, "POST", {});
-      return response.json();
+      return await apiRequest(`/api/minutes/${id}/summarize`, "POST", {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/minutes", id] });

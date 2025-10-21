@@ -93,8 +93,7 @@ export default function Minutes() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: InsertMinute) => {
-      const response = await apiRequest("/api/minutes", "POST", data);
-      return response.json();
+      return await apiRequest("/api/minutes", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
@@ -110,8 +109,7 @@ export default function Minutes() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertMinute> }) => {
-      const response = await apiRequest(`/api/minutes/${id}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/minutes/${id}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
