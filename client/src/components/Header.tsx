@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ const projectItemsBase = [
   { title: "Overview", baseUrl: "", icon: Home },
   { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
   { title: "Notes", baseUrl: "/notes", icon: FileText },
+  { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
   { title: "Calendar", baseUrl: "/calendar", icon: Calendar },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
