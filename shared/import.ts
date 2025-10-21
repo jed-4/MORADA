@@ -100,6 +100,7 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "group": "group",
   "parent": "group",
   "parent name": "group",
+  "parent group": "group",
   "category": "group",
   
   // Status variations
