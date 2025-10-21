@@ -761,8 +761,7 @@ export default function EstimateDetail() {
   // Mutation for creating new estimate
   const createEstimateMutation = useMutation({
     mutationFn: async (data: { name: string; projectId: string }) => {
-      const response = await apiRequest(`/api/estimates`, "POST", data);
-      return response.json();
+      return await apiRequest(`/api/estimates`, "POST", data);
     },
     onSuccess: async (newEstimate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
