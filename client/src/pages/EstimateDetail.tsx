@@ -147,7 +147,7 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
       className={`${className} group`}
       data-testid={`row-item-${id}`}
     >
-      <TableCell className="py-0.5 px-1" style={{ width: '40px' }}>
+      <TableCell className="py-0.5 px-1" style={{ width: '24px' }}>
         {isDraggable && (
           <div
             {...attributes}
@@ -253,7 +253,7 @@ function SortableGroupRow({
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
         </TableCell>
-        <TableCell className="py-2" style={{ width: '40px' }}>
+        <TableCell className="py-2" style={{ width: '24px' }}>
           <Checkbox
             checked={allGroupItemsSelected}
             indeterminate={someGroupItemsSelected}
@@ -2188,7 +2188,7 @@ export default function EstimateDetail() {
     const rows = [
       // Parent item row
       <SortableRow key={item.id} id={item.id} className="min-h-8" isDraggable={!isLocked}>
-        <TableCell className="py-0.5" style={{ width: '40px' }}>
+        <TableCell className="py-0.5" style={{ width: '24px' }}>
           <Checkbox
             checked={selectedItems.has(item.id)}
             onCheckedChange={() => handleToggleSelection(item.id)}
@@ -2281,7 +2281,7 @@ export default function EstimateDetail() {
       subItems.forEach(subItem => {
         rows.push(
           <SortableRow key={subItem.id} id={subItem.id} className="min-h-8 bg-muted/20" isDraggable={!isLocked}>
-            <TableCell className="py-0.5" style={{ width: '40px' }}>
+            <TableCell className="py-0.5" style={{ width: '24px' }}>
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
                 onCheckedChange={() => handleToggleSelection(subItem.id)}
@@ -3504,7 +3504,7 @@ export default function EstimateDetail() {
                           }} data-testid="table-estimate-items">
                             <colgroup>
                               <col style={{ width: '32px' }} />
-                              <col style={{ width: '40px' }} />
+                              <col style={{ width: '24px' }} />
                               {columns.filter(col => col.visible).map(column => (
                                 <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
                               ))}
@@ -3513,7 +3513,7 @@ export default function EstimateDetail() {
                             <TableHeader>
                               <TableRow className="h-8">
                                 <TableHead className="py-1 text-xs font-medium" style={{ width: '32px' }}></TableHead>
-                                <TableHead className="py-1 text-xs font-medium" style={{ width: '40px' }}>
+                                <TableHead className="py-1 text-xs font-medium" style={{ width: '24px' }}>
                                   <Checkbox
                                     checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                     onCheckedChange={handleSelectAll}
