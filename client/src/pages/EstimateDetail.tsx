@@ -2677,15 +2677,32 @@ export default function EstimateDetail() {
         if (isEditing) {
           return (
             <TableCell className="py-0.5">
-              <Input
-                value={editingValue}
-                onChange={(e) => setEditingValue(e.target.value)}
-                onKeyDown={(e) => handleCellKeyDown(e, item, 'costCode')}
-                onBlur={() => handleCellSave(item, 'costCode')}
-                className="h-7 text-sm border-primary"
-                autoFocus
-                data-testid={`input-edit-costCode-${item.id}`}
-              />
+              <Select
+                value={editingValue || 'none'}
+                onValueChange={(value) => {
+                  const newValue = value === 'none' ? undefined : value;
+                  setEditingValue(newValue || '');
+                  // Auto-save on selection
+                  updateItemMutation.mutate({
+                    itemId: item.id,
+                    data: { costCode: newValue }
+                  });
+                  setEditingCell(null);
+                }}
+                data-testid={`select-edit-costCode-${item.id}`}
+              >
+                <SelectTrigger className="h-7 text-sm border-primary">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {!isLoadingCostCodes && costCodes.map((code) => (
+                    <SelectItem key={code.id} value={code.id}>
+                      {code.code} - {code.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </TableCell>
           );
         }
