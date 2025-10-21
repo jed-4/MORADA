@@ -4140,64 +4140,117 @@ export default function EstimateDetail() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="unitCostExTax"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Unit Cost (Ex Tax)</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          step="0.01" 
-                          min="0"
-                          placeholder="0.00"
-                          className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          value={field.value === 0 ? '' : field.value}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '') {
-                              field.onChange(0);
-                            } else {
-                              const cost = parseFloat(value) || 0;
-                              const rounded = Math.round(cost * 100) / 100;
-                              field.onChange(rounded);
-                            }
-                          }}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          data-testid="input-item-builder-cost"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {/* Pricing Section */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Pricing <span className="text-muted-foreground font-normal">GST on expenses</span></h4>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="unitCostExTax"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Unit cost ex. tax *</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                            <Input 
+                              type="number" 
+                              step="0.01" 
+                              min="0"
+                              placeholder="Unit cost ex. tax"
+                              className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              value={field.value === 0 ? '' : field.value}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '') {
+                                  field.onChange(0);
+                                } else {
+                                  const cost = parseFloat(value) || 0;
+                                  const rounded = Math.round(cost * 100) / 100;
+                                  field.onChange(rounded);
+                                }
+                              }}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
+                              data-testid="input-item-builder-cost"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Unit tax</label>
+                    <div className="h-9 flex items-center px-3 text-sm text-muted-foreground">
+                      ${(() => {
+                        const unitCost = form.watch("unitCostExTax") || 0;
+                        const tax = unitCost * 0.10;
+                        return tax.toFixed(2);
+                      })()}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Unit cost inc. tax *</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                      <Input 
+                        type="number" 
+                        step="0.01" 
+                        min="0"
+                        placeholder="Unit cost inc. tax"
+                        className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={(() => {
+                          const unitCost = form.watch("unitCostExTax") || 0;
+                          const incTax = unitCost * 1.10;
+                          return incTax === 0 ? '' : incTax.toFixed(2);
+                        })()}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '') {
+                            form.setValue("unitCostExTax", 0);
+                          } else {
+                            const incTax = parseFloat(value) || 0;
+                            const exTax = incTax / 1.10;
+                            const rounded = Math.round(exTax * 100) / 100;
+                            form.setValue("unitCostExTax", rounded);
+                          }
+                        }}
+                        data-testid="input-item-unit-cost-inc-tax"
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 <FormField
                   control={form.control}
                   name="markupPercent"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Markup % (Optional)</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          step="0.1" 
-                          min="0"
-                          placeholder="0"
-                          className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          {...field}
-                          value={field.value ?? ''}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            field.onChange(value === '' ? undefined : parseFloat(value) || 0);
-                          }}
-                          data-testid="input-item-markup"
-                        />
-                      </FormControl>
+                    <FormItem className="max-w-[200px]">
+                      <FormLabel>Markup</FormLabel>
+                      <div className="flex gap-2">
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.1" 
+                            min="0"
+                            placeholder="20"
+                            className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              field.onChange(value === '' ? undefined : parseFloat(value) || 0);
+                            }}
+                            data-testid="input-item-markup"
+                          />
+                        </FormControl>
+                        <span className="flex items-center text-sm text-muted-foreground">%</span>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -4352,13 +4405,66 @@ export default function EstimateDetail() {
                 />
               </div>
 
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button type="button" variant="outline" onClick={handleCloseAddItem} data-testid="button-cancel-add-item">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
-                  {addItemMutation.isPending ? "Adding..." : "New item"}
-                </Button>
+              {/* Price Summary Footer */}
+              <Separator className="my-4" />
+              <div className="bg-muted/30 -mx-6 -mb-6 p-6 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Description</h4>
+                    <div className="flex gap-6 text-sm text-muted-foreground">
+                      <span>Cost ex. tax ${(() => {
+                        const qty = form.watch("quantity") || 0;
+                        const unitCost = form.watch("unitCostExTax") || 0;
+                        const total = qty * unitCost;
+                        return total.toFixed(2);
+                      })()}</span>
+                      <span>Markup ex. tax ${(() => {
+                        const qty = form.watch("quantity") || 0;
+                        const unitCost = form.watch("unitCostExTax") || 0;
+                        const markup = form.watch("markupPercent") || 0;
+                        const cost = qty * unitCost;
+                        const markupAmount = cost * (markup / 100);
+                        return markupAmount.toFixed(2);
+                      })()}</span>
+                      <span>Tax ${(() => {
+                        const qty = form.watch("quantity") || 0;
+                        const unitCost = form.watch("unitCostExTax") || 0;
+                        const markup = form.watch("markupPercent") || 0;
+                        const cost = qty * unitCost;
+                        const markupAmount = cost * (markup / 100);
+                        const taxableAmount = cost + markupAmount;
+                        const tax = taxableAmount * 0.10;
+                        return tax.toFixed(2);
+                      })()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Amount</p>
+                    <p className="text-2xl font-semibold">${(() => {
+                      const qty = form.watch("quantity") || 0;
+                      const unitCost = form.watch("unitCostExTax") || 0;
+                      const markup = form.watch("markupPercent") || 0;
+                      const cost = qty * unitCost;
+                      const markupAmount = cost * (markup / 100);
+                      const taxableAmount = cost + markupAmount;
+                      const tax = taxableAmount * 0.10;
+                      const total = taxableAmount + tax;
+                      return total.toFixed(2);
+                    })()}</p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" onClick={handleCloseAddItem} data-testid="button-cancel-add-item">
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={addItemMutation.isPending} data-testid="button-submit-add-item">
+                      {addItemMutation.isPending ? "Adding..." : "Add item"}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </form>
           </Form>
