@@ -62,7 +62,8 @@ import {
   updateScheduleTemplateSchema,
   insertTimesheetAllowanceSchema,
   insertAllowanceItemSchema,
-  insertDefectSchema
+  insertDefectSchema,
+  insertMinuteSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -358,6 +359,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete defect" });
+    }
+  });
+
+  // Minutes API Routes
+  app.get("/api/minutes", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const minutes = await storage.getMinutes(projectId as string | undefined);
+      res.json(minutes);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch minutes" });
+    }
+  });
+
+  app.get("/api/minutes/:id", async (req, res) => {
+    try {
+      const minute = await storage.getMinute(req.params.id);
+      if (!minute) {
+        return res.status(404).json({ error: "Minute not found" });
+      }
+      res.json(minute);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch minute" });
+    }
+  });
+
+  app.post("/api/minutes", async (req, res) => {
+    try {
+      const validationResult = insertMinuteSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const minute = await storage.createMinute(validationResult.data);
+      res.status(201).json(minute);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create minute" });
+    }
+  });
+
+  app.patch("/api/minutes/:id", async (req, res) => {
+    try {
+      const updateSchema = insertMinuteSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const minute = await storage.updateMinute(req.params.id, validationResult.data);
+      if (!minute) {
+        return res.status(404).json({ error: "Minute not found" });
+      }
+      res.json(minute);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update minute" });
+    }
+  });
+
+  app.delete("/api/minutes/:id", async (req, res) => {
+    try {
+      await storage.deleteMinute(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete minute" });
+    }
+  });
+
+  // AI Summary endpoint for minutes
+  app.post("/api/minutes/:id/summarize", async (req, res) => {
+    try {
+      const minute = await storage.getMinute(req.params.id);
+      if (!minute) {
+        return res.status(404).json({ error: "Minute not found" });
+      }
+
+      // Use OpenAI to generate summary
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are an assistant that summarizes meeting minutes for construction project management. Provide a concise summary highlighting key decisions, action items, and important discussions. Format the response in clear paragraphs."
+          },
+          {
+            role: "user",
+            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || minute.content}`
+          }
+        ],
+      });
+
+      const summary = completion.choices[0]?.message?.content || '';
+      
+      // Update the minute with the summary
+      const updatedMinute = await storage.updateMinute(req.params.id, { aiSummary: summary });
+      res.json({ summary, minute: updatedMinute });
+    } catch (error) {
+      console.error("Failed to generate summary:", error);
+      res.status(500).json({ error: "Failed to generate AI summary" });
     }
   });
 
