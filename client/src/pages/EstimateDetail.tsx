@@ -201,7 +201,9 @@ function SortableGroupRow({
   handleToggleGroupCollapse,
   renderItemWithSubItems,
   onDeleteGroup,
-  isLocked 
+  isLocked,
+  selectedItems,
+  onToggleGroupSelection
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
@@ -210,6 +212,8 @@ function SortableGroupRow({
   renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
   isLocked: boolean;
+  selectedItems: Set<string>;
+  onToggleGroupSelection: (groupId: string) => void;
 }) {
   const {
     attributes,
@@ -226,6 +230,11 @@ function SortableGroupRow({
     opacity: isDragging ? 0.5 : 1,
   };
   
+  // Check if all items in the group are selected
+  const groupItems = groupedItems[group.id] || [];
+  const allGroupItemsSelected = groupItems.length > 0 && groupItems.every(item => selectedItems.has(item.id));
+  const someGroupItemsSelected = groupItems.some(item => selectedItems.has(item.id)) && !allGroupItemsSelected;
+  
   return (
     <>
       <TableRow 
@@ -234,17 +243,30 @@ function SortableGroupRow({
         className="bg-muted/50 hover:bg-muted/70 border-t-2 border-b"
         data-testid={`row-group-${group.id}`}
       >
-        <TableCell colSpan={columns.filter(col => col.visible).length + 3} className="py-2 px-4">
+        <TableCell className="py-2" style={{ width: '32px' }}>
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
+            data-testid={`drag-handle-group-${group.id}`}
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </TableCell>
+        <TableCell className="py-2" style={{ width: '40px' }}>
+          <Checkbox
+            checked={allGroupItemsSelected}
+            indeterminate={someGroupItemsSelected}
+            onCheckedChange={() => onToggleGroupSelection(group.id)}
+            aria-label={`Select all items in ${group.name}`}
+            data-testid={`checkbox-group-${group.id}`}
+            disabled={isLocked}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </TableCell>
+        <TableCell colSpan={columns.filter(col => col.visible).length + 1} className="py-2 px-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <div
-                {...attributes}
-                {...listeners}
-                className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
-                data-testid={`drag-handle-group-${group.id}`}
-              >
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-              </div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -1896,6 +1918,23 @@ export default function EstimateDetail() {
     }
   };
 
+  const handleToggleGroupSelection = (groupId: string) => {
+    const groupItems = items.filter(item => item.groupId === groupId);
+    const allGroupItemsSelected = groupItems.every(item => selectedItems.has(item.id));
+    
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (allGroupItemsSelected) {
+        // Deselect all items in group
+        groupItems.forEach(item => newSet.delete(item.id));
+      } else {
+        // Select all items in group
+        groupItems.forEach(item => newSet.add(item.id));
+      }
+      return newSet;
+    });
+  };
+
   const handleClearSelection = () => {
     setSelectedItems(new Set());
   };
@@ -3525,6 +3564,8 @@ export default function EstimateDetail() {
                                     setIsDeleteGroupDialogOpen(true);
                                   }}
                                   isLocked={estimate?.isLocked || false}
+                                  selectedItems={selectedItems}
+                                  onToggleGroupSelection={handleToggleGroupSelection}
                                 />
                               ))}
                             </TableBody>
