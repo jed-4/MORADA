@@ -1,7 +1,7 @@
 import React from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -1523,31 +1523,6 @@ export default function EstimateDetail() {
     form.reset();
   };
 
-  // Auto-select group when adding item from group menu
-  useEffect(() => {
-    if (isAddItemOpen && preselectedGroupId) {
-      form.reset({
-        name: "",
-        description: "",
-        notes: "",
-        type: "material",
-        quantity: 1,
-        unitType: "ea",
-        unitCostExTax: 0,
-        markupPercent: 0,
-        status: "pending",
-        groupId: preselectedGroupId,
-        costCode: undefined,
-        allowance: "None",
-        attachmentUrl: "",
-        requestForQuote: false,
-        isSelection: false,
-        proposalVisible: true,
-        trackLabourHours: false,
-      });
-    }
-  }, [isAddItemOpen, preselectedGroupId]);
-
   // Handlers for adding groups
   const handleAddGroup = () => {
     if (estimate?.isLocked) {
@@ -1933,6 +1908,31 @@ export default function EstimateDetail() {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
   const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
+
+  // Auto-select group when adding item from group menu
+  useEffect(() => {
+    if (isAddItemOpen && preselectedGroupId) {
+      form.reset({
+        name: "",
+        description: "",
+        notes: "",
+        type: "material",
+        quantity: 1,
+        unitType: "ea",
+        unitCostExTax: undefined as any,
+        markupPercent: 0,
+        status: "pending",
+        groupId: preselectedGroupId,
+        costCode: undefined,
+        allowance: "None",
+        attachmentUrl: "",
+        requestForQuote: false,
+        isSelection: false,
+        proposalVisible: true,
+        trackLabourHours: false,
+      });
+    }
+  }, [isAddItemOpen, preselectedGroupId, form]);
 
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -2693,8 +2693,8 @@ export default function EstimateDetail() {
         const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? '' : 'Double-click to edit'}
+            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? displayCode : 'Double-click to edit'}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'costCode');
@@ -2959,8 +2959,8 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? '' : 'Double-click to edit'}
+            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? item.unitType || '' : 'Double-click to edit'}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'unitType');
