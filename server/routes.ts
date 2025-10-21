@@ -456,7 +456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           },
           {
             role: "user",
-            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || minute.content}`
+            content: `Please summarize the following meeting minutes:\n\nTitle: ${minute.title}\nDate: ${new Date(minute.meetingDate).toLocaleDateString()}\nAttendees: ${(minute.attendees as string[])?.join(', ') || 'Not specified'}\n\nContent:\n${minute.contentText || ''}`
           }
         ],
       });
@@ -469,6 +469,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to generate summary:", error);
       res.status(500).json({ error: "Failed to generate AI summary" });
+    }
+  });
+
+  // Configure multer for audio/video file uploads
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 25 * 1024 * 1024, // 25MB limit (OpenAI Whisper limit)
+    },
+    fileFilter: (req, file, cb) => {
+      const allowedMimeTypes = [
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'audio/webm',
+        'video/mp4', 'video/mpeg', 'video/webm'
+      ];
+      if (allowedMimeTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid file type. Please upload an audio or video file.'));
+      }
+    }
+  });
+
+  // Transcribe audio/video endpoint for minutes
+  app.post("/api/minutes/:id/transcribe", upload.single('recording'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const minute = await storage.getMinute(req.params.id);
+      if (!minute) {
+        return res.status(404).json({ error: "Minute not found" });
+      }
+
+      // Update status to processing
+      await storage.updateMinute(req.params.id, { 
+        transcriptionStatus: 'processing',
+        recordingFileName: req.file.originalname
+      });
+
+      // Use OpenAI Whisper API to transcribe
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      });
+
+      // Create a File object from the buffer
+      const file = new File([req.file.buffer], req.file.originalname, { type: req.file.mimetype });
+
+      const transcription = await openai.audio.transcriptions.create({
+        file: file,
+        model: "whisper-1",
+        language: "en",
+      });
+
+      // Update minute with transcription
+      const updatedMinute = await storage.updateMinute(req.params.id, {
+        transcription: transcription.text,
+        transcriptionStatus: 'completed',
+        contentText: transcription.text, // Pre-fill content with transcription
+      });
+
+      res.json({ 
+        transcription: transcription.text, 
+        minute: updatedMinute 
+      });
+    } catch (error) {
+      console.error("Failed to transcribe audio:", error);
+      
+      // Update status to failed
+      await storage.updateMinute(req.params.id, { transcriptionStatus: 'failed' });
+      
+      res.status(500).json({ error: "Failed to transcribe audio" });
     }
   });
 
