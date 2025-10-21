@@ -1724,6 +1724,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Duplicate estimate item
+  app.post("/api/estimate-items/:id/duplicate", async (req, res) => {
+    try {
+      const newItem = await storage.duplicateEstimateItem(req.params.id);
+      
+      if (!newItem) {
+        return res.status(404).json({ error: "Failed to duplicate item" });
+      }
+      
+      res.status(201).json(newItem);
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        return res.status(404).json({ error: error.message });
+      }
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      console.error("Error duplicating estimate item:", error);
+      res.status(500).json({ error: "Failed to duplicate estimate item" });
+    }
+  });
+
+  // Copy estimate item to another estimate
+  app.post("/api/estimate-items/:id/copy", async (req, res) => {
+    try {
+      // Validate request body
+      const requestSchema = z.object({
+        targetEstimateId: z.string().min(1, "targetEstimateId is required")
+      });
+      
+      const validationResult = requestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const newItem = await storage.copyItemToEstimate(req.params.id, validationResult.data.targetEstimateId);
+      
+      if (!newItem) {
+        return res.status(404).json({ error: "Failed to copy item" });
+      }
+      
+      res.status(201).json(newItem);
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        return res.status(404).json({ error: error.message });
+      }
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      console.error("Error copying estimate item:", error);
+      res.status(500).json({ error: "Failed to copy estimate item" });
+    }
+  });
+
   // Reorder estimate items
   app.patch("/api/estimate-items/reorder", async (req, res) => {
     try {
@@ -1844,6 +1901,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to delete estimate group" });
+    }
+  });
+
+  // Duplicate estimate group
+  app.post("/api/estimate-groups/:id/duplicate", async (req, res) => {
+    try {
+      const newGroup = await storage.duplicateEstimateGroup(req.params.id);
+      
+      if (!newGroup) {
+        return res.status(404).json({ error: "Failed to duplicate group" });
+      }
+      
+      res.status(201).json(newGroup);
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        return res.status(404).json({ error: error.message });
+      }
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      console.error("Error duplicating estimate group:", error);
+      res.status(500).json({ error: "Failed to duplicate estimate group" });
+    }
+  });
+
+  // Copy estimate group to another estimate
+  app.post("/api/estimate-groups/:id/copy", async (req, res) => {
+    try {
+      // Validate request body
+      const requestSchema = z.object({
+        targetEstimateId: z.string().min(1, "targetEstimateId is required")
+      });
+      
+      const validationResult = requestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const newGroup = await storage.copyGroupToEstimate(req.params.id, validationResult.data.targetEstimateId);
+      
+      if (!newGroup) {
+        return res.status(404).json({ error: "Failed to copy group" });
+      }
+      
+      res.status(201).json(newGroup);
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        return res.status(404).json({ error: error.message });
+      }
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      console.error("Error copying estimate group:", error);
+      res.status(500).json({ error: "Failed to copy estimate group" });
     }
   });
 
