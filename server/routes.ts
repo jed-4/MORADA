@@ -1218,19 +1218,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // 5. Client price inc tax
         const clientPriceIncTax = clientPriceExTax + taxAmount;
         
+        // Explicitly build item data without spreading to avoid field mismatches
         const itemData = {
-          ...item,
           estimateId,
           groupId,
+          name: item.name,
+          description: item.description || undefined,
+          type: item.type || "Material",
           unitCostExTax: unitCostExTaxCents,
           quantity,
+          unitType: item.unitType || "each",
           markupPercent,
           taxAmount,
           priceIncTax: clientPriceIncTax,
+          allowance: item.allowance || "None",
+          status: item.status || "incomplete",
+          notes: item.notes || undefined,
+          proposalVisible: item.proposalVisible !== undefined ? item.proposalVisible : true,
+          shownAs: item.shownAs || undefined,
         };
-        
-        // Remove costCode from itemData as it's not a valid field in the schema
-        delete itemData.costCode;
         
         const validationResult = insertEstimateItemSchema.safeParse(itemData);
         
