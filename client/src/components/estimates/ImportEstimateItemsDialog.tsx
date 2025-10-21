@@ -33,6 +33,7 @@ import {
   autoDetectColumnMapping,
   parseImportRow,
 } from "@shared/import";
+import { useToast } from "@/hooks/use-toast";
 
 interface ImportEstimateItemsDialogProps {
   open: boolean;
@@ -75,6 +76,7 @@ export function ImportEstimateItemsDialog({
   estimateId,
   onImportComplete,
 }: ImportEstimateItemsDialogProps) {
+  const { toast } = useToast();
   const [fileName, setFileName] = useState<string>("");
   const [fileData, setFileData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -202,12 +204,21 @@ export function ImportEstimateItemsDialog({
       }
 
       const result = await response.json();
-      onImportComplete();
+      
+      toast({
+        title: "Success",
+        description: `Successfully imported ${result.count} items!`,
+      });
+      
       handleClose();
-      alert(`Successfully imported ${result.count} items!`);
+      onImportComplete();
     } catch (error: any) {
       console.error("Import error:", error);
-      alert(error.message || "Failed to import items");
+      toast({
+        title: "Error",
+        description: error.message || "Failed to import items",
+        variant: "destructive",
+      });
     } finally {
       setIsImporting(false);
     }
