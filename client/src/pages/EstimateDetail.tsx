@@ -4154,10 +4154,10 @@ export default function EstimateDetail() {
                           min="0"
                           placeholder="0.00"
                           className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          {...field}
+                          value={field.value === 0 ? '' : field.value}
                           onChange={(e) => {
                             const value = e.target.value;
-                            if (value === '' || value === '0') {
+                            if (value === '') {
                               field.onChange(0);
                             } else {
                               const cost = parseFloat(value) || 0;
@@ -4165,6 +4165,9 @@ export default function EstimateDetail() {
                               field.onChange(rounded);
                             }
                           }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                           data-testid="input-item-builder-cost"
                         />
                       </FormControl>
@@ -4634,10 +4637,10 @@ export default function EstimateDetail() {
                               min="0"
                               placeholder="0.00"
                               className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              {...field}
+                              value={field.value === 0 ? '' : field.value}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                if (value === '' || value === '0') {
+                                if (value === '') {
                                   field.onChange(0);
                                 } else {
                                   const cost = parseFloat(value) || 0;
@@ -4645,6 +4648,9 @@ export default function EstimateDetail() {
                                   field.onChange(rounded);
                                 }
                               }}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
                               data-testid="input-edit-item-builder-cost"
                             />
                           </FormControl>
