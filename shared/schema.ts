@@ -472,6 +472,7 @@ export type EstimateItem = typeof estimateItems.$inferSelect;
 export const estimateGroups = pgTable("estimate_groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  parentGroupId: varchar("parent_group_id").references((): any => estimateGroups.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   order: integer("order").notNull().default(0),
