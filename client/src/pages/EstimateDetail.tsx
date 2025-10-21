@@ -46,7 +46,8 @@ import {
   GripVertical,
   Filter,
   Download,
-  Upload
+  Upload,
+  Copy
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -201,10 +202,16 @@ function SortableGroupRow({
   handleToggleGroupCollapse,
   renderItemWithSubItems,
   onDeleteGroup,
+  onEditGroup,
+  onDuplicateGroup,
+  onCopyGroup,
+  onAddSubgroup,
+  onAddItemToGroup,
   isLocked,
   selectedItems,
   selectedGroups,
-  onToggleGroupSelection
+  onToggleGroupSelection,
+  isSubgroup = false
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
@@ -212,11 +219,18 @@ function SortableGroupRow({
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
   renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
+  onEditGroup: (groupId: string) => void;
+  onDuplicateGroup: (groupId: string) => void;
+  onCopyGroup: (groupId: string) => void;
+  onAddSubgroup: (parentGroupId: string) => void;
+  onAddItemToGroup: (groupId: string) => void;
   isLocked: boolean;
   selectedItems: Set<string>;
   selectedGroups: Set<string>;
   onToggleGroupSelection: (groupId: string) => void;
+  isSubgroup?: boolean;
 }) {
+  const { toast } = useToast();
   const {
     attributes,
     listeners,
@@ -262,7 +276,7 @@ function SortableGroupRow({
             disabled={isLocked}
           />
         </TableCell>
-        <TableCell colSpan={columns.filter(col => col.visible).length + 1} className="py-2 px-4">
+        <TableCell colSpan={columns.filter(col => col.visible).length + 1} className={`py-2 ${isSubgroup ? 'pl-12' : 'px-4'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Button
@@ -296,6 +310,57 @@ function SortableGroupRow({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => onAddSubgroup(group.id)}
+                  data-testid={`button-add-subgroup-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <FolderPlus className="w-4 h-4 mr-2" />
+                  Add Subgroup
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => onAddItemToGroup(group.id)}
+                  data-testid={`button-add-item-to-group-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Item
+                </DropdownMenuItem>
+                <Separator />
+                <DropdownMenuItem 
+                  onClick={() => onEditGroup(group.id)}
+                  data-testid={`button-edit-group-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Group
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => onDuplicateGroup(group.id)}
+                  data-testid={`button-duplicate-group-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => onCopyGroup(group.id)}
+                  data-testid={`button-copy-group-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Copy To...
+                </DropdownMenuItem>
+                <Separator />
+                <DropdownMenuItem 
+                  onClick={() => toast({ title: "Create from Group", description: "Coming soon" })}
+                  data-testid={`button-create-from-group-${group.id}`}
+                  disabled={isLocked}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create from...
+                </DropdownMenuItem>
+                <Separator />
                 <DropdownMenuItem 
                   onClick={() => onDeleteGroup(group.id)}
                   data-testid={`button-delete-group-${group.id}`} 
@@ -502,7 +567,7 @@ export default function EstimateDetail() {
     
     if (isDraggingGroup) {
       // Handle group reordering
-      const { sortedGroups } = organizeItemsByGroups();
+      const { sortedGroups, subgroupsByParent } = organizeItemsByGroups();
       const oldIndex = sortedGroups.findIndex(g => `group-${g.id}` === active.id);
       const newIndex = sortedGroups.findIndex(g => `group-${g.id}` === over.id);
       
@@ -1835,6 +1900,11 @@ export default function EstimateDetail() {
   const [isDeleteGroupDialogOpen, setIsDeleteGroupDialogOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
   const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  
+  // Group action handlers
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
+  const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
 
   // Edit item dialog state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -2007,6 +2077,81 @@ export default function EstimateDetail() {
     } finally {
       setIsDeletingGroup(false);
     }
+  };
+  
+  // Group action handlers
+  const handleEditGroup = (groupId: string) => {
+    setEditingGroupId(groupId);
+    setIsAddGroupOpen(true);
+  };
+  
+  const handleDuplicateGroup = async (groupId: string) => {
+    if (!effectiveEstimateId) return;
+    
+    try {
+      await apiRequest(`/api/estimate-groups/${groupId}/duplicate`, 'POST', {});
+      
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'groups'] });
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      
+      toast({
+        title: "Group duplicated",
+        description: "Successfully duplicated the group",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate group",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  const handleCopyGroup = (groupId: string) => {
+    toast({
+      title: "Copy group",
+      description: "Copy group to another estimate - coming soon",
+    });
+  };
+  
+  const handleAddSubgroup = (parentGroupId: string) => {
+    setParentGroupForNewSubgroup(parentGroupId);
+    setIsAddGroupOpen(true);
+  };
+  
+  const handleAddItemToGroup = (groupId: string) => {
+    setPreselectedGroupId(groupId);
+    setIsAddItemOpen(true);
+  };
+  
+  // Item action handlers
+  const handleDuplicateItem = async (itemId: string) => {
+    if (!effectiveEstimateId) return;
+    
+    try {
+      await apiRequest(`/api/estimate-items/${itemId}/duplicate`, 'POST', {});
+      
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+      
+      toast({
+        title: "Item duplicated",
+        description: "Successfully duplicated the item",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate item",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  const handleCopyItem = (itemId: string) => {
+    toast({
+      title: "Copy item",
+      description: "Copy item to another estimate - coming soon",
+    });
   };
 
   // Bulk action handlers
@@ -2290,6 +2435,32 @@ export default function EstimateDetail() {
                 Edit Item
               </DropdownMenuItem>
               <DropdownMenuItem 
+                onClick={() => handleDuplicateItem(item.id)}
+                data-testid={`button-duplicate-item-${item.id}`}
+                disabled={estimate?.isLocked}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => handleCopyItem(item.id)}
+                data-testid={`button-copy-item-${item.id}`}
+                disabled={estimate?.isLocked}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Copy To...
+              </DropdownMenuItem>
+              <Separator />
+              <DropdownMenuItem 
+                onClick={() => toast({ title: "Create from Item", description: "Coming soon" })}
+                data-testid={`button-create-from-item-${item.id}`}
+                disabled={estimate?.isLocked}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create from...
+              </DropdownMenuItem>
+              <Separator />
+              <DropdownMenuItem 
                 onClick={() => {
                   setItemToDelete(item.id);
                   setIsDeleteDialogOpen(true);
@@ -2353,6 +2524,32 @@ export default function EstimateDetail() {
                     Edit Item
                   </DropdownMenuItem>
                   <DropdownMenuItem 
+                    onClick={() => handleDuplicateItem(subItem.id)}
+                    data-testid={`button-duplicate-item-${subItem.id}`}
+                    disabled={estimate?.isLocked}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => handleCopyItem(subItem.id)}
+                    data-testid={`button-copy-item-${subItem.id}`}
+                    disabled={estimate?.isLocked}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Copy To...
+                  </DropdownMenuItem>
+                  <Separator />
+                  <DropdownMenuItem 
+                    onClick={() => toast({ title: "Create from Item", description: "Coming soon" })}
+                    data-testid={`button-create-from-item-${subItem.id}`}
+                    disabled={estimate?.isLocked}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create from...
+                  </DropdownMenuItem>
+                  <Separator />
+                  <DropdownMenuItem 
                     onClick={() => {
                       setItemToDelete(subItem.id);
                       setIsDeleteDialogOpen(true);
@@ -2375,17 +2572,29 @@ export default function EstimateDetail() {
     return rows;
   };
 
-  // Organize items by groups for display (including sub-items)
+  // Organize items by groups for display (including sub-items and hierarchical groups)
   const organizeItemsByGroups = () => {
     const filteredItems = getFilteredItems();
     const groupedItems: { [key: string]: EstimateItem[] } = {};
     const ungroupedItems: EstimateItem[] = [];
 
     // Sort groups by order
-    const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const allSortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    // Separate parent groups and subgroups
+    const parentGroups = allSortedGroups.filter(g => !g.parentGroupId);
+    const subgroupsByParent: { [key: string]: EstimateGroup[] } = {};
+    
+    // Organize subgroups by their parent
+    allSortedGroups.filter(g => g.parentGroupId).forEach(subgroup => {
+      if (!subgroupsByParent[subgroup.parentGroupId!]) {
+        subgroupsByParent[subgroup.parentGroupId!] = [];
+      }
+      subgroupsByParent[subgroup.parentGroupId!].push(subgroup);
+    });
 
-    // Initialize group containers
-    sortedGroups.forEach(group => {
+    // Initialize group containers for all groups (parent and sub)
+    allSortedGroups.forEach(group => {
       groupedItems[group.id] = [];
     });
 
@@ -2417,7 +2626,12 @@ export default function EstimateDetail() {
       return a.id.localeCompare(b.id); // Stable sort by ID when order is same
     });
 
-    return { sortedGroups, groupedItems, ungroupedItems };
+    return { 
+      sortedGroups: parentGroups, 
+      subgroupsByParent,
+      groupedItems, 
+      ungroupedItems 
+    };
   };
 
   // Render cell based on column ID
@@ -3513,10 +3727,15 @@ export default function EstimateDetail() {
                         </div>
                       )}
 {(() => {
-                      const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+                      const { sortedGroups, subgroupsByParent, groupedItems, ungroupedItems } = organizeItemsByGroups();
                       
                       // Create sortable IDs: group IDs prefixed with "group-" and item IDs (including sub-items)
                       const groupIds = sortedGroups.map(g => `group-${g.id}`);
+                      // Add subgroup IDs to sortable context
+                      const subgroupIds: string[] = [];
+                      Object.values(subgroupsByParent).forEach(subgroups => {
+                        subgroupIds.push(...subgroups.map(sg => `group-${sg.id}`));
+                      });
                       const allItemIds = [...ungroupedItems.map(i => i.id)];
                       Object.values(groupedItems).forEach(groupItems => {
                         allItemIds.push(...groupItems.map(i => i.id));
@@ -3527,7 +3746,7 @@ export default function EstimateDetail() {
                         allItemIds.push(subItem.id);
                       });
                       
-                      const allSortableIds = [...groupIds, ...allItemIds];
+                      const allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40 + 32;
                       
@@ -3588,24 +3807,56 @@ export default function EstimateDetail() {
                                 </React.Fragment>
                               ))}
                               
-                              {/* Render groups with inline header rows */}
+                              {/* Render groups with inline header rows and hierarchical subgroups */}
                               {sortedGroups.map((group) => (
-                                <SortableGroupRow
-                                  key={`group-${group.id}`}
-                                  group={group}
-                                  groupedItems={groupedItems}
-                                  columns={columns}
-                                  handleToggleGroupCollapse={handleToggleGroupCollapse}
-                                  renderItemWithSubItems={renderItemWithSubItems}
-                                  onDeleteGroup={(groupId) => {
-                                    setGroupToDelete(groupId);
-                                    setIsDeleteGroupDialogOpen(true);
-                                  }}
-                                  isLocked={estimate?.isLocked || false}
-                                  selectedItems={selectedItems}
-                                  selectedGroups={selectedGroups}
-                                  onToggleGroupSelection={handleToggleGroupSelection}
-                                />
+                                <React.Fragment key={`group-fragment-${group.id}`}>
+                                  <SortableGroupRow
+                                    key={`group-${group.id}`}
+                                    group={group}
+                                    groupedItems={groupedItems}
+                                    columns={columns}
+                                    handleToggleGroupCollapse={handleToggleGroupCollapse}
+                                    renderItemWithSubItems={renderItemWithSubItems}
+                                    onDeleteGroup={(groupId) => {
+                                      setGroupToDelete(groupId);
+                                      setIsDeleteGroupDialogOpen(true);
+                                    }}
+                                    onEditGroup={handleEditGroup}
+                                    onDuplicateGroup={handleDuplicateGroup}
+                                    onCopyGroup={handleCopyGroup}
+                                    onAddSubgroup={handleAddSubgroup}
+                                    onAddItemToGroup={handleAddItemToGroup}
+                                    isLocked={estimate?.isLocked || false}
+                                    selectedItems={selectedItems}
+                                    selectedGroups={selectedGroups}
+                                    onToggleGroupSelection={handleToggleGroupSelection}
+                                  />
+                                  {/* Render subgroups beneath parent group if not collapsed */}
+                                  {!group.isCollapsed && subgroupsByParent[group.id]?.map((subgroup) => (
+                                    <SortableGroupRow
+                                      key={`subgroup-${subgroup.id}`}
+                                      group={subgroup}
+                                      groupedItems={groupedItems}
+                                      columns={columns}
+                                      handleToggleGroupCollapse={handleToggleGroupCollapse}
+                                      renderItemWithSubItems={renderItemWithSubItems}
+                                      onDeleteGroup={(groupId) => {
+                                        setGroupToDelete(groupId);
+                                        setIsDeleteGroupDialogOpen(true);
+                                      }}
+                                      onEditGroup={handleEditGroup}
+                                      onDuplicateGroup={handleDuplicateGroup}
+                                      onCopyGroup={handleCopyGroup}
+                                      onAddSubgroup={handleAddSubgroup}
+                                      onAddItemToGroup={handleAddItemToGroup}
+                                      isLocked={estimate?.isLocked || false}
+                                      selectedItems={selectedItems}
+                                      selectedGroups={selectedGroups}
+                                      onToggleGroupSelection={handleToggleGroupSelection}
+                                      isSubgroup={true}
+                                    />
+                                  ))}
+                                </React.Fragment>
                               ))}
                             </TableBody>
                           </Table>
