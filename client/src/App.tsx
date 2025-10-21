@@ -12,6 +12,8 @@ import Dashboard from "@/pages/Dashboard";
 import Tasks from "@/pages/Tasks";
 import Calendar from "@/pages/Calendar";
 import Notes from "@/pages/Notes";
+import Minutes from "@/pages/Minutes";
+import MinuteDetail from "@/pages/MinuteDetail";
 import Templates from "@/pages/Templates";
 import Settings from "@/pages/Settings";
 import ProjectSettings from "@/pages/ProjectSettings";
@@ -59,6 +61,8 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/notes" component={Notes} />
+      <Route path="/minutes" component={Minutes} />
+      <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />
       
       {/* Business Project */}
@@ -66,12 +70,16 @@ function Router() {
       <Route path="/business/projects" component={BusinessProjects} />
       <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
       <Route path="/business/timesheets" component={Timesheets} />
+      <Route path="/business/minutes" component={Minutes} />
+      <Route path="/business/minutes/:id" component={MinuteDetail} />
       <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
       <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
       
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
       <Route path="/projects/:projectId/notes" component={Notes} />
+      <Route path="/projects/:projectId/minutes" component={Minutes} />
+      <Route path="/projects/:projectId/minutes/:id" component={MinuteDetail} />
       <Route path="/projects/:projectId/tasks" component={Tasks} />
       <Route path="/projects/:projectId/calendar" component={Calendar} />
       <Route path="/projects/:projectId/estimates" component={ProjectEstimates} />
