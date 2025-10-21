@@ -2663,6 +2663,8 @@ export default function EstimateDetail() {
             </TableCell>
           );
         }
+        const matchedCode = costCodes.find(code => code.id === item.costCode);
+        const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
         return (
           <TableCell 
             className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
@@ -2673,7 +2675,7 @@ export default function EstimateDetail() {
             }}
             data-testid={`cell-costCode-${item.id}`}
           >
-            {item.costCode || '-'}
+            {displayCode}
           </TableCell>
         );
       
