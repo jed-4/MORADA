@@ -1519,8 +1519,34 @@ export default function EstimateDetail() {
 
   const handleCloseAddItem = () => {
     setIsAddItemOpen(false);
+    setPreselectedGroupId(null);
     form.reset();
   };
+
+  // Auto-select group when adding item from group menu
+  useEffect(() => {
+    if (isAddItemOpen && preselectedGroupId) {
+      form.reset({
+        name: "",
+        description: "",
+        notes: "",
+        type: "material",
+        quantity: 1,
+        unitType: "ea",
+        unitCostExTax: 0,
+        markupPercent: 0,
+        status: "pending",
+        groupId: preselectedGroupId,
+        costCode: undefined,
+        allowance: "None",
+        attachmentUrl: "",
+        requestForQuote: false,
+        isSelection: false,
+        proposalVisible: true,
+        trackLabourHours: false,
+      });
+    }
+  }, [isAddItemOpen, preselectedGroupId]);
 
   // Handlers for adding groups
   const handleAddGroup = () => {
