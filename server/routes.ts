@@ -1360,7 +1360,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         Array.from(groupMap.entries()).map(([name, id]) => `${name} -> ${id}`)
       );
 
-      // Validate all items first (before creating any groups)
+      // Collect all unique group names from import data
+      const uniqueGroupNames = new Set<string>();
+      items.forEach(item => {
+        if (item.group && item.group.trim()) {
+          uniqueGroupNames.add(item.group.trim());
+        }
+      });
+
+      // Create any missing groups
+      for (const groupName of uniqueGroupNames) {
+        const normalizedName = groupName.toLowerCase().trim();
+        if (!groupMap.has(normalizedName)) {
+          console.log(`[IMPORT] Creating new group: "${groupName}"`);
+          const newGroup = await storage.createEstimateGroup({
+            estimateId,
+            name: groupName,
+            description: undefined,
+            order: 0,
+            isCollapsed: false,
+            parentGroupId: undefined,
+          });
+          groupMap.set(normalizedName, newGroup.id);
+          console.log(`[IMPORT] Created group "${groupName}" with ID ${newGroup.id}`);
+        }
+      }
+
+      console.log('[IMPORT] Final group map:', 
+        Array.from(groupMap.entries()).map(([name, id]) => `${name} -> ${id}`)
+      );
+
+      // Validate all items first
       const validatedItems: any[] = [];
       const itemCostCodes = new Map<number, string>(); // index -> costCode
       const errors: Array<{ row: number; errors: string[] }> = [];
@@ -1378,12 +1408,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let costCodeToStore = null;
         
         if (item.costCode) {
-          const matchedCode = costCodeMap.get(item.costCode.toLowerCase().trim());
-          if (matchedCode) {
-            // Store the validated cost code (preserves original casing from company)
-            costCodeToStore = matchedCode;
+          // Handle both "CODE - TITLE" format and raw code
+          let codeToMatch = item.costCode.trim();
+          
+          // If it contains " - ", extract just the code part
+          if (codeToMatch.includes(' - ')) {
+            codeToMatch = codeToMatch.split(' - ')[0].trim();
           }
-          // If no match found, costCode will be null (item won't have a cost code)
+          
+          // Find matching cost code ID from company cost codes
+          const matchedCostCode = companyCostCodes.find(
+            cc => cc.code.toLowerCase() === codeToMatch.toLowerCase()
+          );
+          
+          if (matchedCostCode) {
+            // Store the cost code ID (UUID)
+            costCodeToStore = matchedCostCode.id;
+            console.log(`[IMPORT] Item "${item.name}" - Matched cost code "${item.costCode}" to ID ${matchedCostCode.id}`);
+          } else {
+            console.log(`[IMPORT] Item "${item.name}" - No match for cost code "${item.costCode}"`);
+          }
         }
 
         // Match group name to existing groups
