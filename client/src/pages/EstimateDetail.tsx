@@ -48,7 +48,7 @@ import {
   Download,
   Upload
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -1743,6 +1743,11 @@ export default function EstimateDetail() {
     queryKey: ["/api/company-settings"],
   });
 
+  // Fetch cost codes
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
   // Get tax rate from company settings (default to 10% if not set)
   const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
 
@@ -2033,10 +2038,11 @@ export default function EstimateDetail() {
           variant: "destructive",
         });
       } else {
-        const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+        const allResults = [...itemResults, ...groupResults];
+        const firstError = allResults.find((r: any) => r.status === 'rejected') as PromiseRejectedResult;
         toast({
           title: "Delete failed",
-          description: firstError?.reason?.message || "Failed to delete items",
+          description: firstError?.reason?.message || "Failed to delete items and groups",
           variant: "destructive",
         });
       }
@@ -3667,14 +3673,22 @@ export default function EstimateDetail() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Cost Code (Optional)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || undefined} disabled>
+                      <Select 
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                        value={field.value || "none"}
+                      >
                         <FormControl>
                           <SelectTrigger data-testid="select-item-costcode">
-                            <SelectValue placeholder="Not configured" />
+                            <SelectValue placeholder="None" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="none">None</SelectItem>
+                          {costCodes.map((code) => (
+                            <SelectItem key={code.id} value={code.id}>
+                              {code.code} - {code.title}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -4138,14 +4152,22 @@ export default function EstimateDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Cost Code (Optional)</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || undefined} disabled>
+                          <Select 
+                            onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                            value={field.value || "none"}
+                          >
                             <FormControl>
                               <SelectTrigger data-testid="select-edit-item-costcode">
-                                <SelectValue placeholder="Not configured" />
+                                <SelectValue placeholder="None" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="none">None</SelectItem>
+                              {costCodes.map((code) => (
+                                <SelectItem key={code.id} value={code.id}>
+                                  {code.code} - {code.title}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                           <FormMessage />
