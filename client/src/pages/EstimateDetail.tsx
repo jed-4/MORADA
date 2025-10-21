@@ -203,6 +203,7 @@ function SortableGroupRow({
   onDeleteGroup,
   isLocked,
   selectedItems,
+  selectedGroups,
   onToggleGroupSelection
 }: { 
   group: EstimateGroup;
@@ -213,6 +214,7 @@ function SortableGroupRow({
   onDeleteGroup: (groupId: string) => void;
   isLocked: boolean;
   selectedItems: Set<string>;
+  selectedGroups: Set<string>;
   onToggleGroupSelection: (groupId: string) => void;
 }) {
   const {
@@ -230,11 +232,8 @@ function SortableGroupRow({
     opacity: isDragging ? 0.5 : 1,
   };
   
-  // Check if all items in the group are selected
-  const groupItems = groupedItems[group.id] || [];
-  const allGroupItemsSelected = groupItems.length > 0 && groupItems.every(item => selectedItems.has(item.id));
-  const someGroupItemsSelected = groupItems.some(item => selectedItems.has(item.id)) && !allGroupItemsSelected;
-  const groupCheckboxState = allGroupItemsSelected ? true : someGroupItemsSelected ? "indeterminate" : false;
+  // Check if the group itself is selected
+  const isGroupSelected = selectedGroups.has(group.id);
   
   return (
     <>
@@ -256,9 +255,9 @@ function SortableGroupRow({
         </TableCell>
         <TableCell className="py-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
           <Checkbox
-            checked={groupCheckboxState}
+            checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
-            aria-label={`Select all items in ${group.name}`}
+            aria-label={`Select group ${group.name}`}
             data-testid={`checkbox-group-${group.id}`}
             disabled={isLocked}
           />
@@ -1822,6 +1821,7 @@ export default function EstimateDetail() {
 
   // State for bulk selection
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   
   // Bulk action dialogs
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
@@ -1918,31 +1918,20 @@ export default function EstimateDetail() {
   };
 
   const handleToggleGroupSelection = (groupId: string) => {
-    console.log('[GROUP SELECTION] Toggling group:', groupId);
-    console.log('[GROUP SELECTION] Total items:', items.length);
-    console.log('[GROUP SELECTION] Sample items:', items.slice(0, 3).map(i => ({ id: i.id, groupId: i.groupId, parentItemId: i.parentItemId })));
-    // Filter only parent items (not sub-items) that belong to this group
-    const groupItems = items.filter(item => !item.parentItemId && item.groupId === groupId);
-    console.log('[GROUP SELECTION] Found items:', groupItems.length);
-    const allGroupItemsSelected = groupItems.length > 0 && groupItems.every(item => selectedItems.has(item.id));
-    console.log('[GROUP SELECTION] All selected?', allGroupItemsSelected);
-    
-    setSelectedItems(prev => {
+    setSelectedGroups(prev => {
       const newSet = new Set(prev);
-      if (allGroupItemsSelected) {
-        // Deselect all items in group
-        groupItems.forEach(item => newSet.delete(item.id));
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
       } else {
-        // Select all items in group
-        groupItems.forEach(item => newSet.add(item.id));
+        newSet.add(groupId);
       }
-      console.log('[GROUP SELECTION] New selection size:', newSet.size);
       return newSet;
     });
   };
 
   const handleClearSelection = () => {
     setSelectedItems(new Set());
+    setSelectedGroups(new Set());
   };
 
   // Single item delete handler
@@ -2007,19 +1996,29 @@ export default function EstimateDetail() {
     
     try {
       const itemIds = Array.from(selectedItems);
-      const results = await Promise.allSettled(
+      const groupIds = Array.from(selectedGroups);
+      
+      const itemResults = await Promise.allSettled(
         itemIds.map(itemId =>
           apiRequest(`/api/estimate-items/${itemId}`, 'DELETE')
         )
       );
       
-      const succeeded = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      const groupResults = await Promise.allSettled(
+        groupIds.map(groupId =>
+          apiRequest(`/api/estimate-groups/${groupId}`, 'DELETE')
+        )
+      );
+      
+      const succeeded = [...itemResults, ...groupResults].filter(r => r.status === 'fulfilled').length;
+      const failed = [...itemResults, ...groupResults].filter(r => r.status === 'rejected').length;
       
       // Always invalidate to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'groups'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
       setSelectedItems(new Set());
+      setSelectedGroups(new Set());
       setIsBulkDeleteDialogOpen(false);
       
       if (failed === 0) {
@@ -3432,11 +3431,14 @@ export default function EstimateDetail() {
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                     <div className="space-y-4">
                       {/* Bulk Actions Toolbar */}
-                      {selectedItems.size > 0 && (
+                      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
                         <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-md px-4 py-2">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">
-                              {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+                              {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
+                              {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
+                              {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
+                              {' selected'}
                             </span>
                             <Button
                               variant="ghost"
@@ -3449,24 +3451,28 @@ export default function EstimateDetail() {
                             </Button>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7"
-                              onClick={() => setIsBulkStatusDialogOpen(true)}
-                              data-testid="button-bulk-change-status"
-                            >
-                              Change Status
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7"
-                              onClick={() => setIsBulkGroupDialogOpen(true)}
-                              data-testid="button-bulk-change-group"
-                            >
-                              Move to Group
-                            </Button>
+                            {selectedItems.size > 0 && selectedGroups.size === 0 && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => setIsBulkStatusDialogOpen(true)}
+                                  data-testid="button-bulk-change-status"
+                                >
+                                  Change Status
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => setIsBulkGroupDialogOpen(true)}
+                                  data-testid="button-bulk-change-group"
+                                >
+                                  Move to Group
+                                </Button>
+                              </>
+                            )}
                             <Button
                               variant="destructive"
                               size="sm"
@@ -3571,6 +3577,7 @@ export default function EstimateDetail() {
                                   }}
                                   isLocked={estimate?.isLocked || false}
                                   selectedItems={selectedItems}
+                                  selectedGroups={selectedGroups}
                                   onToggleGroupSelection={handleToggleGroupSelection}
                                 />
                               ))}
@@ -4771,10 +4778,12 @@ export default function EstimateDetail() {
       <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Items</DialogTitle>
+            <DialogTitle>Delete {selectedGroups.size > 0 ? 'Groups and Items' : 'Items'}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''}? This action cannot be undone.
+            Are you sure you want to delete {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
+            {selectedItems.size > 0 && selectedGroups.size > 0 && ' and '}
+            {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}? This action cannot be undone.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsBulkDeleteDialogOpen(false)} data-testid="button-cancel-bulk-delete">
