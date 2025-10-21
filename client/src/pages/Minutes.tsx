@@ -96,7 +96,10 @@ export default function Minutes() {
       return await apiRequest("/api/minutes", "POST", data);
     },
     onSuccess: () => {
+      // Invalidate all minute queries to ensure fresh data
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
+      // Force refetch of the current context
+      queryClient.refetchQueries({ queryKey: ["/api/minutes", contextProjectId || "business"] });
       toast({ title: "Meeting minutes created successfully" });
       setIsDialogOpen(false);
       form.reset();
@@ -112,7 +115,10 @@ export default function Minutes() {
       return await apiRequest(`/api/minutes/${id}`, "PATCH", data);
     },
     onSuccess: () => {
+      // Invalidate all minute queries to ensure fresh data
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
+      // Force refetch of the current context
+      queryClient.refetchQueries({ queryKey: ["/api/minutes", contextProjectId || "business"] });
       toast({ title: "Meeting minutes updated successfully" });
       setIsDialogOpen(false);
       setEditingMinute(null);
@@ -129,7 +135,10 @@ export default function Minutes() {
       await apiRequest(`/api/minutes/${id}`, "DELETE");
     },
     onSuccess: () => {
+      // Invalidate all minute queries to ensure fresh data
       queryClient.invalidateQueries({ queryKey: ["/api/minutes"] });
+      // Force refetch of the current context
+      queryClient.refetchQueries({ queryKey: ["/api/minutes", contextProjectId || "business"] });
       toast({ title: "Meeting minutes deleted successfully" });
     },
     onError: () => {
