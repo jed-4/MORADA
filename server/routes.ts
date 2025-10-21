@@ -1338,36 +1338,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
-      // Get company cost codes to match against
+      // Get company cost codes to validate against
       const companyCostCodes = await storage.getCostCodes();
-      const costCodeMap = new Map<string, { id: string; code: string; title: string }>();
+      const costCodeMap = new Map<string, string>(); // code -> code (for validation)
       
       // Build map of cost codes by code (case-insensitive)
       for (const cc of companyCostCodes) {
-        costCodeMap.set(cc.code.toLowerCase().trim(), cc);
-      }
-
-      // Get existing groups for this estimate
-      const existingGroups = await storage.getEstimateGroups(estimateId);
-      const groupMap = new Map<string, string>(); // costCodeTitle -> groupId
-      
-      // Build map of existing groups (case-insensitive by name)
-      for (const group of existingGroups) {
-        groupMap.set(group.name.toLowerCase(), group.id);
-      }
-
-      // Collect unique cost code titles for groups that need to be created
-      const newGroupTitles = new Set<string>();
-      for (const item of items) {
-        if (item.costCode) {
-          const matchedCostCode = costCodeMap.get(item.costCode.toLowerCase().trim());
-          if (matchedCostCode) {
-            const groupTitle = matchedCostCode.title;
-            if (!groupMap.has(groupTitle.toLowerCase())) {
-              newGroupTitles.add(groupTitle);
-            }
-          }
-        }
+        costCodeMap.set(cc.code.toLowerCase().trim(), cc.code);
       }
 
       // Validate all items first (before creating any groups)
@@ -1384,23 +1361,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rawMarkupPercent: item.markupPercent
         });
         
-        // Map cost code to group using cost code title
-        let groupId = null;
-        let costCodeToStore = item.costCode || null;
+        // Validate and map cost code to company cost codes
+        let costCodeToStore = null;
         
         if (item.costCode) {
-          // Store for later mapping (for new groups)
-          itemCostCodes.set(index, item.costCode);
-          
-          // Look up the cost code in company cost codes
-          const matchedCostCode = costCodeMap.get(item.costCode.toLowerCase().trim());
-          if (matchedCostCode) {
-            const groupTitle = matchedCostCode.title;
-            // Check if group already exists with this title
-            if (groupMap.has(groupTitle.toLowerCase())) {
-              groupId = groupMap.get(groupTitle.toLowerCase()) || null;
-            }
+          const matchedCode = costCodeMap.get(item.costCode.toLowerCase().trim());
+          if (matchedCode) {
+            // Store the validated cost code (preserves original casing from company)
+            costCodeToStore = matchedCode;
           }
+          // If no match found, costCode will be null (item won't have a cost code)
         }
         
         // Convert dollar amounts to cents with proper rounding
@@ -1431,9 +1401,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           estimateId,
           name: item.name,
           type: item.type || "Material",
-          groupId,
+          groupId: null, // Items are ungrouped on import
           parentItemId: undefined,
-          costCode: item.costCode || undefined,
+          costCode: costCodeToStore || undefined,
           allowance: item.allowance || "None",
           allowanceStatus: "pending",
           pcMarkupPercent: undefined,
@@ -1485,37 +1455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Now that validation passed, create any new groups needed
-      const newGroupTitlesArray = Array.from(newGroupTitles);
-      // Find max order from existing groups (or start at 0)
-      const maxOrder = existingGroups.length > 0
-        ? Math.max(...existingGroups.map(g => g.order))
-        : 0;
-      
-      for (const groupTitle of newGroupTitlesArray) {
-        const newGroup = await storage.createEstimateGroup({
-          estimateId,
-          name: groupTitle,
-          order: maxOrder + 1 + newGroupTitlesArray.indexOf(groupTitle),
-        });
-        groupMap.set(groupTitle.toLowerCase(), newGroup.id);
-      }
-
-      // Update validated items with their groupIds (for items that needed new groups)
-      validatedItems.forEach((item, index) => {
-        const costCode = itemCostCodes.get(index);
-        if (costCode && !item.groupId) {
-          // Look up the cost code to get its title
-          const matchedCostCode = costCodeMap.get(costCode.toLowerCase().trim());
-          if (matchedCostCode) {
-            const groupTitle = matchedCostCode.title;
-            const groupId = groupMap.get(groupTitle.toLowerCase());
-            if (groupId) {
-              item.groupId = groupId;
-            }
-          }
-        }
-      });
+      // Items are imported without groups - user can organize them manually later
 
       console.log(`[Import] Creating ${validatedItems.length} items for estimate ${estimateId}`);
       console.log('[Import] Sample item:', validatedItems[0]);
