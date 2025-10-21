@@ -47,6 +47,7 @@ import {
   Calendar,
   MapPin,
   Users,
+  Building2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -76,6 +77,11 @@ export default function Minutes() {
     },
   });
 
+  // Fetch all projects for display
+  const { data: allProjects = [] } = useQuery({
+    queryKey: ["/api/projects"],
+  });
+
   // Fetch minutes
   const { data: minutes = [], isLoading } = useQuery<Minute[]>({
     queryKey: ["/api/minutes", contextProjectId || "business"],
@@ -95,6 +101,13 @@ export default function Minutes() {
       return response.json();
     },
   });
+
+  // Helper to get project name by ID
+  const getProjectName = (projectId: string | null) => {
+    if (!projectId) return "Business";
+    const project = allProjects.find((p: any) => p.id === projectId);
+    return project?.name || "Unknown Project";
+  };
 
   // Create mutation
   const createMutation = useMutation({
@@ -349,6 +362,7 @@ export default function Minutes() {
                 <TableRow>
                   <TableHead>Meeting Title</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Project</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead>Attendees</TableHead>
                   <TableHead className="w-[80px]"></TableHead>
@@ -362,6 +376,12 @@ export default function Minutes() {
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4" />
                         {format(new Date(minute.meetingDate), "PPp")}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Building2 className="h-4 w-4" />
+                        {getProjectName(minute.projectId)}
                       </div>
                     </TableCell>
                     <TableCell>
