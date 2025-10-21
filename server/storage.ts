@@ -194,6 +194,12 @@ export interface IStorage {
   createEstimateGroup(group: InsertEstimateGroup): Promise<EstimateGroup>;
   updateEstimateGroup(id: string, group: Partial<InsertEstimateGroup>): Promise<EstimateGroup | undefined>;
   deleteEstimateGroup(id: string): Promise<boolean>;
+  duplicateEstimateGroup(id: string): Promise<EstimateGroup>;
+  copyGroupToEstimate(groupId: string, targetEstimateId: string): Promise<EstimateGroup>;
+  
+  // Estimate Items Duplication and Copying
+  duplicateEstimateItem(id: string): Promise<EstimateItem>;
+  copyItemToEstimate(itemId: string, targetEstimateId: string): Promise<EstimateItem>;
 
   // Cost Categories CRUD (business-wide)
   getCostCategories(): Promise<CostCategory[]>;
@@ -2764,6 +2770,146 @@ export class MemStorage implements IStorage {
     return this.estimateGroups.delete(id);
   }
 
+  async duplicateEstimateGroup(id: string): Promise<EstimateGroup> {
+    const group = this.estimateGroups.get(id);
+    if (!group) {
+      throw new Error("Group not found");
+    }
+
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(group.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot duplicate group in locked estimate. Unlock the estimate first.");
+    }
+
+    // Create duplicate with new ID
+    const newGroup: EstimateGroup = {
+      ...group,
+      id: crypto.randomUUID(),
+      name: `${group.name} (Copy)`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.estimateGroups.set(newGroup.id, newGroup);
+
+    // Duplicate all items in this group
+    const items = Array.from(this.estimateItems.values())
+      .filter(item => item.groupId === id);
+    
+    for (const item of items) {
+      const newItem: EstimateItem = {
+        ...item,
+        id: crypto.randomUUID(),
+        groupId: newGroup.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.estimateItems.set(newItem.id, newItem);
+    }
+
+    return newGroup;
+  }
+
+  async copyGroupToEstimate(groupId: string, targetEstimateId: string): Promise<EstimateGroup> {
+    const group = this.estimateGroups.get(groupId);
+    if (!group) {
+      throw new Error("Group not found");
+    }
+
+    // Check if target estimate exists and is not locked
+    const targetEstimate = await this.getEstimate(targetEstimateId);
+    if (!targetEstimate) {
+      throw new Error("Target estimate not found");
+    }
+    if (targetEstimate.isLocked) {
+      throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
+    }
+
+    // Create copy in target estimate
+    const newGroup: EstimateGroup = {
+      ...group,
+      id: crypto.randomUUID(),
+      estimateId: targetEstimateId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.estimateGroups.set(newGroup.id, newGroup);
+
+    // Copy all items in this group to target estimate
+    const items = Array.from(this.estimateItems.values())
+      .filter(item => item.groupId === groupId);
+    
+    for (const item of items) {
+      const newItem: EstimateItem = {
+        ...item,
+        id: crypto.randomUUID(),
+        estimateId: targetEstimateId,
+        groupId: newGroup.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.estimateItems.set(newItem.id, newItem);
+    }
+
+    return newGroup;
+  }
+
+  async duplicateEstimateItem(id: string): Promise<EstimateItem> {
+    const item = this.estimateItems.get(id);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    // Check if parent estimate is locked
+    const estimate = await this.getEstimate(item.estimateId);
+    if (estimate?.isLocked) {
+      throw new Error("Cannot duplicate item in locked estimate. Unlock the estimate first.");
+    }
+
+    // Create duplicate with new ID
+    const newItem: EstimateItem = {
+      ...item,
+      id: crypto.randomUUID(),
+      name: `${item.name} (Copy)`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.estimateItems.set(newItem.id, newItem);
+    return newItem;
+  }
+
+  async copyItemToEstimate(itemId: string, targetEstimateId: string): Promise<EstimateItem> {
+    const item = this.estimateItems.get(itemId);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    // Check if target estimate exists and is not locked
+    const targetEstimate = await this.getEstimate(targetEstimateId);
+    if (!targetEstimate) {
+      throw new Error("Target estimate not found");
+    }
+    if (targetEstimate.isLocked) {
+      throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
+    }
+
+    // Create copy in target estimate (without group assignment)
+    const newItem: EstimateItem = {
+      ...item,
+      id: crypto.randomUUID(),
+      estimateId: targetEstimateId,
+      groupId: null, // Don't assign to a group in target estimate
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.estimateItems.set(newItem.id, newItem);
+    return newItem;
+  }
+
   // Cost Categories CRUD operations (business-wide)
   async getCostCategories(): Promise<CostCategory[]> {
     const categories = Array.from(this.costCategories.values())
@@ -5215,6 +5361,210 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteEstimateGroup:", error);
+      throw error;
+    }
+  }
+
+  async duplicateEstimateGroup(id: string): Promise<EstimateGroup> {
+    try {
+      const group = await db
+        .select()
+        .from(schema.estimateGroups)
+        .where(eq(schema.estimateGroups.id, id))
+        .limit(1);
+      
+      if (!group[0]) {
+        throw new Error("Group not found");
+      }
+
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(group[0].estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot duplicate group in locked estimate. Unlock the estimate first.");
+      }
+
+      // Create duplicate with new ID
+      const newGroupData = {
+        ...group[0],
+        id: undefined,
+        name: `${group[0].name} (Copy)`,
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+
+      const [newGroup] = await db
+        .insert(schema.estimateGroups)
+        .values(newGroupData)
+        .returning();
+
+      // Duplicate all items in this group
+      const items = await db
+        .select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.groupId, id));
+      
+      for (const item of items) {
+        const newItemData = {
+          ...item,
+          id: undefined,
+          groupId: newGroup.id,
+          createdAt: undefined,
+          updatedAt: undefined,
+        };
+        
+        await db
+          .insert(schema.estimateItems)
+          .values(newItemData);
+      }
+
+      return newGroup;
+    } catch (error) {
+      console.error("Database error in duplicateEstimateGroup:", error);
+      throw error;
+    }
+  }
+
+  async copyGroupToEstimate(groupId: string, targetEstimateId: string): Promise<EstimateGroup> {
+    try {
+      const group = await db
+        .select()
+        .from(schema.estimateGroups)
+        .where(eq(schema.estimateGroups.id, groupId))
+        .limit(1);
+      
+      if (!group[0]) {
+        throw new Error("Group not found");
+      }
+
+      // Check if target estimate exists and is not locked
+      const targetEstimate = await this.getEstimate(targetEstimateId);
+      if (!targetEstimate) {
+        throw new Error("Target estimate not found");
+      }
+      if (targetEstimate.isLocked) {
+        throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
+      }
+
+      // Create copy in target estimate
+      const newGroupData = {
+        ...group[0],
+        id: undefined,
+        estimateId: targetEstimateId,
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+
+      const [newGroup] = await db
+        .insert(schema.estimateGroups)
+        .values(newGroupData)
+        .returning();
+
+      // Copy all items in this group to target estimate
+      const items = await db
+        .select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.groupId, groupId));
+      
+      for (const item of items) {
+        const newItemData = {
+          ...item,
+          id: undefined,
+          estimateId: targetEstimateId,
+          groupId: newGroup.id,
+          createdAt: undefined,
+          updatedAt: undefined,
+        };
+        
+        await db
+          .insert(schema.estimateItems)
+          .values(newItemData);
+      }
+
+      return newGroup;
+    } catch (error) {
+      console.error("Database error in copyGroupToEstimate:", error);
+      throw error;
+    }
+  }
+
+  async duplicateEstimateItem(id: string): Promise<EstimateItem> {
+    try {
+      const item = await db
+        .select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.id, id))
+        .limit(1);
+      
+      if (!item[0]) {
+        throw new Error("Item not found");
+      }
+
+      // Check if parent estimate is locked
+      const estimate = await this.getEstimate(item[0].estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot duplicate item in locked estimate. Unlock the estimate first.");
+      }
+
+      // Create duplicate with new ID
+      const newItemData = {
+        ...item[0],
+        id: undefined,
+        name: `${item[0].name} (Copy)`,
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+
+      const [newItem] = await db
+        .insert(schema.estimateItems)
+        .values(newItemData)
+        .returning();
+
+      return newItem;
+    } catch (error) {
+      console.error("Database error in duplicateEstimateItem:", error);
+      throw error;
+    }
+  }
+
+  async copyItemToEstimate(itemId: string, targetEstimateId: string): Promise<EstimateItem> {
+    try {
+      const item = await db
+        .select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.id, itemId))
+        .limit(1);
+      
+      if (!item[0]) {
+        throw new Error("Item not found");
+      }
+
+      // Check if target estimate exists and is not locked
+      const targetEstimate = await this.getEstimate(targetEstimateId);
+      if (!targetEstimate) {
+        throw new Error("Target estimate not found");
+      }
+      if (targetEstimate.isLocked) {
+        throw new Error("Cannot copy to locked estimate. Unlock the estimate first.");
+      }
+
+      // Create copy in target estimate (without group assignment)
+      const newItemData = {
+        ...item[0],
+        id: undefined,
+        estimateId: targetEstimateId,
+        groupId: null, // Don't assign to a group in target estimate
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+
+      const [newItem] = await db
+        .insert(schema.estimateItems)
+        .values(newItemData)
+        .returning();
+
+      return newItem;
+    } catch (error) {
+      console.error("Database error in copyItemToEstimate:", error);
       throw error;
     }
   }
