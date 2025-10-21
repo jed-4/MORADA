@@ -859,8 +859,7 @@ export default function EstimateDetail() {
   // Mutation for updating estimate name
   const updateEstimateMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
-      const response = await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", data);
     },
     onSuccess: async (updatedEstimate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
@@ -897,8 +896,7 @@ export default function EstimateDetail() {
   // Mutation for updating markup percentage
   const updateMarkupMutation = useMutation({
     mutationFn: async (data: { projectMarkupPercent: number }) => {
-      const response = await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
@@ -923,8 +921,7 @@ export default function EstimateDetail() {
   // Mutation for adding estimate items
   const addItemMutation = useMutation({
     mutationFn: async (data: InsertEstimateItem) => {
-      const response = await apiRequest(`/api/estimates/${effectiveEstimateId}/items`, "POST", data);
-      return response.json();
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items`, "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
@@ -948,8 +945,7 @@ export default function EstimateDetail() {
   // Mutation for adding estimate groups
   const addGroupMutation = useMutation({
     mutationFn: async (data: InsertEstimateGroup) => {
-      const response = await apiRequest(`/api/estimates/${effectiveEstimateId}/groups`, "POST", data);
-      return response.json();
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}/groups`, "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
@@ -976,8 +972,7 @@ export default function EstimateDetail() {
     mutationFn: async () => {
       const endpoint = estimate?.isLocked ? "unlock" : "lock";
       console.log(`Making ${endpoint} request for estimate ${effectiveEstimateId}`);
-      const response = await apiRequest(`/api/estimates/${effectiveEstimateId}/${endpoint}`, "POST");
-      const data = await response.json();
+      const data = await apiRequest(`/api/estimates/${effectiveEstimateId}/${endpoint}`, "POST");
       console.log(`${endpoint} response:`, data);
       return data;
     },
@@ -1004,8 +999,7 @@ export default function EstimateDetail() {
   // Mutation for toggling group collapse state
   const toggleGroupCollapseMutation = useMutation({
     mutationFn: async ({ groupId, isCollapsed }: { groupId: string; isCollapsed: boolean }) => {
-      const response = await apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", { isCollapsed });
-      return response.json();
+      return await apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", { isCollapsed });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
@@ -1022,8 +1016,7 @@ export default function EstimateDetail() {
   // Mutation for updating estimate items
   const updateItemMutation = useMutation({
     mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<InsertEstimateItem> }) => {
-      const response = await apiRequest(`/api/estimate-items/${itemId}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/estimate-items/${itemId}`, "PATCH", data);
     },
     onMutate: async ({ itemId, data }) => {
       // Cancel outgoing refetches
