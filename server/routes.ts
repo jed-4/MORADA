@@ -366,9 +366,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/minutes", async (req, res) => {
     try {
       const { projectId } = req.query;
+      console.log("[MINUTES DEBUG] GET /api/minutes - projectId query param:", projectId);
       const minutes = await storage.getMinutes(projectId as string | undefined);
+      console.log("[MINUTES DEBUG] Retrieved", minutes.length, "minutes from storage");
       res.json(minutes);
     } catch (error) {
+      console.error("[MINUTES DEBUG] Error:", error);
       res.status(500).json({ error: "Failed to fetch minutes" });
     }
   });
