@@ -1689,6 +1689,7 @@ export default function EstimateDetail() {
     const groupData: InsertEstimateGroup = {
       ...data,
       estimateId: estimate.id,
+      parentGroupId: parentGroupForNewSubgroup,
     };
     
     addGroupMutation.mutate(groupData);
@@ -1696,6 +1697,7 @@ export default function EstimateDetail() {
 
   const handleCloseAddGroup = () => {
     setIsAddGroupOpen(false);
+    setParentGroupForNewSubgroup(null);
     groupForm.reset();
   };
 
@@ -4875,16 +4877,25 @@ export default function EstimateDetail() {
       <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Estimate Group</DialogTitle>
+            <DialogTitle>{parentGroupForNewSubgroup ? 'Add Subgroup' : 'Add Estimate Group'}</DialogTitle>
           </DialogHeader>
           <Form {...groupForm}>
             <form onSubmit={groupForm.handleSubmit(handleSubmitGroup)} className="space-y-4">
+              {parentGroupForNewSubgroup && (
+                <div className="rounded-md bg-muted p-3">
+                  <p className="text-sm text-muted-foreground">Parent Group:</p>
+                  <p className="text-sm font-medium">
+                    {groups.find(g => g.id === parentGroupForNewSubgroup)?.name || 'Unknown Group'}
+                  </p>
+                </div>
+              )}
+              
               <FormField
                 control={groupForm.control}
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Group Name</FormLabel>
+                    <FormLabel>{parentGroupForNewSubgroup ? 'Subgroup Name' : 'Group Name'}</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g. Kitchen Work" {...field} data-testid="input-group-name" />
                     </FormControl>
