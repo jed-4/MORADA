@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -80,6 +81,7 @@ export function ImportEstimateItemsDialog({
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [isImporting, setIsImporting] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
 
   // Compute parsed results whenever data or mapping changes
   const parsedResults = useMemo(() => {
@@ -135,6 +137,18 @@ export function ImportEstimateItemsDialog({
 
   const toggleGroup = (groupName: string) => {
     setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupName)) {
+        newSet.delete(groupName);
+      } else {
+        newSet.add(groupName);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleGroupSelection = (groupName: string) => {
+    setSelectedGroups(prev => {
       const newSet = new Set(prev);
       if (newSet.has(groupName)) {
         newSet.delete(groupName);
@@ -333,30 +347,43 @@ export function ImportEstimateItemsDialog({
                   {Object.entries(groupedData).map(([groupName, rows]) => (
                     <React.Fragment key={groupName}>
                       {columnMapping.costCode && (
-                        <TableRow
-                          className="bg-muted/50 font-medium cursor-pointer hover-elevate"
-                          onClick={() => toggleGroup(groupName)}
-                        >
+                        <TableRow className="bg-muted/50 font-medium">
                           <TableCell>
-                            {collapsedGroups.has(groupName) ? (
-                              <ChevronRight className="h-4 w-4" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4" />
-                            )}
+                            <div
+                              className="flex items-center gap-2 cursor-pointer"
+                              onClick={() => toggleGroup(groupName)}
+                            >
+                              {collapsedGroups.has(groupName) ? (
+                                <ChevronRight className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell colSpan={8}>
-                            {groupName}
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={selectedGroups.has(groupName)}
+                                onCheckedChange={() => toggleGroupSelection(groupName)}
+                                data-testid={`checkbox-group-${groupName}`}
+                              />
+                              <span>{groupName}</span>
+                            </div>
                           </TableCell>
                         </TableRow>
                       )}
                       {!collapsedGroups.has(groupName) && rows.map((item, index) => {
                         const { row, parsed } = item;
                         const hasError = parsed?.errors && parsed.errors.length > 0;
+                        const isGroupSelected = selectedGroups.has(groupName);
                         
                         return (
                           <TableRow 
                             key={`${groupName}-${index}`}
-                            className={cn(hasError && "bg-destructive/10")}
+                            className={cn(
+                              hasError && "bg-destructive/10",
+                              isGroupSelected && !hasError && "bg-primary/10"
+                            )}
                           >
                             <TableCell>
                               {hasError && <AlertCircle className="h-4 w-4 text-destructive" />}
