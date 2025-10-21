@@ -84,10 +84,7 @@ export default function Minutes() {
       if (contextProjectId) {
         params.append("projectId", contextProjectId);
       }
-      const url = `/api/minutes?${params}`;
-      console.log("[MINUTES FRONTEND] Fetching from:", url);
-      console.log("[MINUTES FRONTEND] Context Project ID:", contextProjectId);
-      const response = await fetch(url, {
+      const response = await fetch(`/api/minutes?${params}`, {
         cache: 'no-cache',
         headers: {
           'Cache-Control': 'no-cache',
@@ -95,15 +92,9 @@ export default function Minutes() {
         }
       });
       if (!response.ok) throw new Error("Failed to fetch minutes");
-      const data = await response.json();
-      console.log("[MINUTES FRONTEND] Received data:", data);
-      console.log("[MINUTES FRONTEND] Data length:", data.length);
-      return data;
+      return response.json();
     },
   });
-
-  console.log("[MINUTES FRONTEND] Current minutes state:", minutes);
-  console.log("[MINUTES FRONTEND] Minutes length:", minutes.length);
 
   // Create mutation
   const createMutation = useMutation({
