@@ -2157,7 +2157,6 @@ export const minutes = pgTable("minutes", {
   meetingDate: timestamp("meeting_date").notNull(),
   location: text("location"), // Meeting location (physical or virtual link)
   attendees: json("attendees").default([]), // Array of attendee names
-  content: text("content").notNull(), // Meeting minutes content
   contentHtml: text("content_html"), // Rich text HTML content
   contentText: text("content_text"), // Plain text for searching
   aiSummary: text("ai_summary"), // AI-generated summary

@@ -59,6 +59,9 @@ export default function Minutes() {
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
+  // Determine context: use URL projectId, or current project context, or null for business
+  const contextProjectId = projectId || currentProject?.id || null;
+
   // Form setup
   const form = useForm<InsertMinute>({
     resolver: zodResolver(insertMinuteSchema),
@@ -67,24 +70,24 @@ export default function Minutes() {
       meetingDate: new Date(),
       location: "",
       attendees: [],
-      content: "",
-      projectId: projectId || currentProject?.id,
+      contentHtml: "",
+      contentText: "",
+      projectId: contextProjectId || undefined,
     },
   });
 
   // Fetch minutes
   const { data: minutes = [], isLoading } = useQuery<Minute[]>({
-    queryKey: ["/api/minutes", projectId || currentProject?.id],
+    queryKey: ["/api/minutes", contextProjectId || "business"],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (projectId || currentProject?.id) {
-        params.append("projectId", projectId || currentProject!.id);
+      if (contextProjectId) {
+        params.append("projectId", contextProjectId);
       }
       const response = await fetch(`/api/minutes?${params}`);
       if (!response.ok) throw new Error("Failed to fetch minutes");
       return response.json();
     },
-    enabled: !!(projectId || currentProject?.id),
   });
 
   // Create mutation
@@ -151,7 +154,8 @@ export default function Minutes() {
       meetingDate: new Date(minute.meetingDate),
       location: minute.location || "",
       attendees: (minute.attendees as string[]) || [],
-      content: minute.content,
+      contentHtml: minute.contentHtml || "",
+      contentText: minute.contentText || "",
       projectId: minute.projectId || undefined,
     });
     setIsDialogOpen(true);
@@ -265,7 +269,7 @@ export default function Minutes() {
                 />
                 <FormField
                   control={form.control}
-                  name="content"
+                  name="contentText"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Meeting Notes</FormLabel>
@@ -274,6 +278,11 @@ export default function Minutes() {
                           className="w-full min-h-[200px] p-3 border rounded-md" 
                           placeholder="Enter meeting notes and discussion points..."
                           {...field}
+                          value={field.value || ""}
+                          onChange={(e) => {
+                            field.onChange(e.target.value);
+                            form.setValue("contentHtml", `<p>${e.target.value}</p>`);
+                          }}
                           data-testid="input-content"
                         />
                       </FormControl>
