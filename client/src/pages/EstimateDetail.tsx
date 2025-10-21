@@ -1551,18 +1551,25 @@ export default function EstimateDetail() {
   const handleExportEstimate = () => {
     if (!estimate || !items) return;
     
-    // Get all column headers (not filtering by visibility)
-    const headers = columns.map(col => col.label);
+    // Get all column headers (not filtering by visibility) and add Group column
+    const headers = ['Group', ...columns.map(col => col.label)];
     const csvRows = [headers.join(',')];
     
     // Add data rows for items
     items.forEach((item) => {
       const row: string[] = [];
       
+      // Add group name first
+      const itemGroup = groups.find(g => g.id === item.groupId);
+      row.push(escapeCsvField(itemGroup?.name || ''));
+      
       columns.forEach(col => {
         switch (col.id) {
           case 'costCode':
-            row.push(escapeCsvField(item.costCode || ''));
+            // Look up cost code and format as "CODE - TITLE"
+            const matchedCode = costCodes.find(code => code.id === item.costCode);
+            const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : '';
+            row.push(escapeCsvField(displayCode));
             break;
           case 'item':
             row.push(escapeCsvField(item.name || ''));
