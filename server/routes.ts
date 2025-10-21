@@ -1339,7 +1339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get company cost codes to match against
-      const companyCostCodes = await storage.getAllCostCodes();
+      const companyCostCodes = await storage.getCostCodes();
       const costCodeMap = new Map<string, { id: string; code: string; title: string }>();
       
       // Build map of cost codes by code (case-insensitive)
