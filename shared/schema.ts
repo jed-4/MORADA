@@ -2156,11 +2156,16 @@ export const minutes = pgTable("minutes", {
   title: text("title").notNull(),
   meetingDate: timestamp("meeting_date").notNull(),
   location: text("location"), // Meeting location (physical or virtual link)
-  attendees: json("attendees").default([]), // Array of attendee names
+  attendees: json("attendees").default([]), // Array of attendee names or {name, contactId} objects
   contentHtml: text("content_html"), // Rich text HTML content
   contentText: text("content_text"), // Plain text for searching
   aiSummary: text("ai_summary"), // AI-generated summary
   actionItems: json("action_items").default([]), // Array of action items [{description, assignee, dueDate, completed}]
+  recordingUrl: text("recording_url"), // External recording link (Zoom, Teams, etc.)
+  recordingFileName: text("recording_file_name"), // Uploaded file name
+  recordingFileUrl: text("recording_file_url"), // Path to uploaded recording
+  transcription: text("transcription"), // AI transcription of recording
+  transcriptionStatus: text("transcription_status"), // pending, processing, completed, failed
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
@@ -2177,13 +2182,21 @@ export const insertMinuteSchema = createInsertSchema(minutes).omit({
   contentHtml: z.string().optional(),
   contentText: z.string().optional(),
   aiSummary: z.string().optional(),
-  attendees: z.array(z.string()).optional(),
+  attendees: z.array(z.union([
+    z.string(), // Manual entry
+    z.object({ name: z.string(), contactId: z.string() }) // From contacts
+  ])).optional(),
   actionItems: z.array(z.object({
     description: z.string(),
     assignee: z.string().optional(),
     dueDate: z.coerce.date().optional(),
     completed: z.boolean().default(false),
   })).optional(),
+  recordingUrl: z.string().optional(),
+  recordingFileName: z.string().optional(),
+  recordingFileUrl: z.string().optional(),
+  transcription: z.string().optional(),
+  transcriptionStatus: z.enum(["pending", "processing", "completed", "failed"]).optional(),
 });
 
 export type InsertMinute = z.infer<typeof insertMinuteSchema>;
