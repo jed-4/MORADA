@@ -4,6 +4,13 @@
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. Key capabilities include a customizable widget-based dashboard, comprehensive task management with Kanban boards and calendar integration, and business operations tracking. The platform aims to streamline project workflows, enhance collaboration, and provide robust tools for financial oversight like budget tracking.
 
 ## Recent Changes (2025-10-21)
+- **Hierarchical Groups for Estimates (COMPLETE)**: Implemented unlimited-depth hierarchical group structure matching Buildern's parent group/subgroup organization.
+  - **Backend**: Added parentGroupId to estimateGroups schema, storage layer methods for hierarchical operations, duplicate/copy API routes with proper validation
+  - **Frontend**: Hierarchical display with pl-12 indentation for subgroups, expand/collapse functionality, flexible multi-level nesting (no restrictions)
+  - **Menu Actions**: Groups have Add Subgroup, Add Item, Edit, Duplicate, Copy To, Create from, Delete. Items have Edit, Duplicate, Copy To, Create from, Delete
+  - **Subgroup Dialog**: "Add Subgroup" shows parent group context, automatically sets parentGroupId, proper state cleanup
+  - **Duplicate/Copy**: Both groups and items can be duplicated (same estimate) or copied (different estimate) with all relationships preserved
+  - **Placeholders**: "Copy To" and "Create from" actions show "coming soon" toast messages for future implementation
 - **Fixed DELETE Request Handling**: Updated `apiRequest` function in queryClient.ts to properly handle 204 No Content responses. Previously, DELETE requests would fail when trying to parse empty response bodies. Now correctly returns null for 204 responses, fixing estimate deletion and other DELETE operations.
 - **Estimate Detail Enhancements**: 
   - Connected cost code dropdowns to fetch actual company cost codes from API
