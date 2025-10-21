@@ -234,6 +234,7 @@ function SortableGroupRow({
   const groupItems = groupedItems[group.id] || [];
   const allGroupItemsSelected = groupItems.length > 0 && groupItems.every(item => selectedItems.has(item.id));
   const someGroupItemsSelected = groupItems.some(item => selectedItems.has(item.id)) && !allGroupItemsSelected;
+  const groupCheckboxState = allGroupItemsSelected ? true : someGroupItemsSelected ? "indeterminate" : false;
   
   return (
     <>
@@ -255,8 +256,7 @@ function SortableGroupRow({
         </TableCell>
         <TableCell className="py-2" style={{ width: '24px' }}>
           <Checkbox
-            checked={allGroupItemsSelected}
-            indeterminate={someGroupItemsSelected}
+            checked={groupCheckboxState}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
             aria-label={`Select all items in ${group.name}`}
             data-testid={`checkbox-group-${group.id}`}
