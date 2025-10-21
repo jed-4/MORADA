@@ -1347,6 +1347,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         costCodeMap.set(cc.code.toLowerCase().trim(), cc.code);
       }
 
+      // Get existing groups for this estimate to match against
+      const existingGroups = await storage.getEstimateGroups(estimateId);
+      const groupMap = new Map<string, string>(); // groupName (lowercase) -> groupId
+      
+      // Build map of existing groups (case-insensitive)
+      for (const group of existingGroups) {
+        groupMap.set(group.name.toLowerCase().trim(), group.id);
+      }
+
       // Validate all items first (before creating any groups)
       const validatedItems: any[] = [];
       const itemCostCodes = new Map<number, string>(); // index -> costCode
@@ -1371,6 +1380,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             costCodeToStore = matchedCode;
           }
           // If no match found, costCode will be null (item won't have a cost code)
+        }
+
+        // Match group name to existing groups
+        let groupIdToStore = null;
+        
+        if (item.group) {
+          const matchedGroupId = groupMap.get(item.group.toLowerCase().trim());
+          if (matchedGroupId) {
+            groupIdToStore = matchedGroupId;
+          }
+          // If no match found, item will be ungrouped
         }
         
         // Convert dollar amounts to cents with proper rounding
@@ -1401,7 +1421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           estimateId,
           name: item.name,
           type: item.type || "Material",
-          groupId: null, // Items are ungrouped on import
+          groupId: groupIdToStore || null,
           parentItemId: undefined,
           costCode: costCodeToStore || undefined,
           allowance: item.allowance || "None",

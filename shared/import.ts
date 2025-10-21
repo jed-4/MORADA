@@ -13,6 +13,7 @@ export const importEstimateItemSchema = z.object({
   allowance: z.enum(["None", "Prime Cost", "Provisional Sum"]).default("None"),
   notes: z.string().optional(),
   costCode: z.string().optional(),
+  group: z.string().optional(), // Group name to match against existing groups
   status: z.string().default("incomplete"),
   proposalVisible: z.boolean().default(true),
   shownAs: z.string().optional(),
@@ -53,7 +54,7 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   // Type variations
   "type": "type",
   "item type": "type",
-  "category": "type",
+  "cost type": "type",
   
   // Quantity variations
   "quantity": "quantity",
@@ -94,6 +95,12 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "cost code": "costCode",
   "costcode": "costCode",
   "code": "costCode",
+  
+  // Group variations
+  "group": "group",
+  "parent": "group",
+  "parent name": "group",
+  "category": "group",
   
   // Status variations
   "status": "status",
