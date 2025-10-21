@@ -475,6 +475,7 @@ export const estimateGroups = pgTable("estimate_groups", {
   parentGroupId: varchar("parent_group_id").references((): any => estimateGroups.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
+  defaultCostCode: varchar("default_cost_code").references(() => costCodes.id, { onDelete: "set null" }),
   order: integer("order").notNull().default(0),
   isCollapsed: boolean("is_collapsed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),

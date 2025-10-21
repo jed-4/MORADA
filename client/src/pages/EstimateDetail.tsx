@@ -5084,6 +5084,36 @@ export default function EstimateDetail() {
 
               <FormField
                 control={groupForm.control}
+                name="defaultCostCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Default Cost Code (Optional)</FormLabel>
+                    <Select 
+                      onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                      value={field.value || "none"}
+                      disabled={isLoadingCostCodes}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-group-default-cost-code">
+                          <SelectValue placeholder={isLoadingCostCodes ? "Loading..." : "None"} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {!isLoadingCostCodes && costCodes.map((code) => (
+                          <SelectItem key={code.id} value={code.id}>
+                            {code.code} - {code.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={groupForm.control}
                 name="order"
                 render={({ field }) => (
                   <FormItem>
