@@ -1338,20 +1338,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
+      // Get company cost codes to match against
+      const companyCostCodes = await storage.getAllCostCodes();
+      const costCodeMap = new Map<string, { id: string; code: string; title: string }>();
+      
+      // Build map of cost codes by code (case-insensitive)
+      for (const cc of companyCostCodes) {
+        costCodeMap.set(cc.code.toLowerCase().trim(), cc);
+      }
+
       // Get existing groups for this estimate
       const existingGroups = await storage.getEstimateGroups(estimateId);
-      const groupMap = new Map<string, string>(); // costCode -> groupId
+      const groupMap = new Map<string, string>(); // costCodeTitle -> groupId
       
-      // Build map of existing groups (case-insensitive)
+      // Build map of existing groups (case-insensitive by name)
       for (const group of existingGroups) {
         groupMap.set(group.name.toLowerCase(), group.id);
       }
 
-      // Collect unique costCodes from items
-      const newGroupNames = new Set<string>();
+      // Collect unique cost code titles for groups that need to be created
+      const newGroupTitles = new Set<string>();
       for (const item of items) {
-        if (item.costCode && !groupMap.has(item.costCode.toLowerCase())) {
-          newGroupNames.add(item.costCode);
+        if (item.costCode) {
+          const matchedCostCode = costCodeMap.get(item.costCode.toLowerCase().trim());
+          if (matchedCostCode) {
+            const groupTitle = matchedCostCode.title;
+            if (!groupMap.has(groupTitle.toLowerCase())) {
+              newGroupTitles.add(groupTitle);
+            }
+          }
         }
       }
 
@@ -1369,15 +1384,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rawMarkupPercent: item.markupPercent
         });
         
-        // Store costCode for later group mapping (after groups are created)
-        if (item.costCode) {
-          itemCostCodes.set(index, item.costCode);
-        }
-        
-        // For existing groups, map costCode to groupId now
+        // Map cost code to group using cost code title
         let groupId = null;
-        if (item.costCode && groupMap.has(item.costCode.toLowerCase())) {
-          groupId = groupMap.get(item.costCode.toLowerCase()) || null;
+        let costCodeToStore = item.costCode || null;
+        
+        if (item.costCode) {
+          // Store for later mapping (for new groups)
+          itemCostCodes.set(index, item.costCode);
+          
+          // Look up the cost code in company cost codes
+          const matchedCostCode = costCodeMap.get(item.costCode.toLowerCase().trim());
+          if (matchedCostCode) {
+            const groupTitle = matchedCostCode.title;
+            // Check if group already exists with this title
+            if (groupMap.has(groupTitle.toLowerCase())) {
+              groupId = groupMap.get(groupTitle.toLowerCase()) || null;
+            }
+          }
         }
         
         // Convert dollar amounts to cents with proper rounding
@@ -1463,28 +1486,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Now that validation passed, create any new groups needed
-      const newGroupNamesArray = Array.from(newGroupNames);
+      const newGroupTitlesArray = Array.from(newGroupTitles);
       // Find max order from existing groups (or start at 0)
       const maxOrder = existingGroups.length > 0
         ? Math.max(...existingGroups.map(g => g.order))
         : 0;
       
-      for (const groupName of newGroupNamesArray) {
+      for (const groupTitle of newGroupTitlesArray) {
         const newGroup = await storage.createEstimateGroup({
           estimateId,
-          name: groupName,
-          order: maxOrder + 1 + newGroupNamesArray.indexOf(groupName),
+          name: groupTitle,
+          order: maxOrder + 1 + newGroupTitlesArray.indexOf(groupTitle),
         });
-        groupMap.set(groupName.toLowerCase(), newGroup.id);
+        groupMap.set(groupTitle.toLowerCase(), newGroup.id);
       }
 
       // Update validated items with their groupIds (for items that needed new groups)
       validatedItems.forEach((item, index) => {
         const costCode = itemCostCodes.get(index);
         if (costCode && !item.groupId) {
-          const groupId = groupMap.get(costCode.toLowerCase());
-          if (groupId) {
-            item.groupId = groupId;
+          // Look up the cost code to get its title
+          const matchedCostCode = costCodeMap.get(costCode.toLowerCase().trim());
+          if (matchedCostCode) {
+            const groupTitle = matchedCostCode.title;
+            const groupId = groupMap.get(groupTitle.toLowerCase());
+            if (groupId) {
+              item.groupId = groupId;
+            }
           }
         }
       });
