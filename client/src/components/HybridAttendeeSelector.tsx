@@ -17,7 +17,7 @@ interface HybridAttendeeSelectorProps {
 export function HybridAttendeeSelector({ value, onChange, projectId }: HybridAttendeeSelectorProps) {
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
 
   const { data: contacts = [] } = useQuery<Array<{ id: string; name: string; company?: string }>>({
     queryKey: ["/api/contacts", { projectId }],
