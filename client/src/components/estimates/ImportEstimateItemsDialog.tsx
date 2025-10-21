@@ -50,7 +50,7 @@ const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   markupPercent: "Markup",
   allowance: "Allowance",
   notes: "Notes",
-  costCode: "Group",
+  costCode: "Cost Code",
   status: "Status",
   proposalVisible: "Proposal Visible",
   shownAs: "Shown As",
@@ -321,7 +321,7 @@ export function ImportEstimateItemsDialog({
                     <TableHead className="w-8"></TableHead>
                     <TableHead className="w-[200px]">{columnMapping.name || "Name"}</TableHead>
                     <TableHead className="w-[120px]">{columnMapping.type || "Cost Type"}</TableHead>
-                    <TableHead className="w-[150px]">{columnMapping.costCode || "Group"}</TableHead>
+                    <TableHead className="w-[150px]">{columnMapping.costCode || "Cost Code"}</TableHead>
                     <TableHead className="w-[100px]">{columnMapping.quantity || "Quantity"}</TableHead>
                     <TableHead className="w-[80px]">{columnMapping.unitType || "Unit"}</TableHead>
                     <TableHead className="w-[120px]">{columnMapping.unitCostExTax || "Unit Cost"}</TableHead>
