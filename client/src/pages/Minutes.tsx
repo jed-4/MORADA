@@ -84,7 +84,13 @@ export default function Minutes() {
       if (contextProjectId) {
         params.append("projectId", contextProjectId);
       }
-      const response = await fetch(`/api/minutes?${params}`);
+      const response = await fetch(`/api/minutes?${params}`, {
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       if (!response.ok) throw new Error("Failed to fetch minutes");
       return response.json();
     },
