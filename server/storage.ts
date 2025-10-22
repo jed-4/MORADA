@@ -5900,49 +5900,42 @@ export class DbStorage implements IStorage {
       const estimate = await this.getEstimate(estimateId);
       const items = await this.getEstimateItems(estimateId);
 
-      let builderCostTotal = 0;
-      let markupTotal = 0;
-      let taxTotal = 0;
-      let clientPriceTotal = 0;
+      let itemAmountsExTaxTotal = 0; // Sum of all line item amounts (ex tax, with their individual markups)
 
-      // Calculate totals, handling both new and legacy items
+      // Calculate totals from line items (each line item has its own markup applied)
       items.forEach(item => {
         const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100);
-        builderCostTotal += builderCost;
 
-        // If item has calculated tax/price (new format), use it
+        // If item has calculated price (new format), use it
         if (item.taxAmount != null && item.priceIncTax != null) {
-          taxTotal += item.taxAmount;
-          clientPriceTotal += item.priceIncTax;
-          
-          // Calculate markup from stored values
-          const clientPriceExTax = item.priceIncTax - item.taxAmount;
-          const itemMarkup = clientPriceExTax - builderCost;
-          markupTotal += itemMarkup;
+          const itemAmountExTax = item.priceIncTax - item.taxAmount;
+          itemAmountsExTaxTotal += itemAmountExTax;
         } else {
-          // Legacy item: calculate using project defaults
-          const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
+          // Legacy item: use item's own markup (default to 0% if not set)
+          // Note: We don't use the global markup here - that's applied separately to the subtotal
+          const markupPercent = item.markupPercent ?? 0;
           const markupAmount = Math.round((builderCost * markupPercent) / 100);
-          markupTotal += markupAmount;
-          
-          const clientPriceExTax = builderCost + markupAmount;
-          const taxRate = estimate?.taxRate ?? 10;
-          const tax = Math.round((clientPriceExTax * taxRate) / 100);
-          const clientPrice = clientPriceExTax + tax;
-
-          taxTotal += tax;
-          clientPriceTotal += clientPrice;
+          const itemAmountExTax = builderCost + markupAmount;
+          itemAmountsExTaxTotal += itemAmountExTax;
         }
       });
       
-      const subtotalWithMarkup = builderCostTotal + markupTotal;
+      // Now apply global markup to the sum of all item amounts (two-layer markup)
+      const globalMarkupPercent = estimate?.projectMarkupPercent ?? 0;
+      const globalMarkupAmount = Math.round((itemAmountsExTaxTotal * globalMarkupPercent) / 100);
+      const totalAmountExTax = itemAmountsExTaxTotal + globalMarkupAmount;
+      
+      // Calculate tax on the total amount (ex tax)
+      const taxRate = estimate?.taxRate ?? 10;
+      const totalTax = Math.round((totalAmountExTax * taxRate) / 100);
+      const totalAmountIncTax = totalAmountExTax + totalTax;
 
       return {
-        subtotal: builderCostTotal,
-        markupAmount: markupTotal,
-        subtotalWithMarkup: subtotalWithMarkup,
-        taxAmount: taxTotal,
-        total: clientPriceTotal,
+        subtotal: itemAmountsExTaxTotal, // Sum of all line item amounts (ex tax, includes item markups)
+        markupAmount: globalMarkupAmount, // Global markup applied to subtotal
+        subtotalWithMarkup: totalAmountExTax, // Subtotal + global markup
+        taxAmount: totalTax, // Tax on the total amount
+        total: totalAmountIncTax, // Final total inc tax
         itemCount: items.length,
       };
     } catch (error) {

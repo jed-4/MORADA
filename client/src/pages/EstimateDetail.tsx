@@ -3582,18 +3582,18 @@ export default function EstimateDetail() {
                 <CardContent className="pt-0 pb-3 space-y-2">
                   <Separator />
                   
-                  {/* Builder Cost Subtotal */}
+                  {/* Subtotal - Sum of all line items (ex tax, with their individual markups) */}
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Builder Cost Subtotal</span>
+                    <span className="text-muted-foreground">Subtotal (ex-tax)</span>
                     <span className="font-semibold" data-testid="text-builder-cost-subtotal">
                       {formatCurrency(summary.subtotal)}
                     </span>
                   </div>
 
-                  {/* Markup Line */}
+                  {/* Global Markup Line - Additional markup on top of subtotal */}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
-                      Markup (
+                      Global Markup (
                       {isEditingMarkup ? (
                         <Input
                           value={editingMarkup}
