@@ -1,0 +1,323 @@
+Name,Parent Name,Cost Type,Status,Cost Code,Cost Title,Quantity,Unit cost ex. tax,Unit tax,Unit cost inc. tax,Unit,Builder Cost,Markup %,Markup $,Unit price ex. tax,Unit price tax,Unit price inc. tax,Amount,Description
+Preliminaries & General,,GROUP,Complete,,,,,,,,14323.64,0,3151.2,,,,19222.32,
+Home Building Compensation Fund,Preliminaries & General,ALLOWANCE,Complete,101,HBCF,1,3300,330,3630,unit,3300,22,726,4026,402.6,4428.6,4428.6,"HBCF provides a safety net for home owners in NSW faced with incomplete and defective building work carried out by a builder or tradesperson, and is required on all jobs valued over $20,000. The cost is calculated on the total of construction costs."
+HBCF Broker Fee,Preliminaries & General,MATERIAL,Complete,101,HBCF,1,450,45,495,unit,450,22,99,549,54.9,603.9,603.9,
+HIA Contract,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,1,40,4,44,unit,40,22,8.8,48.8,4.88,53.68,53.68,
+Hazardco Small Project,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,180,18,198,unit,0,22,0,0,0,0,0,
+Hazardco Large Project,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,1,360,36,396,unit,360,22,79.2,439.2,43.92,483.12,483.12,
+Buildern Project Management,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,400,40,440,unit,0,20,0,0,0,0,0,"We use Buildern as our project management software
+ This gives you access to the client portal where you can view the project information, schedule &amp; site diaries"
+Hazardco Site Safety Software,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,360,36,396,unit,0,20,0,0,0,0,0,We use Hazardco as our site safety hub to ensure all works are performed with complete safety in mind
+Job Photography,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,4,200,20,220,unit,800,22,176,244,24.4,268.4,1073.6,
+Power Cost During Build,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,unit,0,22,0,0,0,0,0,
+Buildern,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,3,400,40,440,unit,1200,22,264,488,48.8,536.8,1610.4,
+Contract Signing,Preliminaries & General,LABOUR,Complete,100,Preliminaries,3,80,8,88,unit,240,22,52.8,97.6,9.76,107.36,322.08,
+Quantity Surveying,Preliminaries & General,SUBCONTRACTOR,Complete,100,Preliminaries,1,1000,100,1100,unit,1000,22,220,1220,122,1342,1342,
+Supervision,Preliminaries & General,LABOUR,Complete,120,Labour - Project Management (Off-Site),16,320,32,352,Weeks,5120,22,1126.4,390.4,39.04,429.44,6871.04,"A job is only as good as the supervision it gets during construction. We pride ourselves on keeping up to date with all current industry rules and regulations, which we then make sure all our carpenters and contractors adhere to. All our projects, no matter how big or small all get constant supervision by our team, every single element is checked and passed by our stringent quality control measures."
+Future Builder,Preliminaries & General,FEE,Complete,100,Preliminaries,1,1813.64,181.364,1995.004,unit,1813.64,22,399,2212.64,221.26,2433.9,2433.9,
+Health & Safety,Preliminaries & General,FEE,Complete,100,Preliminaries,0,0,0,0,unit,0,22,0,0,0,0,0,"Site health and safety measures throughout build
+ Hazardco safety software used on-site"
+Toolbox Meetings On-site,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,unit,0,22,0,0,0,0,0,Regular team site-meetings to ensure all members have a good understanding of the job
+Asbestos Testing,Preliminaries & General,ALLOWANCE,Complete,100,Preliminaries,0,500,50,550,Fee,0,22,0,0,0,0,0,
+Health & Safety,Preliminaries & General,FEE,Complete,100,Preliminaries,0,0,0,0,unit,0,0,0,0,0,0,0,"Site health and safety measures throughout build
+ Hazardco safety software used on-site"
+Engineering Inspections,Preliminaries & General,MATERIAL,Complete,103,Engineering,0,0,0,0,unit,0,22,0,0,0,0,0,
+Certification Fees,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,unit,0,22,0,0,0,0,0,
+Portable Long Service Levy,Preliminaries & General,MATERIAL,Complete,100,Preliminaries,0,0,0,0,unit,0,22,0,0,0,0,0,
+Adjustment for contract,Preliminaries & General,MATERIAL,Complete,FLRT,Flat rate,0,166.35,16.635,182.985,unit,0,20,0,0,0,0,0,
+Site Services,,GROUP,Complete,,,,,,,,10291.82,0,2264.2,,,,13811.62,
+Site Set Up Labour,Site Services,MATERIAL,Complete,202,Site Services,1,960,96,1056,day,960,22,211.2,1171.2,117.12,1288.32,1288.32,Establishment of all equipment &amp; materials required for construciton
+Site Decommission,Site Services,LABOUR,Complete,202,Site Services,1,960,96,1056,day,960,22,211.2,1171.2,117.12,1288.32,1288.32,"Pack up and clean of all construction materiasl and equipment on-site.
+ Removal of all signage, fencing and items that were on-site and responsible by Lighthouse Projects"
+Skip Bin,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,Allowance,0,22,0,0,0,0,0,"Skip bins to be on-site at all times during construction. If suitable access is unavailable, then rubbish will be contained in a suitable area and collected in a truck to be taken to the dump. This would be carried out as required throughout the construction of your project to ensure the site is kept tidy."
+Waste Disposal,Site Services,MATERIAL,Complete,111,Waste Disposal,4,600,60,660,Ea,2400,22,528,732,73.2,805.2,3220.8,"Skip bins or trailer to be on-site at all times during construction. If suitable access is unavailable, then rubbish will be contained in a suitable area and collected in a truck to be taken to the dump. This would be carried out as required throughout the construction of your project to ensure the site is kept tidy."
+Site Signage,Site Services,MATERIAL,Complete,202,Site Services,1,300,30,330,unit,300,22,66,366,36.6,402.6,402.6,We are required by law to show all necessary signage for Workplace Health and Safety and NSW legislation. This includes signage that shows our site rules and business information.
+Site Toilet,Site Services,MATERIAL,Complete,202,Site Services,3,320,32,352,month,960,22,211.2,390.4,39.04,429.44,1288.32,"We have included for a temporary toilet to be on-site at all times during construction unless noted otherwise.
+ Toilet to be pumped out regularly"
+Site Toilet Pump Out,Site Services,FEE,Complete,202,Site Services,10,76,7.6,83.6,unit,760,22,167.2,92.72,9.27,101.99,1019.92,"Temporary toilet to be on-site at all times
+ Toilet to be delievered and picked up from site and pumped out as necessary"
+Site Toilet Pick up & drop off,Site Services,FEE,Complete,202,Site Services,1,220,22,242,unit,220,22,48.4,268.4,26.84,295.24,295.24,
+Ply for walls while concreting,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,ea,0,22,0,0,0,0,0,
+Floor Protection,Site Services,EQUIPMENT,Complete,202,Site Services,1,300,30,330,unit,300,22,66,366,36.6,402.6,402.6,Floor protection for front stairs and balcony to protect recently renovated exterior works
+External Floor Protection,Site Services,MATERIAL,Complete,202,Site Services,1,450,45,495,unit,450,22,99,549,54.9,603.9,603.9,External floor protection for porch &amp; stairs
+Floor Protection,Site Services,MATERIAL,Complete,202,Site Services,0,4.55,0.455,5.005,m2,0,22,0,0,0,0,0,Floor protection installed to building. Floor protection to stay down for duration of the build.
+Temporary Fencing,Site Services,MATERIAL,Complete,202,Site Services,1,1181.82,118.182,1300.002,Ea,1181.82,22,260,1441.82,144.18,1586,1586,We have included setting up and hiring site fencing as required for workplace health and safety. Site fencing to remain on-site at all times during construction. We have allowed for this to be across the front boundary only.
+Site Shed,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,Allowance,0,22,0,0,0,0,0,"No allowance for site shed to store materials
+ Use of garage expected"
+Temporary Utilities,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,unit,0,22,0,0,0,0,0,
+Scaffolding,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,unit,0,22,0,0,0,0,0,
+Ply to cover house,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,unit,0,22,0,0,0,0,0,
+Small Tools & Consumables,Site Services,MATERIAL,Complete,202,Site Services,0,0,0,0,unit,0,22,0,0,0,0,0,
+Materials Delivery,Site Services,FEE,Complete,202,Site Services,1,800,80,880,unit,800,22,176,976,97.6,1073.6,1073.6,Materials to be delivered on-site
+Site cleans throughout build,Site Services,LABOUR,Complete,202,Site Services,10,100,10,110,unit,1000,22,220,122,12.2,134.2,1342,Site to be regularly cleaned and looking respectable and being safe for trades to work in and around
+"Demolition, Excavation & Encasement",,GROUP,Complete,,,,,,,,19830,0,3966,,,,26175.6,"Set out and profiling of existing brick fence
+ Demolition of concrete porch concrete floor and concrete stairs
+ Demolition of entire front porch
+ Remove existing brick fence and concrete footings
+ Dig to open up existing Sydney Water Asset that passes throguh boundary line
+ Dig trench footing for front fence
+ Dig pier holes that are to go in footings
+ Dig to create plumbing provision for stormwater
+ Remove existing concrete path
+ Place concrete for encasement around Sydney Water asset"
+Set out existing fence to record set out,"Demolition, Excavation & Encasement",LABOUR,Complete,128,Labour - Set Out,9,70,7,77,unit,630,20,126,84,8.4,92.4,831.6,
+Demolition labour,"Demolition, Excavation & Encasement",MATERIAL,Complete,126,Labour - Demolition,0,200,20,220,hour,0,20,0,0,0,0,0,
+Chippy - Tiles,"Demolition, Excavation & Encasement",LABOUR,Complete,126,Labour - Demolition,2,1600,160,1760,day,3200,20,640,1920,192,2112,4224,
+Tipper,"Demolition, Excavation & Encasement",EQUIPMENT,Complete,113,Hire,3,100,10,110,day,300,20,60,120,12,132,396,
+1.7t Excavator,"Demolition, Excavation & Encasement",EQUIPMENT,Complete,113,Hire,2,350,35,385,unit,700,20,140,420,42,462,924,
+Waste Disposal,"Demolition, Excavation & Encasement",FEE,Complete,111,Waste Disposal,1,300,30,330,unit,300,20,60,360,36,396,396,
+Demo Saw,"Demolition, Excavation & Encasement",EQUIPMENT,Complete,113,Hire,2,200,20,220,unit,400,20,80,240,24,264,528,
+Demolition & Waste removal of front porch,"Demolition, Excavation & Encasement",SUBCONTRACTOR,Complete,126,Labour - Demolition,1,4000,400,4400,unit,4000,20,800,4800,480,5280,5280,
+Excavation,"Demolition, Excavation & Encasement",SUBCONTRACTOR,Complete,206,Excavation,20,200,20,220,unit,4000,20,800,240,24,264,5280,Machine hire to remove existing brick fence and footings
+Chippy Labour,"Demolition, Excavation & Encasement",LABOUR,Complete,206,Excavation,3,1600,160,1760,unit,4800,20,960,1920,192,2112,6336,
+Waste Disposal,"Demolition, Excavation & Encasement",FEE,Complete,206,Excavation,1,1000,100,1100,unit,1000,20,200,1200,120,1320,1320,
+Concrete for encasement,"Demolition, Excavation & Encasement",MATERIAL,Complete,207,Concrete Works,1,500,50,550,unit,500,20,100,600,60,660,660,
+Earthworks deduction,"Demolition, Excavation & Encasement",FEE,Complete,FLRT,Flat rate,-1,19200,1920,21120,unit,-19200,20,-3840,23040,2304,25344,-25344,
+Demolition & Earthworks Allowance,"Demolition, Excavation & Encasement",ALLOWANCE,Complete,FLRT,Flat rate,1,19200,1920,21120,unit,19200,20,3840,23040,2304,25344,25344,Allowance for demolition &amp; excavation scope of works
+Concreting,,GROUP,Complete,,,,,,,,16000,0,3200,,,,21120.01,"Place reinforcing mesh and bars to trenches for fence and porch footings
+ Place concrete in footing trenches
+ Concrete new path around front of house and western side"
+Concrete Labour,Concreting,MATERIAL,Complete,207,Concrete Works,3,1600,160,1760,unit,4800,20,960,1920,192,2112,6336,
+Concrete for Piers 400d x 2000,Concreting,MATERIAL,Complete,207,Concrete Works,17,70,7,77,unit,1190,20,238,84,8.4,92.4,1570.8,
+Trench Mesh 3-TM12 6000x200 Lm x 2,Concreting,MATERIAL,Complete,207,Concrete Works,61.44,19,1.9,20.9,Lm,1167.36,20,233.47,22.8,2.28,25.08,1540.92,
+Trench Mesh Bar Chairs,Concreting,MATERIAL,Complete,207,Concrete Works,8,25,2.5,27.5,unit,200,20,40,30,3,33,264,
+Starter Bars,Concreting,MATERIAL,Complete,207,Concrete Works,200,0,0,0,unit,0,20,0,0,0,0,0,
+Ligatures,Concreting,MATERIAL,Complete,207,Concrete Works,2,300,30,330,unit,600,20,120,360,36,396,792,
+Trench Mesh Chairs 20pk,Concreting,MATERIAL,Complete,207,Concrete Works,3,25,2.5,27.5,unit,75,20,15,30,3,33,99,
+Place Strip Footing Labour Chippy,Concreting,LABOUR,Complete,207,Concrete Works,1,1600,160,1760,day,1600,20,320,1920,192,2112,2112,
+Strip Footing Labour Apprentice,Concreting,LABOUR,Complete,207,Concrete Works,0,320,32,352,day,0,20,0,0,0,0,0,
+Formwork Materials,Concreting,MATERIAL,Complete,207,Concrete Works,1,500,50,550,Allowance,500,20,100,600,60,660,660,
+Concrete Strip Footing 600x300,Concreting,ASSEMBLY,Complete,,,61.44,80.9985,8.1,89.0985,Lm,4976.55,0,995.31,97.2,9.72,106.92,6569.05,
+Concrete Strip footing 600 x 300,Concrete Strip Footing 600x300,MATERIAL,Complete,207,Concrete Works,110.59,45,4.5,49.5,m3,4976.55,20,995.31,54,5.4,59.4,6569.05,
+Concrete Supply - 110 Thick,Concreting,ASSEMBLY,Complete,,,0,0,0,0,m2,0,0,0,0,0,0,0,
+Concrete - 1m x 1m x 0.1m = 0.1m3/m2,Concrete Supply - 110 Thick,MATERIAL,Complete,207,Concrete Works,0,300,30,330,m3,0,20,0,0,0,0,0,
+Concrete Pump,Concreting,MATERIAL,Complete,207,Concrete Works,1,0,0,0,unit,0,20,0,0,0,0,0,
+Concreting,Concreting,FEE,Complete,207,Concrete Works,1,-15108.91,-1510.891,-16619.801,unit,-15108.91,20,-3021.78,-18130.69,-1813.07,-19943.76,-19943.76,
+Concreting,Concreting,ALLOWANCE,Complete,207,Concrete Works,1,16000,1600,17600,unit,16000,20,3200,19200,1920,21120,21120,"Prepare, mesh and pour concrete for footings for fence and porch"
+Concrete Porch Deck & Stairs,,GROUP,Complete,,,,,,,,17520,0,3504,,,,23126.39,
+Subfloor Manholes,Concrete Porch Deck & Stairs,GROUP,Complete,,,,,,,,1520,0,304,,,,2006.4,"Construct 2 new timber manhole door jamb &amp; door to underneath front balcony &amp; under house
+ Primed pine timber door jamb
+ Solid timber external door
+ Door hardware to secure and lock doors"
+Construct Subfloor Doorways,Subfloor Manholes,LABOUR,Complete,123,Labour - General Carpentry,8,120,12,132,unit,960,20,192,144,14.4,158.4,1267.2,
+Door jambs,Subfloor Manholes,MATERIAL,Complete,123,Labour - General Carpentry,2,90,9,99,unit,180,20,36,108,10.8,118.8,237.6,
+Solidcore door,Subfloor Manholes,MATERIAL,Complete,123,Labour - General Carpentry,2,120,12,132,unit,240,20,48,144,14.4,158.4,316.8,
+Hinges,Subfloor Manholes,MATERIAL,Complete,123,Labour - General Carpentry,4,15,1.5,16.5,unit,60,20,12,18,1.8,19.8,79.2,
+Barrel Bolts,Subfloor Manholes,MATERIAL,Complete,123,Labour - General Carpentry,1,80,8,88,unit,80,20,16,96,9.6,105.6,105.6,
+Porch Floor Frame,Concrete Porch Deck & Stairs,GROUP,Complete,,,,,,,,0,0,0,,,,-0.01,"Construct timber subfloor fram for porch
+ Construct timber frame for stairs to front of building
+ Sheet subfloor frame &amp; stairs with Scyon exterior compressed fibre cement flooring"
+Construct Porch subfloor frame,Porch Floor Frame,LABOUR,Complete,132,Labour - Sub-Floor,1.5,1600,160,1760,unit,2400,20,480,1920,192,2112,3168,
+Sheet Porch Subfloor,Porch Floor Frame,LABOUR,Complete,132,Labour - Sub-Floor,1,1600,160,1760,unit,1600,20,320,1920,192,2112,2112,
+Frame Front Stairs,Porch Floor Frame,LABOUR,Complete,132,Labour - Sub-Floor,2,1600,160,1760,unit,3200,20,640,1920,192,2112,4224,
+Sheet Porch Stairs,Porch Floor Frame,LABOUR,Complete,132,Labour - Sub-Floor,1,1600,160,1760,unit,1600,20,320,1920,192,2112,2112,
+Scyon Exterior,Porch Floor Frame,MATERIAL,Complete,209,Sub-Floor,37.24,93,9.3,102.3,unit,3463.32,20,692.66,111.6,11.16,122.76,4571.58,
+LVL Joists & Bearers,Porch Floor Frame,MATERIAL,Complete,209,Sub-Floor,64.98,18.5,1.85,20.35,unit,1202.14,20,240.43,22.2,2.22,24.42,1586.82,
+Stairs Framing Timber,Porch Floor Frame,MATERIAL,Complete,209,Sub-Floor,1,1400,140,1540,unit,1400,20,280,1680,168,1848,1848,
+Consumables,Porch Floor Frame,MATERIAL,Complete,209,Sub-Floor,1,500,50,550,unit,500,20,100,600,60,660,660,
+Deduction,Porch Floor Frame,MATERIAL,Complete,FLRT,Flat rate,-1,15365.46,1536.546,16902.006,unit,-15365.46,20,-3073.09,18438.55,1843.86,20282.41,-20282.41,
+Concrete Porch Deck & Stairs,Concrete Porch Deck & Stairs,ALLOWANCE,Complete,FLRT,Flat rate,1,16000,1600,17600,unit,16000,20,3200,19200,1920,21120,21120,"Construct formwork for suspended concrete deck &amp; stairs to front porch
+ Place and finish concrete
+ To suit engineers plans which are yet to be designed"
+Brickwork,,GROUP,Complete,,,,,,,,31000,0,6200,,,,40920,
+Brickwork Supply & Install,Brickwork,ALLOWANCE,Complete,309,Brickwork,1,31000,3100,34100,ea,31000,20,6200,37200,3720,40920,40920,"Construct new masonry porch to match existing
+ Construct new masonry fence to match existing
+ Supply all bricks"
+Brickwork Front Porch Supply & Install,Brickwork,MATERIAL,Complete,309,Brickwork,0,10000,1000,11000,unit,0,20,0,0,0,0,0,
+Brickwork,Brickwork,MATERIAL,Complete,309,Brickwork,0,5000,500,5500,ea,0,20,0,0,0,0,0,
+Windows,,GROUP,Complete,,,,,,,,45000,0,9890,,,,60379,"Remove existing windows
+ Supply &amp; install aluminium night sky windows to suit plan. Including flat glass panels on front windows
+ Allowance for supply &amp; install of curved front glass window
+ No allowance for work to laundry external door due to floor being raised in future works"
+MAG Windows quote,Windows,MATERIAL,Complete,216,Windows & External Doors,0,127000,12700,139700,ea,0,22,0,0,0,0,0,
+Aluminium Windows,Windows,MATERIAL,Complete,216,Windows & External Doors,1,26000,2600,28600,ea,26000,22,5720,31720,3172,34892,34892,
+Aluminium Trims,Windows,MATERIAL,Complete,216,Windows & External Doors,1,500,50,550,unit,500,22,110,610,61,671,671,Aluminium to be installed to the face of the joined awning windows at the front of the house
+Front Curved Windows Supply & Install,Windows,ALLOWANCE,Complete,216,Windows & External Doors,1,10000,1000,11000,ea,10000,22,2200,12200,1220,13420,13420,
+Chippy Window Install labour,Windows,LABOUR,Complete,140,Labour - Windows & External Doors,5,1600,160,1760,unit,8000,22,1760,1952,195.2,2147.2,10736,
+Consumables,Windows,MATERIAL,Complete,216,Windows & External Doors,1,500,50,550,unit,500,20,100,600,60,660,660,
+Deduction for price,Windows,LABOUR,Complete,216,Windows & External Doors,0,-43700,-4370,-48070,unit,0,20,0,0,0,0,0,
+Metal Work,,GROUP,Complete,,,,,,,,29500,0,5900,,,,38940,"Custom Aluminium Fencing with Decorative Panel
+ - 1.2m high
+ - 8 lm total
+ - Supply &amp; Install
+ - Powdercoated
+ Custom Aluminium Fencing with Decorative Panel
+ - 0.6m high
+ - 29 lm total
+ - Supply &amp; Install
+ - Powdercoated
+ Custom Aluminium Gate with Decorative Panel
+ - 1.2m high
+ - 1.2 lm total
+ - Supply &amp; Install
+ - Powdercoated
+ Custom Aluminium Balustrade with Decorative Panel
+ - 0.5m high
+ - 5.6 lm total
+ - Supply &amp; Install
+ - Powdercoated"
+"Metal Work To Boundary Fence, Balcony & Deck",Metal Work,SUBCONTRACTOR,Complete,342,Metal Work,1,29500,2950,32450,unit,29500,20,5900,35400,3540,38940,38940,
+Roofing,,GROUP,Complete,,,,,,,,2500,0,500,,,,3300,
+Roof Tiling,Roofing,MATERIAL,Complete,311,Roofing,1,400,40,440,unit,400,20,80,480,48,528,528,Remove skylight bubble and tile over
+Install extra downpipes to gutters,Roofing,SUBCONTRACTOR,Complete,311,Roofing,1,2100,210,2310,unit,2100,20,420,2520,252,2772,2772,"Replace existing downpipes
+ Install 2 new downpipes. Eastern and western sides, towards rear of house."
+Electrical,,GROUP,Incomplete,,,,,,,,3000,0,600,,,,3960,
+Electrical Quote,Electrical,MATERIAL,Incomplete,321,Electrical,1,0,0,0,unit,0,20,0,0,0,0,0,
+Electrical Materials,Electrical,MATERIAL,Incomplete,321,Electrical,1,0,0,0,unit,0,20,0,0,0,0,0,
+Supply & install ventilation system to subfloor,Electrical,ALLOWANCE,Incomplete,321,Electrical,1,1500,150,1650,unit,1500,20,300,1800,180,1980,1980,Supply &amp; installation of a ventilation to system to the subfloor
+Porch Lighting,Electrical,SUBCONTRACTOR,Incomplete,321,Electrical,1,1500,150,1650,unit,1500,20,300,1800,180,1980,1980,Install Electrical for 4 x wall lights to the front of the building
+Plumbing,,GROUP,Complete,,,,,,,,7000,0,1400,,,,9240,
+Stromwater Plumbing,Plumbing,MATERIAL,Complete,316,Plumbing,1,5500,550,6050,unit,5500,20,1100,6600,660,7260,7260,"Supply and installation of uPVC stormwater drainage to connect the downpipes and balcony drainage to discharge at the street, including all associated pipe-work and fittings
+ Install stormwater long grate between house &amp; driveway
+ Allowance to add extra stormwater plumbing to suit new downpipes to be install
+ Inspect existing sewerage plumbing for leaks"
+Driveway Stormwater,Plumbing,SUBCONTRACTOR,Complete,316,Plumbing,1,1500,150,1650,unit,1500,20,300,1800,180,1980,1980,Install stormwater long grate between house &amp; driveway
+Render,,GROUP,Complete,,,,,,,,14200,0,2840,,,,18744,"Rendering of front and side boundary fence
+ Render front of porch to match existing render"
+Rendering,Render,SUBCONTRACTOR,Complete,339,Render,0,9000,900,9900,unit,0,20,0,0,0,0,0,
+Render Front Porch to Match Existing Design,Render,ALLOWANCE,Complete,339,Render,0,6000,600,6600,unit,0,20,0,0,0,0,0,
+Rendering,Render,SUBCONTRACTOR,Complete,339,Render,1,14200,1420,15620,unit,14200,20,2840,17040,1704,18744,18744,"Apply acrylic render over the new brick front porch and
+ brick capping.
+ Apply acrylic render over the new brick boundary fence
+ including every pier and the capping that runs the whole
+ length."
+Waterproofing,,GROUP,Complete,,,,,,,,2500,0,500,,,,3300,"Supply &amp; install of waterproofing the porch floor and front stairs
+ Waterproofing to be done before and after tile screed"
+Waterproofing Supply & Install,Waterproofing,SUBCONTRACTOR,Complete,338,Tiling Install,1,2500,250,2750,ea,2500,20,500,3000,300,3300,3300,
+Chippy Labour,Waterproofing,LABOUR,Complete,338,Tiling Install,0,560,56,616,day,0,20,0,0,0,0,0,
+Apprentice Labour,Waterproofing,LABOUR,Complete,338,Tiling Install,0,320,32,352,day,0,20,0,0,0,0,0,
+Gripset 38FC 15L,Waterproofing,MATERIAL,Complete,338,Tiling Install,0,135,13.5,148.5,ea,0,20,0,0,0,0,0,
+Butyl Tape,Waterproofing,MATERIAL,Complete,338,Tiling Install,0,0,0,0,ea,0,20,0,0,0,0,0,
+Tap Penetrations,Waterproofing,MATERIAL,Complete,338,Tiling Install,0,5,0.5,5.5,ea,0,20,0,0,0,0,0,
+Waterproofing Over Screed,Waterproofing,MATERIAL,Complete,338,Tiling Install,0,70,7,77,hour,0,20,0,0,0,0,0,
+Waterproofing of Balcony/Deck,Waterproofing,SUBCONTRACTOR,Complete,338,Tiling Install,0,0,0,0,ea,0,20,0,0,0,0,0,
+Tiling,,GROUP,Complete,,,,,,,,8480,0,1696,,,,11193.6,"Screed tile bed on porch balcony
+ Tile floors of porch balcony
+ Tile risers and goings for porch front stairs"
+Tiling Labour,Tiling,ALLOWANCE,Complete,338,Tiling Install,10,750,75,825,Days,7500,20,1500,900,90,990,9900,
+Tiling Materials,Tiling,ALLOWANCE,Complete,338,Tiling Install,1,500,50,550,unit,500,20,100,600,60,660,660,
+Sand,Tiling,MATERIAL,Complete,338,Tiling Install,0,30,3,33,ea,0,20,0,0,0,0,0,
+Cement Bag,Tiling,MATERIAL,Complete,338,Tiling Install,0,9,0.9,9.9,ea,0,20,0,0,0,0,0,
+Tile Mesh - Ea,Tiling,MATERIAL,Complete,338,Tiling Install,0,15,1.5,16.5,ea,0,20,0,0,0,0,0,
+Tile Mesh - m2,Tiling,MATERIAL,Complete,338,Tiling Install,0,21.6,2.16,23.76,m2,0,20,0,0,0,0,0,
+Screed Labour,Tiling,LABOUR,Complete,338,Tiling Install,0,0,0,0,m2,0,20,0,0,0,0,0,
+Ardex SE Silicone,Tiling,MATERIAL,Complete,338,Tiling Install,0,18,1.8,19.8,ea,0,20,0,0,0,0,0,
+Tile Glue - Gripset C-Lite,Tiling,MATERIAL,Complete,338,Tiling Install,0,28,2.8,30.8,ea,0,20,0,0,0,0,0,
+Grout - Ardex 5kg,Tiling,MATERIAL,Complete,338,Tiling Install,8,25,2.5,27.5,ea,200,20,40,30,3,33,264,
+Sealer,Tiling,MATERIAL,Complete,338,Tiling Install,0,0,0,0,ea,0,20,0,0,0,0,0,
+Sealing Labour,Tiling,MATERIAL,Complete,338,Tiling Install,0,70,7,77,hour,0,20,0,0,0,0,0,
+Tiling Delivery,Tiling,FEE,Complete,338,Tiling Install,0,150,15,165,ea,0,20,0,0,0,0,0,
+Employee Tile Delivery,Tiling,LABOUR,Complete,338,Tiling Install,0,0,0,0,unit,0,20,0,0,0,0,0,
+Supervisor Set Out Meeting,Tiling,LABOUR,Complete,338,Tiling Install,4,70,7,77,unit,280,20,56,84,8.4,92.4,369.6,
+Painting,,GROUP,Complete,,,,,,,,33850,0,6770,,,,44682,"External Paint:
+ - Roof
+ - Gutters
+ - Eaves
+ - Downpipes
+ - Render
+ - Fence
+ - Garage Door
+ 
+ All areas to be washed down
+ Sheet and protect all areas
+ Roof
+ - Re-point and broken tiles replaced
+ - 1 x coat sealer
+ - 2 x coats roofing membrane
+ - All bubbling paint stripped and removed and cracks filled
+ - Render on top of stairs to be skimmed for better finish
+ 
+ Eaves, gutters, downpipes &amp; render:
+ - 1 x undercoat
+ - 2 x coats exterior low sheen
+ render to have render paint
+ Garage door&nbsp;
+ - 1 x undercoat&nbsp;
+ - 2 x top coats
+ Drive way
+ Wash and seal&nbsp;
+ - 2 x coats
+ 
+ All paint and materials included"
+Internal Paint Supply & Install,Painting,SUBCONTRACTOR,Complete,332,Painting,1,0,0,0,ea,0,20,0,0,0,0,0,
+External Paint Supply & Install,Painting,SUBCONTRACTOR,Complete,332,Painting,1,33850,3385,37235,ea,33850,20,6770,40620,4062,44682,44682,
+External Fixtures,,GROUP,Complete,,,,,,,,550,0,110,,,,726,
+Clothesline Supply,External Fixtures,MATERIAL,Complete,240,Exterior Works,0,0,0,0,ea,0,20,0,0,0,0,0,
+Clothesline Install,External Fixtures,MATERIAL,Complete,240,Exterior Works,0,0,0,0,hour,0,20,0,0,0,0,0,
+Letterbox Supply,External Fixtures,MATERIAL,Complete,240,Exterior Works,1,150,15,165,ea,150,20,30,180,18,198,198,Milkcan Monza Letterbox
+Letterbox Install,External Fixtures,MATERIAL,Complete,240,Exterior Works,2,70,7,77,hour,140,20,28,84,8.4,92.4,184.8,
+Street Name/Number Supply & Install,External Fixtures,MATERIAL,Complete,240,Exterior Works,1,120,12,132,ea,120,20,24,144,14.4,158.4,158.4,
+Street Name/Number Install,External Fixtures,MATERIAL,Complete,240,Exterior Works,2,70,7,77,hour,140,20,28,84,8.4,92.4,184.8,
+Decking,,GROUP,Complete,,,,,,,,10923.68,0,2353.22,,,,14604.6,"Place concrete pier holes to support deck frame
+ Construct external decking frame with H3 treated pine
+ Install Modwood Jarrah smooth finish decking boards to decking and side walls of deck
+ Allowance for black metal balustrade supply &amp; install"
+Chippy Labour,Decking,LABOUR,Complete,149,Labour - Decking,3,1600,160,1760,day,4800,22,1056,1952,195.2,2147.2,6441.6,
+Apprentice 1 Labour,Decking,LABOUR,Complete,149,Labour - Decking,0,320,32,352,day,0,22,0,0,0,0,0,
+Rapid Set Concrete Bag,Decking,MATERIAL,Complete,225,Decking,0,9,0.9,9.9,ea,0,22,0,0,0,0,0,
+G-Taps 50mmx20m,Decking,MATERIAL,Complete,225,Decking,3,32,3.2,35.2,ea,96,22,21.12,39.04,3.9,42.94,128.83,
+Cutek CD50 10L,Decking,MATERIAL,Complete,225,Decking,0,300,30,330,ea,0,22,0,0,0,0,0,
+Staining Materials,Decking,MATERIAL,Complete,225,Decking,0,30,3,33,ea,0,22,0,0,0,0,0,
+120x45 MGP10 deck wall plates,Decking,MATERIAL,Complete,225,Decking,4.5,9.5,0.95,10.45,Lm,42.75,22,9.41,11.59,1.16,12.75,57.38,
+2/120x45 MGP10 deck bearers,Decking,MATERIAL,Complete,225,Decking,18,10.45,1.045,11.495,unit,188.18,22,41.4,12.75,1.28,14.03,252.54,
+120x45 MGP10 deck joists,Decking,MATERIAL,Complete,225,Decking,18,10.45,1.045,11.495,unit,188.18,22,41.4,12.75,1.28,14.03,252.54,
+120x45 MGP10 deck trimmers,Decking,MATERIAL,Complete,225,Decking,11,10.45,1.045,11.495,unit,115,22,25.3,12.75,1.28,14.03,154.33,
+Modwood Jarrah 137 x 23,Decking,MATERIAL,Complete,225,Decking,20.31,128.04,12.804,140.844,unit,2600.42,22,572.09,156.2,15.62,171.82,3489.76,
+Decking Pre-Drill Bits (No.10 Smart-Bit Trim Head Countersink Drill Bit),Decking,MATERIAL,Complete,225,Decking,2,29,2.9,31.9,unit,58,22,12.76,35.38,3.54,38.92,77.84,
+Plastic packers (for decking spacing),Decking,MATERIAL,Complete,225,Decking,1,40,4,44,unit,40,22,8.8,48.8,4.88,53.68,53.68,
+Decking screws (Macsim 10G-10 x 50mm 304 Stainless Steel Torx Decking Screws - 1000 Pack),Decking,MATERIAL,Complete,225,Decking,1,95.15,9.515,104.665,unit,95.15,22,20.94,116.09,11.61,127.7,127.7,
+Allowance for joist brackets/fixings/treaded rod/chemical anchor,Decking,MATERIAL,Complete,225,Decking,1,200,20,220,unit,200,22,44,244,24.4,268.4,268.4,
+Supply & Install of Black Metal Balustrade,Decking,ALLOWANCE,Complete,225,Decking,1,2500,250,2750,unit,2500,20,500,3000,300,3300,3300,
+Silicone,,GROUP,Complete,,,,,,,,708,0,141.6,,,,934.56,
+External Silicone,Silicone,ALLOWANCE,Complete,348,Silicone,8,75,7.5,82.5,day,600,20,120,90,9,99,792,"Silicone junctions around edges of balcony tiles
+ Silicone junctions of front steps tiles"
+Ardex SE Silicone,Silicone,MATERIAL,Complete,348,Silicone,6,18,1.8,19.8,Ea,108,20,21.6,21.6,2.16,23.76,142.56,
+Landscaping,,GROUP,Complete,,,,,,,,10000,0,2000,,,,13200,
+Landscaping Allowance,Landscaping,ALLOWANCE,Complete,227,Landscaping,1,10000,1000,11000,unit,10000,20,2000,12000,1200,13200,13200,Allowance for all general landscaping to be completed at the end of the project
+Concrete Paths,,GROUP,Complete,,,,,,,,5924.39,0,0,,,,6516.83,"Form concrete paths
+ 900mm from the edges around perimeter of the house, excluding rear side
+ 900mm wide walkway from the front gate to the stairs
+ Place concrete paths and finish to a sponged finish"
+Timber,Concrete Paths,MATERIAL,Complete,207,Concrete Works,111.46,5,0.5,5.5,Lm,557.3,0,0,5,0.5,5.5,613.03,
+Mesh,Concrete Paths,MATERIAL,Complete,207,Concrete Works,60.19,11,1.1,12.1,m2,662.09,0,0,11,1.1,12.1,728.3,
+Consumables,Concrete Paths,MATERIAL,Complete,207,Concrete Works,1,5,0.5,5.5,unit,5,0,0,5,0.5,5.5,5.5,
+Labour,Concrete Paths,MATERIAL,Complete,207,Concrete Works,2,1600,160,1760,unit,3200,0,0,1600,160,1760,3520,
+Concrete,Concrete Paths,MATERIAL,Complete,207,Concrete Works,6,250,25,275,unit,1500,0,0,250,25,275,1650,
+Fencing,,GROUP,Complete,,,,,,,,2500,0,500,,,,3300,
+Colorbond Fencing,Fencing,SUBCONTRACTOR,Complete,240,Exterior Works,1,2500,250,2750,unit,2500,20,500,3000,300,3300,3300,"Colorbond fencing to western side of brick wall
+ Install 3 sections on top of masonry fence"
+Carpentry Fit Off,,GROUP,Complete,,,,,,,,795,0,120,,,,1006.5,"Install door stops to external doors
+ Install external door seals and weather strips"
+Chippy Labour,Carpentry Fit Off,LABOUR,Complete,147,Labour - Carpentry Fit Off,1,600,60,660,ea,600,20,120,720,72,792,792,
+Apprentice Labour,Carpentry Fit Off,LABOUR,Complete,147,Labour - Carpentry Fit Off,0,360,36,396,ea,0,20,0,0,0,0,0,
+Consumables,Carpentry Fit Off,MATERIAL,Complete,223,Carpentry Fit Off,0,20,2,22,ea,0,20,0,0,0,0,0,
+Raven Door Bottom Seal,Carpentry Fit Off,MATERIAL,Complete,223,Carpentry Fit Off,3,25,2.5,27.5,unit,75,0,0,25,2.5,27.5,82.5,Raven RP3 door bottom seal
+Door Weather Seal,Carpentry Fit Off,MATERIAL,Complete,223,Carpentry Fit Off,3,10,1,11,unit,30,0,0,10,1,11,33,Raven RP59 door weather strip
+Tile Drill Bits,Carpentry Fit Off,MATERIAL,Complete,223,Carpentry Fit Off,0,100,10,110,unit,0,0,0,0,0,0,0,
+Door Stops,Carpentry Fit Off,ALLOWANCE,Complete,223,Carpentry Fit Off,3,30,3,33,unit,90,0,0,30,3,33,99,
+Cleaning,,GROUP,Complete,,,,,,,,1500,0,300,,,,1980,
+Interior Builders Clean,Cleaning,MATERIAL,Complete,350,Cleaning,1,0,0,0,unit,0,20,0,0,0,0,0,
+Cleaning Windows,Cleaning,MATERIAL,Complete,350,Cleaning,1,0,0,0,unit,0,20,0,0,0,0,0,
+Site Clean,Cleaning,MATERIAL,Complete,350,Cleaning,2.5,600,60,660,unit,1500,20,300,720,72,792,1980,Site clean to ensure external of building site is clean
+Exclusions,,GROUP,Complete,,,,,,,,0,0,0,,,,0,
+Exclusions,Exclusions,MATERIAL,Complete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Design Fees,Exclusions,MATERIAL,Complete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Certification Fees,Exclusions,MATERIAL,Complete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Postage/delivery fees for materials & PC items.,Exclusions,MATERIAL,Complete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Terms,,GROUP,Complete,,,,,,,,0,0,0,,,,0,
+"Tile installation pricing is for standard tiles only. If tiles installed are decorative, mosaic, subway or the like, their installation will incur added cost to the labour component.",Terms,MATERIAL,Complete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+"Everything that is not mentioned in this quote, is not included.",Terms,MATERIAL,Complete,FLRT,Flat rate,1,0,0,0,unit,0,20,0,0,0,0,0,
+Front Balcony,Terms,FEE,Complete,FLRT,Flat rate,0,0,0,0,unit,0,20,0,0,0,0,0,"No allowance for rectification work to front balcony
+ Waiting engineers report to determine works required to front balcony"
+,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+Summary,,,,,,,,,,,,,,,,,,
+Totals,,,,,,,,,,,,,,,,,,
+Builder Fixed Cost,,169706.53,,,,,,,,,,,,,,,,
+Allowances,,118190,,,,,,,,,,,,,,,,
+Overheads,,0,,,,,,,,,,,,,,,,
+Insurances,,0,,,,,,,,,,,,,,,,
+Markup,,57906.22,,,,,,,,,,,,,,,,
+Total Tax,,34580.28,,,,,,,,,,,,,,,,
+Adjust,,0,,,,,,,,,,,,,,,,
+Total,,380383.03,,,,,,,,,,,,,,,,
