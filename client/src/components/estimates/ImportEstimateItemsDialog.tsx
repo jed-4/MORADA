@@ -305,33 +305,35 @@ export function ImportEstimateItemsDialog({
       {/* Preview State - Scrollable Content */}
       {fileData.length > 0 && (
         <>
-          <div className="flex-1 overflow-auto px-6">
-            {/* File info */}
-            <div className="flex items-center gap-2 text-sm flex-wrap py-3 border-b sticky top-0 bg-background z-10">
-              <span className="text-muted-foreground">Import file to</span>
-              <span className="font-medium">{fileName}</span>
-              <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
-                Working
-              </span>
-              <span className="text-muted-foreground">and match your columns to BuildPro</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-auto p-0 text-primary hover:underline"
-                onClick={() => {
-                  setFileData([]);
-                  setHeaders([]);
-                  setColumnMapping({});
-                  setFileName("");
-                }}
-                data-testid="button-change-file"
-              >
-                Change file
-              </Button>
-            </div>
+          <div className="flex-1 overflow-auto">
+            {/* Sticky header section - File info + Column mapping */}
+            <div className="sticky top-0 bg-background z-10 px-6">
+              {/* File info */}
+              <div className="flex items-center gap-2 text-sm flex-wrap py-3 border-b">
+                <span className="text-muted-foreground">Import file to</span>
+                <span className="font-medium">{fileName}</span>
+                <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
+                  Working
+                </span>
+                <span className="text-muted-foreground">and match your columns to BuildPro</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto p-0 text-primary hover:underline"
+                  onClick={() => {
+                    setFileData([]);
+                    setHeaders([]);
+                    setColumnMapping({});
+                    setFileName("");
+                  }}
+                  data-testid="button-change-file"
+                >
+                  Change file
+                </Button>
+              </div>
 
-            {/* Column mapping dropdowns - Sticky */}
-            <div className="grid grid-cols-8 gap-3 py-3 border-b sticky top-[52px] bg-background z-10">
+              {/* Column mapping dropdowns */}
+              <div className="grid grid-cols-8 gap-3 py-3 border-b">
               {CORE_MAPPING_FIELDS.map(field => (
                 <div key={field} className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
@@ -355,10 +357,11 @@ export function ImportEstimateItemsDialog({
                   </Select>
                 </div>
               ))}
+              </div>
             </div>
 
             {/* Data preview table */}
-            <div className="py-3">
+            <div className="py-3 px-6">
               <div className="border rounded-md">
                 <Table>
                 <TableHeader className="bg-muted/50">
