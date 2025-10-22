@@ -20,6 +20,7 @@ import {
   insertRolePermissionSchema,
   insertUserProjectAccessSchema,
   insertUserInvitationSchema,
+  insertUserColumnPreferencesSchema,
   insertCompanySettingsSchema,
   insertSystemConfigurationSchema,
   insertFieldCategorySchema,
@@ -2366,6 +2367,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: error.message });
       }
       res.status(500).json({ error: "Failed to change password" });
+    }
+  });
+
+  // User Column Preferences Routes
+  app.get("/api/user-column-preferences/:pageKey", requireAuth, async (req, res) => {
+    try {
+      const preferences = await storage.getUserColumnPreferences(req.user!.id, req.params.pageKey);
+      res.json(preferences || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch column preferences" });
+    }
+  });
+
+  app.post("/api/user-column-preferences", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertUserColumnPreferencesSchema.safeParse({
+        ...req.body,
+        userId: req.user!.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const preferences = await storage.saveUserColumnPreferences(validationResult.data);
+      res.json(preferences);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save column preferences" });
     }
   });
 
