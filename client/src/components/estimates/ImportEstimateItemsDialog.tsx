@@ -256,55 +256,58 @@ export function ImportEstimateItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[1200px] w-[95vw] max-h-[90vh] overflow-hidden p-0">
-        <div className="flex h-full flex-col">
-          {/* Loading Overlay */}
-          {isImporting && (
-            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
-              <div className="flex flex-col items-center space-y-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                <p className="text-lg font-medium">Importing items...</p>
-                <p className="text-sm text-muted-foreground">Please wait while we process your data</p>
-              </div>
+      <DialogContent className="max-w-[1200px] w-[95vw] max-h-[90vh] p-0 flex flex-col">
+        {/* Loading Overlay */}
+        {isImporting && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+              <p className="text-lg font-medium">Importing items...</p>
+              <p className="text-sm text-muted-foreground">Please wait while we process your data</p>
             </div>
-          )}
-          
-          <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
-            <DialogTitle className="text-xl">Import estimation</DialogTitle>
-          </DialogHeader>
-
-          {!fileData.length ? (
-            <div className="min-h-[420px] grid place-items-center py-8 px-6">
-              <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-12 hover-elevate">
-                <Upload className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">Upload File</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Drag and drop or click to browse for Excel (.xlsx) or CSV files
-                </p>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="file-upload"
-                  data-testid="input-file-upload"
-                />
-                <label htmlFor="file-upload">
-                  <Button asChild data-testid="button-browse-file">
-                    <span>
-                      <FileSpreadsheet className="mr-2 h-4 w-4" />
-                      Browse File
-                    </span>
-                  </Button>
-                </label>
-              </div>
-            </div>
-          ) : null}
+          </div>
+        )}
         
-        {fileData.length > 0 && (
-          <div className="flex-1 flex flex-col min-h-0 px-6 overflow-hidden">
+        {/* Header - Fixed */}
+        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+          <DialogTitle className="text-xl">Import estimation</DialogTitle>
+        </DialogHeader>
+
+        {/* Upload State */}
+        {!fileData.length ? (
+          <div className="flex-1 flex items-center justify-center py-8 px-6">
+            <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-12 hover-elevate">
+              <Upload className="h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">Upload File</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Drag and drop or click to browse for Excel (.xlsx) or CSV files
+              </p>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+                data-testid="input-file-upload"
+              />
+              <label htmlFor="file-upload">
+                <Button asChild data-testid="button-browse-file">
+                  <span>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Browse File
+                  </span>
+                </Button>
+              </label>
+            </div>
+          </div>
+        ) : null}
+      
+      {/* Preview State - Scrollable Content */}
+      {fileData.length > 0 && (
+        <>
+          <div className="flex-1 overflow-auto px-6">
             {/* File info */}
-            <div className="flex items-center gap-2 text-sm flex-wrap pb-3 border-b flex-shrink-0">
+            <div className="flex items-center gap-2 text-sm flex-wrap py-3 border-b sticky top-0 bg-background z-10">
               <span className="text-muted-foreground">Import file to</span>
               <span className="font-medium">{fileName}</span>
               <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
@@ -327,30 +330,8 @@ export function ImportEstimateItemsDialog({
               </Button>
             </div>
 
-            {/* Validation status */}
-            {parsedResults.length > 0 && (
-              <div className="flex items-center gap-3 py-3 flex-shrink-0 flex-wrap">
-                <span className="text-sm text-muted-foreground">{validCount} valid rows</span>
-                {errorCount > 0 && (
-                  <span className="text-sm text-destructive">{errorCount} rows with errors</span>
-                )}
-                {matchedCostCodes > 0 && (
-                  <span className="text-sm text-green-600 flex items-center gap-1">
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    {matchedCostCodes} cost code{matchedCostCodes !== 1 ? 's' : ''} matched
-                  </span>
-                )}
-                {unmatchedCostCodes > 0 && (
-                  <span className="text-sm text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    {unmatchedCostCodes} cost code{unmatchedCostCodes !== 1 ? 's' : ''} unmatched
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Column mapping dropdowns */}
-            <div className="grid grid-cols-8 gap-3 py-3 border-b overflow-x-auto relative z-20 bg-background flex-shrink-0">
+            {/* Column mapping dropdowns - Sticky */}
+            <div className="grid grid-cols-8 gap-3 py-3 border-b sticky top-[52px] bg-background z-10">
               {CORE_MAPPING_FIELDS.map(field => (
                 <div key={field} className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
@@ -377,10 +358,10 @@ export function ImportEstimateItemsDialog({
             </div>
 
             {/* Data preview table */}
-            <div className="flex-1 min-h-0 py-3 relative">
-              <ScrollArea className="h-full border rounded-md">
+            <div className="py-3">
+              <div className="border rounded-md">
                 <Table>
-                <TableHeader className="sticky top-0 bg-background z-10 border-b">
+                <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead className="w-8"></TableHead>
                     <TableHead className="w-[200px]">{columnMapping.name || "Name"}</TableHead>
@@ -483,31 +464,60 @@ export function ImportEstimateItemsDialog({
                   ))}
                 </TableBody>
               </Table>
-              </ScrollArea>
+              </div>
             </div>
           </div>
-        )}
 
-        {fileData.length > 0 && (
-          <div className="flex justify-end gap-2 px-6 py-4 border-t flex-shrink-0 bg-background">
-            <Button
-              variant="outline"
-              onClick={handleClose}
-              disabled={isImporting}
-              data-testid="button-cancel-import"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleImport}
-              disabled={!columnMapping.name || validCount === 0 || isImporting}
-              data-testid="button-import-continue"
-            >
-              {isImporting ? "Importing..." : `Continue (${validCount} items)`}
-            </Button>
+          {/* Footer - Fixed at bottom with summary */}
+          <div className="flex-shrink-0 border-t bg-background">
+            {/* Summary bar */}
+            {parsedResults.length > 0 && (
+              <div className="flex items-center gap-4 px-6 py-3 border-b bg-muted/30">
+                <span className="text-sm font-medium text-muted-foreground">Summary:</span>
+                <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                  <CheckCircle className="h-4 w-4" />
+                  {validCount} valid
+                </span>
+                {errorCount > 0 && (
+                  <span className="text-sm font-medium text-destructive flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errorCount} errors
+                  </span>
+                )}
+                {matchedCostCodes > 0 && (
+                  <span className="text-sm font-medium text-green-600">
+                    {matchedCostCodes} cost code{matchedCostCodes !== 1 ? 's' : ''} matched
+                  </span>
+                )}
+                {unmatchedCostCodes > 0 && (
+                  <span className="text-sm font-medium text-amber-600">
+                    {unmatchedCostCodes} unmatched
+                  </span>
+                )}
+              </div>
+            )}
+            
+            {/* Action buttons */}
+            <div className="flex justify-end gap-2 px-6 py-4">
+              <Button
+                variant="outline"
+                onClick={handleClose}
+                disabled={isImporting}
+                data-testid="button-cancel-import"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleImport}
+                disabled={!columnMapping.name || validCount === 0 || isImporting}
+                data-testid="button-import-continue"
+              >
+                {isImporting ? "Importing..." : `Import ${validCount} items`}
+              </Button>
+            </div>
           </div>
-        )}
-        </div>
+        </>
+      )}
       </DialogContent>
     </Dialog>
   );
