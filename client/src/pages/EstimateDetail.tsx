@@ -4841,64 +4841,117 @@ export default function EstimateDetail() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={editForm.control}
-                      name="unitCostExTax"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Unit Cost (Ex Tax)</FormLabel>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              step="0.01" 
-                              min="0"
-                              placeholder="0.00"
-                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              value={field.value === 0 ? '' : field.value}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                if (value === '') {
-                                  field.onChange(0);
-                                } else {
-                                  const cost = parseFloat(value) || 0;
-                                  const rounded = Math.round(cost * 100) / 100;
-                                  field.onChange(rounded);
-                                }
-                              }}
-                              onBlur={field.onBlur}
-                              name={field.name}
-                              ref={field.ref}
-                              data-testid="input-edit-item-builder-cost"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  {/* Pricing Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium">Pricing <span className="text-muted-foreground font-normal">GST on expenses</span></h4>
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={editForm.control}
+                        name="unitCostExTax"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Unit cost ex. tax *</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                                <Input 
+                                  type="number" 
+                                  step="0.01" 
+                                  min="0"
+                                  placeholder="Unit cost ex. tax"
+                                  className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  value={field.value === 0 ? '' : field.value}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === '') {
+                                      field.onChange(0);
+                                    } else {
+                                      const cost = parseFloat(value) || 0;
+                                      const rounded = Math.round(cost * 100) / 100;
+                                      field.onChange(rounded);
+                                    }
+                                  }}
+                                  onBlur={field.onBlur}
+                                  name={field.name}
+                                  ref={field.ref}
+                                  data-testid="input-edit-item-builder-cost"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">Unit tax</label>
+                        <div className="h-9 flex items-center px-3 text-sm text-muted-foreground">
+                          ${(() => {
+                            const unitCost = editForm.watch("unitCostExTax") || 0;
+                            const tax = unitCost * 0.10;
+                            return tax.toFixed(2);
+                          })()}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">Unit cost inc. tax *</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            min="0"
+                            placeholder="Unit cost inc. tax"
+                            className="pl-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={(() => {
+                              const unitCost = editForm.watch("unitCostExTax") || 0;
+                              const incTax = unitCost * 1.10;
+                              return incTax === 0 ? '' : incTax.toFixed(2);
+                            })()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                editForm.setValue("unitCostExTax", 0);
+                              } else {
+                                const incTax = parseFloat(value) || 0;
+                                const exTax = incTax / 1.10;
+                                const rounded = Math.round(exTax * 100) / 100;
+                                editForm.setValue("unitCostExTax", rounded);
+                              }
+                            }}
+                            data-testid="input-edit-item-unit-cost-inc-tax"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
                     <FormField
                       control={editForm.control}
                       name="markupPercent"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Markup % (Optional)</FormLabel>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              step="0.1" 
-                              min="0"
-                              placeholder="0"
-                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                field.onChange(value === '' ? undefined : parseFloat(value) || 0);
-                              }}
-                              data-testid="input-edit-item-markup"
-                            />
-                          </FormControl>
+                        <FormItem className="max-w-[200px]">
+                          <FormLabel>Markup</FormLabel>
+                          <div className="flex gap-2">
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.1" 
+                                min="0"
+                                placeholder="20"
+                                className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                {...field}
+                                value={field.value ?? ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  field.onChange(value === '' ? undefined : parseFloat(value) || 0);
+                                }}
+                                data-testid="input-edit-item-markup"
+                              />
+                            </FormControl>
+                            <span className="flex items-center text-sm text-muted-foreground">%</span>
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
