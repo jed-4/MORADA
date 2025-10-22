@@ -243,7 +243,18 @@ export function ImportEstimateItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[1200px] flex flex-col p-0">
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[1200px] flex flex-col p-0 relative">
+        {/* Loading Overlay */}
+        {isImporting && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+              <p className="text-lg font-medium">Importing items...</p>
+              <p className="text-sm text-muted-foreground">Please wait while we process your data</p>
+            </div>
+          </div>
+        )}
+        
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
           <DialogTitle className="text-xl">Import estimation</DialogTitle>
         </DialogHeader>

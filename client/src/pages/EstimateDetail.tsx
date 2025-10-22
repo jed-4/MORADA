@@ -983,22 +983,49 @@ export default function EstimateDetail() {
     },
   });
 
-  // Mutation for adding estimate items
+  // Mutation for adding estimate items with optimistic updates
   const addItemMutation = useMutation({
     mutationFn: async (data: InsertEstimateItem) => {
       return await apiRequest(`/api/estimates/${effectiveEstimateId}/items`, "POST", data);
     },
+    onMutate: async (newItem) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      
+      // Snapshot the previous value
+      const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]);
+      
+      // Optimistically update the cache with a temporary ID
+      const optimisticItem = {
+        ...newItem,
+        id: `temp-${Date.now()}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], (old: any) => {
+        return old ? [...old, optimisticItem] : [optimisticItem];
+      });
+      
+      return { previousItems };
+    },
     onSuccess: () => {
+      // Close dialog only on success
+      setIsAddItemOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      setIsAddItemOpen(false);
       toast({
         title: "Success",
         description: "Estimate item added successfully.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
+      // Rollback on error
+      if (context?.previousItems) {
+        queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], context.previousItems);
+      }
+      // Dialog stays open with form data intact
       toast({
         title: "Error",
         description: error.message || "Failed to add estimate item.",
@@ -1061,20 +1088,40 @@ export default function EstimateDetail() {
     },
   });
 
-  // Mutation for toggling group collapse state
+  // Mutation for toggling group collapse state with optimistic updates
   const toggleGroupCollapseMutation = useMutation({
     mutationFn: async ({ groupId, isCollapsed }: { groupId: string; isCollapsed: boolean }) => {
       return await apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", { isCollapsed });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+    onMutate: async ({ groupId, isCollapsed }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      
+      // Snapshot the previous value
+      const previousGroups = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "groups"]);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "groups"], (old: any) => {
+        if (!old) return old;
+        return old.map((g: any) => g.id === groupId ? { ...g, isCollapsed } : g);
+      });
+      
+      return { previousGroups };
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
+      // Rollback on error
+      if (context?.previousGroups) {
+        queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "groups"], context.previousGroups);
+      }
       toast({
         title: "Error",
         description: error.message || "Failed to toggle group collapse state.",
         variant: "destructive",
       });
+    },
+    onSettled: () => {
+      // Always refetch to ensure consistency with server
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
 
