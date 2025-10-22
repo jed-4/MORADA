@@ -286,46 +286,32 @@ function SortableGroupRow({
             disabled={isLocked}
           />
         </TableCell>
-        <TableCell colSpan={columns.filter(col => col.visible).length + 1} className={`py-2 ${isSubgroup ? 'pl-12' : 'px-4'}`}>
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center space-x-2 flex-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                data-testid={`button-toggle-group-${group.id}`}
-              >
-                {group.isCollapsed ? (
-                  <ChevronRight className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </Button>
-              <span className="font-medium text-sm">{group.name}</span>
-              {group.description && (
-                <span className="text-xs text-muted-foreground">- {group.description}</span>
+        {/* Item/Name column - contains group name, toggle, and menu */}
+        <TableCell className={`py-2 ${isSubgroup ? 'pl-12' : 'px-4'}`} style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300 }}>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+              data-testid={`button-toggle-group-${group.id}`}
+            >
+              {group.isCollapsed ? (
+                <ChevronRight className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
               )}
-              {groupTotals && (
-                <div className="flex items-center gap-2 ml-4">
-                  <Badge variant="outline" className="text-xs font-normal" data-testid={`group-total-builder-cost-ex-${group.id}`}>
-                    BC Ex: {formatCurrency(groupTotals.builderCostExTax)}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs font-normal" data-testid={`group-total-builder-cost-inc-${group.id}`}>
-                    BC Inc: {formatCurrency(groupTotals.builderCostIncTax)}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs font-normal" data-testid={`group-total-client-amount-inc-${group.id}`}>
-                    Client: {formatCurrency(groupTotals.clientAmountIncTax)}
-                  </Badge>
-                </div>
-              )}
-            </div>
+            </Button>
+            <span className="font-medium text-sm">{group.name}</span>
+            {group.description && (
+              <span className="text-xs text-muted-foreground">- {group.description}</span>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="h-6 w-6"
+                  className="h-6 w-6 ml-auto"
                   data-testid={`button-group-menu-${group.id}`}
                   disabled={isLocked}
                 >
@@ -397,6 +383,41 @@ function SortableGroupRow({
             </DropdownMenu>
           </div>
         </TableCell>
+        
+        {/* Render cells for each visible column */}
+        {columns.map(column => {
+          if (!column.visible || column.id === 'item') return null;
+          
+          // Show group totals in relevant columns
+          let cellContent = '';
+          if (groupTotals) {
+            if (column.id === 'builderCost') {
+              cellContent = formatCurrency(groupTotals.builderCostExTax);
+            } else if (column.id === 'builderCostIncTax') {
+              cellContent = formatCurrency(groupTotals.builderCostIncTax);
+            } else if (column.id === 'clientPriceExTax') {
+              cellContent = formatCurrency(groupTotals.clientAmountExTax);
+            } else if (column.id === 'clientTax') {
+              cellContent = formatCurrency(groupTotals.clientTax);
+            } else if (column.id === 'clientPriceIncTax') {
+              cellContent = formatCurrency(groupTotals.clientAmountIncTax);
+            }
+          }
+          
+          return (
+            <TableCell 
+              key={column.id} 
+              className="py-2 px-2 text-sm font-semibold"
+              style={{ width: column.widthPx }}
+              data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
+            >
+              {cellContent}
+            </TableCell>
+          );
+        })}
+        
+        {/* Actions column (empty for groups) */}
+        <TableCell className="py-2 px-2" style={{ width: '48px' }}></TableCell>
       </TableRow>
       
       {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
@@ -1374,6 +1395,11 @@ export default function EstimateDetail() {
         // Convert cents to dollars for display
         setEditingValue((item.unitCostExTax / 100).toFixed(2));
         break;
+      case 'unitCostIncTax':
+        // Convert cents to dollars for display (calculated value)
+        const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
+        setEditingValue((unitCostIncTax / 100).toFixed(2));
+        break;
       case 'markupPercent':
         // Show markup percentage (10 = 10%)
         setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
@@ -1405,7 +1431,7 @@ export default function EstimateDetail() {
     if (!editingCell) return;
     
     // Validate based on field type
-    if (field === 'quantity' || field === 'unitCostExTax' || field === 'markupPercent') {
+    if (field === 'quantity' || field === 'unitCostExTax' || field === 'unitCostIncTax' || field === 'markupPercent') {
       const numValue = parseFloat(editingValue);
       if (isNaN(numValue) || numValue < 0) {
         toast({
@@ -1416,6 +1442,9 @@ export default function EstimateDetail() {
         // Reset to original value
         if (field === 'unitCostExTax') {
           setEditingValue(((item as any)[field] / 100).toFixed(2));
+        } else if (field === 'unitCostIncTax') {
+          const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
+          setEditingValue((unitCostIncTax / 100).toFixed(2));
         } else if (field === 'markupPercent') {
           setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
         } else {
@@ -1450,6 +1479,24 @@ export default function EstimateDetail() {
         setEditingCell(null);
         return;
       }
+    } else if (field === 'unitCostIncTax') {
+      // User entered inc-tax value, back-calculate to ex-tax
+      const incTaxValue = parseFloat(editingValue);
+      const taxRate = estimate?.taxRate ?? 10;
+      
+      // Back-calculate: unitCostExTax = unitCostIncTax / (1 + taxRate/100)
+      const calculatedExTax = incTaxValue / (1 + taxRate / 100);
+      
+      // Check if the calculated ex-tax value is different from current
+      const currentIncTax = calculatePricingValues(item).unitCostIncTax / 100;
+      if (Math.abs(incTaxValue - currentIncTax) < 0.01) {
+        setEditingCell(null);
+        return;
+      }
+      
+      // Save the back-calculated ex-tax value
+      valueToSave = calculatedExTax;
+      fieldToUpdate = 'unitCostExTax'; // Update the ex-tax field instead
     } else if (field === 'markupPercent') {
       // Save markup as number (supports decimals like 12.5%)
       const markup = parseFloat(editingValue);
@@ -3193,8 +3240,36 @@ export default function EstimateDetail() {
       
       case 'unitCostIncTax':
         const unitCostIncTax = pricingValues.unitCostIncTax || 0;
+        const isEditingUnitCostIncTax = isEditing && column.id === 'unitCostIncTax';
+        
+        if (isEditingUnitCostIncTax) {
+          return (
+            <TableCell className="py-0.5">
+              <Input
+                type="number"
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => handleCellKeyDown(e, item, 'unitCostIncTax')}
+                onBlur={() => handleCellSave(item, 'unitCostIncTax')}
+                className="h-7 text-sm border-primary"
+                autoFocus
+                min="0"
+                step="0.01"
+                data-testid={`input-edit-unitCostIncTax-${item.id}`}
+              />
+            </TableCell>
+          );
+        }
         return (
-          <TableCell className="py-0.5 text-sm text-muted-foreground" data-testid={`cell-unitCostIncTax-${item.id}`}>
+          <TableCell 
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
+            title={isLocked ? '' : 'Double-click to edit'}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) handleCellEdit(item, 'unitCostIncTax');
+            }}
+            data-testid={`cell-unitCostIncTax-${item.id}`}
+          >
             {formatCurrency(unitCostIncTax)}
           </TableCell>
         );
