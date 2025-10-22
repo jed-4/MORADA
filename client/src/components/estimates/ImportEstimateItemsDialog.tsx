@@ -243,7 +243,7 @@ export function ImportEstimateItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[1200px] flex flex-col p-0 relative">
+      <DialogContent className="max-w-[1200px] w-[95vw] h-[90vh] flex flex-col p-0 relative overflow-hidden">
         {/* Loading Overlay */}
         {isImporting && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
@@ -255,7 +255,7 @@ export function ImportEstimateItemsDialog({
           </div>
         )}
         
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="text-xl">Import estimation</DialogTitle>
         </DialogHeader>
 
