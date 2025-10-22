@@ -44,7 +44,7 @@ Preferred communication style: Simple, everyday language.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop.
 - **Checklist System**: Templates with group functionality and dashboard widget integration.
 - **Cost Code Management**: Merge functionality for consolidation.
-- **Import System**: Flexible column mapping, auto-detection, and support for various CSV/Excel formats (e.g., Buildern, Wunderbuild). Includes specific handling for hierarchical groups and cost codes.
+- **Import System**: Flexible column mapping, auto-detection, and support for various CSV/Excel formats (e.g., Buildern, Wunderbuild). Includes specific handling for hierarchical groups and cost codes. Features intelligent cost code matching that matches imported values against company cost codes by code number, title, or "code - title" format (case-insensitive), with visual feedback showing matched (green badge with checkmark) vs unmatched (yellow badge with alert) codes in the import preview.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with full CRUD operations and UI support (indentation, expand/collapse).
 - **Allowances System**: Tracking of Prime Cost (PC) and Provisional Sum (PS) items, integrating with estimates, bills, timesheets, and client invoices. Features a list page with estimate filtering, editable markup for PC, status tracking, and bill allocation.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support. Utilizes `@react-pdf/renderer` for PDF generation and `@dnd-kit` for section reordering. Includes integration with estimates and company branding settings.
