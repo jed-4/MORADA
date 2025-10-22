@@ -243,49 +243,50 @@ export function ImportEstimateItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[1200px] w-[95vw] max-h-[90vh] min-h-[500px] flex flex-col p-0 relative overflow-hidden">
-        {/* Loading Overlay */}
-        {isImporting && (
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
-            <div className="flex flex-col items-center space-y-4">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              <p className="text-lg font-medium">Importing items...</p>
-              <p className="text-sm text-muted-foreground">Please wait while we process your data</p>
+      <DialogContent className="max-w-[1200px] w-[95vw] max-h-[90vh] overflow-hidden p-0">
+        <div className="flex h-full flex-col">
+          {/* Loading Overlay */}
+          {isImporting && (
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
+              <div className="flex flex-col items-center space-y-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                <p className="text-lg font-medium">Importing items...</p>
+                <p className="text-sm text-muted-foreground">Please wait while we process your data</p>
+              </div>
             </div>
-          </div>
-        )}
-        
-        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
-          <DialogTitle className="text-xl">Import estimation</DialogTitle>
-        </DialogHeader>
+          )}
+          
+          <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+            <DialogTitle className="text-xl">Import estimation</DialogTitle>
+          </DialogHeader>
 
-        {!fileData.length ? (
-          <div className="space-y-6 py-8 px-6">
-            <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-12 hover-elevate">
-              <Upload className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">Upload File</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Drag and drop or click to browse for Excel (.xlsx) or CSV files
-              </p>
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileUpload}
-                className="hidden"
-                id="file-upload"
-                data-testid="input-file-upload"
-              />
-              <label htmlFor="file-upload">
-                <Button asChild data-testid="button-browse-file">
-                  <span>
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                    Browse File
-                  </span>
-                </Button>
-              </label>
+          {!fileData.length ? (
+            <div className="min-h-[420px] grid place-items-center py-8 px-6">
+              <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-12 hover-elevate">
+                <Upload className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">Upload File</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Drag and drop or click to browse for Excel (.xlsx) or CSV files
+                </p>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="file-upload"
+                  data-testid="input-file-upload"
+                />
+                <label htmlFor="file-upload">
+                  <Button asChild data-testid="button-browse-file">
+                    <span>
+                      <FileSpreadsheet className="mr-2 h-4 w-4" />
+                      Browse File
+                    </span>
+                  </Button>
+                </label>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
         
         {fileData.length > 0 && (
           <div className="flex-1 flex flex-col min-h-0 px-6 overflow-hidden">
@@ -461,6 +462,7 @@ export function ImportEstimateItemsDialog({
             </Button>
           </div>
         )}
+        </div>
       </DialogContent>
     </Dialog>
   );
