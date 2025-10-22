@@ -1,5 +1,20 @@
 import { z } from "zod";
 
+// Cost Code type (minimal version from schema for import matching)
+export type CostCode = {
+  id: string;
+  code: string;
+  title: string;
+};
+
+// Cost code match result
+export type CostCodeMatch = {
+  rawValue: string;
+  matchedCode?: CostCode;
+  matchType?: "code" | "title" | "exact";
+  confidence?: "high" | "low";
+};
+
 // Estimate Item Import Schema
 // This schema is used for validating imported data from CSV/Excel files
 export const importEstimateItemSchema = z.object({
@@ -26,6 +41,7 @@ export type ImportRowResult = {
   rowIndex: number;
   data?: ImportEstimateItem;
   errors?: string[];
+  costCodeMatch?: CostCodeMatch;
 };
 
 // Result of parsing an entire file
@@ -145,6 +161,68 @@ export function parseCurrency(value: string | number): number {
   return parsed; // Return dollars, not cents
 }
 
+// Utility: Match imported cost code value to company cost codes
+export function matchCostCode(rawValue: string | undefined, costCodes: CostCode[]): CostCodeMatch | undefined {
+  if (!rawValue || rawValue.trim() === "") {
+    return undefined;
+  }
+  
+  const normalized = String(rawValue).trim();
+  
+  // Try exact code match first (e.g., "100", "FLRT")
+  const exactCodeMatch = costCodes.find(cc => 
+    cc.code.toLowerCase() === normalized.toLowerCase()
+  );
+  
+  if (exactCodeMatch) {
+    return {
+      rawValue: normalized,
+      matchedCode: exactCodeMatch,
+      matchType: "code",
+      confidence: "high",
+    };
+  }
+  
+  // Try exact title match (e.g., "Preliminaries")
+  const exactTitleMatch = costCodes.find(cc => 
+    cc.title.toLowerCase() === normalized.toLowerCase()
+  );
+  
+  if (exactTitleMatch) {
+    return {
+      rawValue: normalized,
+      matchedCode: exactTitleMatch,
+      matchType: "title",
+      confidence: "high",
+    };
+  }
+  
+  // Try partial matches (e.g., "100 - Preliminaries" matches code "100")
+  const partialCodeMatch = costCodes.find(cc => {
+    const lowerNormalized = normalized.toLowerCase();
+    const lowerCode = cc.code.toLowerCase();
+    // Check if the raw value starts with the code (e.g., "100 - Preliminaries" starts with "100")
+    return lowerNormalized.startsWith(lowerCode + " ") || 
+           lowerNormalized.startsWith(lowerCode + "-") ||
+           lowerNormalized === lowerCode;
+  });
+  
+  if (partialCodeMatch) {
+    return {
+      rawValue: normalized,
+      matchedCode: partialCodeMatch,
+      matchType: "code",
+      confidence: "high",
+    };
+  }
+  
+  // No match found
+  return {
+    rawValue: normalized,
+    confidence: "low",
+  };
+}
+
 // Utility: Auto-detect column mappings from headers
 export function autoDetectColumnMapping(headers: string[]): ColumnMapping {
   const mapping: ColumnMapping = {};
@@ -165,10 +243,12 @@ export function autoDetectColumnMapping(headers: string[]): ColumnMapping {
 export function parseImportRow(
   row: any,
   mapping: ColumnMapping,
-  rowIndex: number
+  rowIndex: number,
+  costCodes: CostCode[] = []
 ): ImportRowResult {
   try {
     const data: any = {};
+    let costCodeMatch: CostCodeMatch | undefined;
     
     // Map columns to fields
     Object.entries(mapping).forEach(([fieldKey, columnKey]) => {
@@ -184,7 +264,17 @@ export function parseImportRow(
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 0 : (value || 0);
         } else if (fieldKey === "costCode") {
           // Convert number to string if necessary
-          data[fieldKey] = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          data[fieldKey] = rawValue;
+          
+          // Try to match the cost code
+          if (rawValue && costCodes.length > 0) {
+            costCodeMatch = matchCostCode(rawValue, costCodes);
+            // If we found a match, use the matched code's ID as the cost code value
+            if (costCodeMatch?.matchedCode) {
+              data[fieldKey] = costCodeMatch.matchedCode.id;
+            }
+          }
         } else if (fieldKey === "proposalVisible") {
           // Parse boolean values from various formats
           if (value === undefined || value === null || value === "") {
@@ -212,6 +302,7 @@ export function parseImportRow(
     return {
       rowIndex,
       data: validated,
+      costCodeMatch,
     };
   } catch (error) {
     const errors: string[] = [];

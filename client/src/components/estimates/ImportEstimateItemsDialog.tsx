@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
-import { Upload, FileSpreadsheet, ChevronDown, ChevronRight, X, AlertCircle } from "lucide-react";
+import { Upload, FileSpreadsheet, ChevronDown, ChevronRight, X, AlertCircle, CheckCircle } from "lucide-react";
 import * as XLSX from "xlsx";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -26,12 +27,14 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   ImportEstimateItem,
   ColumnMapping,
   autoDetectColumnMapping,
   parseImportRow,
+  CostCode,
 } from "@shared/import";
 import { useToast } from "@/hooks/use-toast";
 
@@ -87,14 +90,24 @@ export function ImportEstimateItemsDialog({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
 
+  // Fetch cost codes for matching
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+    enabled: open,
+  });
+
   // Compute parsed results whenever data or mapping changes
   const parsedResults = useMemo(() => {
     if (!fileData.length || !columnMapping.name) return [];
-    return fileData.map((row, index) => parseImportRow(row, columnMapping, index));
-  }, [fileData, columnMapping]);
+    return fileData.map((row, index) => parseImportRow(row, columnMapping, index, costCodes));
+  }, [fileData, columnMapping, costCodes]);
 
   const validCount = parsedResults.filter(r => r.data).length;
   const errorCount = parsedResults.filter(r => r.errors).length;
+  
+  // Count cost code matches
+  const matchedCostCodes = parsedResults.filter(r => r.costCodeMatch?.matchedCode).length;
+  const unmatchedCostCodes = parsedResults.filter(r => r.costCodeMatch && !r.costCodeMatch.matchedCode).length;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -316,10 +329,22 @@ export function ImportEstimateItemsDialog({
 
             {/* Validation status */}
             {parsedResults.length > 0 && (
-              <div className="flex items-center gap-2 py-3 flex-shrink-0">
+              <div className="flex items-center gap-3 py-3 flex-shrink-0 flex-wrap">
                 <span className="text-sm text-muted-foreground">{validCount} valid rows</span>
                 {errorCount > 0 && (
                   <span className="text-sm text-destructive">{errorCount} rows with errors</span>
+                )}
+                {matchedCostCodes > 0 && (
+                  <span className="text-sm text-green-600 flex items-center gap-1">
+                    <CheckCircle className="h-3.5 w-3.5" />
+                    {matchedCostCodes} cost code{matchedCostCodes !== 1 ? 's' : ''} matched
+                  </span>
+                )}
+                {unmatchedCostCodes > 0 && (
+                  <span className="text-sm text-amber-600 flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {unmatchedCostCodes} cost code{unmatchedCostCodes !== 1 ? 's' : ''} unmatched
+                  </span>
                 )}
               </div>
             )}
@@ -401,6 +426,7 @@ export function ImportEstimateItemsDialog({
                         const { row, parsed } = item;
                         const hasError = parsed?.errors && parsed.errors.length > 0;
                         const isGroupSelected = selectedGroups.has(groupName);
+                        const costCodeMatch = parsed.costCodeMatch;
                         
                         return (
                           <TableRow 
@@ -412,6 +438,9 @@ export function ImportEstimateItemsDialog({
                           >
                             <TableCell>
                               {hasError && <AlertCircle className="h-4 w-4 text-destructive" />}
+                              {!hasError && costCodeMatch?.matchedCode && (
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                              )}
                             </TableCell>
                             {hasError ? (
                               <TableCell colSpan={8} className="text-sm text-destructive">
@@ -421,7 +450,23 @@ export function ImportEstimateItemsDialog({
                               <>
                                 <TableCell>{getCellValue(row, "name")}</TableCell>
                                 <TableCell>{getCellValue(row, "type")}</TableCell>
-                                <TableCell>{getCellValue(row, "costCode")}</TableCell>
+                                <TableCell>
+                                  {costCodeMatch ? (
+                                    <div className="flex items-center gap-1.5">
+                                      {costCodeMatch.matchedCode ? (
+                                        <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-xs">
+                                          {costCodeMatch.matchedCode.code} - {costCodeMatch.matchedCode.title}
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="text-xs">
+                                          {costCodeMatch.rawValue} (no match)
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    getCellValue(row, "costCode")
+                                  )}
+                                </TableCell>
                                 <TableCell>{getCellValue(row, "quantity")}</TableCell>
                                 <TableCell>{getCellValue(row, "unitType")}</TableCell>
                                 <TableCell>{getCellValue(row, "unitCostExTax")}</TableCell>
