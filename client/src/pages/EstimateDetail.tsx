@@ -487,7 +487,7 @@ export default function EstimateDetail() {
       }, 1000); // Debounce for 1 second
       return () => clearTimeout(timer);
     }
-  }, [columns, effectiveEstimateId, preferencesLoaded, saveColumnPreferencesMutation]);
+  }, [columns, effectiveEstimateId, preferencesLoaded]);
 
   // Filter state
   const [filterType, setFilterType] = useState<string>('all');
