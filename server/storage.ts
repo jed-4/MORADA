@@ -5901,6 +5901,7 @@ export class DbStorage implements IStorage {
       const items = await this.getEstimateItems(estimateId);
 
       let builderCostTotal = 0;
+      let markupTotal = 0;
       let taxTotal = 0;
       let clientPriceTotal = 0;
 
@@ -5913,10 +5914,17 @@ export class DbStorage implements IStorage {
         if (item.taxAmount != null && item.priceIncTax != null) {
           taxTotal += item.taxAmount;
           clientPriceTotal += item.priceIncTax;
+          
+          // Calculate markup from stored values
+          const clientPriceExTax = item.priceIncTax - item.taxAmount;
+          const itemMarkup = clientPriceExTax - builderCost;
+          markupTotal += itemMarkup;
         } else {
           // Legacy item: calculate using project defaults
           const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
           const markupAmount = Math.round((builderCost * markupPercent) / 100);
+          markupTotal += markupAmount;
+          
           const clientPriceExTax = builderCost + markupAmount;
           const taxRate = estimate?.taxRate ?? 10;
           const tax = Math.round((clientPriceExTax * taxRate) / 100);
@@ -5927,8 +5935,6 @@ export class DbStorage implements IStorage {
         }
       });
       
-      // Markup = (client price - tax) - builder cost
-      const markupTotal = (clientPriceTotal - taxTotal) - builderCostTotal;
       const subtotalWithMarkup = builderCostTotal + markupTotal;
 
       return {
