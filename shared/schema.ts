@@ -89,6 +89,16 @@ export const userInvitations = pgTable("user_invitations", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// User column preferences for customizing table views
+export const userColumnPreferences = pgTable("user_column_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  pageKey: text("page_key").notNull(), // e.g., "estimate_detail", "tasks_list"
+  columnConfig: jsonb("column_config").notNull(), // Array of { id, label, visible, widthPx }
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Schema for user creation/updates
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -129,6 +139,12 @@ export const insertUserInvitationSchema = createInsertSchema(userInvitations).om
   expiresAt: z.coerce.date(),
 });
 
+export const insertUserColumnPreferencesSchema = createInsertSchema(userColumnPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -142,6 +158,8 @@ export type UserProjectAccess = typeof userProjectAccess.$inferSelect;
 export type InsertUserProjectAccess = z.infer<typeof insertUserProjectAccessSchema>;
 export type UserInvitation = typeof userInvitations.$inferSelect;
 export type InsertUserInvitation = z.infer<typeof insertUserInvitationSchema>;
+export type UserColumnPreferences = typeof userColumnPreferences.$inferSelect;
+export type InsertUserColumnPreferences = z.infer<typeof insertUserColumnPreferencesSchema>;
 
 // Utility types for role-based access
 export type UserWithRole = User & {
