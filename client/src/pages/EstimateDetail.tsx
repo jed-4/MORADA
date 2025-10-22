@@ -4015,12 +4015,13 @@ export default function EstimateDetail() {
 
       {/* Add Item Dialog */}
       <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-0">
             <DialogTitle>Add Estimate Item</DialogTitle>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmitItem)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(handleSubmitItem)} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               <FormField
                 control={form.control}
                 name="name"
@@ -4515,10 +4516,10 @@ export default function EstimateDetail() {
                   )}
                 />
               </div>
+              </div>
 
-              {/* Price Summary Footer */}
-              <Separator className="my-4" />
-              <div className="bg-muted/30 -mx-6 -mb-6 p-6 space-y-3">
+              {/* Price Summary Footer - Fixed at bottom */}
+              <div className="border-t bg-muted/30 p-6 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
                     <h4 className="text-sm font-medium mb-2">Description</h4>
