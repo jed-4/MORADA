@@ -1,7 +1,7 @@
 import React from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -211,7 +211,9 @@ function SortableGroupRow({
   selectedItems,
   selectedGroups,
   onToggleGroupSelection,
-  isSubgroup = false
+  isSubgroup = false,
+  groupTotals,
+  formatCurrency
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
@@ -229,6 +231,14 @@ function SortableGroupRow({
   selectedGroups: Set<string>;
   onToggleGroupSelection: (groupId: string) => void;
   isSubgroup?: boolean;
+  groupTotals?: {
+    builderCostExTax: number;
+    builderCostIncTax: number;
+    clientAmountExTax: number;
+    clientTax: number;
+    clientAmountIncTax: number;
+  };
+  formatCurrency: (amount: number) => string;
 }) {
   const { toast } = useToast();
   const {
@@ -277,8 +287,8 @@ function SortableGroupRow({
           />
         </TableCell>
         <TableCell colSpan={columns.filter(col => col.visible).length + 1} className={`py-2 ${isSubgroup ? 'pl-12' : 'px-4'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center space-x-2 flex-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -295,6 +305,19 @@ function SortableGroupRow({
               <span className="font-medium text-sm">{group.name}</span>
               {group.description && (
                 <span className="text-xs text-muted-foreground">- {group.description}</span>
+              )}
+              {groupTotals && (
+                <div className="flex items-center gap-2 ml-4">
+                  <Badge variant="outline" className="text-xs font-normal" data-testid={`group-total-builder-cost-ex-${group.id}`}>
+                    BC Ex: {formatCurrency(groupTotals.builderCostExTax)}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs font-normal" data-testid={`group-total-builder-cost-inc-${group.id}`}>
+                    BC Inc: {formatCurrency(groupTotals.builderCostIncTax)}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs font-normal" data-testid={`group-total-client-amount-inc-${group.id}`}>
+                    Client: {formatCurrency(groupTotals.clientAmountIncTax)}
+                  </Badge>
+                </div>
               )}
             </div>
             <DropdownMenu>
@@ -1956,6 +1979,50 @@ export default function EstimateDetail() {
     return `${actualQty}${unitType ? ` ${unitType}` : ''}`;
   };
 
+  // Helper function to calculate group totals recursively
+  const calculateGroupTotals = (groupId: string, allItems: EstimateItem[], allGroups: EstimateGroup[]) => {
+    // Get all subgroups for this group
+    const subgroups = allGroups.filter(g => g.parentGroupId === groupId);
+    
+    // Get all items directly in this group (including sub-items)
+    // Sub-items have their own individual costs and should be counted
+    const groupItems = allItems.filter(item => item.groupId === groupId);
+    
+    let builderCostExTax = 0;
+    let builderCostIncTax = 0;
+    let clientAmountExTax = 0;
+    let clientTax = 0;
+    let clientAmountIncTax = 0;
+    
+    // Sum up all items in this group (including sub-items)
+    groupItems.forEach(item => {
+      const values = calculatePricingValues(item);
+      builderCostExTax += values.builderCost;
+      builderCostIncTax += values.builderCostIncTax;
+      clientAmountExTax += values.clientPriceExTax;
+      clientTax += values.clientTax;
+      clientAmountIncTax += values.clientPriceIncTax;
+    });
+    
+    // Recursively add subgroup totals
+    subgroups.forEach(subgroup => {
+      const subgroupTotals = calculateGroupTotals(subgroup.id, allItems, allGroups);
+      builderCostExTax += subgroupTotals.builderCostExTax;
+      builderCostIncTax += subgroupTotals.builderCostIncTax;
+      clientAmountExTax += subgroupTotals.clientAmountExTax;
+      clientTax += subgroupTotals.clientTax;
+      clientAmountIncTax += subgroupTotals.clientAmountIncTax;
+    });
+    
+    return {
+      builderCostExTax,
+      builderCostIncTax,
+      clientAmountExTax,
+      clientTax,
+      clientAmountIncTax,
+    };
+  };
+
   // Filter items based on current filter state
   const getFilteredItems = () => {
     return items.filter(item => {
@@ -2002,6 +2069,15 @@ export default function EstimateDetail() {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
   const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
+
+  // Calculate group totals (memoized for performance)
+  const groupTotalsMap = useMemo(() => {
+    const totalsMap: Record<string, ReturnType<typeof calculateGroupTotals>> = {};
+    groups.forEach(group => {
+      totalsMap[group.id] = calculateGroupTotals(group.id, items, groups);
+    });
+    return totalsMap;
+  }, [items, groups]);
 
   // Auto-select group when adding item from group menu
   useEffect(() => {
@@ -3971,6 +4047,8 @@ export default function EstimateDetail() {
                                     selectedItems={selectedItems}
                                     selectedGroups={selectedGroups}
                                     onToggleGroupSelection={handleToggleGroupSelection}
+                                    groupTotals={groupTotalsMap[group.id]}
+                                    formatCurrency={formatCurrency}
                                   />
                                   {/* Render subgroups beneath parent group if not collapsed */}
                                   {!group.isCollapsed && subgroupsByParent[group.id]?.map((subgroup) => (
@@ -3995,6 +4073,8 @@ export default function EstimateDetail() {
                                       selectedGroups={selectedGroups}
                                       onToggleGroupSelection={handleToggleGroupSelection}
                                       isSubgroup={true}
+                                      groupTotals={groupTotalsMap[subgroup.id]}
+                                      formatCurrency={formatCurrency}
                                     />
                                   ))}
                                 </React.Fragment>
