@@ -5347,6 +5347,7 @@ export default function EstimateDetail() {
           estimateId={effectiveEstimateId}
           onImportComplete={() => {
             queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/items`] });
+            queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/groups`] });
             queryClient.invalidateQueries({ queryKey: [`/api/estimates/${effectiveEstimateId}/summary`] });
           }}
         />
