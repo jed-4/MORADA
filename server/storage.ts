@@ -65,6 +65,7 @@ import { eq, or, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
+import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -80,6 +81,10 @@ export interface IStorage {
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
   getUsers(category?: UserCategory): Promise<User[]>;
+
+  // User column preferences
+  getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
+  saveUserColumnPreferences(preferences: InsertUserColumnPreferences): Promise<UserColumnPreferences>;
 
   // User Role operations  
   getUserRoles(category?: UserCategory): Promise<UserRole[]>;
@@ -528,6 +533,7 @@ export class MemStorage implements IStorage {
   private rolePermissions: Map<string, RolePermission>;
   private userProjectAccess: Map<string, UserProjectAccess>;
   private userInvitations: Map<string, UserInvitation>;
+  private userColumnPreferences: Map<string, UserColumnPreferences>;
   private notes: Map<string, Note>;
   private customFieldDefs: Map<string, CustomFieldDef>;
   private customFieldOptions: Map<string, CustomFieldOption>;
@@ -557,6 +563,7 @@ export class MemStorage implements IStorage {
     this.rolePermissions = new Map();
     this.userProjectAccess = new Map();
     this.userInvitations = new Map();
+    this.userColumnPreferences = new Map();
     this.notes = new Map();
     this.customFieldDefs = new Map();
     this.customFieldOptions = new Map();
@@ -1439,6 +1446,37 @@ export class MemStorage implements IStorage {
       return allUsers.filter(user => user.userCategory === category && user.isActive);
     }
     return allUsers.filter(user => user.isActive);
+  }
+
+  async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
+    return Array.from(this.userColumnPreferences.values()).find(
+      (pref) => pref.userId === userId && pref.pageKey === pageKey
+    );
+  }
+
+  async saveUserColumnPreferences(preferences: InsertUserColumnPreferences): Promise<UserColumnPreferences> {
+    const existing = await this.getUserColumnPreferences(preferences.userId, preferences.pageKey);
+    
+    if (existing) {
+      const updated: UserColumnPreferences = {
+        ...existing,
+        columnConfig: preferences.columnConfig,
+        updatedAt: new Date(),
+      };
+      this.userColumnPreferences.set(existing.id, updated);
+      return updated;
+    }
+    
+    const id = randomUUID();
+    const now = new Date();
+    const newPreference: UserColumnPreferences = {
+      id,
+      ...preferences,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.userColumnPreferences.set(id, newPreference);
+    return newPreference;
   }
 
   // Helper method to get user permissions
@@ -4459,6 +4497,42 @@ export class DbStorage implements IStorage {
       return await db.select().from(schema.users).where(eq(schema.users.userCategory, category));
     }
     return await db.select().from(schema.users);
+  }
+
+  async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
+    const [preference] = await db
+      .select()
+      .from(schema.userColumnPreferences)
+      .where(
+        and(
+          eq(schema.userColumnPreferences.userId, userId),
+          eq(schema.userColumnPreferences.pageKey, pageKey)
+        )
+      )
+      .limit(1);
+    return preference;
+  }
+
+  async saveUserColumnPreferences(preferences: InsertUserColumnPreferences): Promise<UserColumnPreferences> {
+    const existing = await this.getUserColumnPreferences(preferences.userId, preferences.pageKey);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(schema.userColumnPreferences)
+        .set({
+          columnConfig: preferences.columnConfig,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.userColumnPreferences.id, existing.id))
+        .returning();
+      return updated;
+    }
+    
+    const [newPreference] = await db
+      .insert(schema.userColumnPreferences)
+      .values(preferences)
+      .returning();
+    return newPreference;
   }
 
   // Tasks CRUD operations
