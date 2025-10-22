@@ -449,6 +449,46 @@ export default function EstimateDetail() {
   ];
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
 
+  // Track if preferences have been loaded
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+
+  // Load user column preferences
+  const { data: columnPreferences, isError: preferencesError } = useQuery({
+    queryKey: ["/api/user-column-preferences/estimate_detail"],
+    enabled: !!effectiveEstimateId,
+  });
+
+  // Apply loaded preferences to columns
+  useEffect(() => {
+    if (columnPreferences && (columnPreferences as any).columnConfig) {
+      setColumns((columnPreferences as any).columnConfig as ColumnConfig[]);
+      setPreferencesLoaded(true);
+    } else if (columnPreferences === null || preferencesError) {
+      // No saved preferences or error loading, use defaults
+      setPreferencesLoaded(true);
+    }
+  }, [columnPreferences, preferencesError]);
+
+  // Save column preferences mutation
+  const saveColumnPreferencesMutation = useMutation({
+    mutationFn: async (columnConfig: ColumnConfig[]) => {
+      return await apiRequest("/api/user-column-preferences", "POST", {
+        pageKey: "estimate_detail",
+        columnConfig,
+      });
+    },
+  });
+
+  // Auto-save column preferences when they change (after initial load)
+  useEffect(() => {
+    if (preferencesLoaded && effectiveEstimateId) {
+      const timer = setTimeout(() => {
+        saveColumnPreferencesMutation.mutate(columns);
+      }, 1000); // Debounce for 1 second
+      return () => clearTimeout(timer);
+    }
+  }, [columns, effectiveEstimateId, preferencesLoaded, saveColumnPreferencesMutation]);
+
   // Filter state
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');

@@ -1,50 +1,7 @@
 # Replit Configuration
 
 ## Overview
-BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. Key capabilities include a customizable widget-based dashboard, comprehensive task management with Kanban boards and calendar integration, and business operations tracking. The platform aims to streamline project workflows, enhance collaboration, and provide robust tools for financial oversight like budget tracking.
-
-## Recent Changes (2025-10-22)
-- **Performance Optimizations**: Implemented optimistic UI updates for instant responsiveness:
-  - **Group Expand/Collapse**: Added optimistic cache updates so groups expand/collapse instantly before server responds, with automatic rollback on errors and onSettled invalidation for eventual consistency
-  - **Add Item**: Items appear in the UI immediately after clicking Add, while keeping the dialog open until server confirms success to prevent data loss on validation errors
-  - **Import Progress**: Added full-screen loading overlay with spinner during imports, showing "Importing items..." status and blocking interaction until complete
-- **Estimate Export/Import Improvements**: Fixed export to show proper data and import to preserve structure:
-  - **Export**: Cost codes now export as "CODE - TITLE" format instead of UUIDs, added "Group" column as first column showing group name for each item
-  - **Import**: Backend now auto-creates missing groups during import, parses "CODE - TITLE" format to match cost codes, assigns items to correct groups
-  - **Round-trip**: Can now export an estimate and re-import it with full fidelity (groups, cost codes, all data preserved)
-- **Cost Code Inline Editing**: Changed inline editing from text input to dropdown select. Double-clicking a cost code cell now opens a dropdown showing all available cost codes plus "None" option. Auto-saves selection immediately.
-- **Add Item Modal Enhancements**: Redesigned pricing section with Buildern-style interface:
-  - **Three-field pricing row**: Unit cost ex tax (editable), Unit tax (auto-calculated 10% GST display), Unit cost inc tax (editable with bidirectional updates)
-  - **Markup field**: Moved to separate row with % suffix and proper formatting
-  - **Price summary footer**: Real-time calculations showing Cost ex tax, Markup ex tax, Tax, and total Amount
-  - **Dollar prefixes**: Added $ symbols to pricing inputs for better UX
-  - All calculations update live as user types, providing immediate feedback
-- **Hierarchical Groups for Estimates (COMPLETE)**: Implemented unlimited-depth hierarchical group structure matching Buildern's parent group/subgroup organization.
-  - **Backend**: Added parentGroupId to estimateGroups schema, storage layer methods for hierarchical operations, duplicate/copy API routes with proper validation
-  - **Frontend**: Hierarchical display with pl-12 indentation for subgroups, expand/collapse functionality, flexible multi-level nesting (no restrictions)
-  - **Menu Actions**: Groups have Add Subgroup, Add Item, Edit, Duplicate, Copy To, Create from, Delete. Items have Edit, Duplicate, Copy To, Create from, Delete
-  - **Subgroup Dialog**: "Add Subgroup" shows parent group context, automatically sets parentGroupId, proper state cleanup
-  - **Duplicate/Copy**: Both groups and items can be duplicated (same estimate) or copied (different estimate) with all relationships preserved
-  - **Placeholders**: "Copy To" and "Create from" actions show "coming soon" toast messages for future implementation
-- **Fixed DELETE Request Handling**: Updated `apiRequest` function in queryClient.ts to properly handle 204 No Content responses. Previously, DELETE requests would fail when trying to parse empty response bodies. Now correctly returns null for 204 responses, fixing estimate deletion and other DELETE operations.
-- **Estimate Detail Enhancements**: 
-  - Connected cost code dropdowns to fetch actual company cost codes from API
-  - Added loading states to prevent interaction while cost codes are fetching
-  - Implemented cascading group selection (selecting a group automatically selects all items in that group)
-  - Enhanced bulk delete to handle both items and groups with improved error reporting
-  - Added group selection checkboxes separate from item checkboxes
-- **Estimate Status Badges**: Removed version tag (e.g., "v1") from estimate status badges in ProjectEstimates page for cleaner UI.
-- **Project Estimate Cards**: Simplified estimate cards to show only Total Value, removing Subtotal, Markup, GST breakdown, and Items count for a more streamlined view.
-- Fixed codebase-wide apiRequest parameter order bug (url, method, data) across 40+ files.
-- Implemented delete estimate functionality with confirmation dialog in estimates list dropdown menu.
-- Built comprehensive estimate import system supporting buildern and wunderbuild CSV/Excel formats.
-- Created column mapping interface matching buildern's UI style with dropdown selectors.
-- Added backend API route for full estimate imports with groups and items.
-- **Project Estimates Page**: Simplified to grid view only. Removed Kanban view, import dialog, and drag-and-drop functionality. Kanban view remains available on the All Estimates page (`/estimates`). Import functionality relocated to estimate detail page.
-- **Full-Width Card Layout**: Converted estimate cards from 3-column grid to full-width horizontal layout. Each card displays estimate name, total value, subtotal, markup, GST, item count, status badge, and actions in a single responsive row with flex-wrap for mobile compatibility.
-- **Estimate Status Badges**: Updated EstimateDetail page to use field settings for status badges (consistent with ProjectEstimates), enabling customizable status names and colors. Removed non-functional Edit button from header (inline editing still available).
-- **Icon-Only Action Buttons**: Converted import, export, and lock/unlock buttons in EstimateDetail header to icon-only design with proper aria-labels for accessibility. Import button added next to export button.
-- **Buildern-Style Import Modal**: Redesigned ImportEstimateItemsDialog to match Buildern's interface with large centered modal (1200px × 95vh), column mapping dropdowns at top (8 core fields in 4-column grid), live data preview table with grouped/collapsible rows by cost code, functional tax toggle (converts tax-inclusive to tax-exclusive with 10% GST), filename display, row-level validation error indicators (red backgrounds, AlertCircle icons, error messages), and valid item count on Continue button. Added markupPercent field support throughout the import pipeline (schema, auto-detection, parsing, UI, backend).
+BuildPro is a project management software designed for Australian residential builders. It provides a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. The platform aims to streamline project workflows, enhance collaboration, and offer robust tools for financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to provide a comprehensive solution that simplifies complex construction project management, offering significant market potential by improving efficiency and profitability for builders.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -60,6 +17,8 @@ Preferred communication style: Simple, everyday language.
 - **Theme System**: Custom theme provider supporting light/dark modes, with a white & minimalist aesthetic, muted blue accents (HSL 215 35% 45%), and accessible contrast ratios.
 - **Typography**: Inter font family.
 - **Dashboard**: Widget-based with drag & drop functionality, grid-based layout, and per-project localStorage persistence.
+- **UI/UX Decisions**: Emphasis on a white and minimalist theme, column resizing for tables, and accessibility compliance.
+- **Design Approach**: Buildern-style interfaces for components like the import modal and pricing sections, providing a familiar and intuitive user experience.
 
 ### Backend Architecture
 - **Framework**: Express.js with TypeScript.
@@ -80,25 +39,19 @@ Preferred communication style: Simple, everyday language.
 - **Module System**: ESM modules.
 - **Project Structure**: Monorepo with client, server, and shared code.
 
-### Key Features and Implementations
-- **Budget Tracking**: Comprehensive budget management with database schema, API routes, calculation engine, summary cards, and cost code breakdown. Integrates with estimates, bills, and variations for automatic calculations.
-- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, filter interface, and view deletion.
-- **Checklist System**: Templates with group functionality, responsive table view, and dashboard widget.
-- **Contact Management**: Improved form UX with structured address fields for future mapping integration.
-- **Cost Code Management**: Merge functionality to consolidate duplicate cost codes.
-- **Import System**: Enhanced dialog with flexible column mapping, auto-detection, and blank header handling.
-- **Templates Hub**: Centralized "Templates" page with cards for various template types (e.g., Notes, Site Diary, Schedule), supporting phased rollouts with "Coming Soon" indicators.
-- **Allowances System**: Track Prime Cost (PC) and Provisional Sum (PS) items from estimates through to final pricing and invoicing. PC items allow markup over supplier cost, PS items accumulate bills and timesheets. Integrates with Bills, Timesheets, and Client Invoices. Status tracking: Pending → In Progress → Finalized.
-  - **List Page**: Estimate selector at top to filter allowances by estimate. Aligned columns for PC and PS tables (Description, Estimate Price, Status, Actual Price, Variance). PC items include editable markup column. Status displayed as colored badges (clickable to change) using field settings for customizable names and colors. Rows clickable to navigate to detail page (interactive cells use stopPropagation).
-  - **Field Settings**: allowance.status field category with customizable status names and colors. Default statuses: Pending (yellow/F59E0B), In Progress (blue/3B82F6), Finalized (green/10B981).
-  - **Detail Page (Foundation)**: Header displays allowance info with status badge, estimate/actual/variance. Back button navigation. PC/PS type detection for specialized interfaces (in progress).
-  - **Bill Allocation (Complete)**: Bill line items can be allocated to PC/PS allowances with checkbox "Applies to Allowances" and dropdown selection. Saves to billLineItemAllowances table with proper create/update/delete handling.
-  - **Timesheet Allocation (Backend Complete)**: Infrastructure added for PS allowance allocation including timesheetAllowances table, storage methods (get, create, update, delete), and API routes. UI integration pending.
-  - **Client Invoice Integration (Pending)**: Allowance variance display in client invoices not yet implemented.
-- **Timesheet Enhancements**: 15-minute time block intervals, standard work hours configuration in company settings, time picker auto-scroll to default hours, Excel export with filtering.
-- **Proposals System**: Professional PDF proposal builder with live preview and section-based editing. Database schema enhanced with section types (cover_page, cover_letter, estimate, summary, allowances, closing_letter, attachments, terms_conditions, signature), template support, and flexible JSON content storage. Frontend features split-screen PDF builder (60% live preview, 40% section editor) using @react-pdf/renderer for instant PDF generation. Drag-drop section reordering with @dnd-kit. PDF components include Cover Page and Estimate sections with company branding integration. Supports PDF download, section templates, and visual editing. Backend workflow API endpoints for status transitions, acceptance tracking, and proposal-to-invoice conversion. Company branding settings for logo, colors (primary/secondary), fonts, and header/footer text.
-  - **Estimate Section**: Full integration with existing estimates system. Section editor provides dropdown to select estimate, optional description field, and column visibility toggles (description, quantity, unit cost ex/inc tax, markup %, amount ex/inc tax, show subtotals, show $0 lines). PDF renders grouped tables by cost code with Jack App style (black group headers, clean rows). Subtotals and grand totals dynamically match enabled column toggles. API endpoint `/api/estimates/:id/full` fetches complete estimate data (estimate, groups, items). Null-safe calculations prevent NaN values from missing pricing data.
-- **UI/UX**: White & minimalist theme, column resizing for tables, and accessibility compliance.
+### Feature Specifications & System Design
+- **Budget Tracking**: Comprehensive budget management integrating estimates, bills, and variations with a calculation engine.
+- **Task Management**: Kanban, List, and Calendar views with drag-and-drop.
+- **Checklist System**: Templates with group functionality and dashboard widget integration.
+- **Cost Code Management**: Merge functionality for consolidation.
+- **Import System**: Flexible column mapping, auto-detection, and support for various CSV/Excel formats (e.g., Buildern, Wunderbuild). Includes specific handling for hierarchical groups and cost codes.
+- **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with full CRUD operations and UI support (indentation, expand/collapse).
+- **Allowances System**: Tracking of Prime Cost (PC) and Provisional Sum (PS) items, integrating with estimates, bills, timesheets, and client invoices. Features a list page with estimate filtering, editable markup for PC, status tracking, and bill allocation.
+- **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support. Utilizes `@react-pdf/renderer` for PDF generation and `@dnd-kit` for section reordering. Includes integration with estimates and company branding settings.
+- **User Column Preferences**: Persistent storage and loading of user-specific column order, visibility, and width for tables, with auto-save and fallback to defaults.
+- **Optimistic UI Updates**: Implemented for group expand/collapse and item additions to enhance responsiveness.
+- **Estimate Detail Enhancements**: Cost code dropdowns connected to API, loading states, cascading group selection, and improved bulk delete functionality.
+- **Estimate Status Badges**: Consistent status badge display across the application, configurable via field settings.
 
 ## External Dependencies
 
@@ -109,6 +62,7 @@ Preferred communication style: Simple, everyday language.
 - **class-variance-authority**: For variant-based component APIs.
 - **@dnd-kit**: For drag & drop functionality.
 - **@tiptap/react**: Rich text editor.
+- **@react-pdf/renderer**: PDF generation.
 
 ### Data and State Management
 - **TanStack Query**: Server state management.
