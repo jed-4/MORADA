@@ -387,6 +387,11 @@ export function parseBuildernRow(row: any): { isGroup: boolean; groupName?: stri
     };
   }
   
+  // Skip ASSEMBLY rows - their costs are already in their child items
+  if (costType === "ASSEMBLY") {
+    return { isGroup: false };
+  }
+  
   // Item row: has a Parent Name
   if (parentName) {
     const quantity = parseFloat(row["Quantity"]) || 0;
