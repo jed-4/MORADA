@@ -2010,6 +2010,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/estimate-groups/reorder", async (req, res) => {
     try {
       const { groups } = req.body;
+      console.log('[REORDER] Received reorder request for groups:', JSON.stringify(groups, null, 2));
+      
       if (!Array.isArray(groups)) {
         return res.status(400).json({ error: "Groups must be an array" });
       }
@@ -2024,16 +2026,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update each group's order and verify success
       const results = await Promise.all(
         groups.map(async ({ id, order }) => {
+          console.log(`[REORDER] Updating group ${id} to order ${order}`);
+          const existingGroup = await storage.getEstimateGroup(id);
+          console.log(`[REORDER] Existing group ${id}:`, existingGroup ? 'found' : 'NOT FOUND');
+          
           const updated = await storage.updateEstimateGroup(id, { order });
           if (!updated) {
+            console.log(`[REORDER] Failed to update group ${id}`);
             throw new Error(`Failed to update group ${id}`);
           }
+          console.log(`[REORDER] Successfully updated group ${id}`);
           return updated;
         })
       );
 
+      console.log('[REORDER] All groups updated successfully');
       res.json({ success: true, count: results.length });
     } catch (error: any) {
+      console.error('[REORDER] Error:', error.message);
       if (error.message?.includes("locked estimate")) {
         return res.status(409).json({ error: error.message });
       }
