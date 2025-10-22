@@ -176,16 +176,16 @@ export function ImportEstimateItemsDialog({
     });
   };
 
-  // Group data by cost code/group with parsed results
+  // Group data by group/parent name with parsed results
   const groupedData = useMemo(() => {
-    if (!fileData.length || !columnMapping.costCode) {
+    if (!fileData.length || !columnMapping.group) {
       return { ungrouped: fileData.map((row, idx) => ({ row, parsed: parsedResults[idx] })) };
     }
 
     const groups: Record<string, any[]> = {};
-    const costCodeColumn = columnMapping.costCode as string;
+    const groupColumn = columnMapping.group as string;
     fileData.forEach((row, idx) => {
-      const groupName = row[costCodeColumn] || "Ungrouped";
+      const groupName = row[groupColumn] || "Ungrouped";
       if (!groups[groupName]) {
         groups[groupName] = [];
       }
@@ -193,7 +193,7 @@ export function ImportEstimateItemsDialog({
     });
 
     return groups;
-  }, [fileData, columnMapping.costCode, parsedResults]);
+  }, [fileData, columnMapping.group, parsedResults]);
 
   const handleImport = async () => {
     setIsImporting(true);
@@ -380,7 +380,7 @@ export function ImportEstimateItemsDialog({
                 <TableBody>
                   {Object.entries(groupedData).map(([groupName, rows]) => (
                     <React.Fragment key={groupName}>
-                      {columnMapping.costCode && (
+                      {columnMapping.group && (
                         <TableRow className="bg-muted/50 font-medium">
                           <TableCell>
                             <div
