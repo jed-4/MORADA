@@ -243,7 +243,7 @@ export function ImportEstimateItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[1200px] w-[95vw] max-h-[90vh] flex flex-col p-0 relative overflow-hidden">
+      <DialogContent className="max-w-[1200px] w-[95vw] max-h-[90vh] min-h-[500px] flex flex-col p-0 relative overflow-hidden">
         {/* Loading Overlay */}
         {isImporting && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-lg">
