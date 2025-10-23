@@ -29,7 +29,7 @@ const projectItemsBase = [
   { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
   { title: "Request For Quotes", baseUrl: "/rfq", icon: FileSearch },
   { title: "Request For Information", baseUrl: "/rfi", icon: HelpCircle },
-  { title: "Proposal", baseUrl: "/proposal", icon: File },
+  { title: "Proposals", baseUrl: "/proposals", icon: File },
   { title: "Selections", baseUrl: "/selections", icon: CheckSquare },
   { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
   { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
