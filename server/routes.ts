@@ -1582,20 +1582,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const estimate = await storage.createEstimate(estimateData);
 
-      // 2. Create groups with proper sort order
+      // 2. Create groups with proper sort order, handling arbitrary nesting depth
       const createdGroups: any[] = [];
-      const groupNameToId = new Map<string, string>();
+      const groupNameToId = new Map<string, string>(); // normalized name -> id
+      const pendingGroups = [...groups];
+      const maxIterations = groups.length + 1; // Prevent infinite loops
+      let iteration = 0;
 
-      for (const group of groups) {
-        const groupData = {
-          estimateId: estimate.id,
-          name: group.name,
-          costCode: group.costCode || null,
-          sortOrder: group.sortOrder ?? createdGroups.length,
-        };
-        const createdGroup = await storage.createEstimateGroup(groupData);
-        createdGroups.push(createdGroup);
-        groupNameToId.set(group.name, createdGroup.id);
+      // Normalize group name for matching (case-insensitive, trimmed)
+      const normalizeName = (name: string) => name.trim().toLowerCase();
+
+      // Iteratively create groups: first parents, then their children, then their grandchildren, etc.
+      while (pendingGroups.length > 0 && iteration < maxIterations) {
+        iteration++;
+        const groupsToCreate: any[] = [];
+
+        // Find all groups whose parents have been created (or have no parent)
+        for (const group of pendingGroups) {
+          if (!group.parentGroupName) {
+            // Top-level group, can be created
+            groupsToCreate.push(group);
+          } else {
+            // Check if parent has been created
+            const parentGroupId = groupNameToId.get(normalizeName(group.parentGroupName));
+            if (parentGroupId) {
+              groupsToCreate.push(group);
+            }
+          }
+        }
+
+        // If no groups can be created this iteration, we have orphaned subgroups
+        if (groupsToCreate.length === 0) {
+          console.warn(`[IMPORT] Could not create ${pendingGroups.length} groups due to missing parents:`,
+            pendingGroups.map(g => `"${g.name}" (parent: "${g.parentGroupName}")`));
+          break;
+        }
+
+        // Create the groups
+        for (const group of groupsToCreate) {
+          const parentGroupId = group.parentGroupName 
+            ? groupNameToId.get(normalizeName(group.parentGroupName))
+            : undefined;
+
+          const groupData = {
+            estimateId: estimate.id,
+            name: group.name,
+            parentGroupId,
+            order: group.sortOrder ?? createdGroups.length,
+          };
+          
+          const createdGroup = await storage.createEstimateGroup(groupData);
+          createdGroups.push(createdGroup);
+          groupNameToId.set(normalizeName(group.name), createdGroup.id);
+          
+          // Remove from pending
+          const index = pendingGroups.indexOf(group);
+          if (index > -1) {
+            pendingGroups.splice(index, 1);
+          }
+        }
       }
 
       // 3. Create items with pricing calculations

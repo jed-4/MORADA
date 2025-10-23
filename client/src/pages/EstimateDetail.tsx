@@ -637,6 +637,16 @@ export default function EstimateDetail() {
     },
   });
 
+  // Mutation for updating individual group properties (including parentGroupId)
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number } }) => {
+      return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+    },
+  });
+
   // Handle drag end for reordering items, groups, and cross-group moves
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -650,21 +660,97 @@ export default function EstimateDetail() {
     const isOverGroup = String(over.id).startsWith('group-');
     
     if (isDraggingGroup) {
-      // Handle group reordering
-      const { sortedGroups, subgroupsByParent } = organizeItemsByGroups();
-      const oldIndex = sortedGroups.findIndex(g => `group-${g.id}` === active.id);
-      const newIndex = sortedGroups.findIndex(g => `group-${g.id}` === over.id);
+      // Extract group IDs
+      const draggedGroupId = String(active.id).replace('group-', '');
+      const draggedGroup = groups.find(g => g.id === draggedGroupId);
       
-      if (oldIndex === -1 || newIndex === -1) return;
+      if (!draggedGroup) {
+        console.log('[DRAG] Dragged group not found:', draggedGroupId);
+        return;
+      }
       
-      const reorderedGroups = arrayMove(sortedGroups, oldIndex, newIndex);
-      const updates = reorderedGroups.map((group, index) => ({
-        id: group.id,
-        order: index
-      }));
+      console.log('[DRAG] Dragging group:', draggedGroup.name, 'parentGroupId:', draggedGroup.parentGroupId);
       
-      console.log('[DRAG] Reordering groups:', updates);
-      reorderGroupsMutation.mutate({ groups: updates });
+      if (isOverGroup) {
+        // Dragging a group onto another group
+        const overGroupId = String(over.id).replace('group-', '');
+        const overGroup = groups.find(g => g.id === overGroupId);
+        
+        if (!overGroup) {
+          console.log('[DRAG] Over group not found:', overGroupId);
+          return;
+        }
+        
+        // Prevent nesting a group into itself or its own descendants
+        if (draggedGroupId === overGroupId) {
+          console.log('[DRAG] Cannot nest group into itself');
+          return;
+        }
+        
+        // Check if overGroup is a descendant of draggedGroup (prevent circular nesting)
+        let checkGroup = overGroup;
+        while (checkGroup.parentGroupId) {
+          if (checkGroup.parentGroupId === draggedGroupId) {
+            console.log('[DRAG] Cannot nest group into its own descendant');
+            return;
+          }
+          checkGroup = groups.find(g => g.id === checkGroup.parentGroupId) || checkGroup;
+          if (checkGroup.id === overGroup.id) break; // Safety check to prevent infinite loop
+        }
+        
+        console.log('[DRAG] Dropping group onto group:', overGroup.name);
+        
+        // Determine behavior: are they at the same level?
+        const sameLevelGroups = groups.filter(g => g.parentGroupId === draggedGroup.parentGroupId);
+        const isOverGroupSameLevel = sameLevelGroups.some(g => g.id === overGroupId);
+        
+        if (isOverGroupSameLevel) {
+          // Reorder at same level
+          console.log('[DRAG] Reordering groups at same level');
+          const sortedSameLevelGroups = sameLevelGroups.sort((a, b) => (a.order || 0) - (b.order || 0));
+          const oldIndex = sortedSameLevelGroups.findIndex(g => g.id === draggedGroupId);
+          const newIndex = sortedSameLevelGroups.findIndex(g => g.id === overGroupId);
+          
+          if (oldIndex === -1 || newIndex === -1) return;
+          
+          const reorderedGroups = arrayMove(sortedSameLevelGroups, oldIndex, newIndex);
+          const updates = reorderedGroups.map((group, index) => ({
+            id: group.id,
+            order: index
+          }));
+          
+          console.log('[DRAG] Reordering groups at same level:', updates);
+          reorderGroupsMutation.mutate({ groups: updates });
+        } else {
+          // Nest into the over group (make draggedGroup a subgroup of overGroup)
+          console.log('[DRAG] Nesting group into another group');
+          
+          // Get siblings left behind in the original level (need to reorder them)
+          const oldSiblings = sameLevelGroups.filter(g => g.id !== draggedGroupId);
+          const siblingUpdates = oldSiblings.map((group, index) => ({
+            id: group.id,
+            order: index
+          }));
+          
+          // Get siblings in the new parent
+          const newSiblings = groups.filter(g => g.parentGroupId === overGroupId);
+          const newOrder = newSiblings.length; // Add at end
+          
+          // Reorder old siblings first if any
+          if (siblingUpdates.length > 0) {
+            reorderGroupsMutation.mutate({ groups: siblingUpdates });
+          }
+          
+          // Then update the dragged group's parent and order
+          updateGroupMutation.mutate({
+            groupId: draggedGroupId,
+            updates: { parentGroupId: overGroupId, order: newOrder }
+          });
+        }
+      } else {
+        // Dragging group onto an item - ignore this case
+        console.log('[DRAG] Ignoring group drag onto item');
+      }
       return;
     }
     
@@ -713,6 +799,12 @@ export default function EstimateDetail() {
       updatedTargetItems.forEach((item, index) => {
         if (item.id === draggedItem.id) {
           updates.push({ id: item.id, order: index, groupId: targetGroupId });
+          
+          // Also update all sub-items to move with parent
+          const subItems = items.filter(i => i.parentItemId === draggedItem.id);
+          subItems.forEach(subItem => {
+            updates.push({ id: subItem.id, groupId: targetGroupId });
+          });
         } else {
           updates.push({ id: item.id, order: index });
         }
@@ -777,6 +869,12 @@ export default function EstimateDetail() {
       updatedTargetItems.forEach((item, index) => {
         if (item.id === draggedItem.id) {
           updates.push({ id: item.id, order: index, groupId: targetGroupId });
+          
+          // Also update all sub-items to move with parent
+          const subItems = items.filter(i => i.parentItemId === draggedItem.id);
+          subItems.forEach(subItem => {
+            updates.push({ id: subItem.id, groupId: targetGroupId });
+          });
         } else {
           updates.push({ id: item.id, order: index });
         }

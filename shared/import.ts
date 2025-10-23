@@ -328,6 +328,7 @@ export function validateImportResult(result: ImportFileResult): boolean {
 // Full Estimate Import (with groups and items)
 export const importEstimateGroupSchema = z.object({
   name: z.string().min(1, "Group name is required"),
+  parentGroupName: z.string().optional(), // For importing subgroups
   costCode: z.string().optional(),
   sortOrder: z.number().optional(),
 });
@@ -374,16 +375,18 @@ export function detectEstimateImportFormat(headers: string[]): ImportEstimateFor
 }
 
 // Parse buildern format row
-export function parseBuildernRow(row: any): { isGroup: boolean; groupName?: string; item?: Partial<ImportEstimateWithGroupsItem> } {
+export function parseBuildernRow(row: any): { isGroup: boolean; groupName?: string; parentGroupName?: string; item?: Partial<ImportEstimateWithGroupsItem> } {
   const costType = String(row["Cost Type"] || "").toUpperCase();
   const parentName = String(row["Parent Name"] || "").trim();
   const name = String(row["Name"] || "").trim();
   
-  // Group row: Cost Type = "GROUP" and no Parent Name
-  if (costType === "GROUP" && !parentName) {
+  // GROUP rows create estimate groups (parent or subgroup)
+  // They're summary totals, so they won't be imported as cost-bearing items
+  if (costType === "GROUP") {
     return {
       isGroup: true,
       groupName: name,
+      parentGroupName: parentName || undefined, // Include parent if it exists (for subgroups)
     };
   }
   
@@ -521,6 +524,7 @@ export function parseFullEstimateImport(
           if (!groupNames.has(parsed.groupName)) {
             groups.push({
               name: parsed.groupName,
+              parentGroupName: parsed.parentGroupName, // Include parent for subgroups
               sortOrder: sortOrder++,
             });
             groupNames.add(parsed.groupName);
