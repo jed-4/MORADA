@@ -403,7 +403,7 @@ export default function Notes() {
         handleDialogClose();
       }
     }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? "Edit Note" : "Add New Note"}
@@ -416,7 +416,7 @@ export default function Notes() {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={handleFormSubmit} className="space-y-4 mt-4">
+          <form onSubmit={handleFormSubmit} className="space-y-3 mt-4">
             {/* Title Field - using FormField for better stability */}
             <FormField
               control={form.control}
@@ -437,53 +437,56 @@ export default function Notes() {
               )}
             />
             
-            {/* Owner Field */}
-            <FormField
-              control={form.control}
-              name="ownerName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Owner</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Note owner..."
-                      {...field}
-                      data-testid="note-owner-input"
-                      readOnly
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Category Dropdown */}
-            <FormField
-              control={form.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select value={field.value || "General"} onValueChange={field.onChange}>
+            {/* Owner and Category in a row */}
+            <div className="grid grid-cols-2 gap-3">
+              {/* Owner Field */}
+              <FormField
+                control={form.control}
+                name="ownerName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Owner</FormLabel>
                     <FormControl>
-                      <SelectTrigger data-testid="note-category-select">
-                        <SelectValue placeholder="Select category..." />
-                      </SelectTrigger>
+                      <Input
+                        placeholder="Note owner..."
+                        {...field}
+                        data-testid="note-owner-input"
+                        readOnly
+                      />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="General">General</SelectItem>
-                      <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
-                      <SelectItem value="Project Updates">Project Updates</SelectItem>
-                      <SelectItem value="Ideas">Ideas</SelectItem>
-                      <SelectItem value="To-Do">To-Do</SelectItem>
-                      <SelectItem value="Important">Important</SelectItem>
-                      <SelectItem value="Documentation">Documentation</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Category Dropdown */}
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select value={field.value || "General"} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger data-testid="note-category-select">
+                          <SelectValue placeholder="Select category..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="General">General</SelectItem>
+                        <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
+                        <SelectItem value="Project Updates">Project Updates</SelectItem>
+                        <SelectItem value="Ideas">Ideas</SelectItem>
+                        <SelectItem value="To-Do">To-Do</SelectItem>
+                        <SelectItem value="Important">Important</SelectItem>
+                        <SelectItem value="Documentation">Documentation</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             {/* Template Selector */}
             {!isEditing && noteTemplates.length > 0 && (
@@ -571,20 +574,22 @@ export default function Notes() {
                 <FormItem>
                   <FormLabel>Content</FormLabel>
                   <FormControl>
-                    <RichTextEditor
-                      key={editingNote ? `edit-${editingNote.id}` : 'new'}
-                      content={field.value || ""}
-                      onChange={(html, text) => {
-                        // Use batch update to prevent multiple re-renders during typing
-                        requestAnimationFrame(() => {
-                          field.onChange(html);
-                          form.setValue("contentText", text, { shouldValidate: false });
-                          form.setValue("content", text, { shouldValidate: false }); // For backward compatibility
-                        });
-                      }}
-                      placeholder="Enter note content..."
-                      data-testid="note-content-editor"
-                    />
+                    <div className="min-h-[300px]">
+                      <RichTextEditor
+                        key={editingNote ? `edit-${editingNote.id}` : 'new'}
+                        content={field.value || ""}
+                        onChange={(html, text) => {
+                          // Use batch update to prevent multiple re-renders during typing
+                          requestAnimationFrame(() => {
+                            field.onChange(html);
+                            form.setValue("contentText", text, { shouldValidate: false });
+                            form.setValue("content", text, { shouldValidate: false }); // For backward compatibility
+                          });
+                        }}
+                        placeholder="Enter note content..."
+                        data-testid="note-content-editor"
+                      />
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
