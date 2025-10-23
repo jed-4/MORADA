@@ -1602,45 +1602,44 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="grid grid-cols-13 gap-3 items-center p-3 border rounded-lg hover-elevate"
+      className="flex items-center gap-4 p-4 border rounded-lg hover-elevate bg-card"
       data-testid={`option-row-${index}`}
     >
       {/* Drag Handle */}
-      <div className="col-span-1 flex justify-center">
+      <div className="flex-shrink-0">
         <Button
           variant="ghost"
           size="icon"
-          className="cursor-grab active:cursor-grabbing"
+          className="cursor-grab active:cursor-grabbing h-8 w-8"
           {...attributes}
           {...listeners}
           data-testid={`drag-handle-${index}`}
         >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
+          <GripVertical className="h-5 w-5 text-muted-foreground" />
         </Button>
       </div>
 
       {/* Color Picker */}
-      <div className="col-span-2">
+      <div className="flex-shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
-              size="sm"
-              className="w-8 h-8 rounded border-2 p-0"
+              className="w-10 h-10 rounded-md border-2 p-0 shadow-sm"
               style={{ backgroundColor: option.color || "#6B7280" }}
               data-testid={`color-select-${index}`}
             >
               <span className="sr-only">Select color</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-48 p-2" align="start">
-            <div className="grid grid-cols-6 gap-1">
+          <DropdownMenuContent className="w-56 p-3" align="start">
+            <div className="grid grid-cols-6 gap-2">
               {colorOptions.map((color) => (
                 <button
                   key={color}
                   type="button"
                   onClick={() => handleOptionChange(index, "color", color)}
-                  className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                  className="w-8 h-8 rounded-md border-2 hover:scale-110 transition-transform shadow-sm"
                   style={{ backgroundColor: color }}
                   title={color}
                   data-testid={`color-option-${color.replace('#', '')}`}
@@ -1654,29 +1653,29 @@ function SortableItem({
       </div>
 
       {/* Name Input */}
-      <div className="col-span-3">
+      <div className="flex-1 min-w-[180px]">
         <Input
           value={option.name}
           onChange={(e) => handleOptionChange(index, "name", e.target.value)}
-          className="h-8 text-sm"
+          className="h-9"
           placeholder="Option name"
           data-testid={`name-input-${index}`}
         />
       </div>
 
       {/* Key Input */}
-      <div className="col-span-3">
+      <div className="flex-1 min-w-[180px]">
         <Input
           value={option.key}
           onChange={(e) => handleOptionChange(index, "key", e.target.value)}
-          className="h-8 text-sm font-mono"
+          className="h-9 font-mono text-sm"
           placeholder="option_key"
           data-testid={`key-input-${index}`}
         />
       </div>
 
       {/* Active Toggle */}
-      <div className="col-span-1 flex justify-center">
+      <div className="flex-shrink-0 flex items-center justify-center w-16">
         <Checkbox
           checked={option.isActive}
           onCheckedChange={(checked) => handleOptionChange(index, "isActive", checked)}
@@ -1685,7 +1684,7 @@ function SortableItem({
       </div>
 
       {/* Default Toggle */}
-      <div className="col-span-1 flex justify-center">
+      <div className="flex-shrink-0 flex items-center justify-center w-16">
         <Checkbox
           checked={option.isDefault}
           onCheckedChange={(checked) => {
@@ -1702,7 +1701,7 @@ function SortableItem({
       </div>
 
       {/* Completed Toggle */}
-      <div className="col-span-1 flex justify-center">
+      <div className="flex-shrink-0 flex items-center justify-center w-16">
         <Checkbox
           checked={option.isCompleted}
           onCheckedChange={(checked) => {
@@ -1719,7 +1718,7 @@ function SortableItem({
       </div>
 
       {/* Remove Button */}
-      <div className="col-span-1 flex justify-center">
+      <div className="flex-shrink-0">
         <Button
           size="sm"
           variant="ghost"
@@ -1943,35 +1942,35 @@ function FieldCategoriesSection() {
         )}
       </div>
 
-      <div className="flex gap-6 h-[600px]">
+      <div className="flex gap-8 h-[650px]">
         {/* Master Panel - Category List */}
-        <Card className="w-80 flex-shrink-0" data-testid="card-categories-master">
-          <CardHeader>
+        <Card className="w-96 flex-shrink-0 shadow-sm" data-testid="card-categories-master">
+          <CardHeader className="pb-4">
             <CardTitle className="text-lg" data-testid="title-field-categories">Field Categories</CardTitle>
             <p className="text-sm text-muted-foreground">
               Select a category to manage its options
             </p>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="space-y-1">
+            <div className="space-y-1 px-3 pb-3">
               {categories.map((category: FieldCategoryWithOptions) => (
                 <button
                   key={category.id}
                   onClick={() => setSelectedCategoryId(category.id)}
-                  className={`w-full text-left p-4 flex items-center gap-3 hover-elevate ${
+                  className={`w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${
                     selectedCategoryId === category.id 
-                      ? "bg-primary text-primary-foreground" 
-                      : "hover:bg-muted"
+                      ? "bg-primary text-primary-foreground shadow-md" 
+                      : "hover-elevate"
                   }`}
                   data-testid={`category-${category.key}`}
                 >
                   <div className="flex-1">
-                    <p className="font-medium">{category.label}</p>
-                    <p className="text-xs opacity-70">
-                      {category.options?.length || 0} options
+                    <p className="font-semibold">{category.label}</p>
+                    <p className={`text-xs mt-0.5 ${selectedCategoryId === category.id ? 'opacity-90' : 'text-muted-foreground'}`}>
+                      {category.options?.length || 0} option{category.options?.length !== 1 ? 's' : ''}
                     </p>
                   </div>
-                  <List className="h-4 w-4" />
+                  <List className="h-5 w-5 opacity-70" />
                 </button>
               ))}
             </div>
@@ -1979,20 +1978,19 @@ function FieldCategoriesSection() {
         </Card>
 
         {/* Detail Panel - Options Table */}
-        <Card className="flex-1" data-testid="card-options-detail">
-          <CardHeader>
+        <Card className="flex-1 shadow-sm" data-testid="card-options-detail">
+          <CardHeader className="pb-5">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-lg" data-testid="title-selected-category">
-                  {selectedCategory?.label || "Select Category"}
+                <CardTitle className="text-xl font-bold" data-testid="title-selected-category">
+                  {selectedCategory?.label || "Select a Category"}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground mt-1">
                   Manage options for this field category
                 </p>
               </div>
               <Button 
                 onClick={handleAddOption}
-                size="sm"
                 data-testid="button-add-option"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -2017,16 +2015,16 @@ function FieldCategoriesSection() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                <div className="grid grid-cols-13 gap-3 text-xs font-medium text-muted-foreground p-2 border-b">
-                  <div className="col-span-1 text-center">Drag</div>
-                  <div className="col-span-2">Color</div>
-                  <div className="col-span-3">Name</div>
-                  <div className="col-span-3">Key</div>
-                  <div className="col-span-1 text-center">Active</div>
-                  <div className="col-span-1 text-center">Default</div>
-                  <div className="col-span-1 text-center">Done</div>
-                  <div className="col-span-1 text-center">Remove</div>
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                <div className="flex items-center gap-4 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b sticky top-0 bg-card z-10">
+                  <div className="flex-shrink-0 w-8"></div>
+                  <div className="flex-shrink-0 w-10">Color</div>
+                  <div className="flex-1 min-w-[180px]">Name</div>
+                  <div className="flex-1 min-w-[180px]">Key</div>
+                  <div className="flex-shrink-0 w-16 text-center">Active</div>
+                  <div className="flex-shrink-0 w-16 text-center">Default</div>
+                  <div className="flex-shrink-0 w-16 text-center">Done</div>
+                  <div className="flex-shrink-0 w-9"></div>
                 </div>
                 <DndContext 
                   sensors={sensors} 
