@@ -71,8 +71,7 @@ function SelectionOptionsDropdown({ selectionId, onNavigate }: SelectionOptionsD
   const { data: selectionWithOptions, isLoading } = useQuery<SelectionWithOptions>({
     queryKey: ["/api/selections", selectionId, "with-options"],
     queryFn: async () => {
-      const response = await apiRequest(`/api/selections/${selectionId}`, "GET");
-      return response.json();
+      return await apiRequest(`/api/selections/${selectionId}`, "GET");
     },
     enabled: isOpen, // Only fetch when dropdown is open
   });
@@ -173,7 +172,7 @@ export default function Selections() {
   // Fetch selections for the current project
   const { data: selections = [], isLoading } = useQuery<Selection[]>({
     queryKey: ["/api/selections", currentProject?.id],
-    queryFn: () => apiRequest(`/api/selections?projectId=${currentProject?.id}`, "GET").then(res => res.json()),
+    queryFn: () => apiRequest(`/api/selections?projectId=${currentProject?.id}`, "GET"),
     enabled: !!currentProject?.id,
   });
 
@@ -190,8 +189,7 @@ export default function Selections() {
   // Create selection mutation
   const createSelectionMutation = useMutation({
     mutationFn: async (selection: InsertSelection) => {
-      const response = await apiRequest("/api/selections", "POST", selection);
-      return response.json();
+      return await apiRequest("/api/selections", "POST", selection);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", currentProject?.id] });
@@ -213,8 +211,7 @@ export default function Selections() {
   // Update selection mutation
   const updateSelectionMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertSelection> }) => {
-      const response = await apiRequest(`/api/selections/${id}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/selections/${id}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", currentProject?.id] });
