@@ -1912,8 +1912,8 @@ function FieldCategoriesSection() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between pb-2 border-b">
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between pb-4 mb-6 border-b flex-shrink-0">
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-1" data-testid="heading-field-settings">Field Settings</h2>
           <p className="text-base text-muted-foreground">
@@ -1942,17 +1942,17 @@ function FieldCategoriesSection() {
         )}
       </div>
 
-      <div className="flex gap-8 h-[650px]">
+      <div className="flex gap-8 flex-1 overflow-hidden min-h-0">
         {/* Master Panel - Category List */}
-        <Card className="w-96 flex-shrink-0 shadow-sm" data-testid="card-categories-master">
-          <CardHeader className="pb-4">
+        <Card className="w-96 flex-shrink-0 shadow-sm flex flex-col" data-testid="card-categories-master">
+          <CardHeader className="pb-4 flex-shrink-0">
             <CardTitle className="text-lg" data-testid="title-field-categories">Field Categories</CardTitle>
             <p className="text-sm text-muted-foreground">
               Select a category to manage its options
             </p>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="space-y-1 px-3 pb-3">
+          <CardContent className="p-0 flex-1 overflow-hidden">
+            <div className="space-y-1 px-3 pb-3 overflow-y-auto h-full">
               {categories.map((category: FieldCategoryWithOptions) => (
                 <button
                   key={category.id}
@@ -1978,8 +1978,8 @@ function FieldCategoriesSection() {
         </Card>
 
         {/* Detail Panel - Options Table */}
-        <Card className="flex-1 shadow-sm" data-testid="card-options-detail">
-          <CardHeader className="pb-5">
+        <Card className="flex-1 shadow-sm flex flex-col" data-testid="card-options-detail">
+          <CardHeader className="pb-5 flex-shrink-0">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-xl font-bold" data-testid="title-selected-category">
@@ -1998,7 +1998,7 @@ function FieldCategoriesSection() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="pt-2">
+          <CardContent className="pt-2 flex-1 overflow-hidden">
             {options.length === 0 ? (
               <div className="text-center py-16">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
@@ -2017,8 +2017,8 @@ function FieldCategoriesSection() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                <div className="flex items-center gap-4 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b sticky top-0 bg-card z-10">
+              <div className="flex flex-col h-full overflow-hidden">
+                <div className="flex items-center gap-4 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b bg-card flex-shrink-0">
                   <div className="flex-shrink-0 w-8"></div>
                   <div className="flex-shrink-0 w-10">Color</div>
                   <div className="flex-1 min-w-[180px]">Name</div>
@@ -2028,31 +2028,33 @@ function FieldCategoriesSection() {
                   <div className="flex-shrink-0 w-16 text-center">Done</div>
                   <div className="flex-shrink-0 w-9"></div>
                 </div>
-                <DndContext 
-                  sensors={sensors} 
-                  collisionDetection={closestCenter} 
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext 
-                    items={options.map((option, index) => option.id || `option-${index}`)} 
-                    strategy={verticalListSortingStrategy}
+                <div className="flex-1 overflow-y-auto px-2 py-3 space-y-3">
+                  <DndContext 
+                    sensors={sensors} 
+                    collisionDetection={closestCenter} 
+                    onDragEnd={handleDragEnd}
                   >
-                    {options.map((option, index) => (
-                      <SortableItem
-                        key={option.id || `option-${index}`}
-                        id={option.id || `option-${index}`}
-                        option={option}
-                        index={index}
-                        handleOptionChange={handleOptionChange}
-                        handleRemoveOption={handleRemoveOption}
-                        colorOptions={colorOptions}
-                        options={options}
-                        setOptions={setOptions}
-                        setIsDirty={setIsDirty}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
+                    <SortableContext 
+                      items={options.map((option, index) => option.id || `option-${index}`)} 
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {options.map((option, index) => (
+                        <SortableItem
+                          key={option.id || `option-${index}`}
+                          id={option.id || `option-${index}`}
+                          option={option}
+                          index={index}
+                          handleOptionChange={handleOptionChange}
+                          handleRemoveOption={handleRemoveOption}
+                          colorOptions={colorOptions}
+                          options={options}
+                          setOptions={setOptions}
+                          setIsDirty={setIsDirty}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                </div>
               </div>
             )}
           </CardContent>
