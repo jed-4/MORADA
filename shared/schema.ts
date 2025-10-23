@@ -1434,6 +1434,7 @@ export const proposals = pgTable("proposals", {
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   notes: text("notes"), // Internal notes, not visible to client
+  isArchived: boolean("is_archived").notNull().default(false),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

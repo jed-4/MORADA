@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Plus, 
   FileText, 
@@ -16,7 +17,9 @@ import {
   CheckCircle,
   XCircle,
   FileCheck,
-  ChevronDown
+  ChevronDown,
+  Archive,
+  ArchiveRestore
 } from "lucide-react";
 import {
   Select,
@@ -29,6 +32,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type Proposal, type Project, type FieldCategoryWithOptions } from "@shared/schema";
@@ -43,6 +47,7 @@ export default function Proposals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
+  const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
   const { toast } = useToast();
 
   // Auto-select project if accessed from project context
@@ -83,6 +88,29 @@ export default function Proposals() {
     },
   });
 
+  // Mutation to archive/unarchive proposal
+  const toggleArchiveMutation = useMutation({
+    mutationFn: async ({ proposalId, isArchived }: { proposalId: string; isArchived: boolean }) => {
+      return await apiRequest(`/api/proposals/${proposalId}`, "PATCH", { isArchived });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
+      toast({
+        title: variables.isArchived ? "Proposal archived" : "Proposal restored",
+        description: variables.isArchived 
+          ? "Proposal has been moved to archived proposals."
+          : "Proposal has been restored to active proposals.",
+      });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update proposal archive status.",
+      });
+    },
+  });
+
   // Fetch all proposals
   const { data: proposals = [], isLoading: proposalsLoading } = useQuery<Proposal[]>({
     queryKey: ["/api/proposals"],
@@ -105,13 +133,14 @@ export default function Proposals() {
   // Filter proposals
   const filteredProposals = useMemo(() => {
     return proposals.filter(proposal => {
+      const matchesArchived = activeTab === "archived" ? proposal.isArchived : !proposal.isArchived;
       const matchesSearch = proposal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            proposal.notes?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesProject = selectedProject === "All" || proposal.projectId === selectedProject;
       const matchesStatus = selectedStatus === "All" || proposal.status === selectedStatus;
-      return matchesSearch && matchesProject && matchesStatus;
+      return matchesArchived && matchesSearch && matchesProject && matchesStatus;
     });
-  }, [proposals, searchTerm, selectedProject, selectedStatus]);
+  }, [proposals, searchTerm, selectedProject, selectedStatus, activeTab]);
 
   // Calculate status counts
   const statusCounts = useMemo(() => {
@@ -120,6 +149,13 @@ export default function Proposals() {
       counts[proposal.status] = (counts[proposal.status] || 0) + 1;
     });
     return counts;
+  }, [proposals]);
+
+  // Calculate archive counts
+  const archiveCounts = useMemo(() => {
+    const active = proposals.filter(p => !p.isArchived).length;
+    const archived = proposals.filter(p => p.isArchived).length;
+    return { active, archived };
   }, [proposals]);
 
   const getStatusIcon = (status: string) => {
@@ -188,6 +224,30 @@ export default function Proposals() {
               New Proposal
             </Button>
           </div>
+
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "archived")} className="mt-6">
+            <TabsList className="w-full sm:w-auto" data-testid="tabs-proposals">
+              <TabsTrigger value="active" className="gap-2" data-testid="tab-active-proposals">
+                <FileText className="w-4 h-4" />
+                Active
+                {archiveCounts.active > 0 && (
+                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
+                    {archiveCounts.active}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="archived" className="gap-2" data-testid="tab-archived-proposals">
+                <Archive className="w-4 h-4" />
+                Archived
+                {archiveCounts.archived > 0 && (
+                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
+                    {archiveCounts.archived}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-3 mt-4">
@@ -371,6 +431,27 @@ export default function Proposals() {
                               </DropdownMenuItem>
                             );
                           })}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => toggleArchiveMutation.mutate({ 
+                              proposalId: proposal.id, 
+                              isArchived: !proposal.isArchived 
+                            })}
+                            className="gap-2"
+                            data-testid={`menu-item-archive-${proposal.id}`}
+                          >
+                            {proposal.isArchived ? (
+                              <>
+                                <ArchiveRestore className="w-4 h-4" />
+                                <span>Restore</span>
+                              </>
+                            ) : (
+                              <>
+                                <Archive className="w-4 h-4" />
+                                <span>Archive</span>
+                              </>
+                            )}
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
