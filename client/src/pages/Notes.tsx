@@ -115,13 +115,19 @@ export default function Notes() {
   const effectiveProjectId = params.projectId || currentProject?.id;
 
   // Fetch custom field definitions and templates
-  const { data: customFieldDefs = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
+  const { data: customFieldDefsRaw = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
     queryKey: ["/api/custom-field-defs"],
   });
 
   const { data: noteTemplates = [], isLoading: isLoadingTemplates } = useQuery<NoteTemplate[]>({
     queryKey: ["/api/note-templates"],
   });
+
+  // Stabilize customFieldDefs to prevent unnecessary re-renders
+  // Only update when the actual content changes, not the array reference
+  const customFieldDefs = useMemo(() => customFieldDefsRaw, [
+    JSON.stringify(customFieldDefsRaw)
+  ]);
 
   // Fetch custom field options for select fields
   const { data: customFieldOptions = {} } = useQuery<Record<string, CustomFieldOption[]>>({
@@ -430,6 +436,15 @@ export default function Notes() {
                       {...field}
                       data-testid="note-title-input"
                       autoComplete="off"
+                      onFocus={(e) => {
+                        // Prevent auto-selection of text on focus
+                        // Move cursor to end instead of selecting all
+                        const target = e.target;
+                        const length = target.value.length;
+                        setTimeout(() => {
+                          target.setSelectionRange(length, length);
+                        }, 0);
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
