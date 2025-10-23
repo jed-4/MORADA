@@ -203,7 +203,8 @@ export default function Proposals() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4 sm:p-6">
+      <div className="flex-1 overflow-auto">
+        <div className="p-4 sm:p-6 min-w-[800px]">
         {filteredProposals.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center">
             <FileText className="w-12 h-12 text-muted-foreground mb-4" />
@@ -326,6 +327,7 @@ export default function Proposals() {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
