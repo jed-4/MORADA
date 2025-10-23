@@ -221,7 +221,7 @@ export default function Proposals() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-4 max-w-5xl">
+          <div className="flex flex-col gap-4">
             {filteredProposals.map((proposal) => {
               const project = projects.find(p => p.id === proposal.projectId);
               const statusColor = getStatusColor(proposal.status);
@@ -240,7 +240,7 @@ export default function Proposals() {
                   }}
                   data-testid={`card-proposal-${proposal.id}`}
                 >
-                  <div className="flex items-center justify-between gap-6 p-6">
+                  <div className="flex items-center gap-6 p-6">
                     {/* Left: Title and Project */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {project && (
@@ -267,15 +267,8 @@ export default function Proposals() {
                       </div>
                     </div>
 
-                    {/* Middle: Metadata */}
+                    {/* Middle: Additional Info */}
                     <div className="flex items-center gap-6 text-sm shrink-0">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <DollarSign className="w-4 h-4" />
-                        <span className="font-medium" data-testid={`text-proposal-amount-${proposal.id}`}>
-                          {formatCurrency(proposal.totalAmount)}
-                        </span>
-                      </div>
-                      
                       {proposal.expiryDate && (
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <Calendar className="w-4 h-4" />
@@ -304,20 +297,29 @@ export default function Proposals() {
                       )}
                     </div>
 
-                    {/* Right: Status Badge */}
-                    <Badge 
-                      variant={getStatusBadgeVariant(proposal.status)}
-                      className="shrink-0 gap-1.5 px-3 py-1.5"
-                      style={statusColor ? {
-                        backgroundColor: `${statusColor}15`,
-                        color: statusColor,
-                        borderColor: `${statusColor}30`
-                      } : undefined}
-                      data-testid={`badge-proposal-status-${proposal.id}`}
-                    >
-                      {getStatusIcon(proposal.status)}
-                      <span className="font-medium">{statusOption?.name || proposal.status}</span>
-                    </Badge>
+                    {/* Status Column */}
+                    <div className="shrink-0 min-w-[140px]">
+                      <Badge 
+                        variant={getStatusBadgeVariant(proposal.status)}
+                        className="gap-1.5 px-3 py-1.5 w-full justify-center"
+                        style={statusColor ? {
+                          backgroundColor: `${statusColor}15`,
+                          color: statusColor,
+                          borderColor: `${statusColor}30`
+                        } : undefined}
+                        data-testid={`badge-proposal-status-${proposal.id}`}
+                      >
+                        {getStatusIcon(proposal.status)}
+                        <span className="font-medium">{statusOption?.name || proposal.status}</span>
+                      </Badge>
+                    </div>
+
+                    {/* Price Column */}
+                    <div className="shrink-0 min-w-[140px] text-right">
+                      <div className="text-lg font-semibold" data-testid={`text-proposal-amount-${proposal.id}`}>
+                        {formatCurrency(proposal.totalAmount)}
+                      </div>
+                    </div>
                   </div>
                 </Card>
               );
