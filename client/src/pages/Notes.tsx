@@ -171,6 +171,14 @@ export default function Notes() {
     }, {} as Record<string, string>),
   }), [customFieldDefs]);
 
+  // Use a ref to store stable default values for form resets
+  const defaultValuesRef = useRef(defaultValues);
+  
+  // Update ref when defaultValues change, but don't trigger re-renders
+  useEffect(() => {
+    defaultValuesRef.current = defaultValues;
+  }, [defaultValues]);
+
   // Form handling - declare form after schema is available
   const form = useForm<NoteFormData>({
     resolver: zodResolver(noteFormSchema),
@@ -207,7 +215,7 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
-      form.reset(defaultValues);
+      form.reset(defaultValuesRef.current);
     },
     onError: (error) => {
       toast({ 
@@ -227,7 +235,7 @@ export default function Notes() {
       queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
-      form.reset(defaultValues);
+      form.reset(defaultValuesRef.current);
     },
     onError: (error) => {
       toast({ 
@@ -392,9 +400,9 @@ export default function Notes() {
     setIsAddingNote(false);
     setEditingNote(null);
     setSelectedTemplate(null);
-    // Reset form to default values
-    form.reset(defaultValues);
-  }, [form, defaultValues]);
+    // Reset form to default values using ref to prevent dependency issues
+    form.reset(defaultValuesRef.current);
+  }, [form]);
 
   // Standard form submission
   const handleFormSubmit = form.handleSubmit(onSubmit);
@@ -615,7 +623,7 @@ export default function Notes() {
               <Button type="button" variant="outline" onClick={() => {
                 setIsAddingNote(false);
                 setEditingNote(null);
-                form.reset();
+                form.reset(defaultValuesRef.current);
               }}>
                 Cancel
               </Button>
