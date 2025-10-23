@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,8 @@ import {
   Send,
   CheckCircle,
   XCircle,
-  FileCheck
+  FileCheck,
+  ChevronDown
 } from "lucide-react";
 import {
   Select,
@@ -24,9 +25,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type Proposal, type Project, type FieldCategoryWithOptions } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Proposals() {
   const [, setLocation] = useLocation();
@@ -34,6 +43,7 @@ export default function Proposals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
+  const { toast } = useToast();
 
   // Auto-select project if accessed from project context
   useEffect(() => {
@@ -51,6 +61,27 @@ export default function Proposals() {
       setLocation('/proposals/new');
     }
   };
+
+  // Mutation to update proposal status
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ proposalId, status }: { proposalId: string; status: string }) => {
+      return await apiRequest(`/api/proposals/${proposalId}`, "PATCH", { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
+      toast({
+        title: "Status updated",
+        description: "Proposal status has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update proposal status.",
+      });
+    },
+  });
 
   // Fetch all proposals
   const { data: proposals = [], isLoading: proposalsLoading } = useQuery<Proposal[]>({
@@ -299,20 +330,49 @@ export default function Proposals() {
                     </div>
 
                     {/* Status Column */}
-                    <div className="shrink-0 min-w-[140px]">
-                      <Badge 
-                        variant={getStatusBadgeVariant(proposal.status)}
-                        className="gap-1.5 px-3 py-1.5 w-full justify-center"
-                        style={statusColor ? {
-                          backgroundColor: `${statusColor}15`,
-                          color: statusColor,
-                          borderColor: `${statusColor}30`
-                        } : undefined}
-                        data-testid={`badge-proposal-status-${proposal.id}`}
-                      >
-                        {getStatusIcon(proposal.status)}
-                        <span className="font-medium">{statusOption?.name || proposal.status}</span>
-                      </Badge>
+                    <div className="shrink-0 min-w-[140px]" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <div className="cursor-pointer">
+                            <Badge 
+                              variant={getStatusBadgeVariant(proposal.status)}
+                              className="gap-1.5 px-3 py-1.5 w-full justify-center hover-elevate"
+                              style={statusColor ? {
+                                backgroundColor: `${statusColor}15`,
+                                color: statusColor,
+                                borderColor: `${statusColor}30`
+                              } : undefined}
+                              data-testid={`badge-proposal-status-${proposal.id}`}
+                            >
+                              {getStatusIcon(proposal.status)}
+                              <span className="font-medium">{statusOption?.name || proposal.status}</span>
+                              <ChevronDown className="w-3 h-3 ml-1" />
+                            </Badge>
+                          </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="center" className="w-48">
+                          {proposalStatuses.map((status) => {
+                            const statusColor = status.color;
+                            return (
+                              <DropdownMenuItem
+                                key={status.key}
+                                onClick={() => updateStatusMutation.mutate({ 
+                                  proposalId: proposal.id, 
+                                  status: status.key 
+                                })}
+                                className="gap-2"
+                                data-testid={`menu-item-status-${status.key}`}
+                              >
+                                {getStatusIcon(status.key)}
+                                <span className="flex-1">{status.name}</span>
+                                {proposal.status === status.key && (
+                                  <CheckCircle className="w-4 h-4" />
+                                )}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
 
                     {/* Price Column */}
