@@ -1912,16 +1912,16 @@ function FieldCategoriesSection() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      <div className="flex items-start justify-between pb-2 border-b">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight" data-testid="heading-field-settings">Field Settings</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-1" data-testid="heading-field-settings">Field Settings</h2>
           <p className="text-base text-muted-foreground">
             Manage predefined field categories and their options
           </p>
         </div>
         {isDirty && (
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <Button 
               variant="outline" 
               onClick={handleDiscardChanges}
@@ -1998,13 +1998,15 @@ function FieldCategoriesSection() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-2">
             {options.length === 0 ? (
-              <div className="text-center py-8">
-                <List className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">No Options</h3>
-                <p className="text-muted-foreground mb-4">
-                  This category has no options yet.
+              <div className="text-center py-16">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                  <List className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">No Options Yet</h3>
+                <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                  This category has no options yet. Add your first option to get started.
                 </p>
                 <Button 
                   onClick={handleAddOption}
