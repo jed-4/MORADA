@@ -283,7 +283,7 @@ function SortableGroupRow({
         style={{
           ...style,
         }}
-        className={`bg-card border border-border rounded-lg ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all !border-b-border`}
+        className={`bg-card border border-border rounded-xl ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all !border-b-border`}
         data-testid={`row-group-${group.id}`}
       >
         <TableCell className="py-2" style={{ width: '32px' }}>
@@ -3907,12 +3907,12 @@ export default function EstimateDetail() {
           )}
 
           {/* Items Table */}
-          <Card className="min-w-0">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center">
+          <div className="min-w-0 border border-border rounded-lg overflow-hidden">
+            <div className="bg-card flex flex-row items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold flex items-center">
                 <FileText className="w-5 h-5 mr-2" />
                 Estimate Items ({items.length})
-              </CardTitle>
+              </h3>
               <div className="flex items-center space-x-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -4004,10 +4004,10 @@ export default function EstimateDetail() {
                   New item
                 </Button>
               </div>
-            </CardHeader>
+            </div>
             
             {/* Filter Bar */}
-            <div className="px-6 py-3 border-b flex items-center gap-3">
+            <div className="bg-card px-6 py-3 border-b flex items-center gap-3">
               {groups.length > 0 && (
                 <>
                   <Button
@@ -4087,8 +4087,8 @@ export default function EstimateDetail() {
               )}
             </div>
             
-            <CardContent className="p-0 overflow-x-auto">
-              <div className="p-6">
+            <div className="p-0 overflow-x-auto">
+              <div className="p-6 bg-muted/30">
                 {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -4315,8 +4315,8 @@ export default function EstimateDetail() {
                 </DndContext>
               )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
 
