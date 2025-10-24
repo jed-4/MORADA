@@ -272,16 +272,18 @@ function SortableGroupRow({
   
   return (
     <>
+      {/* Spacer row for visual separation - top */}
+      {nestingLevel === 0 && (
+        <TableRow className="h-3 bg-transparent !border-0">
+          <TableCell colSpan={100} className="p-0 !border-0 bg-transparent" />
+        </TableRow>
+      )}
       <TableRow 
         ref={setNodeRef}
         style={{
           ...style,
-          marginLeft: `${indentPixels}px`,
-          marginRight: '8px',
-          marginBottom: '8px',
-          marginTop: nestingLevel === 0 ? '8px' : '4px'
         }}
-        className={`bg-card border rounded-md ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all`}
+        className={`bg-card border border-border rounded-md ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all !border-b-border`}
         data-testid={`row-group-${group.id}`}
       >
         <TableCell className="py-2" style={{ width: '32px' }}>
@@ -304,7 +306,7 @@ function SortableGroupRow({
           />
         </TableCell>
         {/* Item/Name column - contains group name, toggle, and menu */}
-        <TableCell className="py-2 px-4" style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300 }}>
+        <TableCell className="py-2 px-4" style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300, paddingLeft: `${16 + indentPixels}px` }}>
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
