@@ -61,7 +61,7 @@ import {
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
-import { eq, or, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
@@ -5333,7 +5333,7 @@ export class DbStorage implements IStorage {
     try {
       const groups = await db.select().from(schema.estimateGroups)
         .where(eq(schema.estimateGroups.estimateId, estimateId))
-        .orderBy(schema.estimateGroups.order);
+        .orderBy(asc(schema.estimateGroups.order));
       return groups;
     } catch (error) {
       console.error("Database error in getEstimateGroups:", error);
