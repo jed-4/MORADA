@@ -679,7 +679,54 @@ export default function EstimateDetail() {
     mutationFn: async ({ groups }: { groups: { id: string; order: number }[] }) => {
       return apiRequest("/api/estimate-groups/reorder", "PATCH", { groups });
     },
-    onSuccess: () => {
+    onMutate: async ({ groups: groupUpdates }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      
+      // Snapshot previous value
+      const previousGroups = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "groups"]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(
+        ["/api/estimates", effectiveEstimateId, "groups"],
+        (old: any) => {
+          if (!Array.isArray(old)) return old;
+          
+          // Create a map of order changes
+          const orderMap = new Map(groupUpdates.map(u => [u.id, u.order]));
+          
+          // Update the groups with new orders
+          return old.map(group => {
+            if (orderMap.has(group.id)) {
+              return {
+                ...group,
+                order: orderMap.get(group.id)
+              };
+            }
+            return group;
+          });
+        }
+      );
+      
+      return { previousGroups };
+    },
+    onError: (error: any, variables, context) => {
+      // Rollback to previous state
+      if (context?.previousGroups) {
+        queryClient.setQueryData(
+          ["/api/estimates", effectiveEstimateId, "groups"],
+          context.previousGroups
+        );
+      }
+      
+      toast({
+        title: "Failed to reorder groups",
+        description: error?.message || "Could not update group order. Please try again.",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      // Always refetch to ensure consistency
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
