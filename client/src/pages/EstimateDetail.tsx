@@ -211,9 +211,11 @@ function SortableGroupRow({
   selectedItems,
   selectedGroups,
   onToggleGroupSelection,
-  isSubgroup = false,
+  nestingLevel = 0,
   groupTotals,
-  formatCurrency
+  formatCurrency,
+  subgroups = [],
+  allGroups = []
 }: { 
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
@@ -230,7 +232,7 @@ function SortableGroupRow({
   selectedItems: Set<string>;
   selectedGroups: Set<string>;
   onToggleGroupSelection: (groupId: string) => void;
-  isSubgroup?: boolean;
+  nestingLevel?: number;
   groupTotals?: {
     builderCostExTax: number;
     builderCostIncTax: number;
@@ -239,6 +241,8 @@ function SortableGroupRow({
     clientAmountIncTax: number;
   };
   formatCurrency: (amount: number) => string;
+  subgroups?: EstimateGroup[];
+  allGroups?: EstimateGroup[];
 }) {
   const { toast } = useToast();
   const {
@@ -259,12 +263,19 @@ function SortableGroupRow({
   // Check if the group itself is selected
   const isGroupSelected = selectedGroups.has(group.id);
   
+  // Calculate indentation based on nesting level (each level adds 48px)
+  const indentPixels = nestingLevel * 48;
+  
+  // Get immediate children subgroups
+  const childSubgroups = subgroups.filter(sg => sg.parentGroupId === group.id)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  
   return (
     <>
       <TableRow 
         ref={setNodeRef}
         style={style}
-        className="bg-muted/50 hover:bg-muted/70 border-t-2 border-b"
+        className={`bg-card border-l-4 border-l-primary/20 ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all`}
         data-testid={`row-group-${group.id}`}
       >
         <TableCell className="py-2" style={{ width: '32px' }}>
@@ -287,7 +298,7 @@ function SortableGroupRow({
           />
         </TableCell>
         {/* Item/Name column - contains group name, toggle, and menu */}
-        <TableCell className={`py-2 ${isSubgroup ? 'pl-12' : 'px-4'}`} style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300 }}>
+        <TableCell className="py-2 px-4" style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300, paddingLeft: `${16 + indentPixels}px` }}>
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
@@ -302,7 +313,7 @@ function SortableGroupRow({
                 <ChevronDown className="h-4 w-4" />
               )}
             </Button>
-            <span className="font-medium text-sm">{group.name}</span>
+            <span className="font-semibold text-sm">{group.name}</span>
             {group.description && (
               <span className="text-xs text-muted-foreground">- {group.description}</span>
             )}
@@ -420,10 +431,38 @@ function SortableGroupRow({
         <TableCell className="py-2 px-2" style={{ width: '48px' }}></TableCell>
       </TableRow>
       
+      {/* Render items in this group if not collapsed */}
       {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
         <React.Fragment key={`item-wrapper-${item.id}`}>
           {renderItemWithSubItems(item)}
         </React.Fragment>
+      ))}
+      
+      {/* Recursively render child subgroups if not collapsed */}
+      {!group.isCollapsed && childSubgroups.map((childGroup) => (
+        <SortableGroupRow
+          key={`subgroup-${childGroup.id}`}
+          group={childGroup}
+          groupedItems={groupedItems}
+          columns={columns}
+          handleToggleGroupCollapse={handleToggleGroupCollapse}
+          renderItemWithSubItems={renderItemWithSubItems}
+          onDeleteGroup={onDeleteGroup}
+          onEditGroup={onEditGroup}
+          onDuplicateGroup={onDuplicateGroup}
+          onCopyGroup={onCopyGroup}
+          onAddSubgroup={onAddSubgroup}
+          onAddItemToGroup={onAddItemToGroup}
+          isLocked={isLocked}
+          selectedItems={selectedItems}
+          selectedGroups={selectedGroups}
+          onToggleGroupSelection={onToggleGroupSelection}
+          nestingLevel={nestingLevel + 1}
+          groupTotals={groupTotals}
+          formatCurrency={formatCurrency}
+          subgroups={subgroups}
+          allGroups={allGroups}
+        />
       ))}
     </>
   );
@@ -3338,9 +3377,8 @@ export default function EstimateDetail() {
       
       case 'unitCostIncTax':
         const unitCostIncTax = pricingValues.unitCostIncTax || 0;
-        const isEditingUnitCostIncTax = isEditing && column.id === 'unitCostIncTax';
         
-        if (isEditingUnitCostIncTax) {
+        if (isEditing) {
           return (
             <TableCell className="py-0.5">
               <Input
@@ -4197,9 +4235,12 @@ export default function EstimateDetail() {
                                 </React.Fragment>
                               ))}
                               
-                              {/* Render groups with inline header rows and hierarchical subgroups */}
-                              {sortedGroups.map((group) => (
-                                <React.Fragment key={`group-fragment-${group.id}`}>
+                              {/* Render groups with inline header rows and recursive hierarchical subgroups */}
+                              {sortedGroups.map((group) => {
+                                // Get all subgroups for recursive rendering
+                                const allSubgroups = groups.filter(g => g.parentGroupId);
+                                
+                                return (
                                   <SortableGroupRow
                                     key={`group-${group.id}`}
                                     group={group}
@@ -4220,38 +4261,14 @@ export default function EstimateDetail() {
                                     selectedItems={selectedItems}
                                     selectedGroups={selectedGroups}
                                     onToggleGroupSelection={handleToggleGroupSelection}
+                                    nestingLevel={0}
                                     groupTotals={groupTotalsMap[group.id]}
                                     formatCurrency={formatCurrency}
+                                    subgroups={allSubgroups}
+                                    allGroups={groups}
                                   />
-                                  {/* Render subgroups beneath parent group if not collapsed */}
-                                  {!group.isCollapsed && subgroupsByParent[group.id]?.map((subgroup) => (
-                                    <SortableGroupRow
-                                      key={`subgroup-${subgroup.id}`}
-                                      group={subgroup}
-                                      groupedItems={groupedItems}
-                                      columns={columns}
-                                      handleToggleGroupCollapse={handleToggleGroupCollapse}
-                                      renderItemWithSubItems={renderItemWithSubItems}
-                                      onDeleteGroup={(groupId) => {
-                                        setGroupToDelete(groupId);
-                                        setIsDeleteGroupDialogOpen(true);
-                                      }}
-                                      onEditGroup={handleEditGroup}
-                                      onDuplicateGroup={handleDuplicateGroup}
-                                      onCopyGroup={handleCopyGroup}
-                                      onAddSubgroup={handleAddSubgroup}
-                                      onAddItemToGroup={handleAddItemToGroup}
-                                      isLocked={estimate?.isLocked || false}
-                                      selectedItems={selectedItems}
-                                      selectedGroups={selectedGroups}
-                                      onToggleGroupSelection={handleToggleGroupSelection}
-                                      isSubgroup={true}
-                                      groupTotals={groupTotalsMap[subgroup.id]}
-                                      formatCurrency={formatCurrency}
-                                    />
-                                  ))}
-                                </React.Fragment>
-                              ))}
+                                );
+                              })}
                             </TableBody>
                           </Table>
                         </SortableContext>
