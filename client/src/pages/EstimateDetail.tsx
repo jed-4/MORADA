@@ -4222,9 +4222,7 @@ export default function EstimateDetail() {
                             display: 'table',
                             tableLayout: 'fixed',
                             width: `${tableWidth}px`,
-                            minWidth: `${tableWidth}px`,
-                            borderCollapse: 'separate',
-                            borderSpacing: '0 8px'
+                            minWidth: `${tableWidth}px`
                           }} data-testid="table-estimate-items">
                             <colgroup>
                               <col style={{ width: '32px' }} />
