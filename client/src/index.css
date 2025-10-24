@@ -506,6 +506,38 @@
     inset: -1px;
   }
 
+  /* Group row shell - creates rounded background for table rows */
+  .group-row-shell {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .group-row-shell::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) * 1.5); /* rounded-xl */
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  /* Hover state for group row shell */
+  .group-row-shell:hover::before {
+    background: hsl(var(--card));
+  }
+
+  .group-row-shell:hover::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background-color: var(--elevate-1);
+    border-radius: calc(var(--radius) * 1.5);
+    z-index: -1;
+    pointer-events: none;
+  }
+
   /* React Big Calendar Styles */
   .rbc-calendar {
     color: hsl(var(--foreground));

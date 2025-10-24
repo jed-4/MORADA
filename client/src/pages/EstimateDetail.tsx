@@ -285,7 +285,7 @@ function SortableGroupRow({
         style={{
           ...style,
         }}
-        className={`bg-card border border-border rounded-xl ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all !border-b-border`}
+        className={`group-row-shell transition-all ${isDragging ? 'opacity-40' : ''}`}
         data-testid={`row-group-${group.id}`}
       >
         <TableCell className="py-2" style={{ width: '32px' }}>
