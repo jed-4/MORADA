@@ -1,0 +1,18 @@
+"Implement drag-and-drop reordering and nesting in the Estimate section of Casva PM software. Current UI: Flat list of items/groups with icons (see attached screenshots). Desired: Nested hierarchy where estimate items, groups, and subgroups are draggable/reorderable. Users can:
+
+Drag items into/out of groups/subgroups.
+Drag groups into other groups (turning them into subgroups).
+Reorder siblings within a group.
+Groups render as expandable 'bubbles' (card-like: bordered, light background, rounded, padding; e.g., CSS: border:1px solid #e5e7eb; background:#f9fafb; border-radius:8px; margin:4px;).
+Visual feedback: Drag previews, drop zones (e.g., lines/indicators), animations.
+Preserve metadata (status, visibility checkbox, quantity, unit cost, taxes, builder cost).
+On drop: Recalculate summary totals (sum children recursively), save updated tree to backend API/PostgreSQL.
+Accessibility: Keyboard support, ARIA labels.
+Edge cases: Prevent nesting cycles/self-drops; handle empty groups; collapse/expand groups.
+Tech: React (confirm stack). Install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities via npm.
+Data: Tree structure {id, type:'item'|'group', name, status, visible, quantity, unitCostExTax, unitCostIncTax, builderCost, children:[]}.
+Use flattening technique: Flatten tree to array with ancestorIds/depth for single SortableContext (allows cross-level drags). Update nested tree in onDragEnd.
+Reference: dnd-kit docsdocs.dndkit.com for basics; dev.to tutorialdev.to for tree flattening/moves; GitHub discussiongithub.com for multi-container (groups as droppables, type differentiation).
+Provide: Updated Estimate component code with DndContext, recursive/flat rendering, custom handleDragEnd for nesting, CSS for bubbles. Integrate with existing state/API. Test with sample data like 'External Fixtures' group containing 'Garage Door' item."
+
+If Replit balks, break into steps: 1) Add lib/install. 2) Basic flat sortable. 3) Add nesting/flattening. 4) Bubble CSS. 5) Backend sync. Share errors/screenshots for iteration.
