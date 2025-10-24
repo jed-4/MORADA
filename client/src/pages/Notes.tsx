@@ -600,12 +600,9 @@ export default function Notes() {
                         key={editingNote ? `edit-${editingNote.id}` : 'new'}
                         content={field.value || ""}
                         onChange={(html, text) => {
-                          // Use batch update to prevent multiple re-renders during typing
-                          requestAnimationFrame(() => {
-                            field.onChange(html);
-                            form.setValue("contentText", text, { shouldValidate: false });
-                            form.setValue("content", text, { shouldValidate: false }); // For backward compatibility
-                          });
+                          field.onChange(html);
+                          form.setValue("contentText", text, { shouldValidate: false });
+                          form.setValue("content", text, { shouldValidate: false });
                         }}
                         placeholder="Enter note content..."
                         data-testid="note-content-editor"

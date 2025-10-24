@@ -39,6 +39,7 @@ export function RichTextEditor({
   'data-testid': testId,
 }: RichTextEditorProps) {
   const initialContentRef = useRef(content);
+  const isInternalChange = useRef(false);
 
   const editor = useEditor(
     {
@@ -46,6 +47,7 @@ export function RichTextEditor({
       content: initialContentRef.current,
       editable: !disabled,
       onUpdate: ({ editor }) => {
+        isInternalChange.current = true;
         const html = editor.getHTML();
         const text = editor.getText();
         onChange?.(html, text);
@@ -59,10 +61,15 @@ export function RichTextEditor({
     []
   );
 
-  // Sync content when it changes from outside
+  // Sync content when it changes from outside (not from typing)
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content);
+      // Only sync if this is an external change (not from user typing)
+      if (!isInternalChange.current) {
+        editor.commands.setContent(content);
+      }
+      // Reset the flag after checking
+      isInternalChange.current = false;
     }
   }, [editor, content]);
 
