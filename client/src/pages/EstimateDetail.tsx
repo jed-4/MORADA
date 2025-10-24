@@ -283,7 +283,7 @@ function SortableGroupRow({
         style={{
           ...style,
         }}
-        className={`bg-card border border-border rounded-md ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all !border-b-border`}
+        className={`bg-card border border-border rounded-lg ${isDragging ? 'shadow-lg' : 'hover-elevate'} transition-all !border-b-border`}
         data-testid={`row-group-${group.id}`}
       >
         <TableCell className="py-2" style={{ width: '32px' }}>
@@ -679,51 +679,18 @@ export default function EstimateDetail() {
     mutationFn: async ({ groups }: { groups: { id: string; order: number }[] }) => {
       return apiRequest("/api/estimate-groups/reorder", "PATCH", { groups });
     },
-    onMutate: async ({ groups: groupUpdates }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
-      
-      // Snapshot previous value
-      const previousGroups = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "groups"]);
-      
-      // Optimistically update to the new value
-      queryClient.setQueryData(
-        ["/api/estimates", effectiveEstimateId, "groups"],
-        (old: any) => {
-          if (!Array.isArray(old)) return old;
-          
-          // Create a map of order changes
-          const orderMap = new Map(groupUpdates.map(u => [u.id, u.order]));
-          
-          // Update the groups with new orders
-          return old.map(group => {
-            if (orderMap.has(group.id)) {
-              return {
-                ...group,
-                order: orderMap.get(group.id)
-              };
-            }
-            return group;
-          });
-        }
-      );
-      
-      return { previousGroups };
+    onSuccess: () => {
+      // Refetch after successful save
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
-    onError: (error: any, variables, context) => {
-      // Rollback to previous state
-      if (context?.previousGroups) {
-        queryClient.setQueryData(
-          ["/api/estimates", effectiveEstimateId, "groups"],
-          context.previousGroups
-        );
-      }
-      
+    onError: (error: any) => {
       toast({
         title: "Failed to reorder groups",
         description: error?.message || "Could not update group order. Please try again.",
         variant: "destructive",
       });
+      // Refetch to restore correct state
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
 
