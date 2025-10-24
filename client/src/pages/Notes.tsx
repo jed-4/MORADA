@@ -123,11 +123,8 @@ export default function Notes() {
     queryKey: ["/api/note-templates"],
   });
 
-  // Stabilize customFieldDefs to prevent unnecessary re-renders
-  // Only update when the actual content changes, not the array reference
-  const customFieldDefs = useMemo(() => customFieldDefsRaw, [
-    JSON.stringify(customFieldDefsRaw)
-  ]);
+  // Use customFieldDefs directly - React Query already handles caching
+  const customFieldDefs = customFieldDefsRaw;
 
   // Fetch custom field options for select fields
   const { data: customFieldOptions = {} } = useQuery<Record<string, CustomFieldOption[]>>({

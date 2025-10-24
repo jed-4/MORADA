@@ -25,7 +25,10 @@ interface RichTextEditorProps {
 
 // Static extensions configuration to prevent recreation
 const extensions = [
-  StarterKit,
+  StarterKit.configure({
+    // Disable underline in StarterKit since we're adding it separately
+    underline: false,
+  }),
   TextStyle,
   Underline,
 ];
