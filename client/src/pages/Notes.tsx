@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { useParams } from "wouter";
@@ -403,238 +403,6 @@ export default function Notes() {
   const handleFormSubmit = form.handleSubmit(onSubmit);
 
 
-  // Track title validation errors manually
-  const titleError = form.formState.errors.title?.message;
-
-  const NoteDialog = ({ isEditing }: { isEditing: boolean }) => (
-    <Dialog open={isDialogOpen} onOpenChange={(open) => {
-      if (!open) {
-        handleDialogClose();
-      }
-    }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Edit Note" : "Add New Note"}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing 
-              ? "Make changes to your note here. Click save when you're done."
-              : "Create a new project note. Add a title, category, content and priority level."
-            }
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={handleFormSubmit} className="space-y-3 mt-4">
-            {/* Title Field - using FormField for better stability */}
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Enter note title..."
-                      {...field}
-                      data-testid="note-title-input"
-                      autoComplete="off"
-                      onFocus={(e) => {
-                        // Prevent auto-selection of text on focus
-                        // Move cursor to end instead of selecting all
-                        const target = e.target;
-                        const length = target.value.length;
-                        setTimeout(() => {
-                          target.setSelectionRange(length, length);
-                        }, 0);
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            {/* Owner and Category in a row */}
-            <div className="grid grid-cols-2 gap-3">
-              {/* Owner Field */}
-              <FormField
-                control={form.control}
-                name="ownerName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Owner</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Note owner..."
-                        {...field}
-                        data-testid="note-owner-input"
-                        readOnly
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Category Dropdown */}
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category</FormLabel>
-                    <Select value={field.value || "General"} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger data-testid="note-category-select">
-                          <SelectValue placeholder="Select category..." />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="General">General</SelectItem>
-                        <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
-                        <SelectItem value="Project Updates">Project Updates</SelectItem>
-                        <SelectItem value="Ideas">Ideas</SelectItem>
-                        <SelectItem value="To-Do">To-Do</SelectItem>
-                        <SelectItem value="Important">Important</SelectItem>
-                        <SelectItem value="Documentation">Documentation</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Template Selector */}
-            {!isEditing && noteTemplates.length > 0 && (
-              <div>
-                <label className="text-sm font-medium">Apply Template</label>
-                <Select 
-                  value={selectedTemplate || ""} 
-                  onValueChange={(value) => {
-                    if (value) {
-                      const template = noteTemplates.find(t => t.id === value);
-                      if (template) applyTemplate(template);
-                    } else {
-                      setSelectedTemplate(null);
-                    }
-                  }}
-                >
-                  <SelectTrigger data-testid="note-template-select">
-                    <FileTemplate className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Choose a template..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">No template</SelectItem>
-                    {noteTemplates.map((template) => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Dynamic Custom Fields */}
-            {customFieldDefs.length > 0 && (
-              <div className="grid grid-cols-2 gap-4">
-                {customFieldDefs.map((fieldDef) => {
-                  const fieldOptions = customFieldOptions[fieldDef.id] || [];
-                  
-                  return (
-                    <FormField
-                      key={fieldDef.id}
-                      control={form.control}
-                      name={`customFields.${fieldDef.key}` as any}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            {fieldDef.label}
-                            {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
-                          </FormLabel>
-                          <FormControl>
-                            {fieldDef.type === "select" ? (
-                              <Select value={field.value || ""} onValueChange={field.onChange}>
-                                <SelectTrigger data-testid={`note-${fieldDef.key}-select`}>
-                                  <SelectValue placeholder={`Select ${fieldDef.label.toLowerCase()}...`} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {fieldOptions.map((option: CustomFieldOption) => (
-                                    <SelectItem key={option.id} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Input
-                                placeholder={`Enter ${fieldDef.label.toLowerCase()}...`}
-                                {...field}
-                                data-testid={`note-${fieldDef.key}-input`}
-                              />
-                            )}
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  );
-                })}
-              </div>
-            )}
-            
-            <FormField
-              control={form.control}
-              name="contentHtml"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Content</FormLabel>
-                  <FormControl>
-                    <div className="min-h-[300px]">
-                      <RichTextEditor
-                        key={editingNote ? `edit-${editingNote.id}` : 'new'}
-                        content={field.value || ""}
-                        onChange={(html, text) => {
-                          field.onChange(html);
-                          form.setValue("contentText", text, { shouldValidate: false });
-                          form.setValue("content", text, { shouldValidate: false });
-                        }}
-                        placeholder="Enter note content..."
-                        data-testid="note-content-editor"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => {
-                setIsAddingNote(false);
-                setEditingNote(null);
-                form.reset(defaultValuesRef.current);
-              }}>
-                Cancel
-              </Button>
-              <Button 
-                type="submit"
-                disabled={createNoteMutation.isPending || updateNoteMutation.isPending}
-                data-testid="note-save-button"
-              >
-                {createNoteMutation.isPending || updateNoteMutation.isPending ? 
-                  (isEditing ? "Updating..." : "Adding...") :
-                  (isEditing ? "Update Note" : "Add Note")
-                }
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
-  );
 
   return (
     <div className="p-6 space-y-6" data-testid="notes-page">
@@ -800,7 +568,239 @@ export default function Notes() {
       )}
 
       {/* Dialog */}
-      <NoteDialog isEditing={!!editingNote} />
+      <Dialog 
+        open={isDialogOpen} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsAddingNote(false);
+            setEditingNote(null);
+            setSelectedTemplate(null);
+            form.reset(defaultValuesRef.current);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingNote ? "Edit Note" : "Add New Note"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingNote 
+                ? "Make changes to your note here. Click save when you're done."
+                : "Create a new project note. Add a title, category, content and priority level."
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={handleFormSubmit} className="space-y-3 mt-4">
+              {/* Title Field - using FormField for better stability */}
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter note title..."
+                        {...field}
+                        data-testid="note-title-input"
+                        autoComplete="off"
+                        onFocus={(e) => {
+                          // Prevent auto-selection of text on focus
+                          // Move cursor to end instead of selecting all
+                          const target = e.target;
+                          const length = target.value.length;
+                          setTimeout(() => {
+                            target.setSelectionRange(length, length);
+                          }, 0);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              {/* Owner and Category in a row */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Owner Field */}
+                <FormField
+                  control={form.control}
+                  name="ownerName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Owner</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Note owner..."
+                          {...field}
+                          data-testid="note-owner-input"
+                          readOnly
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Category Dropdown */}
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Category</FormLabel>
+                      <Select value={field.value || "General"} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger data-testid="note-category-select">
+                            <SelectValue placeholder="Select category..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="General">General</SelectItem>
+                          <SelectItem value="Meeting Notes">Meeting Notes</SelectItem>
+                          <SelectItem value="Project Updates">Project Updates</SelectItem>
+                          <SelectItem value="Ideas">Ideas</SelectItem>
+                          <SelectItem value="To-Do">To-Do</SelectItem>
+                          <SelectItem value="Important">Important</SelectItem>
+                          <SelectItem value="Documentation">Documentation</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Template Selector */}
+              {!editingNote && noteTemplates.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium">Apply Template</label>
+                  <Select 
+                    value={selectedTemplate || ""} 
+                    onValueChange={(value) => {
+                      if (value) {
+                        const template = noteTemplates.find(t => t.id === value);
+                        if (template) applyTemplate(template);
+                      } else {
+                        setSelectedTemplate(null);
+                      }
+                    }}
+                  >
+                    <SelectTrigger data-testid="note-template-select">
+                      <FileTemplate className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Choose a template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">No template</SelectItem>
+                      {noteTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Dynamic Custom Fields */}
+              {customFieldDefs.length > 0 && (
+                <div className="grid grid-cols-2 gap-4">
+                  {customFieldDefs.map((fieldDef) => {
+                    const fieldOptions = customFieldOptions[fieldDef.id] || [];
+                    
+                    return (
+                      <FormField
+                        key={fieldDef.id}
+                        control={form.control}
+                        name={`customFields.${fieldDef.key}` as any}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {fieldDef.label}
+                              {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
+                            </FormLabel>
+                            <FormControl>
+                              {fieldDef.type === "select" ? (
+                                <Select value={field.value || ""} onValueChange={field.onChange}>
+                                  <SelectTrigger data-testid={`note-${fieldDef.key}-select`}>
+                                    <SelectValue placeholder={`Select ${fieldDef.label.toLowerCase()}...`} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {fieldOptions.map((option: CustomFieldOption) => (
+                                      <SelectItem key={option.id} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  placeholder={`Enter ${fieldDef.label.toLowerCase()}...`}
+                                  {...field}
+                                  data-testid={`note-${fieldDef.key}-input`}
+                                />
+                              )}
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              
+              <FormField
+                control={form.control}
+                name="contentHtml"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Content</FormLabel>
+                    <FormControl>
+                      <div className="min-h-[300px]">
+                        <RichTextEditor
+                          key={editingNote ? `edit-${editingNote.id}` : 'new'}
+                          content={field.value || ""}
+                          onChange={(html, text) => {
+                            field.onChange(html);
+                            form.setValue("contentText", text, { shouldValidate: false });
+                            form.setValue("content", text, { shouldValidate: false });
+                          }}
+                          placeholder="Enter note content..."
+                          data-testid="note-content-editor"
+                        />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => {
+                  setIsAddingNote(false);
+                  setEditingNote(null);
+                  form.reset(defaultValuesRef.current);
+                }}>
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit"
+                  disabled={createNoteMutation.isPending || updateNoteMutation.isPending}
+                  data-testid="note-save-button"
+                >
+                  {createNoteMutation.isPending || updateNoteMutation.isPending ? 
+                    (editingNote ? "Updating..." : "Adding...") :
+                    (editingNote ? "Update Note" : "Add Note")
+                  }
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
