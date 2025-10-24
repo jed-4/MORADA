@@ -26,7 +26,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowLeft, 
   Lock, 
@@ -543,9 +542,6 @@ export default function EstimateDetail() {
 
   // Track if preferences have been loaded
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-
-  // Tab state for Measurements vs Labour Hours
-  const [activeTab, setActiveTab] = useState("measurements");
 
   // Load user column preferences
   const { data: columnPreferences, isError: preferencesError } = useQuery({
@@ -4091,20 +4087,8 @@ export default function EstimateDetail() {
               )}
             </div>
             
-            <CardContent className="p-0">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <div className="border-b px-6 pt-4">
-                  <TabsList className="h-10">
-                    <TabsTrigger value="measurements" className="text-sm" data-testid="tab-measurements">
-                      Measurements
-                    </TabsTrigger>
-                    <TabsTrigger value="labour" className="text-sm" data-testid="tab-labour">
-                      Labour Hours
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-                
-                <TabsContent value="measurements" className="p-6 m-0">
+            <CardContent className="p-0 overflow-x-auto">
+              <div className="p-6">
                 {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -4330,24 +4314,7 @@ export default function EstimateDetail() {
                   </div>
                 </DndContext>
               )}
-              </TabsContent>
-
-              <TabsContent value="labour" className="p-6 m-0">
-                <div className="space-y-4">
-                  <div className="text-center py-12">
-                    <h3 className="text-lg font-medium mb-2">Labour Hours Tracking</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Track and manage labour hours for items marked as labour type.
-                    </p>
-                    <div className="mt-6">
-                      <p className="text-sm text-muted-foreground">
-                        This feature will display all items where "Track labour hours" is enabled.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
+              </div>
             </CardContent>
           </Card>
         </div>

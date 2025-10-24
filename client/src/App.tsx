@@ -49,6 +49,7 @@ import Defects from "@/pages/Defects";
 import Proposals from "@/pages/Proposals";
 import ProposalDetail from "@/pages/ProposalDetail";
 import BusinessProjects from "@/pages/BusinessProjects";
+import Takeoff from "@/pages/Takeoff";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { useState, useEffect } from "react";
@@ -89,7 +90,7 @@ function Router() {
       <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
       <Route path="/projects/:projectId/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/projects/:projectId/schedule" component={Schedule} />
-      <Route path="/projects/:projectId/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
+      <Route path="/projects/:projectId/takeoff" component={Takeoff} />
       <Route path="/projects/:projectId/rfq" component={() => <ComingSoonPage section="rfq" />} />
       <Route path="/projects/:projectId/rfi" component={() => <ComingSoonPage section="rfi" />} />
       <Route path="/projects/:projectId/proposals" component={Proposals} />
@@ -116,7 +117,7 @@ function Router() {
       
       {/* Global Project sections - Coming Soon */}
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
-      <Route path="/takeoff" component={() => <ComingSoonPage section="takeoff" />} />
+      <Route path="/takeoff" component={Takeoff} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/project/:projectId" component={ProjectEstimates} />
       <Route path="/estimates/new" component={EstimateDetail} />
