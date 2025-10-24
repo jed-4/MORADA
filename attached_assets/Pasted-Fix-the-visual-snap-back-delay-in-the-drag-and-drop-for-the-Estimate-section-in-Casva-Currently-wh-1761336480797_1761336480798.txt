@@ -1,0 +1,62 @@
+Fix the visual snap-back delay in the drag-and-drop for the Estimate section in Casva. Currently, when dragging a group, subgroup, or item, it briefly reverts to the original position before jumping to the new spot (about 1 second delay). I want seamless sliding: the item glides neatly to the drop location without revert or flicker.
+
+Key requirements:
+- Add <DragOverlay> for smooth previews: Render a floating clone of the dragged node during drag, hiding the original to prevent snap-back visuals.
+- Optimize onDragEnd: Make state updates synchronous/optimistic—update flattened array/tree and setState immediately before any async (e.g., API saves). Use arrayMove or custom nested move fn.
+- Tune CSS: Add easing transitions (e.g., 200ms ease-in-out) in SortableNode; avoid abrupt opacity changes (use 0.3 for ghosting instead of 0).
+- Add modifiers/sensors: Restrict to vertical axis, add activation distance for quicker response.
+- Preserve existing: Nested hierarchy (groups/subgroups/items), metadata (status, costs), bubble styles for groups.
+- Test: Ensure no delay on reorder/nesting; handle many items without lag.
+
+Tech: React with @dnd-kit (core, sortable, utilities installed). Assume flattened tree with ancestorIds/depth.
+
+Provide updated code for the EstimateList component (or main dnd one): Include imports, DndContext with DragOverlay, onDragStart/onDragEnd (track activeId), SortableNode with smooth styles. Example skeleton:
+
+import { DndContext, DragOverlay, useSensors, PointerSensor, KeyboardSensor, closestCenter, sortableKeyboardCoordinates, restrictToVerticalAxis } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useState } from 'react';
+
+function EstimateList({ tree, onUpdate }) {
+  const [flattened, setFlattened] = useState(flatten(tree));
+  const [activeId, setActiveId] = useState(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  
+  const handleDragStart = (event) => setActiveId(event.active.id);
+  
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || active.id === over.id) return;
+    // Optimistic: Clone and move immediately
+    const newFlat = [...flattened];
+    // Custom move logic here (arrayMove or nested fn, validate ancestorIds)
+    setFlattened(newFlat); // Update UI first
+    // Then async save: onUpdate(newTreeFromFlat(newFlat));
+  };
+
+  const activeNode = flattened.find(n => n.id === activeId);
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis]}>
+      <SortableContext items={flattened.map(n => n.id)} strategy={verticalListSortingStrategy}>
+        {flattened.map(node => <SortableNode key={node.id} node={node} />)}
+      </SortableContext>
+      <DragOverlay>
+        {activeNode && <SortableNode node={activeNode} isOverlay />}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+function SortableNode({ node, isOverlay = false }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 200ms ease-in-out',
+    opacity: isDragging ? 0.3 : 1,
+  };
+  // Render node (group bubble or item row)
+}
+
+Integrate with my existing code—don't rewrite everything. Test with sample data like 'External Fixtures' group.

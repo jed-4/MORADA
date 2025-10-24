@@ -13,6 +13,8 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -137,8 +139,8 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: transition || 'transform 200ms ease-in-out',
+    opacity: isDragging ? 0.4 : 1,
   };
 
   return (
@@ -183,8 +185,8 @@ function SortableGroup({ id, children, className }: SortableGroupProps) {
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: transition || 'transform 200ms ease-in-out',
+    opacity: isDragging ? 0.4 : 1,
   };
 
   return (
@@ -256,8 +258,8 @@ function SortableGroupRow({
   
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: transition || 'transform 200ms ease-in-out',
+    opacity: isDragging ? 0.4 : 1,
   };
   
   // Check if the group itself is selected
@@ -584,9 +586,16 @@ export default function EstimateDetail() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  // Drag and drop sensors
+  // Track active drag item for DragOverlay
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Drag and drop sensors with activation constraints
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -723,9 +732,17 @@ export default function EstimateDetail() {
     },
   });
 
+  // Handle drag start
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  };
+
   // Handle drag end for reordering items, groups, and cross-group moves
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    
+    // Clear active drag state
+    setActiveId(null);
     
     console.log('[DRAG] Drag end - active:', active.id, 'over:', over?.id);
     
@@ -4133,7 +4150,7 @@ export default function EstimateDetail() {
                     </div>
                   </div>
                 ) : (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
                     <div className="space-y-4">
                       {/* Bulk Actions Toolbar */}
                       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
@@ -4312,6 +4329,48 @@ export default function EstimateDetail() {
                       );
                     })()}
                   </div>
+                  <DragOverlay>
+                    {activeId ? (
+                      <div style={{ 
+                        opacity: 0.8,
+                        cursor: 'grabbing',
+                      }}>
+                        {(() => {
+                          // Check if dragging a group
+                          if (String(activeId).startsWith('group-')) {
+                            const groupId = String(activeId).replace('group-', '');
+                            const group = groups.find(g => g.id === groupId);
+                            if (group) {
+                              return (
+                                <div className="bg-card border-2 border-primary rounded-xl shadow-lg p-3 min-w-[300px]">
+                                  <div className="flex items-center gap-2">
+                                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                    <span className="font-semibold text-sm">{group.name}</span>
+                                    {group.description && (
+                                      <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
+                          }
+                          // Dragging an item
+                          const item = items.find(i => i.id === activeId);
+                          if (item) {
+                            return (
+                              <div className="bg-card border-2 border-primary rounded-lg shadow-lg p-3 min-w-[300px]">
+                                <div className="flex items-center gap-2">
+                                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium text-sm">{item.name}</span>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    ) : null}
+                  </DragOverlay>
                 </DndContext>
               )}
               </div>
