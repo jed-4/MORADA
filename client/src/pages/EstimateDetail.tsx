@@ -674,14 +674,33 @@ export default function EstimateDetail() {
     },
   });
 
-  // Mutation for reordering groups
+  // Mutation for reordering groups  
   const reorderGroupsMutation = useMutation({
     mutationFn: async ({ groups }: { groups: { id: string; order: number }[] }) => {
       return apiRequest("/api/estimate-groups/reorder", "PATCH", { groups });
     },
-    onSuccess: () => {
-      // Refetch after successful save
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+    onSuccess: (data, variables) => {
+      // Update cache directly without refetching to avoid snap-back
+      queryClient.setQueryData(
+        ["/api/estimates", effectiveEstimateId, "groups"],
+        (old: any) => {
+          if (!Array.isArray(old)) return old;
+          
+          // Create a map of order changes
+          const orderMap = new Map(variables.groups.map(u => [u.id, u.order]));
+          
+          // Update the groups with new orders
+          return old.map(group => {
+            if (orderMap.has(group.id)) {
+              return {
+                ...group,
+                order: orderMap.get(group.id)
+              };
+            }
+            return group;
+          });
+        }
+      );
     },
     onError: (error: any) => {
       toast({
@@ -689,7 +708,7 @@ export default function EstimateDetail() {
         description: error?.message || "Could not update group order. Please try again.",
         variant: "destructive",
       });
-      // Refetch to restore correct state
+      // Only refetch on error to restore correct state
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
