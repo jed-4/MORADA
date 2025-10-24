@@ -725,10 +725,6 @@ export default function EstimateDetail() {
         variant: "destructive",
       });
     },
-    onSettled: () => {
-      // Always refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
-    },
   });
 
   // Mutation for updating individual group properties (including parentGroupId)
