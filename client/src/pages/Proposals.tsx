@@ -148,7 +148,7 @@ export default function Proposals() {
       }
       
       const matchesSearch = proposal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           proposal.notes?.toLowerCase().includes(searchTerm.toLowerCase());
+                           (proposal.notes || "").toLowerCase().includes(searchTerm.toLowerCase());
       const matchesProject = selectedProject === "All" || proposal.projectId === selectedProject;
       const matchesStatus = selectedStatus === "All" || proposal.status === selectedStatus;
       return matchesTab && matchesSearch && matchesProject && matchesStatus;
