@@ -48,6 +48,7 @@ export default function Proposals() {
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [activeTab, setActiveTab] = useState<"active" | "completed" | "archived">("active");
+  const [sortBy, setSortBy] = useState<"status" | "alphabetical">("status");
   const { toast } = useToast();
 
   // Auto-select project if accessed from project context
@@ -130,17 +131,20 @@ export default function Proposals() {
     return proposalStatusesData?.options || [];
   }, [proposalStatusesData]);
 
-  // Filter proposals
+  // Filter and sort proposals
   const filteredProposals = useMemo(() => {
-    return proposals.filter(proposal => {
-      // Tab-based filtering
-      let matchesTab = false;
-      if (activeTab === "archived") {
-        matchesTab = proposal.isArchived;
-      } else if (activeTab === "completed") {
-        matchesTab = !proposal.isArchived && (proposal.status === "accepted" || proposal.status === "rejected");
-      } else { // active
-        matchesTab = !proposal.isArchived && proposal.status !== "accepted" && proposal.status !== "rejected";
+    let filtered = proposals.filter(proposal => {
+      // In project context, show all proposals (no tab filtering)
+      // In global context, use tab-based filtering
+      let matchesTab = true;
+      if (!isProjectContext) {
+        if (activeTab === "archived") {
+          matchesTab = proposal.isArchived;
+        } else if (activeTab === "completed") {
+          matchesTab = !proposal.isArchived && (proposal.status === "accepted" || proposal.status === "rejected");
+        } else { // active
+          matchesTab = !proposal.isArchived && proposal.status !== "accepted" && proposal.status !== "rejected";
+        }
       }
       
       const matchesSearch = proposal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -149,7 +153,26 @@ export default function Proposals() {
       const matchesStatus = selectedStatus === "All" || proposal.status === selectedStatus;
       return matchesTab && matchesSearch && matchesProject && matchesStatus;
     });
-  }, [proposals, searchTerm, selectedProject, selectedStatus, activeTab]);
+    
+    // Apply sorting for project context
+    if (isProjectContext) {
+      if (sortBy === "alphabetical") {
+        filtered = [...filtered].sort((a, b) => 
+          (a.name || "").localeCompare(b.name || "")
+        );
+      } else {
+        // Sort by status
+        const statusOrder = { draft: 0, sent: 1, accepted: 2, rejected: 3 };
+        filtered = [...filtered].sort((a, b) => {
+          const statusA = statusOrder[a.status as keyof typeof statusOrder] ?? 999;
+          const statusB = statusOrder[b.status as keyof typeof statusOrder] ?? 999;
+          return statusA - statusB;
+        });
+      }
+    }
+    
+    return filtered;
+  }, [proposals, searchTerm, selectedProject, selectedStatus, activeTab, isProjectContext, sortBy]);
 
   // Calculate status counts
   const statusCounts = useMemo(() => {
@@ -235,38 +258,40 @@ export default function Proposals() {
             </Button>
           </div>
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "completed" | "archived")} className="mt-6">
-            <TabsList className="w-full sm:w-auto" data-testid="tabs-proposals">
-              <TabsTrigger value="active" className="gap-2" data-testid="tab-active-proposals">
-                <FileText className="w-4 h-4" />
-                Active
-                {tabCounts.active > 0 && (
-                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                    {tabCounts.active}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="completed" className="gap-2" data-testid="tab-completed-proposals">
-                <FileCheck className="w-4 h-4" />
-                Completed
-                {tabCounts.completed > 0 && (
-                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                    {tabCounts.completed}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="archived" className="gap-2" data-testid="tab-archived-proposals">
-                <Archive className="w-4 h-4" />
-                Archived
-                {tabCounts.archived > 0 && (
-                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                    {tabCounts.archived}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* Tabs - only show in global context */}
+          {!isProjectContext && (
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "completed" | "archived")} className="mt-6">
+              <TabsList className="w-full sm:w-auto" data-testid="tabs-proposals">
+                <TabsTrigger value="active" className="gap-2" data-testid="tab-active-proposals">
+                  <FileText className="w-4 h-4" />
+                  Active
+                  {tabCounts.active > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
+                      {tabCounts.active}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="completed" className="gap-2" data-testid="tab-completed-proposals">
+                  <FileCheck className="w-4 h-4" />
+                  Completed
+                  {tabCounts.completed > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
+                      {tabCounts.completed}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="archived" className="gap-2" data-testid="tab-archived-proposals">
+                  <Archive className="w-4 h-4" />
+                  Archived
+                  {tabCounts.archived > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
+                      {tabCounts.archived}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
 
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-3 mt-4">
@@ -308,6 +333,17 @@ export default function Proposals() {
                 ))}
               </SelectContent>
             </Select>
+            {isProjectContext && (
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as "status" | "alphabetical")}>
+                <SelectTrigger className="w-full sm:w-48" data-testid="select-sort-proposals">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="status">Sort by Status</SelectItem>
+                  <SelectItem value="alphabetical">Sort Alphabetically</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
       </div>
