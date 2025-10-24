@@ -47,7 +47,7 @@ export default function Proposals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
-  const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
+  const [activeTab, setActiveTab] = useState<"active" | "completed" | "archived">("active");
   const { toast } = useToast();
 
   // Auto-select project if accessed from project context
@@ -133,12 +133,21 @@ export default function Proposals() {
   // Filter proposals
   const filteredProposals = useMemo(() => {
     return proposals.filter(proposal => {
-      const matchesArchived = activeTab === "archived" ? proposal.isArchived : !proposal.isArchived;
+      // Tab-based filtering
+      let matchesTab = false;
+      if (activeTab === "archived") {
+        matchesTab = proposal.isArchived;
+      } else if (activeTab === "completed") {
+        matchesTab = !proposal.isArchived && (proposal.status === "accepted" || proposal.status === "rejected");
+      } else { // active
+        matchesTab = !proposal.isArchived && proposal.status !== "accepted" && proposal.status !== "rejected";
+      }
+      
       const matchesSearch = proposal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            proposal.notes?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesProject = selectedProject === "All" || proposal.projectId === selectedProject;
       const matchesStatus = selectedStatus === "All" || proposal.status === selectedStatus;
-      return matchesArchived && matchesSearch && matchesProject && matchesStatus;
+      return matchesTab && matchesSearch && matchesProject && matchesStatus;
     });
   }, [proposals, searchTerm, selectedProject, selectedStatus, activeTab]);
 
@@ -151,11 +160,12 @@ export default function Proposals() {
     return counts;
   }, [proposals]);
 
-  // Calculate archive counts
-  const archiveCounts = useMemo(() => {
-    const active = proposals.filter(p => !p.isArchived).length;
+  // Calculate tab counts
+  const tabCounts = useMemo(() => {
+    const active = proposals.filter(p => !p.isArchived && p.status !== "accepted" && p.status !== "rejected").length;
+    const completed = proposals.filter(p => !p.isArchived && (p.status === "accepted" || p.status === "rejected")).length;
     const archived = proposals.filter(p => p.isArchived).length;
-    return { active, archived };
+    return { active, completed, archived };
   }, [proposals]);
 
   const getStatusIcon = (status: string) => {
@@ -226,23 +236,32 @@ export default function Proposals() {
           </div>
 
           {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "archived")} className="mt-6">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "completed" | "archived")} className="mt-6">
             <TabsList className="w-full sm:w-auto" data-testid="tabs-proposals">
               <TabsTrigger value="active" className="gap-2" data-testid="tab-active-proposals">
                 <FileText className="w-4 h-4" />
                 Active
-                {archiveCounts.active > 0 && (
+                {tabCounts.active > 0 && (
                   <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                    {archiveCounts.active}
+                    {tabCounts.active}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="completed" className="gap-2" data-testid="tab-completed-proposals">
+                <FileCheck className="w-4 h-4" />
+                Completed
+                {tabCounts.completed > 0 && (
+                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
+                    {tabCounts.completed}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="archived" className="gap-2" data-testid="tab-archived-proposals">
                 <Archive className="w-4 h-4" />
                 Archived
-                {archiveCounts.archived > 0 && (
+                {tabCounts.archived > 0 && (
                   <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs h-5">
-                    {archiveCounts.archived}
+                    {tabCounts.archived}
                   </Badge>
                 )}
               </TabsTrigger>
