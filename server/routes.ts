@@ -1955,6 +1955,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reorder estimate groups - MUST come before /:id route
+  app.patch("/api/estimate-groups/reorder", async (req, res) => {
+    try {
+      const { groups } = req.body;
+      console.log('[REORDER] Received reorder request for groups:', JSON.stringify(groups, null, 2));
+      
+      if (!Array.isArray(groups)) {
+        return res.status(400).json({ error: "Groups must be an array" });
+      }
+
+      // Validate input
+      for (const group of groups) {
+        if (!group.id || typeof group.order !== 'number') {
+          return res.status(400).json({ error: "Each group must have id and order" });
+        }
+      }
+
+      // Update each group's order and verify success
+      const results = await Promise.all(
+        groups.map(async ({ id, order }) => {
+          console.log(`[REORDER] Updating group ${id} to order ${order}`);
+          const existingGroup = await storage.getEstimateGroup(id);
+          console.log(`[REORDER] Existing group ${id}:`, existingGroup ? 'found' : 'NOT FOUND');
+          
+          const updated = await storage.updateEstimateGroup(id, { order });
+          if (!updated) {
+            console.log(`[REORDER] Failed to update group ${id}`);
+            throw new Error(`Failed to update group ${id}`);
+          }
+          console.log(`[REORDER] Successfully updated group ${id}`);
+          return updated;
+        })
+      );
+
+      console.log('[REORDER] All groups updated successfully');
+      res.json({ success: true, count: results.length });
+    } catch (error: any) {
+      console.error('[REORDER] Error:', error.message);
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      if (error.message?.includes("Failed to update")) {
+        return res.status(404).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to reorder groups" });
+    }
+  });
+
   app.patch("/api/estimate-groups/:id", async (req, res) => {
     try {
       const updateSchema = insertEstimateGroupSchema.partial();
@@ -2048,54 +2096,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error copying estimate group:", error);
       res.status(500).json({ error: "Failed to copy estimate group" });
-    }
-  });
-
-  // Reorder estimate groups
-  app.patch("/api/estimate-groups/reorder", async (req, res) => {
-    try {
-      const { groups } = req.body;
-      console.log('[REORDER] Received reorder request for groups:', JSON.stringify(groups, null, 2));
-      
-      if (!Array.isArray(groups)) {
-        return res.status(400).json({ error: "Groups must be an array" });
-      }
-
-      // Validate input
-      for (const group of groups) {
-        if (!group.id || typeof group.order !== 'number') {
-          return res.status(400).json({ error: "Each group must have id and order" });
-        }
-      }
-
-      // Update each group's order and verify success
-      const results = await Promise.all(
-        groups.map(async ({ id, order }) => {
-          console.log(`[REORDER] Updating group ${id} to order ${order}`);
-          const existingGroup = await storage.getEstimateGroup(id);
-          console.log(`[REORDER] Existing group ${id}:`, existingGroup ? 'found' : 'NOT FOUND');
-          
-          const updated = await storage.updateEstimateGroup(id, { order });
-          if (!updated) {
-            console.log(`[REORDER] Failed to update group ${id}`);
-            throw new Error(`Failed to update group ${id}`);
-          }
-          console.log(`[REORDER] Successfully updated group ${id}`);
-          return updated;
-        })
-      );
-
-      console.log('[REORDER] All groups updated successfully');
-      res.json({ success: true, count: results.length });
-    } catch (error: any) {
-      console.error('[REORDER] Error:', error.message);
-      if (error.message?.includes("locked estimate")) {
-        return res.status(409).json({ error: error.message });
-      }
-      if (error.message?.includes("Failed to update")) {
-        return res.status(404).json({ error: error.message });
-      }
-      res.status(500).json({ error: "Failed to reorder groups" });
     }
   });
 
