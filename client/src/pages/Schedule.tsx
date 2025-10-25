@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "@shared/schema";
+import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
+import moment from "moment";
+import "react-big-calendar/lib/css/react-big-calendar.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -54,6 +58,9 @@ interface ScheduleParams {
   projectId: string;
 }
 
+// Setup moment localizer for BigCalendar
+const localizer = momentLocalizer(moment);
+
 export default function Schedule() {
   const { currentProject } = useProject();
   const { toast } = useToast();
@@ -64,6 +71,17 @@ export default function Schedule() {
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    type: "task",
+    status: "not_started",
+    priority: "medium",
+    startDate: "",
+    endDate: "",
+    assignedToId: "",
+    progressPercent: 0,
+  });
   const [filters, setFilters] = useState({
     status: "all",
     assignee: "all",
@@ -168,6 +186,7 @@ export default function Schedule() {
       queryClient.invalidateQueries({ queryKey: ["/api/schedules", schedule?.id, "items"] });
       setShowItemDialog(false);
       setEditingItem(null);
+      resetForm();
       toast({
         title: "Item created",
         description: "Schedule item has been added.",
@@ -181,6 +200,105 @@ export default function Schedule() {
       });
     },
   });
+
+  // Update schedule item
+  const updateItemMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (!editingItem) throw new Error("No item selected");
+      const response = await fetch(`/api/schedule-items/${editingItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update item");
+      return response.json() as Promise<ScheduleItem>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", schedule?.id, "items"] });
+      setShowItemDialog(false);
+      setEditingItem(null);
+      resetForm();
+      toast({
+        title: "Item updated",
+        description: "Schedule item has been updated.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update item",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Reset form
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      type: "task",
+      status: "not_started",
+      priority: "medium",
+      startDate: "",
+      endDate: "",
+      assignedToId: "",
+      progressPercent: 0,
+    });
+  };
+
+  // Handle submit
+  const handleSubmit = () => {
+    if (!schedule) {
+      toast({
+        title: "Error",
+        description: "No schedule found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.name || !formData.startDate || !formData.endDate) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const data = {
+      scheduleId: schedule.id,
+      ...formData,
+      assignedToId: formData.assignedToId || undefined,
+    };
+
+    if (editingItem) {
+      updateItemMutation.mutate(data);
+    } else {
+      createItemMutation.mutate(data);
+    }
+  };
+
+  // Load editing item into form
+  useEffect(() => {
+    if (editingItem) {
+      setFormData({
+        name: editingItem.name || "",
+        description: editingItem.description || "",
+        type: editingItem.type || "task",
+        status: editingItem.status || "not_started",
+        priority: editingItem.priority || "medium",
+        startDate: editingItem.startDate ? new Date(editingItem.startDate).toISOString().split('T')[0] : "",
+        endDate: editingItem.endDate ? new Date(editingItem.endDate).toISOString().split('T')[0] : "",
+        assignedToId: editingItem.assignedToId || "",
+        progressPercent: editingItem.progressPercent || 0,
+      });
+    } else {
+      resetForm();
+    }
+  }, [editingItem]);
 
   // Auto-create schedule if it doesn't exist
   useEffect(() => {
@@ -275,6 +393,62 @@ export default function Schedule() {
     
     return true;
   });
+
+  // Convert schedule items to calendar events
+  const calendarEvents = useMemo(() => {
+    return scheduleItems.map(item => ({
+      id: item.id,
+      title: item.name,
+      start: new Date(item.startDate),
+      end: new Date(item.endDate),
+      resource: item, // Store the full item for reference
+    }));
+  }, [scheduleItems]);
+
+  // Calculate Gantt timeline boundaries (memoized for performance)
+  const ganttTimeline = useMemo(() => {
+    if (filteredItems.length === 0) {
+      return { timelineStart: new Date(), timelineEnd: new Date(), totalDays: 1 };
+    }
+    
+    const allDates = [
+      ...filteredItems.map(i => new Date(i.startDate)),
+      ...filteredItems.map(i => new Date(i.endDate))
+    ];
+    const timelineStart = new Date(Math.min(...allDates.map(d => d.getTime())));
+    const timelineEnd = new Date(Math.max(...allDates.map(d => d.getTime())));
+    // Add 1 to include both start and end days (inclusive)
+    const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    return { timelineStart, timelineEnd, totalDays };
+  }, [filteredItems]);
+
+  // Calendar event style getter
+  const eventStyleGetter = (event: any) => {
+    const item = event.resource as ScheduleItem;
+    let backgroundColor = "#6366f1"; // default blue
+    
+    // Color by type
+    if (item.type === "inspection") backgroundColor = "#ef4444";
+    else if (item.type === "milestone") backgroundColor = "#8b5cf6";
+    else if (item.type === "delivery") backgroundColor = "#f59e0b";
+    else if (item.type === "meeting") backgroundColor = "#10b981";
+    
+    // Adjust for status
+    if (item.status === "completed") backgroundColor = "#9ca3af";
+    else if (item.status === "on_hold") backgroundColor = "#6b7280";
+    
+    return {
+      style: {
+        backgroundColor,
+        borderRadius: "4px",
+        opacity: 0.9,
+        color: "white",
+        border: "0px",
+        display: "block",
+      },
+    };
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -568,28 +742,124 @@ export default function Schedule() {
           </TabsContent>
 
           <TabsContent value="gantt" className="h-full m-0 p-4">
-            <Card className="p-12 text-center">
-              <CardTitle className="mb-2">Gantt View Coming Soon</CardTitle>
-              <p className="text-muted-foreground">
-                Visual timeline with drag-and-drop scheduling will be available soon.
-              </p>
-            </Card>
+            <div className="space-y-4">
+              {filteredItems.length === 0 ? (
+                <Card className="p-12 text-center">
+                  <CardTitle className="mb-2">No Schedule Items</CardTitle>
+                  <p className="text-muted-foreground">
+                    Add schedule items to see them in the Gantt view.
+                  </p>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {filteredItems
+                    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+                    .map((item) => {
+                      const startDate = new Date(item.startDate);
+                      const endDate = new Date(item.endDate);
+                      
+                      // Use memoized timeline boundaries
+                      const { timelineStart, totalDays } = ganttTimeline;
+                      
+                      const daysSinceStart = Math.ceil((startDate.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24));
+                      const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                      
+                      const leftPercent = (daysSinceStart / totalDays) * 100;
+                      const widthPercent = (duration / totalDays) * 100;
+                      
+                      // Color by type
+                      let barColor = "bg-blue-500";
+                      if (item.type === "inspection") barColor = "bg-red-500";
+                      else if (item.type === "milestone") barColor = "bg-purple-500";
+                      else if (item.type === "delivery") barColor = "bg-yellow-500";
+                      else if (item.type === "meeting") barColor = "bg-green-500";
+                      
+                      if (item.status === "completed") barColor = "bg-gray-400";
+                      else if (item.status === "on_hold") barColor = "bg-gray-500";
+
+                      return (
+                        <Card 
+                          key={item.id} 
+                          className="p-4 hover-elevate cursor-pointer"
+                          onClick={() => {
+                            if (schedule?.status !== "locked") {
+                              setEditingItem(item);
+                              setShowItemDialog(true);
+                            }
+                          }}
+                          data-testid={`gantt-item-${item.id}`}
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className="flex-shrink-0 w-48">
+                              <div className="font-medium text-sm mb-1">{item.name}</div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Badge variant="outline" className="text-xs">
+                                  {item.type}
+                                </Badge>
+                                <span>{item.status.replace("_", " ")}</span>
+                              </div>
+                              {item.assignedToName && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {item.assignedToName}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex-1 py-2">
+                              <div className="relative h-6 bg-muted rounded">
+                                <div
+                                  className={`absolute h-full ${barColor} rounded flex items-center justify-center text-xs text-white font-medium`}
+                                  style={{
+                                    left: `${leftPercent}%`,
+                                    width: `${widthPercent}%`,
+                                  }}
+                                >
+                                  {item.progressPercent > 0 && (
+                                    <div className="absolute inset-0 bg-green-600 rounded" style={{ width: `${item.progressPercent}%` }} />
+                                  )}
+                                  <span className="relative z-10 px-2 truncate">
+                                    {startDate.toLocaleDateString()} - {endDate.toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
           </TabsContent>
 
-          <TabsContent value="calendar" className="h-full m-0 p-4">
-            <Card className="p-12 text-center">
-              <CardTitle className="mb-2">Calendar View Coming Soon</CardTitle>
-              <p className="text-muted-foreground">
-                Monthly and weekly calendar views will be available soon.
-              </p>
-            </Card>
+          <TabsContent value="calendar" className="h-full m-0">
+            <div className="h-full p-4" style={{ minHeight: '600px' }}>
+              <BigCalendar
+                localizer={localizer}
+                events={calendarEvents}
+                startAccessor="start"
+                endAccessor="end"
+                style={{ height: '100%' }}
+                eventPropGetter={eventStyleGetter}
+                onSelectEvent={(event) => {
+                  if (schedule?.status !== "locked") {
+                    setEditingItem(event.resource as ScheduleItem);
+                    setShowItemDialog(true);
+                  }
+                }}
+                views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
+                defaultView={Views.MONTH}
+                popup
+                data-testid="calendar-view"
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>
 
-      {/* Create/Edit Item Dialog - Placeholder for now */}
+      {/* Create/Edit Item Dialog */}
       <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
             <DialogDescription>
@@ -597,15 +867,182 @@ export default function Schedule() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-muted-foreground text-center py-8">
-              Item form will be implemented next...
-            </p>
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="item-name">
+                Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="item-name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g., Foundation Inspection"
+                data-testid="input-item-name"
+              />
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="item-description">Description</Label>
+              <Textarea
+                id="item-description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Add details about this schedule item..."
+                rows={3}
+                data-testid="input-item-description"
+              />
+            </div>
+
+            {/* Type and Priority Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item-type">Type</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(value) => setFormData({ ...formData, type: value })}
+                >
+                  <SelectTrigger id="item-type" data-testid="select-item-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="task">Task</SelectItem>
+                    <SelectItem value="milestone">Milestone</SelectItem>
+                    <SelectItem value="inspection">Inspection</SelectItem>
+                    <SelectItem value="delivery">Delivery</SelectItem>
+                    <SelectItem value="meeting">Meeting</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item-priority">Priority</Label>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(value) => setFormData({ ...formData, priority: value })}
+                >
+                  <SelectTrigger id="item-priority" data-testid="select-item-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Status and Assignee Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item-status">Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value) => setFormData({ ...formData, status: value })}
+                >
+                  <SelectTrigger id="item-status" data-testid="select-item-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_started">Not Started</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="on_hold">On Hold</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item-assignee">Assignee</Label>
+                <Select
+                  value={formData.assignedToId}
+                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value })}
+                >
+                  <SelectTrigger id="item-assignee" data-testid="select-item-assignee">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {contacts.map((contact) => (
+                      <SelectItem key={contact.id} value={contact.id}>
+                        {contact.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Dates Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item-start-date">
+                  Start Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="item-start-date"
+                  type="date"
+                  value={formData.startDate}
+                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  data-testid="input-item-start-date"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item-end-date">
+                  End Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="item-end-date"
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  data-testid="input-item-end-date"
+                />
+              </div>
+            </div>
+
+            {/* Progress */}
+            {(editingItem || formData.status === "in_progress") && (
+              <div className="space-y-2">
+                <Label htmlFor="item-progress">Progress (%)</Label>
+                <Input
+                  id="item-progress"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={formData.progressPercent}
+                  onChange={(e) => {
+                    const value = e.target.value === '' ? 0 : Math.min(100, Math.max(0, parseInt(e.target.value, 10)));
+                    setFormData({ ...formData, progressPercent: isNaN(value) ? 0 : value });
+                  }}
+                  data-testid="input-item-progress"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowItemDialog(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowItemDialog(false);
+                setEditingItem(null);
+                resetForm();
+              }}
+              data-testid="button-cancel-item"
+            >
               Cancel
             </Button>
-            <Button onClick={() => setShowItemDialog(false)}>Save</Button>
+            <Button 
+              onClick={handleSubmit}
+              disabled={createItemMutation.isPending || updateItemMutation.isPending}
+              data-testid="button-save-item"
+            >
+              {(createItemMutation.isPending || updateItemMutation.isPending) ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
