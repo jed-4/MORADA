@@ -298,7 +298,7 @@ function SortableGroupRow({
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
         </TableCell>
-        <TableCell className="py-2 px-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
+        <TableCell className="py-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
@@ -314,6 +314,7 @@ function SortableGroupRow({
             // Custom rendering for item/name column with group name and toggle
             // Base padding 32px (to match pl-8 used by items) + indentation for nested groups
             const cellPaddingLeft = 32 + indentPixels;
+            console.log(`[GROUP ${group.name}] Nesting level:`, nestingLevel, 'Indent pixels:', indentPixels, 'Total padding:', cellPaddingLeft);
             return (
               <TableCell 
                 key={column.id}
@@ -362,7 +363,7 @@ function SortableGroupRow({
           return (
             <TableCell 
               key={column.id} 
-              className="py-2 px-2 text-sm font-semibold"
+              className="py-2 text-sm font-semibold"
               style={{ width: column.widthPx }}
               data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
             >
@@ -372,7 +373,7 @@ function SortableGroupRow({
         })}
         
         {/* Actions column - group menu */}
-        <TableCell className="py-2 px-2" style={{ width: '80px' }}>
+        <TableCell className="py-2" style={{ width: '80px' }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
@@ -3160,6 +3161,7 @@ export default function EstimateDetail() {
         const isCollapsed = collapsedItems.has(item.id);
         const isSubItem = !!item.parentItemId;
         const indentClass = isSubItem ? 'pl-16' : 'pl-8';
+        console.log(`[ITEM ${item.name}] isSubItem:`, isSubItem, 'indentClass:', indentClass, '(pl-8=32px, pl-16=64px)');
         
         if (isEditing) {
           return (
