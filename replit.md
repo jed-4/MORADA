@@ -52,6 +52,7 @@ Preferred communication style: Simple, everyday language.
 - **Optimistic UI Updates**: Implemented for group expand/collapse and item additions to enhance responsiveness.
 - **Estimate Detail Enhancements**: Cost code dropdowns connected to API, loading states, cascading group selection, and improved bulk delete functionality.
 - **Estimate Status Badges**: Consistent status badge display across the application, configurable via field settings.
+- **Estimate Group Visual Containment** (October 2025): Implemented rounded-corner visual containment for estimate groups with items. Groups display as unified "bubbles" with rounded-t-xl on headers, rounded-b-xl on last items, and full rounded-xl when collapsed. Items within groups receive subtle visual nesting (background tint bg-muted/10, 2px left border, 8px additional padding). CSS implemented via pseudo-elements on TableRows (group-row-shell with .group-collapsed/.group-expanded variants, item-in-group, item-in-group-last classes). Spacer rows (h-3 transparent) provide visual separation between top-level groups since table rows don't support margins.
 
 ## External Dependencies
 
