@@ -312,13 +312,15 @@ function SortableGroupRow({
         {columns.filter(col => col.visible).map(column => {
           if (column.id === 'item') {
             // Custom rendering for item/name column with group name and toggle
+            // Use pl-8 padding (32px) to match item rows, plus additional indentation for nested groups
+            const paddingClass = nestingLevel === 0 ? 'pl-8' : `pl-${8 + nestingLevel * 12}`;
             return (
               <TableCell 
                 key={column.id}
-                className="py-2 px-2" 
-                style={{ width: column.widthPx, paddingLeft: `${8 + indentPixels}px` }}
+                className={`py-2 ${paddingClass}`}
+                style={{ width: column.widthPx }}
               >
-                <div className="flex items-center space-x-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
                   <Button
                     variant="ghost"
                     size="sm"
