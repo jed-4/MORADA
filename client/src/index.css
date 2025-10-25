@@ -512,13 +512,27 @@
     isolation: isolate;
   }
 
-  .group-row-shell::before {
+  /* Collapsed groups get full rounding */
+  .group-row-shell.group-collapsed::before {
     content: '';
     position: absolute;
     inset: -1px;
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     border-radius: calc(var(--radius) * 1.5); /* rounded-xl */
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  /* Expanded groups get top rounding only */
+  .group-row-shell.group-expanded::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) * 1.5) calc(var(--radius) * 1.5) 0 0; /* rounded-t-xl */
+    border-bottom: none;
     z-index: -1;
     pointer-events: none;
   }
@@ -533,8 +547,42 @@
     position: absolute;
     inset: -1px;
     background-color: var(--elevate-1);
-    border-radius: calc(var(--radius) * 1.5);
+    border-radius: inherit;
     z-index: -1;
+    pointer-events: none;
+  }
+
+  /* Items within groups - visual containment */
+  .item-in-group {
+    position: relative;
+    background: hsl(var(--muted) / 0.05);
+  }
+
+  .item-in-group::before {
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: hsl(var(--border));
+    z-index: -1;
+  }
+
+  /* Last item in group gets bottom rounding */
+  .item-in-group-last {
+    position: relative;
+  }
+
+  .item-in-group-last::after {
+    content: '';
+    position: absolute;
+    inset: -1px -1px -1px -1px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-top: none;
+    border-radius: 0 0 calc(var(--radius) * 1.5) calc(var(--radius) * 1.5); /* rounded-b-xl */
+    z-index: -2;
     pointer-events: none;
   }
 

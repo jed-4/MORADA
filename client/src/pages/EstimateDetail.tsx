@@ -150,7 +150,7 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
       className={`${className} group`}
       data-testid={`row-item-${id}`}
     >
-      <TableCell className="py-0.5 px-1" style={{ width: '24px' }}>
+      <TableCell className="py-0.5 px-1" style={{ width: '32px' }}>
         {isDraggable && (
           <div
             {...attributes}
@@ -223,7 +223,7 @@ function SortableGroupRow({
   groupedItems: Record<string, EstimateItem[]>;
   columns: Array<{ id: string; label: string; visible: boolean; widthPx: number }>;
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
-  renderItemWithSubItems: (item: EstimateItem) => React.ReactNode;
+  renderItemWithSubItems: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
   onEditGroup: (groupId: string) => void;
   onDuplicateGroup: (groupId: string) => void;
@@ -274,10 +274,10 @@ function SortableGroupRow({
   
   return (
     <>
-      {/* Spacer row for visual separation - top */}
+      {/* Spacer row for visual separation between top-level groups */}
       {nestingLevel === 0 && (
-        <TableRow className="h-3 bg-transparent !border-0">
-          <TableCell colSpan={100} className="p-0 !border-0 bg-transparent" />
+        <TableRow className="h-3 bg-transparent border-0">
+          <TableCell colSpan={100} className="p-0 border-0 bg-transparent" />
         </TableRow>
       )}
       <TableRow 
@@ -285,7 +285,7 @@ function SortableGroupRow({
         style={{
           ...style,
         }}
-        className={`group-row-shell transition-all ${isDragging ? 'opacity-40' : ''}`}
+        className={`group-row-shell ${group.isCollapsed ? 'group-collapsed' : 'group-expanded'} transition-all ${isDragging ? 'opacity-40' : ''}`}
         data-testid={`row-group-${group.id}`}
       >
         <TableCell className="py-2" style={{ width: '32px' }}>
@@ -307,13 +307,13 @@ function SortableGroupRow({
             disabled={isLocked}
           />
         </TableCell>
-        {/* Item/Name column - contains group name, toggle, and menu */}
+        {/* Item/Name column - contains group name and toggle */}
         <TableCell className="py-2 px-4" style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300, paddingLeft: `${16 + indentPixels}px` }}>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 min-w-0">
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 w-6 p-0"
+              className="h-6 w-6 p-0 flex-shrink-0"
               onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
               data-testid={`button-toggle-group-${group.id}`}
             >
@@ -323,85 +323,10 @@ function SortableGroupRow({
                 <ChevronDown className="h-4 w-4" />
               )}
             </Button>
-            <span className="font-semibold text-sm">{group.name}</span>
+            <span className="font-semibold text-sm truncate">{group.name}</span>
             {group.description && (
-              <span className="text-xs text-muted-foreground">- {group.description}</span>
+              <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6 ml-auto"
-                  data-testid={`button-group-menu-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={() => onAddSubgroup(group.id)}
-                  data-testid={`button-add-subgroup-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <FolderPlus className="w-4 h-4 mr-2" />
-                  Add Subgroup
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onAddItemToGroup(group.id)}
-                  data-testid={`button-add-item-to-group-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Item
-                </DropdownMenuItem>
-                <Separator />
-                <DropdownMenuItem 
-                  onClick={() => onEditGroup(group.id)}
-                  data-testid={`button-edit-group-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Group
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onDuplicateGroup(group.id)}
-                  data-testid={`button-duplicate-group-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Duplicate
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onCopyGroup(group.id)}
-                  data-testid={`button-copy-group-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Copy To...
-                </DropdownMenuItem>
-                <Separator />
-                <DropdownMenuItem 
-                  onClick={() => toast({ title: "Create from Group", description: "Coming soon" })}
-                  data-testid={`button-create-from-group-${group.id}`}
-                  disabled={isLocked}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create from...
-                </DropdownMenuItem>
-                <Separator />
-                <DropdownMenuItem 
-                  onClick={() => onDeleteGroup(group.id)}
-                  data-testid={`button-delete-group-${group.id}`} 
-                  className="text-destructive"
-                  disabled={isLocked}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Group
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </TableCell>
         
@@ -437,16 +362,95 @@ function SortableGroupRow({
           );
         })}
         
-        {/* Actions column (empty for groups) */}
-        <TableCell className="py-2 px-2" style={{ width: '48px' }}></TableCell>
+        {/* Actions column - group menu */}
+        <TableCell className="py-2 px-2" style={{ width: '80px' }}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 w-8 p-0"
+                data-testid={`button-group-menu-${group.id}`}
+                disabled={isLocked}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem 
+                onClick={() => onAddSubgroup(group.id)}
+                data-testid={`button-add-subgroup-${group.id}`}
+                disabled={isLocked}
+              >
+                <FolderPlus className="w-4 h-4 mr-2" />
+                Add Subgroup
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => onAddItemToGroup(group.id)}
+                data-testid={`button-add-item-to-group-${group.id}`}
+                disabled={isLocked}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Item
+              </DropdownMenuItem>
+              <Separator />
+              <DropdownMenuItem 
+                onClick={() => onEditGroup(group.id)}
+                data-testid={`button-edit-group-${group.id}`}
+                disabled={isLocked}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Group
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => onDuplicateGroup(group.id)}
+                data-testid={`button-duplicate-group-${group.id}`}
+                disabled={isLocked}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => onCopyGroup(group.id)}
+                data-testid={`button-copy-group-${group.id}`}
+                disabled={isLocked}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Copy To...
+              </DropdownMenuItem>
+              <Separator />
+              <DropdownMenuItem 
+                onClick={() => toast({ title: "Create from Group", description: "Coming soon" })}
+                data-testid={`button-create-from-group-${group.id}`}
+                disabled={isLocked}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create from...
+              </DropdownMenuItem>
+              <Separator />
+              <DropdownMenuItem 
+                onClick={() => onDeleteGroup(group.id)}
+                data-testid={`button-delete-group-${group.id}`} 
+                className="text-destructive"
+                disabled={isLocked}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Group
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
       </TableRow>
       
       {/* Render items in this group if not collapsed */}
-      {!group.isCollapsed && groupedItems[group.id]?.map((item) => (
-        <React.Fragment key={`item-wrapper-${item.id}`}>
-          {renderItemWithSubItems(item)}
-        </React.Fragment>
-      ))}
+      {!group.isCollapsed && groupedItems[group.id]?.map((item, index, array) => {
+        const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
+        return (
+          <React.Fragment key={`item-wrapper-${item.id}`}>
+            {renderItemWithSubItems(item, { isInGroup: true, isLastInGroup })}
+          </React.Fragment>
+        );
+      })}
       
       {/* Recursively render child subgroups if not collapsed */}
       {!group.isCollapsed && childSubgroups.map((childGroup) => (
@@ -2788,18 +2792,29 @@ export default function EstimateDetail() {
   };
 
   // Helper function to render an item row with its sub-items
-  const renderItemWithSubItems = (item: EstimateItem) => {
+  const renderItemWithSubItems = (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }) => {
     const subItems = getSubItems(item.id);
     const isCollapsed = collapsedItems.has(item.id);
     const isLocked = estimate?.isLocked;
+    const isInGroup = groupContext?.isInGroup || false;
+    const isLastInGroup = groupContext?.isLastInGroup || false;
     
     const visibleColumns = columns.filter(col => col.visible);
     console.log('[RENDER ROW] Visible columns:', visibleColumns.map(c => c.id));
     console.log('[RENDER ROW] Item column visible?', visibleColumns.some(c => c.id === 'item'));
     
+    // Build className for visual containment
+    let itemClassName = "min-h-8";
+    if (isInGroup) {
+      itemClassName += " item-in-group";
+      if (isLastInGroup && subItems.length === 0) {
+        itemClassName += " item-in-group-last";
+      }
+    }
+    
     const rows = [
       // Parent item row
-      <SortableRow key={item.id} id={item.id} className="min-h-8" isDraggable={!isLocked}>
+      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked}>
         <TableCell className="py-0.5" style={{ width: '24px' }}>
           <Checkbox
             checked={selectedItems.has(item.id)}
