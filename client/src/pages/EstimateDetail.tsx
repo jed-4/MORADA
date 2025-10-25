@@ -298,7 +298,7 @@ function SortableGroupRow({
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
         </TableCell>
-        <TableCell className="py-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
+        <TableCell className="py-2 px-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
@@ -307,32 +307,39 @@ function SortableGroupRow({
             disabled={isLocked}
           />
         </TableCell>
-        {/* Item/Name column - contains group name and toggle */}
-        <TableCell className="py-2 px-4" style={{ width: columns.find(c => c.id === 'item')?.widthPx || 300, paddingLeft: `${16 + indentPixels}px` }}>
-          <div className="flex items-center space-x-2 min-w-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 flex-shrink-0"
-              onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-              data-testid={`button-toggle-group-${group.id}`}
-            >
-              {group.isCollapsed ? (
-                <ChevronRight className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
-            </Button>
-            <span className="font-semibold text-sm truncate">{group.name}</span>
-            {group.description && (
-              <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
-            )}
-          </div>
-        </TableCell>
         
-        {/* Render cells for each visible column */}
-        {columns.map(column => {
-          if (!column.visible || column.id === 'item') return null;
+        {/* Render cells for each visible column, with custom rendering for item column */}
+        {columns.filter(col => col.visible).map(column => {
+          if (column.id === 'item') {
+            // Custom rendering for item/name column with group name and toggle
+            return (
+              <TableCell 
+                key={column.id}
+                className="py-2 px-2" 
+                style={{ width: column.widthPx, paddingLeft: `${8 + indentPixels}px` }}
+              >
+                <div className="flex items-center space-x-2 min-w-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 flex-shrink-0"
+                    onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
+                    data-testid={`button-toggle-group-${group.id}`}
+                  >
+                    {group.isCollapsed ? (
+                      <ChevronRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <span className="font-semibold text-sm truncate">{group.name}</span>
+                  {group.description && (
+                    <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
+                  )}
+                </div>
+              </TableCell>
+            );
+          }
           
           // Show group totals in relevant columns
           let cellContent = '';
