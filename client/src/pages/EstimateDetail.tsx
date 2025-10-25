@@ -265,8 +265,8 @@ function SortableGroupRow({
   // Check if the group itself is selected
   const isGroupSelected = selectedGroups.has(group.id);
   
-  // Calculate indentation based on nesting level (each level adds 48px)
-  const indentPixels = nestingLevel * 48;
+  // Calculate indentation based on nesting level (each level adds 32px to match item indentation)
+  const indentPixels = nestingLevel * 32;
   
   // Get immediate children subgroups
   const childSubgroups = subgroups.filter(sg => sg.parentGroupId === group.id)
@@ -312,13 +312,13 @@ function SortableGroupRow({
         {columns.filter(col => col.visible).map(column => {
           if (column.id === 'item') {
             // Custom rendering for item/name column with group name and toggle
-            // Use pl-8 padding (32px) to match item rows, plus additional indentation for nested groups
-            const paddingClass = nestingLevel === 0 ? 'pl-8' : `pl-${8 + nestingLevel * 12}`;
+            // Base padding 32px (to match pl-8 used by items) + indentation for nested groups
+            const cellPaddingLeft = 32 + indentPixels;
             return (
               <TableCell 
                 key={column.id}
-                className={`py-2 ${paddingClass}`}
-                style={{ width: column.widthPx }}
+                className="py-2"
+                style={{ width: column.widthPx, paddingLeft: `${cellPaddingLeft}px` }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <Button
