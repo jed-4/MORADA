@@ -306,6 +306,78 @@ export default function Schedule() {
     }
   }, [scheduleLoading, schedule, projectId]);
 
+  // Memoize calendar events (must be before early returns)
+  const calendarEvents = useMemo(() => {
+    return scheduleItems.map(item => ({
+      id: item.id,
+      title: item.name,
+      start: new Date(item.startDate),
+      end: new Date(item.endDate),
+      resource: item,
+    }));
+  }, [scheduleItems]);
+
+  // Memoize filtered items computation
+  const filteredItems = useMemo(() => {
+    return scheduleItems.filter((item) => {
+      if (filters.status !== "all" && item.status !== filters.status) return false;
+      if (filters.assignee !== "all" && item.assignedToId !== filters.assignee) return false;
+      if (filters.type !== "all" && item.type !== filters.type) return false;
+      
+      // Date range filtering
+      if (filters.dateRange !== "all") {
+        const now = new Date();
+        const itemStart = new Date(item.startDate);
+        const itemEnd = new Date(item.endDate);
+        
+        switch (filters.dateRange) {
+          case "today":
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            if (itemEnd < today || itemStart >= tomorrow) return false;
+            break;
+          case "this_week":
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay());
+            weekStart.setHours(0, 0, 0, 0);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 7);
+            if (itemEnd < weekStart || itemStart >= weekEnd) return false;
+            break;
+          case "this_month":
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            if (itemEnd < monthStart || itemStart >= monthEnd) return false;
+            break;
+          case "overdue":
+            if (itemEnd >= now || item.status === "completed") return false;
+            break;
+        }
+      }
+      
+      return true;
+    });
+  }, [scheduleItems, filters]);
+
+  // Calculate Gantt timeline boundaries (memoized for performance)
+  const ganttTimeline = useMemo(() => {
+    if (filteredItems.length === 0) {
+      return { timelineStart: new Date(), timelineEnd: new Date(), totalDays: 1 };
+    }
+    
+    const allDates = [
+      ...filteredItems.map(i => new Date(i.startDate)),
+      ...filteredItems.map(i => new Date(i.endDate))
+    ];
+    const timelineStart = new Date(Math.min(...allDates.map(d => d.getTime())));
+    const timelineEnd = new Date(Math.max(...allDates.map(d => d.getTime())));
+    // Add 1 to include both start and end days (inclusive)
+    const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    return { timelineStart, timelineEnd, totalDays };
+  }, [filteredItems]);
+
   if (!projectId) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -352,75 +424,6 @@ export default function Schedule() {
         return "secondary";
     }
   };
-
-  const filteredItems = scheduleItems.filter((item) => {
-    if (filters.status !== "all" && item.status !== filters.status) return false;
-    if (filters.assignee !== "all" && item.assignedToId !== filters.assignee) return false;
-    if (filters.type !== "all" && item.type !== filters.type) return false;
-    
-    // Date range filtering
-    if (filters.dateRange !== "all") {
-      const now = new Date();
-      const itemStart = new Date(item.startDate);
-      const itemEnd = new Date(item.endDate);
-      
-      switch (filters.dateRange) {
-        case "today":
-          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const tomorrow = new Date(today);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          if (itemEnd < today || itemStart >= tomorrow) return false;
-          break;
-        case "this_week":
-          const weekStart = new Date(now);
-          weekStart.setDate(now.getDate() - now.getDay());
-          weekStart.setHours(0, 0, 0, 0);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekStart.getDate() + 7);
-          if (itemEnd < weekStart || itemStart >= weekEnd) return false;
-          break;
-        case "this_month":
-          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-          const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-          if (itemEnd < monthStart || itemStart >= monthEnd) return false;
-          break;
-        case "overdue":
-          if (itemEnd >= now || item.status === "completed") return false;
-          break;
-      }
-    }
-    
-    return true;
-  });
-
-  // Convert schedule items to calendar events
-  const calendarEvents = useMemo(() => {
-    return scheduleItems.map(item => ({
-      id: item.id,
-      title: item.name,
-      start: new Date(item.startDate),
-      end: new Date(item.endDate),
-      resource: item, // Store the full item for reference
-    }));
-  }, [scheduleItems]);
-
-  // Calculate Gantt timeline boundaries (memoized for performance)
-  const ganttTimeline = useMemo(() => {
-    if (filteredItems.length === 0) {
-      return { timelineStart: new Date(), timelineEnd: new Date(), totalDays: 1 };
-    }
-    
-    const allDates = [
-      ...filteredItems.map(i => new Date(i.startDate)),
-      ...filteredItems.map(i => new Date(i.endDate))
-    ];
-    const timelineStart = new Date(Math.min(...allDates.map(d => d.getTime())));
-    const timelineEnd = new Date(Math.max(...allDates.map(d => d.getTime())));
-    // Add 1 to include both start and end days (inclusive)
-    const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    
-    return { timelineStart, timelineEnd, totalDays };
-  }, [filteredItems]);
 
   // Calendar event style getter
   const eventStyleGetter = (event: any) => {
