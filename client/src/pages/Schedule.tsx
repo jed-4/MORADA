@@ -103,8 +103,7 @@ export default function Schedule() {
 
   // Fetch contacts for assignee selection
   const { data: contacts = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts", projectId],
-    enabled: !!projectId,
+    queryKey: ["/api/contacts"],
   });
 
   // Create schedule if it doesn't exist
