@@ -1,12 +1,10 @@
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, CheckCircle2, Calendar, FileText, DollarSign, Users } from "lucide-react";
-import { SiReplit } from "react-icons/si";
+import { Building2, CheckCircle2, Calendar, FileText, DollarSign, Users, ArrowRight } from "lucide-react";
 
 export default function LandingPage() {
-  const handleLogin = () => {
-    window.location.href = '/api/login';
-  };
+  const [, navigate] = useLocation();
 
   return (
     <div className="min-h-screen bg-background">
@@ -16,15 +14,22 @@ export default function LandingPage() {
             <Building2 className="h-8 w-8 text-primary" data-testid="logo-icon" />
             <span className="text-2xl font-bold text-foreground" data-testid="text-logo">BuildPro</span>
           </div>
-          <Button 
-            onClick={handleLogin}
-            variant="default"
-            className="gap-2"
-            data-testid="button-login-header"
-          >
-            <SiReplit className="h-4 w-4" />
-            Login with Replit
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              onClick={() => navigate('/login')}
+              variant="ghost"
+              data-testid="button-login-header"
+            >
+              Log In
+            </Button>
+            <Button 
+              onClick={() => navigate('/signup')}
+              variant="default"
+              data-testid="button-signup-header"
+            >
+              Sign Up
+            </Button>
+          </div>
         </header>
 
         <main className="py-12 sm:py-20">
@@ -38,13 +43,22 @@ export default function LandingPage() {
             </p>
             <div className="mt-10 flex items-center justify-center gap-4">
               <Button 
-                onClick={handleLogin}
+                onClick={() => navigate('/signup')}
                 size="lg"
                 className="gap-2 text-base"
+                data-testid="button-signup-hero"
+              >
+                Get Started Free
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+              <Button 
+                onClick={() => navigate('/login')}
+                size="lg"
+                variant="outline"
+                className="text-base"
                 data-testid="button-login-hero"
               >
-                <SiReplit className="h-5 w-5" />
-                Get Started with Replit
+                Log In
               </Button>
             </div>
           </div>
@@ -100,16 +114,16 @@ export default function LandingPage() {
                   Ready to streamline your construction projects?
                 </h2>
                 <p className="mt-4 text-lg text-muted-foreground" data-testid="text-cta-description">
-                  Sign in with Replit to set up your company and start managing projects today.
+                  Create your free account and start managing projects today. No credit card required.
                 </p>
                 <Button 
-                  onClick={handleLogin}
+                  onClick={() => navigate('/signup')}
                   size="lg"
                   className="mt-8 gap-2 text-base"
-                  data-testid="button-login-cta"
+                  data-testid="button-signup-cta"
                 >
-                  <SiReplit className="h-5 w-5" />
-                  Login with Replit
+                  Sign Up Free
+                  <ArrowRight className="h-5 w-5" />
                 </Button>
               </CardContent>
             </Card>
@@ -135,20 +149,12 @@ interface FeatureCardProps {
 
 function FeatureCard({ icon, title, description, testId }: FeatureCardProps) {
   return (
-    <Card data-testid={`card-${testId}`}>
-      <CardContent className="p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary" data-testid={`icon-${testId}`}>
-            {icon}
-          </div>
-          <h3 className="text-lg font-bold text-foreground" data-testid={`text-${testId}-title`}>
-            {title}
-          </h3>
-        </div>
-        <p className="mt-3 text-sm text-muted-foreground" data-testid={`text-${testId}-description`}>
-          {description}
-        </p>
-      </CardContent>
+    <Card className="p-6" data-testid={testId}>
+      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        {icon}
+      </div>
+      <h3 className="mt-4 text-lg font-semibold text-foreground">{title}</h3>
+      <p className="mt-2 text-sm text-muted-foreground">{description}</p>
     </Card>
   );
 }

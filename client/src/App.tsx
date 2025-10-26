@@ -53,8 +53,11 @@ import Takeoff from "@/pages/Takeoff";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
+import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 
 function Router() {
   return (
@@ -174,6 +177,7 @@ function Router() {
 
 function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
+  const [location] = useLocation();
   
   // Sidebar width state - must be declared before any conditional returns
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -197,8 +201,14 @@ function AuthWrapper() {
     );
   }
 
-  // Show landing page if not authenticated
+  // Show login/signup pages if not authenticated and user is on those routes
   if (!isAuthenticated) {
+    if (location === '/login') {
+      return <Login />;
+    }
+    if (location === '/signup') {
+      return <Signup />;
+    }
     return <LandingPage />;
   }
 
