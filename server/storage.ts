@@ -78,6 +78,7 @@ export interface IStorage {
   validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined>;
   getUserWithRole(id: string): Promise<UserWithRole | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  upsertUser(user: import("@shared/schema").UpsertUser): Promise<User>; // Required for Replit Auth
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
   getUsers(category?: UserCategory): Promise<User[]>;
@@ -4472,6 +4473,22 @@ export class DbStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(schema.users).values(insertUser).returning();
+    return user;
+  }
+
+  // Required for Replit Auth - upsert user based on Replit ID
+  async upsertUser(userData: import("@shared/schema").UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(schema.users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: schema.users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
     return user;
   }
 
