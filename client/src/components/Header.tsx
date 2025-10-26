@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 // Project sections base configuration (from AppSidebar)
 const projectItemsBase = [
@@ -56,32 +57,35 @@ export default function Header() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const { toast } = useToast();
+  const { user, logout } = useAuth();
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "same-origin", // Ensure cookies are sent
-      });
-
-      if (response.ok) {
-        // Small delay to ensure session is destroyed
-        await new Promise(resolve => setTimeout(resolve, 100));
-        // Force a full page reload to clear all state
-        window.location.replace("/");
-      } else {
-        throw new Error("Logout failed");
-      }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Logout failed",
-        description: "Please try again",
-      });
+  // Helper to get user initials
+  const getUserInitials = () => {
+    if (!user) return "U";
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    if (firstName && lastName) {
+      return `${firstName[0]}${lastName[0]}`.toUpperCase();
     }
+    if (firstName) return firstName.substring(0, 2).toUpperCase();
+    if (user.email) return user.email.substring(0, 2).toUpperCase();
+    return "U";
+  };
+
+  // Helper to get user full name
+  const getUserName = () => {
+    if (!user) return "User";
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    if (firstName && lastName) {
+      return `${firstName} ${lastName}`;
+    }
+    if (firstName) return firstName;
+    return user.email || "User";
+  };
+
+  const handleLogout = () => {
+    logout();
   };
 
   const handleNewNote = () => {
@@ -206,13 +210,13 @@ export default function Header() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="button-user-menu">
               <Avatar className="h-8 w-8">
-                <AvatarImage src="" alt="User" />
-                <AvatarFallback>JD</AvatarFallback>
+                <AvatarImage src={user?.profileImageUrl || ""} alt={getUserName()} />
+                <AvatarFallback>{getUserInitials()}</AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>John Doe</DropdownMenuLabel>
+            <DropdownMenuLabel data-testid="text-user-name">{getUserName()}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="menu-profile">
               <User className="h-4 w-4 mr-2" />
