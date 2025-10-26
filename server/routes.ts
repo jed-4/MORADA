@@ -1,7 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { db } from "./db";
+import bcrypt from "bcrypt";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -74,56 +77,53 @@ import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafe
 import multer from "multer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup Replit Auth before any routes
-  await setupAuth(app);
+  // Setup session middleware
+  const PgSession = connectPgSimple(session);
+  
+  app.use(
+    session({
+      store: new PgSession({
+        pool: db as any,
+        tableName: 'sessions',
+        createTableIfMissing: false,
+      }),
+      secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+      },
+    })
+  );
+  
   // put application routes here
   // prefix all routes with /api
 
-  // Global authentication middleware with exceptions for development
+  // Global authentication middleware - protect all API routes
   app.use('/api', (req, res, next) => {
     const path = req.path;
     
-    // Always allow auth endpoints
+    // PUBLIC ENDPOINTS - Always allow these
+    // Auth endpoints (register, login, logout, get user)
     if (path.startsWith('/auth/')) {
       return next();
     }
     
-    // Always allow public invitation endpoints
+    // Public invitation endpoints
     if (/^\/invitations\/by-token\/[^/]+$/.test(path) || /^\/invitations\/[^/]+\/accept$/.test(path)) {
       return next();
     }
 
-    // TEMPORARY: Allow field categories operations for development (remove when auth UI is ready)
-    if ((path.startsWith('/field-categories') || path.startsWith('/field-options')) && process.env.NODE_ENV === 'development') {
+    // DEVELOPMENT-ONLY BYPASSES - Remove these once frontend auth is working
+    if (process.env.NODE_ENV === 'development') {
+      // Allow all routes in development for now to avoid breaking the app during auth migration
       return next();
     }
     
-    // TEMPORARY: Allow company settings for development (needed for Settings page)
-    if (path.startsWith('/company-settings') && process.env.NODE_ENV === 'development') {
-      return next();
-    }
-    
-    // TEMPORARY: Allow system configuration for development (needed for Settings page)
-    if (path.startsWith('/system-configuration') && process.env.NODE_ENV === 'development') {
-      return next();
-    }
-    
-    // TEMPORARY: Allow roles/permissions for development (needed for Settings page)
-    if ((path.startsWith('/user-roles') || path.startsWith('/permissions')) && process.env.NODE_ENV === 'development') {
-      return next();
-    }
-    
-    // TEMPORARY: Allow notes operations for development (remove when auth UI is ready)
-    if (path.startsWith('/notes')) {
-      return next();
-    }
-    
-    // TEMPORARY: Allow projects, tasks, estimates, suppliers, bills, variations, client invoices, site diary, checklists, budgets, contacts, proposals, minutes, and other core operations for development
-    if (path.startsWith('/projects') || path.startsWith('/tasks') || path.startsWith('/estimates') || path.startsWith('/estimate-items') || path.startsWith('/estimate-groups') || path.startsWith('/cost-categories') || path.startsWith('/cost-codes') || path.startsWith('/note-templates') || path.startsWith('/custom-field-defs') || path.startsWith('/custom-field-options') || path.startsWith('/suppliers') || path.startsWith('/bills') || path.startsWith('/variations') || path.startsWith('/variation-items') || path.startsWith('/client-invoices') || path.startsWith('/client-invoice-items') || path.startsWith('/client-invoice-payments') || path.startsWith('/invoice-estimates') || path.startsWith('/invoice-variations') || path.startsWith('/invoice-bills') || path.startsWith('/site-diary-templates') || path.startsWith('/site-diary-entries') || path.startsWith('/checklist-templates') || path.startsWith('/checklist-template-groups') || path.startsWith('/checklist-template-items') || path.startsWith('/budgets') || path.startsWith('/budget-line-items') || path.startsWith('/contacts') || path.startsWith('/proposals') || path.startsWith('/proposal-sections') || path.startsWith('/minutes')) {
-      return next();
-    }
-    
-    // Require authentication for admin routes (users, roles, permissions, invitations)
+    // PRODUCTION - Require authentication for all other routes
     return requireAuth(req, res, next);
   });
 
@@ -2238,35 +2238,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
 
   // ============================================================
-  // REPLIT AUTH ROUTES
+  // EMAIL/PASSWORD AUTHENTICATION ROUTES
   // ============================================================
-  // Note: Login (/api/login), logout (/api/logout), and callback (/api/callback) 
-  // routes are handled by setupAuth in replitAuth.ts
   
-  // Get current authenticated user
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  // Register new user
+  app.post('/api/auth/register', async (req, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      const { email, password, firstName, lastName } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
       }
-      res.json(user);
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "User already exists" });
+      }
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Create user
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+      });
+      
+      // Create session
+      (req.session as any).userId = user.id;
+      
+      res.status(201).json({ user: toSafeUser(user) });
     } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Failed to register user" });
     }
   });
-
-  // Current user route (legacy compatibility)
-  app.get("/api/auth/me", isAuthenticated, async (req: any, res) => {
+  
+  // Login
+  app.post('/api/auth/login', async (req, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+      
+      // Get user
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.password) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Verify password
+      const isValid = await bcrypt.compare(password, user.password);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Create session
+      (req.session as any).userId = user.id;
+      
+      res.json({ user: toSafeUser(user) });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Failed to login" });
+    }
+  });
+  
+  // Logout
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Failed to logout" });
+      }
+      res.clearCookie('connect.sid');
+      res.json({ success: true });
+    });
+  });
+  
+  // Get current authenticated user
+  app.get('/api/auth/user', async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      res.json({ user });
+      
+      res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -2278,9 +2344,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
   
   // Create company (onboarding)
-  app.post("/api/companies", isAuthenticated, async (req: any, res) => {
+  app.post("/api/companies", async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const user = await storage.getUser(userId);
       
       if (!user) {
