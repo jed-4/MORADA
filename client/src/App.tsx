@@ -175,9 +175,20 @@ function Router() {
   );
 }
 
+function UnauthenticatedRoutes() {
+  const [location] = useLocation();
+  
+  if (location === '/login') {
+    return <Login />;
+  }
+  if (location === '/signup') {
+    return <Signup />;
+  }
+  return <LandingPage />;
+}
+
 function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
-  const [location] = useLocation();
   
   // Sidebar width state - must be declared before any conditional returns
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -201,15 +212,9 @@ function AuthWrapper() {
     );
   }
 
-  // Show login/signup pages if not authenticated and user is on those routes
+  // Show login/signup/landing pages if not authenticated
   if (!isAuthenticated) {
-    if (location === '/login') {
-      return <Login />;
-    }
-    if (location === '/signup') {
-      return <Signup />;
-    }
-    return <LandingPage />;
+    return <UnauthenticatedRoutes />;
   }
 
   // Show onboarding if user doesn't have a company

@@ -159,14 +159,13 @@ export default function Signup() {
 
           <div className="text-center text-sm">
             <span className="text-muted-foreground">Already have an account? </span>
-            <Button
-              variant="link"
-              className="p-0 h-auto font-semibold"
+            <button
+              className="text-primary font-semibold hover:underline"
               onClick={() => navigate("/login")}
               data-testid="link-login"
             >
               Log in
-            </Button>
+            </button>
           </div>
         </CardContent>
       </Card>
