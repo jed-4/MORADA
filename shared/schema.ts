@@ -1,7 +1,35 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Session storage table for Replit Auth
+// IMPORTANT: This table is mandatory for Replit Auth, don't drop it
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// Companies table for multi-tenant support
+export const companies = pgTable("companies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  abn: text("abn"),
+  address: text("address"),
+  phone: text("phone"),
+  email: text("email"),
+  website: text("website"),
+  logo: text("logo"),
+  ownerId: varchar("owner_id"), // User who created/owns the company
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 // User roles (Admin, Project Manager, Carpenter, Subcontractor, Client, etc.)
 export const userRoles = pgTable("user_roles", {
@@ -15,16 +43,19 @@ export const userRoles = pgTable("user_roles", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Enhanced users table with role system  
+// Enhanced users table with Replit Auth support
+// IMPORTANT: This table is mandatory for Replit Auth, don't drop it
 export const users = pgTable("users", {
+  // Replit Auth fields (required)
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  email: text("email"),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  
+  // Additional application fields
   phone: text("phone"),
-  company: text("company"),
+  companyId: varchar("company_id").references(() => companies.id),
   userCategory: text("user_category").notNull().default("team"), // "team" | "supplier" | "client"
   roleId: varchar("role_id").references(() => userRoles.id),
   roleName: text("role_name"), // Cached for performance
@@ -99,13 +130,28 @@ export const userColumnPreferences = pgTable("user_column_preferences", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Schema for user creation/updates
+// Schema for company creation/updates
+export const insertCompanySchema = createInsertSchema(companies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Schema for user creation/updates (Replit Auth compatible)
+export const upsertUserSchema = z.object({
+  id: z.string(),
+  email: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  profileImageUrl: z.string().nullable(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
-  email: z.string().email().optional(),
+  email: z.string().email().nullable().optional(),
   userCategory: z.enum(["team", "supplier", "client"]).default("team"),
 });
 
@@ -146,6 +192,9 @@ export const insertUserColumnPreferencesSchema = createInsertSchema(userColumnPr
 });
 
 // Types
+export type Company = typeof companies.$inferSelect;
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type UserRole = typeof userRoles.$inferSelect;
