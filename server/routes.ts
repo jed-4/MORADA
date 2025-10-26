@@ -2273,6 +2273,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================================
+  // COMPANY ROUTES
+  // ============================================================
+  
+  // Create company (onboarding)
+  app.post("/api/companies", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if user already has a company
+      if (user.companyId) {
+        return res.status(400).json({ message: "User already belongs to a company" });
+      }
+      
+      // Create company
+      const company = await storage.createCompany(req.body, userId);
+      res.status(201).json(company);
+    } catch (error) {
+      console.error("Error creating company:", error);
+      res.status(500).json({ message: "Failed to create company" });
+    }
+  });
+
   // Check if current user can approve bills
   app.get("/api/user/can-approve-bills", async (req, res) => {
     try {

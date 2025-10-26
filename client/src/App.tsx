@@ -52,6 +52,7 @@ import BusinessProjects from "@/pages/BusinessProjects";
 import Takeoff from "@/pages/Takeoff";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
+import OnboardingPage from "@/pages/onboarding";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -201,7 +202,12 @@ function AuthWrapper() {
     return <LandingPage />;
   }
 
-  // Show main app if authenticated
+  // Show onboarding if user doesn't have a company
+  if (user && !user.companyId) {
+    return <OnboardingPage />;
+  }
+
+  // Show main app if authenticated and has company
   const style = {
     "--sidebar-width": sidebarWidth,
     "--sidebar-width-icon": "4rem",

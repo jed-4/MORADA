@@ -239,6 +239,11 @@ export interface IStorage {
     itemCount: number;
   }>;
 
+  // Company CRUD
+  getCompany(id: string): Promise<import("@shared/schema").Company | undefined>;
+  createCompany(company: import("@shared/schema").InsertCompany, ownerId: string): Promise<import("@shared/schema").Company>;
+  updateCompany(id: string, company: Partial<import("@shared/schema").InsertCompany>): Promise<import("@shared/schema").Company | undefined>;
+  
   // Company Settings
   getCompanySettings(): Promise<CompanySettings | undefined>;
   updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings | undefined>;
@@ -546,6 +551,7 @@ export class MemStorage implements IStorage {
   private estimateGroups: Map<string, EstimateGroup>;
   private costCategories: Map<string, CostCategory>;
   private costCodes: Map<string, CostCode>;
+  private companies: Map<string, import("@shared/schema").Company>;
   private companySettings: CompanySettings | undefined;
   private systemConfiguration: SystemConfiguration | undefined;
   private fieldCategories: Map<string, FieldCategory>;
@@ -576,6 +582,7 @@ export class MemStorage implements IStorage {
     this.estimateGroups = new Map();
     this.costCategories = new Map();
     this.costCodes = new Map();
+    this.companies = new Map();
     this.fieldCategories = new Map();
     this.fieldOptions = new Map();
     this.selections = new Map();
@@ -3307,6 +3314,50 @@ export class MemStorage implements IStorage {
     };
   }
 
+  // Company CRUD
+  async getCompany(id: string): Promise<import("@shared/schema").Company | undefined> {
+    return this.companies.get(id);
+  }
+
+  async createCompany(company: import("@shared/schema").InsertCompany, ownerId: string): Promise<import("@shared/schema").Company> {
+    const newCompany: import("@shared/schema").Company = {
+      id: randomUUID(),
+      name: company.name,
+      abn: company.abn || null,
+      address: company.address || null,
+      phone: company.phone || null,
+      email: company.email || null,
+      website: company.website || null,
+      logo: company.logo || null,
+      ownerId,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.companies.set(newCompany.id, newCompany);
+    
+    // Update user's companyId
+    const user = await this.getUser(ownerId);
+    if (user) {
+      await this.updateUser(ownerId, { companyId: newCompany.id });
+    }
+    
+    return newCompany;
+  }
+
+  async updateCompany(id: string, company: Partial<import("@shared/schema").InsertCompany>): Promise<import("@shared/schema").Company | undefined> {
+    const existing = this.companies.get(id);
+    if (!existing) return undefined;
+    
+    const updated: import("@shared/schema").Company = {
+      ...existing,
+      ...company,
+      updatedAt: new Date(),
+    };
+    this.companies.set(id, updated);
+    return updated;
+  }
+
   // Company Settings
   async getCompanySettings(): Promise<CompanySettings | undefined> {
     return this.companySettings;
@@ -5960,6 +6011,39 @@ export class DbStorage implements IStorage {
       return { subtotal: 0, markupAmount: 0, subtotalWithMarkup: 0, taxAmount: 0, total: 0, itemCount: 0 };
     }
   }
+  // Company CRUD
+  async getCompany(id: string): Promise<import("@shared/schema").Company | undefined> {
+    const [company] = await db.select().from(schema.companies)
+      .where(eq(schema.companies.id, id))
+      .limit(1);
+    return company;
+  }
+
+  async createCompany(company: import("@shared/schema").InsertCompany, ownerId: string): Promise<import("@shared/schema").Company> {
+    const [newCompany] = await db.insert(schema.companies)
+      .values({
+        ...company,
+        ownerId,
+        isActive: true,
+      })
+      .returning();
+    
+    // Update user's companyId
+    await db.update(schema.users)
+      .set({ companyId: newCompany.id, updatedAt: new Date() })
+      .where(eq(schema.users.id, ownerId));
+    
+    return newCompany;
+  }
+
+  async updateCompany(id: string, company: Partial<import("@shared/schema").InsertCompany>): Promise<import("@shared/schema").Company | undefined> {
+    const [updated] = await db.update(schema.companies)
+      .set({ ...company, updatedAt: new Date() })
+      .where(eq(schema.companies.id, id))
+      .returning();
+    return updated;
+  }
+
   async getCompanySettings(): Promise<CompanySettings | undefined> { 
     // Get first (and only) company settings record
     const [settings] = await db.select().from(schema.companySettings).limit(1);
