@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { setupAuth, isAuthenticated } from "./replitAuth";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -73,6 +74,8 @@ import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafe
 import multer from "multer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup Replit Auth before any routes
+  await setupAuth(app);
   // put application routes here
   // prefix all routes with /api
 
@@ -2234,72 +2237,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // USER ROLE SYSTEM API ROUTES
   // ============================================================
 
-  // Authentication Routes
-  app.post("/api/auth/login", async (req, res) => {
+  // ============================================================
+  // REPLIT AUTH ROUTES
+  // ============================================================
+  // Note: Login (/api/login), logout (/api/logout), and callback (/api/callback) 
+  // routes are handled by setupAuth in replitAuth.ts
+  
+  // Get current authenticated user
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const { username, password } = req.body;
-      if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required" });
-      }
-
-      const user = await storage.validateUserCredentials(username, password);
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
       if (!user) {
-        return res.status(401).json({ error: "Invalid username or password" });
+        return res.status(404).json({ message: "User not found" });
       }
-
-      // Regenerate session to prevent fixation attacks
-      req.session.regenerate((err) => {
-        if (err) {
-          console.error('Session regeneration error:', err);
-          return res.status(500).json({ error: "Login failed" });
-        }
-        
-        // Create secure session with new session ID
-        req.session.userId = user.id;
-        
-        // Save session explicitly
-        req.session.save(async (err) => {
-          if (err) {
-            console.error('Session save error:', err);
-            return res.status(500).json({ error: "Login failed" });
-          }
-          
-          try {
-            // Update last login time
-            await storage.updateUser(user.id, { lastLoginAt: new Date() });
-            res.json({ user: toSafeUser(user), message: "Login successful" });
-          } catch (error) {
-            console.error('Login update error:', error);
-            res.status(500).json({ error: "Login failed" });
-          }
-        });
-      });
+      res.json(user);
     } catch (error) {
-      console.error('Login error:', error);
-      res.status(500).json({ error: "Login failed" });
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 
-  // Logout route
-  app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        console.error('Logout error:', err);
-        return res.status(500).json({ error: "Logout failed" });
+  // Current user route (legacy compatibility)
+  app.get("/api/auth/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
-      res.clearCookie('buildpro.session', { 
-        path: '/',
-        httpOnly: true, 
-        sameSite: 'lax', 
-        secure: process.env.NODE_ENV === 'production' 
-      });
-      res.json({ message: "Logout successful" });
-    });
-  });
-
-  // Current user route
-  app.get("/api/auth/me", (req, res) => {
-    res.json({ user: toSafeUser(req.user!) });
+      res.json({ user });
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
   });
 
   // Check if current user can approve bills

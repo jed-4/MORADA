@@ -1,7 +1,4 @@
 import express, { type Request, Response, NextFunction } from "express";
-import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
-import { pool } from "./db";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -30,27 +27,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET environment variable must be set in production');
 }
 
-// Configure PostgreSQL session store for persistence across server restarts
-const PgStore = connectPgSimple(session);
-
-// Configure session middleware for authentication
-app.use(session({
-  store: new PgStore({
-    pool: pool,
-    tableName: 'session', // Use a simple table name
-    createTableIfMissing: true, // Automatically create the session table
-  }),
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    httpOnly: true, // Prevent XSS attacks
-    sameSite: 'lax', // CSRF protection - prevent cross-site request forgery
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  },
-  name: 'buildpro.session', // Custom session name (security through obscurity)
-}));
+// Note: Replit Auth session setup is done in registerRoutes via setupAuth()
 
 app.use((req, res, next) => {
   const start = Date.now();
