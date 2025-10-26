@@ -51,9 +51,9 @@ import ProposalDetail from "@/pages/ProposalDetail";
 import BusinessProjects from "@/pages/BusinessProjects";
 import Takeoff from "@/pages/Takeoff";
 import NotFound from "@/pages/not-found";
-import Login from "@/pages/Login";
+import LandingPage from "@/pages/landing";
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 
 function Router() {
   return (
@@ -172,7 +172,7 @@ function Router() {
 }
 
 function AuthWrapper() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const { user, isLoading, isAuthenticated } = useAuth();
   
   // Sidebar width state - must be declared before any conditional returns
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -184,41 +184,21 @@ function AuthWrapper() {
     localStorage.setItem('sidebar-width', sidebarWidth);
   }, [sidebarWidth]);
 
-  // Check authentication status
-  const { data: authCheck, isLoading } = useQuery({
-    queryKey: ["/api/projects"],
-    retry: false,
-    retryOnMount: false,
-    refetchOnWindowFocus: false,
-  });
-
-  useEffect(() => {
-    if (!isLoading) {
-      setIsAuthenticated(!!authCheck);
-    }
-  }, [authCheck, isLoading]);
-
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-    // Force refetch of auth-dependent queries
-    queryClient.invalidateQueries();
-  };
-
   // Show loading while checking auth
-  if (isAuthenticated === null) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="loading-enhanced text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading BuildPro...</p>
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" data-testid="loading-spinner"></div>
+          <p className="text-muted-foreground" data-testid="text-loading">Loading BuildPro...</p>
         </div>
       </div>
     );
   }
 
-  // Show login if not authenticated
+  // Show landing page if not authenticated
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return <LandingPage />;
   }
 
   // Show main app if authenticated
