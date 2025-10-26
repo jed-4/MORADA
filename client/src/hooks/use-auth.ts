@@ -9,10 +9,48 @@ export function useAuth() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
+  const loginMutation = useMutation({
+    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      const response = await apiRequest('/api/auth/login', 'POST', { email, password });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: async ({ 
+      email, 
+      password, 
+      name,
+      companyName 
+    }: { 
+      email: string; 
+      password: string; 
+      name: string;
+      companyName: string;
+    }) => {
+      const response = await apiRequest('/api/auth/register', 'POST', { 
+        email, 
+        password, 
+        name, 
+        companyName 
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+    },
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      // Call the Replit Auth logout endpoint
-      window.location.href = '/api/logout';
+      await apiRequest('/api/auth/logout', 'POST');
+    },
+    onSuccess: () => {
+      queryClient.setQueryData(['/api/auth/user'], null);
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
     },
   });
 
@@ -21,10 +59,10 @@ export function useAuth() {
     isLoading,
     isAuthenticated: !!user,
     error,
+    login: loginMutation.mutateAsync,
+    register: registerMutation.mutateAsync,
     logout: logoutMutation.mutate,
-    login: () => {
-      // Redirect to Replit Auth login
-      window.location.href = '/api/login';
-    },
+    isLoggingIn: loginMutation.isPending,
+    isRegistering: registerMutation.isPending,
   };
 }
