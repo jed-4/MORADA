@@ -8,6 +8,13 @@
       "when": 1761275608953,
       "tag": "0000_clean_trauma",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1761516101244,
+      "tag": "0001_replit_auth_company",
+      "breakpoints": true
     }
   ]
 }
