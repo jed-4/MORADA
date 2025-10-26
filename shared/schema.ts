@@ -43,17 +43,15 @@ export const userRoles = pgTable("user_roles", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Enhanced users table with Replit Auth support
-// IMPORTANT: This table is mandatory for Replit Auth, don't drop it
+// Users table with email/password authentication
 export const users = pgTable("users", {
-  // Replit Auth fields (required)
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
+  email: varchar("email").notNull().unique(),
+  password: varchar("password").notNull(), // bcrypt hashed password
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
   
-  // Additional application fields
+  // Application fields
   phone: text("phone"),
   companyId: varchar("company_id").references(() => companies.id),
   userCategory: text("user_category").notNull().default("team"), // "team" | "supplier" | "client"
