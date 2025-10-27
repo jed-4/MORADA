@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth } from "date-fns";
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ export interface CalendarEvent {
   projectId?: string | null;
   projectColor?: string | null;
   type: "task" | "schedule" | "meeting";
-  status?: "todo" | "in-progress" | "done" | "not_started" | "completed";
+  status?: string;
   isCompleted?: boolean;
 }
 
@@ -64,7 +64,7 @@ export function EnhancedCalendar({
     } else if (view === "week") {
       setCurrentDate(direction === "next" ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
     } else {
-      setCurrentDate(direction === "next" ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
+      setCurrentDate(direction === "next" ? addDays(currentDate, 1) : subDays(currentDate, 1));
     }
   }, [currentDate, view]);
 
