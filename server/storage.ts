@@ -5,6 +5,7 @@ import {
   type CustomFieldDef, type InsertCustomFieldDef,
   type CustomFieldOption, type InsertCustomFieldOption,
   type NoteTemplate, type InsertNoteTemplate,
+  type Client, type InsertClient,
   type Project, type InsertProject,
   type TaskView, type InsertTaskView,
   type Estimate, type InsertEstimate,
@@ -159,6 +160,13 @@ export interface IStorage {
   createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate>;
   updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined>;
   deleteNoteTemplate(id: string): Promise<boolean>;
+
+  // Clients CRUD
+  getClients(): Promise<Client[]>;
+  getClient(id: string): Promise<Client | undefined>;
+  createClient(client: InsertClient): Promise<Client>;
+  updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
+  deleteClient(id: string): Promise<boolean>;
 
   // Projects CRUD
   getProjects(ownerId?: string): Promise<Project[]>;
@@ -2133,6 +2141,66 @@ export class MemStorage implements IStorage {
 
   async updateTaskStatus(id: string, status: "todo" | "in-progress" | "done"): Promise<Task | undefined> {
     return this.updateTask(id, { status } as Partial<InsertTask>);
+  }
+
+  // Clients CRUD operations
+  async getClients(): Promise<Client[]> {
+    try {
+      const clients = await db.select().from(schema.clients)
+        .where(eq(schema.clients.isActive, true))
+        .orderBy(schema.clients.name);
+      return clients;
+    } catch (error) {
+      console.error("Database error in getClients:", error);
+      return [];
+    }
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    try {
+      const [client] = await db.select().from(schema.clients)
+        .where(eq(schema.clients.id, id));
+      return client;
+    } catch (error) {
+      console.error("Database error in getClient:", error);
+      return undefined;
+    }
+  }
+
+  async createClient(client: InsertClient): Promise<Client> {
+    try {
+      const [newClient] = await db.insert(schema.clients)
+        .values(client)
+        .returning();
+      return newClient;
+    } catch (error) {
+      console.error("Database error in createClient:", error);
+      throw error;
+    }
+  }
+
+  async updateClient(id: string, clientData: Partial<InsertClient>): Promise<Client | undefined> {
+    try {
+      const [updated] = await db.update(schema.clients)
+        .set({ ...clientData, updatedAt: new Date() })
+        .where(eq(schema.clients.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateClient:", error);
+      return undefined;
+    }
+  }
+
+  async deleteClient(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.clients)
+        .where(eq(schema.clients.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteClient:", error);
+      return false;
+    }
   }
 
   // Projects CRUD operations
