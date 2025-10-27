@@ -14,6 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
+import { UserCalendarDialog } from "./UserCalendarDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -23,7 +24,6 @@ const projectItemsBase = [
   { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
   { title: "Notes", baseUrl: "/notes", icon: FileText },
   { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
-  { title: "Calendar", baseUrl: "/calendar", icon: Calendar },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
   { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
@@ -46,7 +46,7 @@ const projectItemsBase = [
 
 // Items to exclude from All Items menu
 const excludedItems = new Set([
-  "Overview", "Messages", "Calendar", "Schedule", "Take off", 
+  "Overview", "Messages", "Schedule", "Take off", 
   "Selections", "Allowances", "Budget", "Files", "Team"
 ]);
 
@@ -56,6 +56,7 @@ const allItemsMenuItems = projectItemsBase.filter(item => !excludedItems.has(ite
 export default function Header() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const { toast } = useToast();
   const { user, logout } = useAuth();
 
@@ -156,7 +157,12 @@ export default function Header() {
 
       <div className="flex items-center gap-2">
         {/* Calendar Button */}
-        <Button variant="outline" size="icon" data-testid="button-calendar">
+        <Button 
+          variant="outline" 
+          size="icon" 
+          onClick={() => setIsCalendarOpen(true)}
+          data-testid="button-calendar"
+        >
           <Calendar className="h-4 w-4" />
         </Button>
 
@@ -239,6 +245,12 @@ export default function Header() {
       <CreateProjectDialog 
         open={isCreateProjectOpen} 
         onOpenChange={setIsCreateProjectOpen} 
+      />
+
+      {/* User Calendar Dialog */}
+      <UserCalendarDialog 
+        open={isCalendarOpen} 
+        onOpenChange={setIsCalendarOpen}
       />
     </header>
   );

@@ -134,6 +134,7 @@ export interface IStorage {
 
   // Tasks CRUD operations (specific to type="task")
   getTasks(projectId?: string, status?: string): Promise<Task[]>;
+  getTasksByUser(userId: string, companyId: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined>;
@@ -512,6 +513,7 @@ export interface IStorage {
 
   // Schedule Items CRUD
   getScheduleItems(scheduleId: string): Promise<ScheduleItem[]>;
+  getAllScheduleItems(companyId: string): Promise<ScheduleItem[]>;
   getScheduleItem(id: string): Promise<ScheduleItem | undefined>;
   createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem>;
   updateScheduleItem(id: string, item: Partial<InsertScheduleItem>): Promise<ScheduleItem | undefined>;
@@ -2106,6 +2108,20 @@ export class MemStorage implements IStorage {
     }
     
     return filteredTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
+    const allTasks = Array.from(this.notes.values())
+      .filter(note => note.type === "task") as Task[];
+    
+    const userTasks = allTasks.filter(task => {
+      if (!task.assignedTo || !task.assignedTo.includes(userId)) return false;
+      if (!task.projectId) return false;
+      const project = this.projects.get(task.projectId);
+      return project?.companyId === companyId;
+    });
+    
+    return userTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getTask(id: string): Promise<Task | undefined> {
@@ -4018,6 +4034,22 @@ export class MemStorage implements IStorage {
   async deleteSiteDiaryEntry(id: string): Promise<boolean> {
     return this.siteDiaryEntries.delete(id);
   }
+
+  async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
+    const allItems: ScheduleItem[] = [];
+    
+    for (const schedule of this.schedules.values()) {
+      const project = this.projects.get(schedule.projectId);
+      if (project?.companyId === companyId) {
+        const scheduleItems = await this.getScheduleItems(schedule.id);
+        allItems.push(...scheduleItems);
+      }
+    }
+    
+    return allItems.sort((a, b) => 
+      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+    );
+  }
 }
 
 // Database-backed storage implementation
@@ -4714,6 +4746,42 @@ export class DbStorage implements IStorage {
     const tasks = await db.select().from(schema.notes).where(
       conditions.length === 1 ? conditions[0] : and(...conditions)
     );
+    return tasks as Task[];
+  }
+
+  async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
+    const tasks = await db.select({
+      id: schema.notes.id,
+      type: schema.notes.type,
+      title: schema.notes.title,
+      content: schema.notes.content,
+      status: schema.notes.status,
+      priority: schema.notes.priority,
+      category: schema.notes.category,
+      projectId: schema.notes.projectId,
+      assignedTo: schema.notes.assignedTo,
+      dueDate: schema.notes.dueDate,
+      completedAt: schema.notes.completedAt,
+      tags: schema.notes.tags,
+      customFields: schema.notes.customFields,
+      visibility: schema.notes.visibility,
+      visibleToUsers: schema.notes.visibleToUsers,
+      isPinned: schema.notes.isPinned,
+      pinnedAt: schema.notes.pinnedAt,
+      createdBy: schema.notes.createdBy,
+      createdAt: schema.notes.createdAt,
+      updatedAt: schema.notes.updatedAt,
+    })
+      .from(schema.notes)
+      .innerJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id))
+      .where(
+        and(
+          eq(schema.notes.type, "task"),
+          eq(schema.projects.companyId, companyId),
+          sql`${schema.notes.assignedTo} @> ARRAY[${userId}]::text[]`
+        )
+      )
+      .orderBy(desc(schema.notes.createdAt));
     return tasks as Task[];
   }
 
@@ -8788,6 +8856,32 @@ export class DbStorage implements IStorage {
         .orderBy(schema.scheduleItems.sortOrder, schema.scheduleItems.startDate);
     } catch (error) {
       console.error("Database error in getScheduleItems:", error);
+      throw error;
+    }
+  }
+
+  async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
+    try {
+      const items = await db.select({
+        id: schema.scheduleItems.id,
+        scheduleId: schema.scheduleItems.scheduleId,
+        title: schema.scheduleItems.title,
+        description: schema.scheduleItems.description,
+        startDate: schema.scheduleItems.startDate,
+        endDate: schema.scheduleItems.endDate,
+        color: schema.scheduleItems.color,
+        sortOrder: schema.scheduleItems.sortOrder,
+        createdAt: schema.scheduleItems.createdAt,
+        updatedAt: schema.scheduleItems.updatedAt,
+      })
+        .from(schema.scheduleItems)
+        .innerJoin(schema.schedules, eq(schema.scheduleItems.scheduleId, schema.schedules.id))
+        .innerJoin(schema.projects, eq(schema.schedules.projectId, schema.projects.id))
+        .where(eq(schema.projects.companyId, companyId))
+        .orderBy(schema.scheduleItems.startDate);
+      return items;
+    } catch (error) {
+      console.error("Database error in getAllScheduleItems:", error);
       throw error;
     }
   }

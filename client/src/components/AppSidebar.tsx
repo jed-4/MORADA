@@ -75,7 +75,6 @@ const projectItemsBase = [
   { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
   { title: "Notes", baseUrl: "/notes", icon: FileText },
   { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
-  { title: "Calendar", baseUrl: "/calendar", icon: Calendar },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
   { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
@@ -101,6 +100,7 @@ const projectItemsBase = [
 const businessItems = [
   { title: "Business Overview", url: "/business", icon: Home },
   { title: "Projects", url: "/business/projects", icon: FolderOpen },
+  { title: "Calendar", url: "/business/calendar", icon: Calendar },
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
   { title: "Messages", url: "/business/messages", icon: MessageSquare },

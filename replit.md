@@ -53,6 +53,7 @@ Preferred communication style: Simple, everyday language.
 - **Estimate Detail Enhancements**: Cost code dropdowns connected to API, loading states, cascading group selection, and improved bulk delete functionality.
 - **Estimate Status Badges**: Consistent status badge display across the application, configurable via field settings.
 - **Estimate Group Visual Containment** (October 2025): Implemented rounded-corner visual containment for estimate groups with items. Groups display as unified "bubbles" with rounded-t-xl on headers, rounded-b-xl on last items, and full rounded-xl when collapsed. Items within groups receive subtle visual nesting (background tint bg-muted/10, 2px left border, 8px additional padding). CSS implemented via pseudo-elements on TableRows (group-row-shell with .group-collapsed/.group-expanded variants, item-in-group, item-in-group-last classes). Spacer rows (h-3 transparent) provide visual separation between top-level groups since table rows don't support margins.
+- **Calendar System** (October 2025): Dual calendar structure with personal and business views. Personal calendar (accessible via header icon button) shows user's tasks across all projects with completion checkboxes and visual states. Business calendar (in business sidebar) displays all company events with project and user filtering. Both calendars integrate tasks and schedule items with month/week/day views, drag-and-drop support, and real-time status updates. Calendar removed from project sidebar as schedules are managed per-project.
 
 ## External Dependencies
 

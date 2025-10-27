@@ -280,6 +280,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get all tasks for the current user across all projects
+  app.get("/api/tasks/user", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const tasks = await storage.getTasksByUser(user.id, user.companyId);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user tasks" });
+    }
+  });
+
   app.get("/api/tasks/:id", async (req, res) => {
     try {
       const task = await storage.getTask(req.params.id);
@@ -6350,6 +6365,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch schedule items",
+        details: error.message 
+      });
+    }
+  });
+
+  // Get all schedule items across all schedules/projects
+  app.get("/api/schedule-items/all", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const items = await storage.getAllScheduleItems(user.companyId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch all schedule items",
         details: error.message 
       });
     }
