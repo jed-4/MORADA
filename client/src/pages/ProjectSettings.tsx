@@ -729,8 +729,7 @@ function DeleteProjectButton({ project }: { project: Project }) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('DELETE', `/api/projects/${project.id}`);
-      return response;
+      return await apiRequest(`/api/projects/${project.id}`, 'DELETE');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
