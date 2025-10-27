@@ -636,7 +636,7 @@ export default function ProjectSettings() {
                     ) : (
                       estimates.map((estimate) => (
                         <SelectItem key={estimate.id} value={estimate.id}>
-                          {estimate.name || `Estimate ${estimate.number}`}
+                          {estimate.name}
                         </SelectItem>
                       ))
                     )}
