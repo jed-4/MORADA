@@ -76,10 +76,7 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
   });
 
   const onSubmit = (data: FormData) => {
-    createProjectMutation.mutate({
-      ...data,
-      isBusiness: false, // All user-created projects are not business projects
-    });
+    createProjectMutation.mutate(data);
   };
 
   const handleClose = () => {
