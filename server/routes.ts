@@ -2263,17 +2263,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
       
-      // Create company first
-      const company = await storage.createCompany({
-        name: companyName,
-      });
-      
-      // Create user with company
+      // Step 1: Create user without company
       const user = await storage.createUser({
         email,
         password: hashedPassword,
         firstName,
         lastName,
+        userCategory: "team",
+      });
+      
+      // Step 2: Create company with user as owner
+      const company = await storage.createCompany({
+        name: companyName,
+      }, user.id);
+      
+      // Step 3: Update user with companyId
+      await storage.updateUser(user.id, {
         companyId: company.id,
       });
       
