@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,9 +74,7 @@ export default function ProjectSettings() {
   const updateProjectMutation = useMutation({
     mutationFn: async (data: Partial<Project>) => {
       if (!currentProject) throw new Error("No project selected");
-      const response = await apiRequest('PATCH', `/api/projects/${currentProject.id}`, data);
-      const updatedProject = await response.json();
-      return updatedProject as Project;
+      return await apiRequest(`/api/projects/${currentProject.id}`, 'PATCH', data) as Project;
     },
     onSuccess: (updatedProject: Project) => {
       setCurrentProject(updatedProject);
@@ -660,24 +659,28 @@ function ArchiveProjectButton({ project }: { project: Project }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { setCurrentProject } = useProject();
+  const [, navigate] = useLocation();
 
   const archiveMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('PATCH', `/api/projects/${project.id}`, {
+      return await apiRequest(`/api/projects/${project.id}`, 'PATCH', {
         isArchived: true
       });
-      return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      // Clear the current project immediately
       setCurrentProject(null);
       setOpen(false);
+      
+      // Navigate to dashboard immediately
+      navigate('/');
+      
+      // Then invalidate and show toast
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
       toast({
         title: "Project Archived",
         description: `${project.name} has been archived.`,
       });
-      // Redirect to home
-      window.location.href = '/';
     },
     onError: () => {
       toast({
@@ -726,21 +729,26 @@ function DeleteProjectButton({ project }: { project: Project }) {
   const [confirmText, setConfirmText] = useState("");
   const { toast } = useToast();
   const { setCurrentProject } = useProject();
+  const [, navigate] = useLocation();
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest(`/api/projects/${project.id}`, 'DELETE');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      // Clear the current project immediately
       setCurrentProject(null);
       setOpen(false);
+      
+      // Navigate to dashboard immediately
+      navigate('/');
+      
+      // Then invalidate and show toast
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
       toast({
         title: "Project Deleted",
         description: `${project.name} has been permanently deleted.`,
       });
-      // Redirect to home
-      window.location.href = '/';
     },
     onError: () => {
       toast({
