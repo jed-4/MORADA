@@ -42,7 +42,7 @@ export default function Signup() {
         title: "Account created!",
         description: "Welcome to BuildPro. Your company has been set up.",
       });
-      navigate("/dashboard");
+      navigate("/");
     } catch (error: any) {
       toast({
         variant: "destructive",

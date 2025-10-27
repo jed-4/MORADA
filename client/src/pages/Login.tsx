@@ -38,7 +38,7 @@ export default function Login() {
         title: "Welcome back!",
         description: "You've successfully logged in to BuildPro.",
       });
-      navigate("/dashboard");
+      navigate("/");
     } catch (error: any) {
       toast({
         variant: "destructive",

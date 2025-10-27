@@ -48,8 +48,7 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: InsertProject) => {
-      const response = await apiRequest("/api/projects", "POST", data);
-      return response.json() as Promise<Project>;
+      return await apiRequest("/api/projects", "POST", data) as Project;
     },
     onSuccess: (newProject) => {
       // Invalidate and refetch projects
