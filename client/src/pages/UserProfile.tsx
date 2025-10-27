@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,18 @@ export default function UserProfile() {
   const [isEditing, setIsEditing] = useState(false);
 
   // Form state
-  const [firstName, setFirstName] = useState(user?.firstName || "");
-  const [lastName, setLastName] = useState(user?.lastName || "");
-  const [phone, setPhone] = useState(user?.phone || "");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  // Sync form state when user data loads
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.firstName || "");
+      setLastName(user.lastName || "");
+      setPhone(user.phone || "");
+    }
+  }, [user]);
 
   // Update user profile mutation
   const updateProfileMutation = useMutation({
@@ -54,7 +63,24 @@ export default function UserProfile() {
   });
 
   const handleSave = () => {
+    if (!user?.id) {
+      toast({
+        title: "Error",
+        description: "User session not found. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     updateProfileMutation.mutate({ firstName, lastName, phone });
+  };
+
+  const handleCancel = () => {
+    if (user) {
+      setFirstName(user.firstName || "");
+      setLastName(user.lastName || "");
+      setPhone(user.phone || "");
+    }
+    setIsEditing(false);
   };
 
   const handleConnectGoogleCalendar = () => {
@@ -187,12 +213,7 @@ export default function UserProfile() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => {
-                      setIsEditing(false);
-                      setFirstName(user?.firstName || "");
-                      setLastName(user?.lastName || "");
-                      setPhone(user?.phone || "");
-                    }}
+                    onClick={handleCancel}
                     data-testid="button-cancel-edit"
                   >
                     Cancel
