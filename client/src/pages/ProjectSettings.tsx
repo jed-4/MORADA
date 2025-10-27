@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
@@ -13,11 +13,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign } from "lucide-react";
+import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import CreateClientDialog from "@/components/CreateClientDialog";
 import * as LucideIcons from "lucide-react";
 
 export default function ProjectSettings() {
@@ -27,6 +28,7 @@ export default function ProjectSettings() {
   const [isAddingProjectType, setIsAddingProjectType] = useState(false);
   const [newProjectType, setNewProjectType] = useState("");
   const [customProjectTypes, setCustomProjectTypes] = useState<string[]>([]);
+  const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
   
   // Form state for editing project details
   const [formData, setFormData] = useState({
@@ -34,12 +36,58 @@ export default function ProjectSettings() {
     description: currentProject?.description || "",
     jobNumber: currentProject?.jobNumber || "",
     projectType: currentProject?.projectType || "",
+    clientId: currentProject?.clientId || null,
+    location: currentProject?.location || "",
+    projectStatus: currentProject?.projectStatus || null,
+    projectSubStatus: currentProject?.projectSubStatus || null,
+    clientBudget: currentProject?.clientBudget || null,
+    proposedStartDate: currentProject?.proposedStartDate || null,
+    proposedEndDate: currentProject?.proposedEndDate || null,
+    contractCost: currentProject?.contractCost || null,
+    selectedEstimateId: currentProject?.selectedEstimateId || null,
     color: currentProject?.color || "#3b82f6",
     icon: currentProject?.icon || "Building2",
     isActive: currentProject?.isActive ?? true,
-    isBusiness: currentProject?.isBusiness ?? false,
     invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
   });
+
+  // Fetch clients for dropdown
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: ['/api/clients'],
+  });
+
+  // Fetch field options for project status (hierarchical)
+  const { data: allFieldOptions = [] } = useQuery<FieldOption[]>({
+    queryKey: ['/api/field-options', 'project.status'],
+    queryFn: async () => {
+      const categories = await apiRequest('/api/field-categories', 'GET') as any[];
+      const statusCategory = categories.find((c: any) => c.key === 'project.status');
+      if (!statusCategory) return [];
+      return await apiRequest(`/api/field-options?categoryId=${statusCategory.id}`, 'GET') as FieldOption[];
+    },
+  });
+
+  // Fetch estimates for the current project
+  const { data: estimates = [] } = useQuery<Estimate[]>({
+    queryKey: ['/api/estimates', currentProject?.id],
+    enabled: !!currentProject?.id,
+    queryFn: async () => {
+      if (!currentProject?.id) return [];
+      const result = await apiRequest(`/api/estimates?projectId=${currentProject.id}`, 'GET') as Estimate[];
+      return result || [];
+    },
+  });
+
+  // Filter high-level and low-level status options
+  const parentStatusOptions = useMemo(() => 
+    allFieldOptions.filter(opt => !opt.parentId),
+    [allFieldOptions]
+  );
+
+  const subStatusOptions = useMemo(() => {
+    if (!formData.projectStatus) return [];
+    return allFieldOptions.filter(opt => opt.parentId === formData.projectStatus);
+  }, [allFieldOptions, formData.projectStatus]);
 
   // Load custom project types from localStorage
   useEffect(() => {
@@ -61,10 +109,18 @@ export default function ProjectSettings() {
         description: currentProject.description || "",
         jobNumber: currentProject.jobNumber || "",
         projectType: currentProject.projectType || "",
+        clientId: currentProject.clientId || null,
+        location: currentProject.location || "",
+        projectStatus: currentProject.projectStatus || null,
+        projectSubStatus: currentProject.projectSubStatus || null,
+        clientBudget: currentProject.clientBudget || null,
+        proposedStartDate: currentProject.proposedStartDate || null,
+        proposedEndDate: currentProject.proposedEndDate || null,
+        contractCost: currentProject.contractCost || null,
+        selectedEstimateId: currentProject.selectedEstimateId || null,
         color: currentProject.color || "#3b82f6",
         icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
-        isBusiness: currentProject.isBusiness,
         invoicingMethod: currentProject.invoicingMethod || "progress_payments",
       });
     }
@@ -106,14 +162,27 @@ export default function ProjectSettings() {
         description: currentProject.description || "",
         jobNumber: currentProject.jobNumber || "",
         projectType: currentProject.projectType || "",
+        clientId: currentProject.clientId || null,
+        location: currentProject.location || "",
+        projectStatus: currentProject.projectStatus || null,
+        projectSubStatus: currentProject.projectSubStatus || null,
+        clientBudget: currentProject.clientBudget || null,
+        proposedStartDate: currentProject.proposedStartDate || null,
+        proposedEndDate: currentProject.proposedEndDate || null,
+        contractCost: currentProject.contractCost || null,
+        selectedEstimateId: currentProject.selectedEstimateId || null,
         color: currentProject.color || "#3b82f6",
         icon: currentProject.icon || "Building2",
         isActive: currentProject.isActive,
-        isBusiness: currentProject.isBusiness,
         invoicingMethod: currentProject.invoicingMethod || "progress_payments",
       });
     }
     setIsEditing(false);
+  };
+
+  const handleClientCreated = (client: Client) => {
+    queryClient.invalidateQueries({ queryKey: ['/api/clients'] });
+    setFormData({ ...formData, clientId: client.id });
   };
 
   const handleAddProjectType = () => {
@@ -508,28 +577,6 @@ export default function ProjectSettings() {
             ) : (
               <Badge variant={currentProject.isActive ? "default" : "secondary"} data-testid="badge-is-active">
                 {currentProject.isActive ? "Active" : "Inactive"}
-              </Badge>
-            )}
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label>Business Project</Label>
-              <p className="text-sm text-muted-foreground">
-                Whether this is a business-wide project or client project
-              </p>
-            </div>
-            {isEditing ? (
-              <Switch
-                checked={formData.isBusiness}
-                onCheckedChange={(checked) => setFormData({ ...formData, isBusiness: checked })}
-                data-testid="switch-is-business"
-              />
-            ) : (
-              <Badge variant={currentProject.isBusiness ? "default" : "outline"} data-testid="badge-is-business">
-                {currentProject.isBusiness ? "Business Project" : "Client Project"}
               </Badge>
             )}
           </div>
