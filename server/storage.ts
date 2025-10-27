@@ -126,7 +126,7 @@ export interface IStorage {
   acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
   // Notes CRUD operations
-  getNotes(projectId?: string): Promise<Note[]>;
+  getNotes(projectId?: string, companyId?: string): Promise<Note[]>;
   getNote(id: string): Promise<Note | undefined>;
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined>;
@@ -1837,7 +1837,7 @@ export class MemStorage implements IStorage {
   }
 
   // Notes CRUD operations
-  async getNotes(projectId?: string): Promise<Note[]> {
+  async getNotes(projectId?: string, companyId?: string): Promise<Note[]> {
     const allNotes = Array.from(this.notes.values());
     if (projectId) {
       return allNotes.filter(note => note.projectId === projectId);
@@ -5016,16 +5016,58 @@ export class DbStorage implements IStorage {
   async updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> { return undefined; }
   async deleteUserInvitation(id: string): Promise<boolean> { return false; }
   async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> { return undefined; }
-  async getNotes(projectId?: string): Promise<Note[]> {
+  async getNotes(projectId?: string, companyId?: string): Promise<Note[]> {
+    // Build query to join with projects table for company filtering
+    let query = db
+      .select({
+        id: schema.notes.id,
+        title: schema.notes.title,
+        content: schema.notes.content,
+        contentHtml: schema.notes.contentHtml,
+        contentText: schema.notes.contentText,
+        category: schema.notes.category,
+        priority: schema.notes.priority,
+        author: schema.notes.author,
+        ownerId: schema.notes.ownerId,
+        ownerName: schema.notes.ownerName,
+        visibility: schema.notes.visibility,
+        pinned: schema.notes.pinned,
+        customFields: schema.notes.customFields,
+        projectId: schema.notes.projectId,
+        type: schema.notes.type,
+        status: schema.notes.status,
+        assigneeId: schema.notes.assigneeId,
+        assigneeName: schema.notes.assigneeName,
+        dueDate: schema.notes.dueDate,
+        completedAt: schema.notes.completedAt,
+        tags: schema.notes.tags,
+        labels: schema.notes.labels,
+        parentTaskId: schema.notes.parentTaskId,
+        subtaskOrder: schema.notes.subtaskOrder,
+        recurringSettings: schema.notes.recurringSettings,
+        recurringParentId: schema.notes.recurringParentId,
+        templateId: schema.notes.templateId,
+        createdAt: schema.notes.createdAt,
+        updatedAt: schema.notes.updatedAt,
+      })
+      .from(schema.notes)
+      .leftJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id));
+
     const conditions = [eq(schema.notes.type, "note")];
     
+    // Filter by specific project if provided
     if (projectId) {
       conditions.push(eq(schema.notes.projectId, projectId));
     }
     
-    const notes = await db.select().from(schema.notes).where(
-      conditions.length === 1 ? conditions[0] : and(...conditions)
-    ).orderBy(desc(schema.notes.createdAt));
+    // Filter by company - notes must belong to projects in the user's company
+    if (companyId) {
+      conditions.push(eq(schema.projects.companyId, companyId));
+    }
+    
+    const notes = await query
+      .where(conditions.length === 1 ? conditions[0] : and(...conditions))
+      .orderBy(desc(schema.notes.createdAt));
     
     return notes as Note[];
   }

@@ -130,7 +130,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/notes", async (req, res) => {
     try {
       const { projectId } = req.query;
-      const notes = await storage.getNotes(projectId as string | undefined);
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const notes = await storage.getNotes(projectId as string | undefined, companyId);
       res.json(notes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch notes" });
