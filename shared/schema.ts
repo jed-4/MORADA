@@ -262,6 +262,8 @@ export const notes: any = pgTable("notes", {
   assigneeId: varchar("assignee_id").references(() => users.id),
   assigneeName: text("assignee_name"), // Cached for performance
   dueDate: timestamp("due_date"),
+  startTime: text("start_time"), // Optional time in HH:MM format for timed events
+  endTime: text("end_time"), // Optional time in HH:MM format for timed events
   completedAt: timestamp("completed_at"),
   tags: json("tags").default([]), // string[] for task tags
   labels: json("labels").default([]), // string[] for task labels from field options
@@ -2094,6 +2096,8 @@ export const scheduleItems = pgTable("schedule_items", {
   // Date and duration
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
+  startTime: text("start_time"), // Optional time in HH:MM format (e.g., "09:00", "14:30")
+  endTime: text("end_time"), // Optional time in HH:MM format
   duration: integer("duration").notNull().default(1), // Duration in days
   actualStartDate: timestamp("actual_start_date"),
   actualEndDate: timestamp("actual_end_date"),
