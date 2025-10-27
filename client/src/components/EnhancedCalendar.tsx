@@ -35,7 +35,7 @@ interface EnhancedCalendarProps {
   events: CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
   onEventComplete?: (eventId: string, completed: boolean) => void;
-  onEventReschedule?: (eventId: string, newDate: Date, eventType: "task" | "schedule") => void;
+  onEventReschedule?: (eventId: string, newDate: Date, eventType: CalendarEvent["type"]) => void;
   onDateClick?: (date: Date) => void;
   showCompletionCheckbox?: boolean;
   initialView?: "month" | "week" | "day";

@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Calendar as CalendarIcon, Filter } from "lucide-react";
+import { format } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { apiRequest } from "@/lib/queryClient";
@@ -65,6 +66,34 @@ export default function BusinessCalendar() {
       toast({
         title: "Task updated",
         description: "Task status has been updated successfully.",
+      });
+    },
+  });
+
+  // Reschedule task mutation
+  const rescheduleTaskMutation = useMutation({
+    mutationFn: async ({ taskId, dueDate }: { taskId: string; dueDate: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { dueDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task rescheduled",
+        description: "Task has been moved to the new date.",
+      });
+    },
+  });
+
+  // Reschedule schedule item mutation
+  const rescheduleScheduleItemMutation = useMutation({
+    mutationFn: async ({ itemId, startDate, endDate }: { itemId: string; startDate: string; endDate: string }) => {
+      return await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { startDate, endDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/all"] });
+      toast({
+        title: "Event rescheduled",
+        description: "Schedule item has been moved to the new date.",
       });
     },
   });
@@ -148,6 +177,31 @@ export default function BusinessCalendar() {
     }
   };
 
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting") => {
+    if (eventType === "task") {
+      rescheduleTaskMutation.mutate({ 
+        taskId: eventId, 
+        dueDate: format(newDate, "yyyy-MM-dd")
+      });
+    } else if (eventType === "schedule") {
+      const event = allScheduleItems.find(item => item.id === eventId);
+      if (event) {
+        const oldStart = new Date(event.startDate);
+        const oldEnd = new Date(event.endDate);
+        const duration = oldEnd.getTime() - oldStart.getTime();
+        
+        const newStartDate = format(newDate, "yyyy-MM-dd");
+        const newEndDate = format(new Date(newDate.getTime() + duration), "yyyy-MM-dd");
+        
+        rescheduleScheduleItemMutation.mutate({
+          itemId: eventId,
+          startDate: newStartDate,
+          endDate: newEndDate,
+        });
+      }
+    }
+  };
+
   const handleEventClick = (event: CalendarEvent) => {
     console.log("Event clicked:", event);
   };
@@ -211,6 +265,7 @@ export default function BusinessCalendar() {
               events={events}
               onEventClick={handleEventClick}
               onEventComplete={handleEventComplete}
+              onEventReschedule={handleEventReschedule}
               showCompletionCheckbox={true}
               initialView="week"
             />

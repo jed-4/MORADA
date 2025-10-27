@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Calendar as CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
 import type { Task, ScheduleItem, Project, FieldCategoryWithOptions } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { apiRequest } from "@/lib/queryClient";
@@ -59,6 +60,21 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
     },
   });
 
+  // Reschedule task mutation
+  const rescheduleTaskMutation = useMutation({
+    mutationFn: async ({ taskId, dueDate }: { taskId: string; dueDate: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { dueDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task rescheduled",
+        description: "Task has been moved to the new date.",
+      });
+    },
+  });
+
   // Convert tasks to calendar events
   const events: CalendarEvent[] = useMemo(() => {
     return userTasks
@@ -89,6 +105,15 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
       ? (completedOption?.key || "done") 
       : (defaultOption?.key || "todo");
     updateTaskMutation.mutate({ taskId: eventId, status: newStatus });
+  };
+
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting") => {
+    if (eventType === "task") {
+      rescheduleTaskMutation.mutate({ 
+        taskId: eventId, 
+        dueDate: format(newDate, "yyyy-MM-dd")
+      });
+    }
   };
 
   const handleEventClick = (event: CalendarEvent) => {
@@ -131,6 +156,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
             events={events}
             onEventClick={handleEventClick}
             onEventComplete={handleEventComplete}
+            onEventReschedule={handleEventReschedule}
             showCompletionCheckbox={true}
             initialView="week"
           />
