@@ -1014,7 +1014,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "User must belong to a company" });
       }
 
-      const validationResult = insertClientSchema.safeParse(req.body);
+      // Validate without companyId since it's set by the backend
+      const createClientSchema = insertClientSchema.omit({ companyId: true, isActive: true });
+      const validationResult = createClientSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -1025,6 +1027,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const clientData = {
         ...validationResult.data,
         companyId: user.companyId,
+        isActive: true,
       };
 
       const client = await storage.createClient(clientData);
