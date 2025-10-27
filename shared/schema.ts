@@ -252,6 +252,7 @@ export const notes: any = pgTable("notes", {
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
   visibility: text("visibility").notNull().default("team_only"), // "team_only" | "everyone" | "project_team" | "private"
+  pinned: boolean("pinned").default(false), // Whether note is pinned to top
   customFields: json("custom_fields").default({}), // Record<string, any> for custom field values
   projectId: text("project_id"),
   
@@ -294,6 +295,7 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   contentHtml: z.string().optional(),
   contentText: z.string().optional(),
   visibility: z.enum(["team_only", "everyone", "project_team", "private"]).optional(),
+  pinned: z.boolean().optional(),
   customFields: z.record(z.any()).optional(),
   // Task-specific fields
   type: z.enum(["note", "task"]).optional(),
