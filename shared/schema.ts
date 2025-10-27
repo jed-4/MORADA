@@ -251,6 +251,7 @@ export const notes: any = pgTable("notes", {
   author: text("author").notNull(), // Legacy author field
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
+  visibility: text("visibility").notNull().default("team_only"), // "team_only" | "everyone" | "project_team"
   customFields: json("custom_fields").default({}), // Record<string, any> for custom field values
   projectId: text("project_id"),
   
@@ -292,6 +293,7 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Ensure new fields are properly handled
   contentHtml: z.string().optional(),
   contentText: z.string().optional(),
+  visibility: z.enum(["team_only", "everyone", "project_team"]).optional(),
   customFields: z.record(z.any()).optional(),
   // Task-specific fields
   type: z.enum(["note", "task"]).optional(),

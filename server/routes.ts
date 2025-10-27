@@ -159,7 +159,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const note = await storage.createNote(validationResult.data);
+      // Automatically set owner from authenticated user
+      const user = req.user as any;
+      const noteData = {
+        ...validationResult.data,
+        ownerId: user?.id,
+        ownerName: user?.firstName && user?.lastName 
+          ? `${user.firstName} ${user.lastName}`.trim()
+          : user?.email || 'Unknown User',
+        author: user?.firstName && user?.lastName 
+          ? `${user.firstName} ${user.lastName}`.trim()
+          : user?.email || 'Unknown User', // Legacy field
+      };
+
+      const note = await storage.createNote(noteData);
       res.status(201).json(note);
     } catch (error) {
       res.status(500).json({ error: "Failed to create note" });
