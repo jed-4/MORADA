@@ -393,18 +393,19 @@ export default function FieldSettings() {
         <div className="h-full overflow-y-auto">
           <div className="p-8">
             {selectedCategory ? (
-              <Card>
+              <div className="space-y-6">
+                {/* Page Header */}
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight">{selectedCategory.name}</h1>
+                  <p className="text-muted-foreground mt-2">
+                    {selectedCategory.description || "Manage field options for this category"}
+                  </p>
+                </div>
+
+                <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <SettingsIcon className="h-5 w-5" />
-                        {selectedCategory.name}
-                      </CardTitle>
-                      <CardDescription>
-                        {selectedCategory.description || "Manage field options"}
-                      </CardDescription>
-                    </div>
+                    <CardTitle>Options</CardTitle>
                     <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                       <DialogTrigger asChild>
                         <Button data-testid="button-add-option">
@@ -547,6 +548,7 @@ export default function FieldSettings() {
                   </DndContext>
                 </CardContent>
               </Card>
+              </div>
             ) : (
               <Card>
                 <CardContent className="flex items-center justify-center py-12">
