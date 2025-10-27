@@ -114,8 +114,9 @@ export default function Notes() {
   const { currentProject } = useProject();
   const params = useParams<NotesParams>();
   
-  // Use projectId from URL params if available, otherwise fall back to currentProject
-  const effectiveProjectId = params.projectId || currentProject?.id;
+  // Use projectId from URL params only - don't fallback to currentProject
+  // This allows /notes to show all notes, and /projects/:projectId/notes to show project-specific notes
+  const effectiveProjectId = params.projectId;
 
   // Fetch custom field definitions and templates
   const { data: customFieldDefsRaw = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
