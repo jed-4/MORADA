@@ -821,7 +821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/field-options", async (req, res) => {
+  app.post("/api/field-options", requireAdmin, async (req, res) => {
     try {
       const validationResult = insertFieldOptionSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -838,7 +838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/field-options/:id", async (req, res) => {
+  app.patch("/api/field-options/:id", requireAdmin, async (req, res) => {
     try {
       const updateSchema = insertFieldOptionSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
@@ -859,7 +859,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/field-options/:id", async (req, res) => {
+  app.delete("/api/field-options/:id", requireAdmin, async (req, res) => {
     try {
       const success = await storage.deleteFieldOption(req.params.id);
       if (!success) {
@@ -872,7 +872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Batch update field options (for Buildern-style master-detail UI)
-  app.post("/api/field-categories/:id/options/batch", async (req, res) => {
+  app.post("/api/field-categories/:id/options/batch", requireAdmin, async (req, res) => {
     try {
       // Validate the request body as an array of partial field options
       const batchSchema = z.array(z.object({
