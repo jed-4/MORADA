@@ -5066,6 +5066,67 @@ export class DbStorage implements IStorage {
   async createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate> { throw new Error("Not implemented"); }
   async updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined> { return undefined; }
   async deleteNoteTemplate(id: string): Promise<boolean> { return false; }
+  
+  // Clients CRUD operations
+  async getClients(): Promise<Client[]> {
+    try {
+      const clients = await db.select().from(schema.clients)
+        .where(eq(schema.clients.isActive, true))
+        .orderBy(schema.clients.name);
+      return clients;
+    } catch (error) {
+      console.error("Database error in getClients:", error);
+      return [];
+    }
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    try {
+      const [client] = await db.select().from(schema.clients)
+        .where(eq(schema.clients.id, id));
+      return client;
+    } catch (error) {
+      console.error("Database error in getClient:", error);
+      return undefined;
+    }
+  }
+
+  async createClient(client: InsertClient): Promise<Client> {
+    try {
+      const [newClient] = await db.insert(schema.clients)
+        .values(client)
+        .returning();
+      return newClient;
+    } catch (error) {
+      console.error("Database error in createClient:", error);
+      throw error;
+    }
+  }
+
+  async updateClient(id: string, clientData: Partial<InsertClient>): Promise<Client | undefined> {
+    try {
+      const [updated] = await db.update(schema.clients)
+        .set({ ...clientData, updatedAt: new Date() })
+        .where(eq(schema.clients.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateClient:", error);
+      return undefined;
+    }
+  }
+
+  async deleteClient(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.clients)
+        .where(eq(schema.clients.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteClient:", error);
+      return false;
+    }
+  }
+
   async getProjects(ownerId?: string): Promise<Project[]> {
     if (ownerId) {
       // Filter by owner
