@@ -1020,6 +1020,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects", async (req, res) => {
     try {
+      const userId = (req.session as any).userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.companyId) {
+        return res.status(403).json({ error: "User must belong to a company" });
+      }
+
       const validationResult = insertProjectSchema.safeParse(req.body);
       if (!validationResult.success) {
         console.error("Project validation failed:", fromZodError(validationResult.error).toString());
@@ -1029,7 +1039,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const project = await storage.createProject(validationResult.data);
+      // Automatically set companyId and ownerId for multi-tenant isolation
+      const projectData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+        ownerId: userId,
+      };
+
+      const project = await storage.createProject(projectData);
       res.status(201).json(project);
     } catch (error) {
       console.error("Error creating project:", error);
