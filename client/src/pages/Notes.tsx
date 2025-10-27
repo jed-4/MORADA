@@ -87,6 +87,7 @@ const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
     author: z.string(),
     ownerId: z.string().optional(),
     ownerName: z.string().optional(),
+    visibility: z.enum(["team_only", "everyone", "project_team", "private"]).optional(),
     projectId: z.string().optional(),
     category: z.string().optional(),
     customFields: z.object(customFieldsSchema).optional(),
@@ -161,6 +162,7 @@ export default function Notes() {
     author: "Current User", // todo: get from auth context
     ownerId: undefined,
     ownerName: "Current User",
+    visibility: "team_only" as const,
     category: "General", // Default category
     customFields: customFieldDefs.reduce((acc, field) => {
       acc[field.key] = "";
@@ -315,6 +317,7 @@ export default function Notes() {
         author: data.author || "Current User",
         ownerId: data.ownerId,
         ownerName: data.ownerName || "Current User",
+        visibility: data.visibility || "team_only",
         projectId: effectiveProjectId,
         customFields: data.customFields || {},
         category: data.category || "General",
@@ -346,6 +349,7 @@ export default function Notes() {
       author: note.author,
       ownerId: note.ownerId || undefined,
       ownerName: note.ownerName || "Current User",
+      visibility: (note.visibility as "team_only" | "everyone" | "project_team" | "private") || "team_only",
       projectId: note.projectId || undefined,
       category: note.category || "General",
       customFields: note.customFields as Record<string, string> || {},
@@ -384,6 +388,21 @@ export default function Notes() {
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+    }
+  };
+
+  const getVisibilityLabel = (visibility: string) => {
+    switch (visibility) {
+      case "team_only":
+        return "Team only";
+      case "everyone":
+        return "Everyone";
+      case "project_team":
+        return "Project team";
+      case "private":
+        return "Private";
+      default:
+        return "Team only";
     }
   };
 
@@ -516,6 +535,13 @@ export default function Notes() {
                   </Badge>
                 </div>
                 
+                {/* Visibility */}
+                <div className="flex-shrink-0">
+                  <Badge variant="outline" className="text-xs" data-testid={`note-visibility-${note.id}`}>
+                    {getVisibilityLabel(note.visibility || "team_only")}
+                  </Badge>
+                </div>
+                
                 {/* Priority */}
                 <div className="flex-shrink-0">
                   <Badge className={`text-xs ${getPriorityColor(note.priority)}`} data-testid={`note-priority-${note.id}`}>
@@ -622,8 +648,8 @@ export default function Notes() {
                 )}
               />
               
-              {/* Owner and Category in a row */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Owner, Visibility, and Category in a row */}
+              <div className="grid grid-cols-3 gap-3">
                 {/* Owner Field */}
                 <FormField
                   control={form.control}
@@ -639,6 +665,31 @@ export default function Notes() {
                           readOnly
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Visibility Dropdown */}
+                <FormField
+                  control={form.control}
+                  name="visibility"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Who can view</FormLabel>
+                      <Select value={field.value || "team_only"} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger data-testid="note-visibility-select">
+                            <SelectValue placeholder="Select visibility..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="private">Private</SelectItem>
+                          <SelectItem value="team_only">Team only</SelectItem>
+                          <SelectItem value="project_team">Project team</SelectItem>
+                          <SelectItem value="everyone">Everyone</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
