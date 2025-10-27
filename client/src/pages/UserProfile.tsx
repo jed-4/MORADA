@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Calendar as CalendarIcon, Check, X, User, Mail, Phone, Building2 } from "lucide-react";
+import { Calendar as CalendarIcon, Check, X, User as UserIcon, Mail, Phone, Building2 } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
 import type { User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -88,7 +88,7 @@ export default function UserProfile() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5" />
+                    <UserIcon className="h-5 w-5" />
                     Personal Information
                   </CardTitle>
                   <CardDescription>
