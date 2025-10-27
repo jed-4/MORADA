@@ -5046,7 +5046,20 @@ export class DbStorage implements IStorage {
     const result = await db.insert(schema.notes).values(noteData).returning();
     return result[0];
   }
-  async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> { return undefined; }
+  async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> {
+    const now = new Date();
+    const updateData = {
+      ...note,
+      updatedAt: now
+    };
+    
+    const result = await db.update(schema.notes)
+      .set(updateData)
+      .where(eq(schema.notes.id, id))
+      .returning();
+    
+    return result[0];
+  }
   async deleteNote(id: string): Promise<boolean> {
     const result = await db.delete(schema.notes).where(eq(schema.notes.id, id)).returning({ id: schema.notes.id });
     return result.length > 0;
