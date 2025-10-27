@@ -5029,7 +5029,10 @@ export class DbStorage implements IStorage {
     
     return notes as Note[];
   }
-  async getNote(id: string): Promise<Note | undefined> { return undefined; }
+  async getNote(id: string): Promise<Note | undefined> {
+    const result = await db.select().from(schema.notes).where(eq(schema.notes.id, id));
+    return result[0] as Note | undefined;
+  }
   async createNote(insertNote: InsertNote): Promise<Note> {
     const now = new Date();
     const noteData = {
