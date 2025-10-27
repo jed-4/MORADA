@@ -2244,10 +2244,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register new user
   app.post('/api/auth/register', async (req, res) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, name, companyName } = req.body;
       
       if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
+      }
+      
+      if (!name || !companyName) {
+        return res.status(400).json({ message: "Name and company name are required" });
       }
       
       // Check if user already exists
@@ -2256,15 +2260,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "User already exists" });
       }
       
+      // Split name into first and last name
+      const nameParts = name.trim().split(/\s+/);
+      const firstName = nameParts[0] || name;
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
       
-      // Create user
+      // Create company first
+      const company = await storage.createCompany({
+        name: companyName,
+      });
+      
+      // Create user with company
       const user = await storage.createUser({
         email,
         password: hashedPassword,
         firstName,
         lastName,
+        companyId: company.id,
       });
       
       // Create session
