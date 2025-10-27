@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
-import { db } from "./db";
+import { db, pool } from "./db";
 import bcrypt from "bcrypt";
 import { 
   insertNoteSchema,
@@ -83,7 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(
     session({
       store: new PgSession({
-        pool: db as any,
+        pool: pool,
         tableName: 'sessions',
         createTableIfMissing: false,
       }),
