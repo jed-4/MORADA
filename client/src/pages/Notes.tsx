@@ -186,12 +186,19 @@ export default function Notes() {
     defaultValues,
   });
 
-  // React Query hooks - fetch notes filtered by current project
+  // Fetch projects to display project names
+  const { data: projects = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // React Query hooks - fetch notes filtered by current project (or all notes if no project selected)
   const { data: notes = [], isLoading } = useQuery<Note[]>({
     queryKey: ["/api/notes", effectiveProjectId],
     queryFn: async () => {
-      if (!effectiveProjectId) return [];
-      const response = await fetch(`/api/notes?projectId=${effectiveProjectId}`, {
+      const url = effectiveProjectId 
+        ? `/api/notes?projectId=${effectiveProjectId}` 
+        : '/api/notes';
+      const response = await fetch(url, {
         credentials: "include",
       });
       if (!response.ok) {
@@ -204,7 +211,6 @@ export default function Notes() {
       createdAt: new Date(note.createdAt),
       updatedAt: new Date(note.updatedAt),
     })),
-    enabled: !!effectiveProjectId,
   });
 
   const createNoteMutation = useMutation({
@@ -422,19 +428,6 @@ export default function Notes() {
     deleteNoteMutation.mutate(noteId);
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "high":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-      case "medium":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-      case "low":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
-    }
-  };
-
   const getVisibilityLabel = (visibility: string) => {
     switch (visibility) {
       case "team_only":
@@ -448,6 +441,12 @@ export default function Notes() {
       default:
         return "Team only";
     }
+  };
+
+  const getProjectName = (projectId: string | null | undefined) => {
+    if (!projectId) return "No Project";
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || "Unknown Project";
   };
 
   // Stabilize dialog state to prevent flickering
@@ -579,6 +578,15 @@ export default function Notes() {
                   </p>
                 </div>
                 
+                {/* Project (only show when viewing all items) */}
+                {!effectiveProjectId && (
+                  <div className="flex-shrink-0">
+                    <Badge variant="default" className="text-xs" data-testid={`note-project-${note.id}`}>
+                      {getProjectName(note.projectId)}
+                    </Badge>
+                  </div>
+                )}
+
                 {/* Category */}
                 <div className="flex-shrink-0">
                   <Badge variant="secondary" className="text-xs" data-testid={`note-category-${note.id}`}>
@@ -590,13 +598,6 @@ export default function Notes() {
                 <div className="flex-shrink-0">
                   <Badge variant="outline" className="text-xs" data-testid={`note-visibility-${note.id}`}>
                     {getVisibilityLabel(note.visibility || "team_only")}
-                  </Badge>
-                </div>
-                
-                {/* Priority */}
-                <div className="flex-shrink-0">
-                  <Badge className={`text-xs ${getPriorityColor(note.priority)}`} data-testid={`note-priority-${note.id}`}>
-                    {note.priority}
                   </Badge>
                 </div>
                 
