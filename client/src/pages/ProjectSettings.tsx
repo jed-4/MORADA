@@ -86,7 +86,9 @@ export default function ProjectSettings() {
 
   const subStatusOptions = useMemo(() => {
     if (!formData.projectStatus) return [];
-    return allFieldOptions.filter(opt => opt.parentId === formData.projectStatus);
+    const parentStatus = allFieldOptions.find(opt => opt.key === formData.projectStatus);
+    if (!parentStatus) return [];
+    return allFieldOptions.filter(opt => opt.parentId === parentStatus.id);
   }, [allFieldOptions, formData.projectStatus]);
 
   // Load custom project types from localStorage
@@ -459,7 +461,7 @@ export default function ProjectSettings() {
                   </SelectTrigger>
                   <SelectContent>
                     {parentStatusOptions.map((status) => (
-                      <SelectItem key={status.id} value={status.id}>
+                      <SelectItem key={status.id} value={status.key}>
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#gray' }} />
                           {status.name}
@@ -470,7 +472,7 @@ export default function ProjectSettings() {
                 </Select>
               ) : (
                 <div className="p-2 bg-muted rounded-md" data-testid="text-project-status">
-                  {parentStatusOptions.find(s => s.id === currentProject.projectStatus)?.name || "Not set"}
+                  {parentStatusOptions.find(s => s.key === currentProject.projectStatus)?.name || "Not set"}
                 </div>
               )}
             </div>
@@ -488,7 +490,7 @@ export default function ProjectSettings() {
                   </SelectTrigger>
                   <SelectContent>
                     {subStatusOptions.map((status) => (
-                      <SelectItem key={status.id} value={status.id}>
+                      <SelectItem key={status.id} value={status.key}>
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#gray' }} />
                           {status.name}
@@ -499,7 +501,7 @@ export default function ProjectSettings() {
                 </Select>
               ) : (
                 <div className="p-2 bg-muted rounded-md" data-testid="text-project-sub-status">
-                  {subStatusOptions.find(s => s.id === currentProject.projectSubStatus)?.name || "Not set"}
+                  {allFieldOptions.find(s => s.key === currentProject.projectSubStatus)?.name || "Not set"}
                 </div>
               )}
             </div>
