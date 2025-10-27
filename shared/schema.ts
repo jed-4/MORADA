@@ -778,6 +778,7 @@ export type FieldCategory = typeof fieldCategories.$inferSelect;
 export const fieldOptions = pgTable("field_options", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   categoryId: varchar("category_id").notNull().references(() => fieldCategories.id, { onDelete: "cascade" }),
+  parentId: varchar("parent_id").references(() => fieldOptions.id, { onDelete: "cascade" }), // For hierarchical options (e.g., project sub-statuses)
   key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
   name: text("name").notNull(), // Display name (editable by user)
   color: text("color"), // Hex color code (e.g., "#3b82f6")
@@ -797,6 +798,11 @@ export const insertFieldOptionSchema = createInsertSchema(fieldOptions).omit({
 
 export type InsertFieldOption = z.infer<typeof insertFieldOptionSchema>;
 export type FieldOption = typeof fieldOptions.$inferSelect;
+
+// Hierarchical field option with children
+export type FieldOptionWithChildren = FieldOption & {
+  children?: FieldOptionWithChildren[];
+};
 
 // Combined type for category with its options
 export type FieldCategoryWithOptions = FieldCategory & {
