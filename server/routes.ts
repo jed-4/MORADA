@@ -78,15 +78,10 @@ import multer from "multer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session middleware
-  const PgSession = connectPgSimple(session);
-  
+  // Note: Using memory store for now due to Neon serverless compatibility issues
+  // TODO: Switch to PostgreSQL session store once we resolve the pool compatibility
   app.use(
     session({
-      store: new PgSession({
-        pool: pool,
-        tableName: 'sessions',
-        createTableIfMissing: false,
-      }),
       secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
       resave: false,
       saveUninitialized: false,
