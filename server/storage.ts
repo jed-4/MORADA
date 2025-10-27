@@ -2212,10 +2212,7 @@ export class MemStorage implements IStorage {
         query = query.where(
           and(
             eq(schema.projects.isActive, true),
-            or(
-              eq(schema.projects.ownerId, ownerId),
-              eq(schema.projects.isBusiness, true)
-            )
+            eq(schema.projects.ownerId, ownerId)
           )
         );
       } else {
@@ -2232,7 +2229,7 @@ export class MemStorage implements IStorage {
       
       if (ownerId) {
         return allProjects.filter(project => 
-          project.ownerId === ownerId || project.isBusiness
+          project.ownerId === ownerId
         ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       }
       return allProjects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -2260,12 +2257,21 @@ export class MemStorage implements IStorage {
       description: insertProject.description ?? null,
       jobNumber: insertProject.jobNumber ?? null,
       projectType: insertProject.projectType ?? null,
+      clientId: insertProject.clientId ?? null,
+      location: insertProject.location ?? null,
+      projectStatus: insertProject.projectStatus ?? null,
+      projectSubStatus: insertProject.projectSubStatus ?? null,
+      clientBudget: insertProject.clientBudget ?? null,
+      proposedStartDate: insertProject.proposedStartDate ?? null,
+      proposedEndDate: insertProject.proposedEndDate ?? null,
+      contractCost: insertProject.contractCost ?? null,
+      selectedEstimateId: insertProject.selectedEstimateId ?? null,
       color: insertProject.color ?? null,
       icon: insertProject.icon ?? "Building2",
       ownerId: insertProject.ownerId ?? null,
+      companyId: insertProject.companyId ?? null,
       isActive: insertProject.isActive ?? true,
       isArchived: insertProject.isArchived ?? false,
-      isBusiness: insertProject.isBusiness ?? false,
       invoicingMethod: insertProject.invoicingMethod ?? "progress_payments",
       createdAt: now,
       updatedAt: now,
@@ -5062,15 +5068,12 @@ export class DbStorage implements IStorage {
   async deleteNoteTemplate(id: string): Promise<boolean> { return false; }
   async getProjects(ownerId?: string): Promise<Project[]> {
     if (ownerId) {
-      // Filter by owner or business projects
+      // Filter by owner
       return await db.select().from(schema.projects)
         .where(
           and(
             eq(schema.projects.isActive, true),
-            or(
-              eq(schema.projects.ownerId, ownerId),
-              eq(schema.projects.isBusiness, true)
-            )
+            eq(schema.projects.ownerId, ownerId)
           )
         )
         .orderBy(schema.projects.createdAt);
@@ -5097,10 +5100,24 @@ export class DbStorage implements IStorage {
       ...insertProject,
       id,
       description: insertProject.description ?? null,
+      jobNumber: insertProject.jobNumber ?? null,
+      projectType: insertProject.projectType ?? null,
+      clientId: insertProject.clientId ?? null,
+      location: insertProject.location ?? null,
+      projectStatus: insertProject.projectStatus ?? null,
+      projectSubStatus: insertProject.projectSubStatus ?? null,
+      clientBudget: insertProject.clientBudget ?? null,
+      proposedStartDate: insertProject.proposedStartDate ?? null,
+      proposedEndDate: insertProject.proposedEndDate ?? null,
+      contractCost: insertProject.contractCost ?? null,
+      selectedEstimateId: insertProject.selectedEstimateId ?? null,
       color: insertProject.color ?? null,
+      icon: insertProject.icon ?? "Building2",
       ownerId: insertProject.ownerId ?? null,
+      companyId: insertProject.companyId ?? null,
       isActive: insertProject.isActive ?? true,
-      isBusiness: insertProject.isBusiness ?? false,
+      isArchived: insertProject.isArchived ?? false,
+      invoicingMethod: insertProject.invoicingMethod ?? "progress_payments",
       createdAt: now,
       updatedAt: now,
     };

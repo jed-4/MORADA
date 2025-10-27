@@ -270,21 +270,21 @@ export default function ProjectSettings() {
         )}
       </div>
 
-      {/* Project Information */}
+      {/* Project Details */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Info className="h-5 w-5" />
-            Project Information
+            Project Details
           </CardTitle>
           <CardDescription>
-            Basic details and description for this project
+            Basic project information and client details
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="project-name">Project Name</Label>
+              <Label htmlFor="project-name">Project Name *</Label>
               {isEditing ? (
                 <Input
                   id="project-name"
@@ -300,7 +300,7 @@ export default function ProjectSettings() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="job-number">Job Number</Label>
+              <Label htmlFor="job-number">Project Number</Label>
               {isEditing ? (
                 <Input
                   id="job-number"
@@ -311,7 +311,7 @@ export default function ProjectSettings() {
                 />
               ) : (
                 <div className="p-2 bg-muted rounded-md" data-testid="text-job-number">
-                  {currentProject.jobNumber || "No job number set"}
+                  {currentProject.jobNumber || "Not set"}
                 </div>
               )}
             </div>
@@ -322,7 +322,7 @@ export default function ProjectSettings() {
               <Label htmlFor="project-type">Project Type</Label>
               {isEditing ? (
                 <Select
-                  value={formData.projectType}
+                  value={formData.projectType || ""}
                   onValueChange={(value) => {
                     if (value === "__add_new__") {
                       setIsAddingProjectType(true);
@@ -332,7 +332,7 @@ export default function ProjectSettings() {
                   }}
                 >
                   <SelectTrigger data-testid="select-project-type">
-                    <SelectValue placeholder="Select project type" />
+                    <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
                     {allProjectTypes.map((type) => (
@@ -350,31 +350,302 @@ export default function ProjectSettings() {
                 </Select>
               ) : (
                 <div className="p-2 bg-muted rounded-md" data-testid="text-project-type">
-                  {currentProject.projectType || "No project type set"}
+                  {currentProject.projectType || "Not set"}
                 </div>
               )}
             </div>
+
             <div className="space-y-2">
-              {/* Empty column for now - could add more fields later */}
+              <Label htmlFor="client">Client</Label>
+              {isEditing ? (
+                <Select
+                  value={formData.clientId || ""}
+                  onValueChange={(value) => {
+                    if (value === "__create_new__") {
+                      setIsCreateClientOpen(true);
+                    } else {
+                      setFormData({ ...formData, clientId: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="select-client">
+                    <SelectValue placeholder="Select client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}{client.company ? ` (${client.company})` : ''}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__create_new__" className="text-primary font-medium">
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        Create New Client...
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-client">
+                  {currentProject.clientId 
+                    ? clients.find(c => c.id === currentProject.clientId)?.name || "Unknown client"
+                    : "Not set"}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="project-description">Description</Label>
+            <Label htmlFor="address"><MapPin className="h-3 w-3 inline mr-1" />Address</Label>
             {isEditing ? (
-              <Textarea
-                id="project-description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Enter project description..."
-                rows={3}
-                data-testid="input-project-description"
+              <Input
+                id="address"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                placeholder="123 Main St, Sydney NSW 2000"
+                data-testid="input-address"
               />
             ) : (
-              <div className="p-2 bg-muted rounded-md min-h-[80px]" data-testid="text-project-description">
-                {currentProject.description || "No description provided"}
+              <div className="p-2 bg-muted rounded-md" data-testid="text-address">
+                {currentProject.location || "Not set"}
               </div>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            {isEditing ? (
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Project description..."
+                rows={3}
+                data-testid="input-description"
+              />
+            ) : (
+              <div className="p-2 bg-muted rounded-md min-h-[80px]" data-testid="text-description">
+                {currentProject.description || "No description"}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Project Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Project Status
+          </CardTitle>
+          <CardDescription>
+            Track project lifecycle and progress stage
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-status">Status</Label>
+              {isEditing ? (
+                <Select
+                  value={formData.projectStatus || ""}
+                  onValueChange={(value) => {
+                    setFormData({ ...formData, projectStatus: value, projectSubStatus: null });
+                  }}
+                >
+                  <SelectTrigger data-testid="select-project-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parentStatusOptions.map((status) => (
+                      <SelectItem key={status.id} value={status.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#gray' }} />
+                          {status.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-project-status">
+                  {parentStatusOptions.find(s => s.id === currentProject.projectStatus)?.name || "Not set"}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="project-sub-status">Sub-Status</Label>
+              {isEditing ? (
+                <Select
+                  value={formData.projectSubStatus || ""}
+                  onValueChange={(value) => setFormData({ ...formData, projectSubStatus: value })}
+                  disabled={!formData.projectStatus}
+                >
+                  <SelectTrigger data-testid="select-project-sub-status">
+                    <SelectValue placeholder={formData.projectStatus ? "Select sub-status" : "Select status first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subStatusOptions.map((status) => (
+                      <SelectItem key={status.id} value={status.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#gray' }} />
+                          {status.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-project-sub-status">
+                  {subStatusOptions.find(s => s.id === currentProject.projectSubStatus)?.name || "Not set"}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Timeline & Budget */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Timeline & Budget
+          </CardTitle>
+          <CardDescription>
+            Project schedule and client budget information
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="proposed-start">Proposed Start Date</Label>
+              {isEditing ? (
+                <Input
+                  id="proposed-start"
+                  type="date"
+                  value={formData.proposedStartDate || ""}
+                  onChange={(e) => setFormData({ ...formData, proposedStartDate: e.target.value })}
+                  data-testid="input-proposed-start"
+                />
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-proposed-start">
+                  {currentProject.proposedStartDate 
+                    ? new Date(currentProject.proposedStartDate).toLocaleDateString()
+                    : "Not set"}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="proposed-end">Proposed End Date</Label>
+              {isEditing ? (
+                <Input
+                  id="proposed-end"
+                  type="date"
+                  value={formData.proposedEndDate || ""}
+                  onChange={(e) => setFormData({ ...formData, proposedEndDate: e.target.value })}
+                  data-testid="input-proposed-end"
+                />
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-proposed-end">
+                  {currentProject.proposedEndDate 
+                    ? new Date(currentProject.proposedEndDate).toLocaleDateString()
+                    : "Not set"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="client-budget">Client Budget</Label>
+            {isEditing ? (
+              <Input
+                id="client-budget"
+                type="number"
+                value={formData.clientBudget ? formData.clientBudget / 100 : ""}
+                onChange={(e) => setFormData({ ...formData, clientBudget: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null })}
+                placeholder="0.00"
+                step="0.01"
+                data-testid="input-client-budget"
+              />
+            ) : (
+              <div className="p-2 bg-muted rounded-md" data-testid="text-client-budget">
+                {currentProject.clientBudget 
+                  ? `$${(currentProject.clientBudget / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : "Not set"}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Contract */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Contract
+          </CardTitle>
+          <CardDescription>
+            Contract details and estimate selection
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="contract-cost">Contract Cost</Label>
+              {isEditing ? (
+                <Input
+                  id="contract-cost"
+                  type="number"
+                  value={formData.contractCost ? formData.contractCost / 100 : ""}
+                  onChange={(e) => setFormData({ ...formData, contractCost: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null })}
+                  placeholder="0.00"
+                  step="0.01"
+                  data-testid="input-contract-cost"
+                />
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-contract-cost">
+                  {currentProject.contractCost 
+                    ? `$${(currentProject.contractCost / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : "Not set"}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="selected-estimate">Selected Estimate</Label>
+              {isEditing ? (
+                <Select
+                  value={formData.selectedEstimateId || ""}
+                  onValueChange={(value) => setFormData({ ...formData, selectedEstimateId: value })}
+                >
+                  <SelectTrigger data-testid="select-estimate">
+                    <SelectValue placeholder="Select estimate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {estimates.length === 0 ? (
+                      <SelectItem value="_none" disabled>No estimates available</SelectItem>
+                    ) : (
+                      estimates.map((estimate) => (
+                        <SelectItem key={estimate.id} value={estimate.id}>
+                          {estimate.name || `Estimate ${estimate.number}`}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-2 bg-muted rounded-md" data-testid="text-selected-estimate">
+                  {currentProject.selectedEstimateId && estimates.find(e => e.id === currentProject.selectedEstimateId)
+                    ? estimates.find(e => e.id === currentProject.selectedEstimateId)?.name || "Unknown estimate"
+                    : "Not set"}
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -697,6 +968,13 @@ export default function ProjectSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Client Dialog */}
+      <CreateClientDialog 
+        open={isCreateClientOpen}
+        onOpenChange={setIsCreateClientOpen}
+        onClientCreated={handleClientCreated}
+      />
     </div>
   );
 }
