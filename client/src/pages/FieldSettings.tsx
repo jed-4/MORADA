@@ -380,7 +380,7 @@ export default function FieldSettings() {
                   data-testid={`category-${category.key}`}
                 >
                   <List className="h-4 w-4 flex-shrink-0" />
-                  <span className="text-sm font-medium">{category.name}</span>
+                  <span className="text-sm font-medium">{category.label}</span>
                 </button>
               );
             })}
@@ -396,7 +396,7 @@ export default function FieldSettings() {
               <div className="space-y-6">
                 {/* Page Header */}
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">{selectedCategory.name}</h1>
+                  <h1 className="text-3xl font-bold tracking-tight">{selectedCategory.label}</h1>
                   <p className="text-muted-foreground mt-2">
                     {selectedCategory.description || "Manage field options for this category"}
                   </p>
@@ -421,7 +421,7 @@ export default function FieldSettings() {
                           <DialogDescription>
                             {editingOption
                               ? "Update the option details below."
-                              : `Add a new option to ${selectedCategory.name}.`}
+                              : `Add a new option to ${selectedCategory.label}.`}
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-4">
