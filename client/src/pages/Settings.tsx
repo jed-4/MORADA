@@ -134,7 +134,7 @@ const SETTINGS_CATEGORIES = [
     id: "field-settings",
     label: "Field Settings",
     icon: Sliders,
-    description: "Custom fields for notes, tasks, and other forms"
+    description: "Manage project statuses and custom field options"
   },
   {
     id: "notifications",
@@ -924,6 +924,8 @@ export default function Settings() {
                       navigate("/system-configuration");
                     } else if (category.id === "roles-permissions") {
                       navigate("/roles-permissions");
+                    } else if (category.id === "field-settings") {
+                      navigate("/field-settings");
                     } else {
                       setActiveSection(category.id);
                     }

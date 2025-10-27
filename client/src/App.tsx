@@ -50,6 +50,7 @@ import Proposals from "@/pages/Proposals";
 import ProposalDetail from "@/pages/ProposalDetail";
 import BusinessProjects from "@/pages/BusinessProjects";
 import Takeoff from "@/pages/Takeoff";
+import FieldSettings from "@/pages/FieldSettings";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
@@ -159,6 +160,7 @@ function Router() {
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/settings" component={Settings} />
       <Route path="/system-configuration" component={SystemConfiguration} />
+      <Route path="/field-settings" component={FieldSettings} />
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/cost-codes" component={CostCodes} />
