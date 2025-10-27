@@ -562,15 +562,19 @@ export default function ProjectSettings() {
           <div className="space-y-2">
             <Label htmlFor="client-budget">Client Budget</Label>
             {isEditing ? (
-              <Input
-                id="client-budget"
-                type="number"
-                value={formData.clientBudget ? formData.clientBudget / 100 : ""}
-                onChange={(e) => setFormData({ ...formData, clientBudget: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null })}
-                placeholder="0.00"
-                step="0.01"
-                data-testid="input-client-budget"
-              />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <Input
+                  id="client-budget"
+                  type="number"
+                  className="pl-7"
+                  value={formData.clientBudget ? formData.clientBudget / 100 : ""}
+                  onChange={(e) => setFormData({ ...formData, clientBudget: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null })}
+                  placeholder="0.00"
+                  step="0.01"
+                  data-testid="input-client-budget"
+                />
+              </div>
             ) : (
               <div className="p-2 bg-muted rounded-md" data-testid="text-client-budget">
                 {currentProject.clientBudget 
