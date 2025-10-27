@@ -472,7 +472,7 @@ export default function Notes() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Project Notes</h1>
+            <h1 className="text-3xl font-bold">{effectiveProjectId ? 'Project Notes' : 'All Notes'}</h1>
           </div>
           <Button onClick={() => setIsAddingNote(true)} data-testid="add-note-button">
             <Plus className="h-4 w-4 mr-2" />
