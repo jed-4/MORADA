@@ -85,6 +85,14 @@ export const users = pgTable("users", {
   invitedBy: varchar("invited_by"),
   invitedAt: timestamp("invited_at"),
   lastLoginAt: timestamp("last_login_at"),
+  
+  // Google Calendar integration fields
+  googleCalendarEmail: text("google_calendar_email"),
+  googleCalendarAccessToken: text("google_calendar_access_token"),
+  googleCalendarRefreshToken: text("google_calendar_refresh_token"),
+  googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),
+  googleCalendarConnectedAt: timestamp("google_calendar_connected_at"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
