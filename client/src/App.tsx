@@ -52,6 +52,7 @@ import BusinessProjects from "@/pages/BusinessProjects";
 import Takeoff from "@/pages/Takeoff";
 import FieldSettings from "@/pages/FieldSettings";
 import BusinessCalendar from "@/pages/BusinessCalendar";
+import UserProfile from "@/pages/UserProfile";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
@@ -71,6 +72,9 @@ function Router() {
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />
+      
+      {/* User Profile */}
+      <Route path="/profile" component={UserProfile} />
       
       {/* Business Project */}
       <Route path="/business" component={BusinessOverviewPage} />

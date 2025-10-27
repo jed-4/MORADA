@@ -6,6 +6,35 @@ BuildPro is a project management software designed for Australian residential bu
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Google Calendar Integration (In Progress - October 2025)
+**Status**: Awaiting Google OAuth credentials from user
+
+**What's Complete:**
+- User Profile page (/profile) with Google Calendar connection UI
+- Database schema updated with Google Calendar token fields (google_calendar_email, google_calendar_access_token, google_calendar_refresh_token, google_calendar_token_expiry, google_calendar_connected_at)
+- Navigation added to header (User menu → Profile)
+- Frontend UI for connecting/disconnecting Google Calendar
+
+**Pending Implementation:**
+OAuth routes still need to be implemented (requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
+- `/api/auth/google/initiate` - Starts OAuth flow
+- `/api/auth/google/callback` - Handles OAuth callback
+- `/api/auth/google/disconnect` - Disconnects user's calendar
+
+**User Action Required:**
+1. Set up Google Cloud Console project
+2. Enable Google Calendar API
+3. Create OAuth 2.0 credentials (Web application)
+4. Add authorized redirect URI: `https://[replit-url].replit.dev/api/auth/google/callback`
+5. Provide GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET as Replit secrets
+
+**Future Sync Features** (to be implemented):
+- Bi-directional sync between BuildPro and Google Calendar
+- Sync tasks with due dates to Google Calendar
+- Sync schedule items to Google Calendar
+- Auto-refresh tokens when expired
+- Hourly sync job
+
 ## System Architecture
 
 ### Frontend Architecture

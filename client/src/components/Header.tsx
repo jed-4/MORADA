@@ -224,11 +224,11 @@ export default function Header() {
           <DropdownMenuContent align="end">
             <DropdownMenuLabel data-testid="text-user-name">{getUserName()}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem data-testid="menu-profile">
+            <DropdownMenuItem onClick={() => navigate("/profile")} data-testid="menu-profile">
               <User className="h-4 w-4 mr-2" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menu-settings">
+            <DropdownMenuItem onClick={() => navigate("/settings")} data-testid="menu-settings">
               <Settings className="h-4 w-4 mr-2" />
               Settings
             </DropdownMenuItem>
