@@ -190,6 +190,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Check if trying to pin a note
+      if (validationResult.data.pinned === true) {
+        // Get the note to find its projectId
+        const currentNote = await storage.getNote(req.params.id);
+        if (!currentNote) {
+          return res.status(404).json({ error: "Note not found" });
+        }
+
+        // Count currently pinned notes for this project (excluding the note being updated)
+        const allNotes = await storage.getNotes(currentNote.projectId || undefined);
+        const pinnedCount = allNotes.filter(n => n.pinned && n.id !== req.params.id).length;
+        
+        if (pinnedCount >= 3) {
+          return res.status(400).json({ 
+            error: "Maximum pinned notes reached",
+            message: "You can only pin up to 3 notes at a time. Unpin another note first."
+          });
+        }
+      }
+
       const note = await storage.updateNote(req.params.id, validationResult.data);
       if (!note) {
         return res.status(404).json({ error: "Note not found" });

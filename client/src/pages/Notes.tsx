@@ -63,6 +63,8 @@ import {
   Settings,
   ArrowUpDown,
   Clock,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -260,6 +262,41 @@ export default function Notes() {
     },
   });
 
+  const togglePinMutation = useMutation({
+    mutationFn: async ({ id, pinned }: { id: string; pinned: boolean }) => {
+      return await apiRequest(`/api/notes/${id}`, "PATCH", { pinned });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to pin note", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleTogglePin = (note: Note) => {
+    const newPinnedState = !note.pinned;
+    
+    // Check if we're trying to pin a note and already have 3 pinned
+    if (newPinnedState) {
+      const pinnedCount = notes.filter(n => n.pinned).length;
+      if (pinnedCount >= 3) {
+        toast({ 
+          title: "Maximum pinned notes reached", 
+          description: "You can only pin up to 3 notes at a time. Unpin another note first.",
+          variant: "destructive" 
+        });
+        return;
+      }
+    }
+    
+    togglePinMutation.mutate({ id: note.id, pinned: newPinnedState });
+  };
+
 
   const filteredNotes = useMemo(() => {
     let filtered = notes.filter(note => {
@@ -302,6 +339,13 @@ export default function Notes() {
         filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         break;
     }
+    
+    // Always sort pinned notes to the top (max 3 pinned)
+    filtered.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return 0;
+    });
     
     return filtered;
   }, [notes, searchTerm, selectedCategory, selectedField, sortBy]);
@@ -518,6 +562,13 @@ export default function Notes() {
               onDoubleClick={() => handleEditNote(note)}
             >
               <div className="flex items-start gap-6">
+                {/* Pin indicator */}
+                {note.pinned && (
+                  <div className="flex-shrink-0">
+                    <Pin className="h-4 w-4 text-primary" data-testid={`note-pinned-indicator-${note.id}`} />
+                  </div>
+                )}
+                
                 {/* Title and Content */}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-base mb-2 line-clamp-1">
@@ -572,6 +623,23 @@ export default function Notes() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem 
+                        onClick={() => handleTogglePin(note)} 
+                        disabled={togglePinMutation.isPending}
+                        data-testid={`note-pin-${note.id}`}
+                      >
+                        {note.pinned ? (
+                          <>
+                            <PinOff className="h-4 w-4 mr-2" />
+                            Unpin
+                          </>
+                        ) : (
+                          <>
+                            <Pin className="h-4 w-4 mr-2" />
+                            Pin
+                          </>
+                        )}
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleEditNote(note)} data-testid={`note-edit-${note.id}`}>
                         <Edit3 className="h-4 w-4 mr-2" />
                         Edit
