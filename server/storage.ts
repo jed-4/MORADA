@@ -127,7 +127,7 @@ export interface IStorage {
   
   // Notes CRUD operations
   getNotes(projectId?: string, companyId?: string): Promise<Note[]>;
-  getNote(id: string): Promise<Note | undefined>;
+  getNote(id: string, companyId?: string): Promise<Note | undefined>;
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined>;
   deleteNote(id: string): Promise<boolean>;
@@ -1839,14 +1839,37 @@ export class MemStorage implements IStorage {
   // Notes CRUD operations
   async getNotes(projectId?: string, companyId?: string): Promise<Note[]> {
     const allNotes = Array.from(this.notes.values());
-    if (projectId) {
-      return allNotes.filter(note => note.projectId === projectId);
+    
+    // Filter by company if specified
+    let filtered = allNotes;
+    if (companyId) {
+      filtered = allNotes.filter(note => {
+        if (!note.projectId) return false;
+        const project = this.projects.get(note.projectId);
+        return project?.companyId === companyId;
+      });
     }
-    return allNotes.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    // Further filter by specific project if specified
+    if (projectId) {
+      filtered = filtered.filter(note => note.projectId === projectId);
+    }
+    
+    return filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async getNote(id: string): Promise<Note | undefined> {
-    return this.notes.get(id);
+  async getNote(id: string, companyId?: string): Promise<Note | undefined> {
+    const note = this.notes.get(id);
+    if (!note) return undefined;
+    
+    // If companyId is specified, verify the note's project belongs to that company
+    if (companyId) {
+      if (!note.projectId) return undefined;
+      const project = this.projects.get(note.projectId);
+      if (project?.companyId !== companyId) return undefined;
+    }
+    
+    return note;
   }
 
   async createNote(insertNote: InsertNote): Promise<Note> {
@@ -5071,8 +5094,53 @@ export class DbStorage implements IStorage {
     
     return notes as Note[];
   }
-  async getNote(id: string): Promise<Note | undefined> {
-    const result = await db.select().from(schema.notes).where(eq(schema.notes.id, id));
+  async getNote(id: string, companyId?: string): Promise<Note | undefined> {
+    if (!companyId) {
+      // If no companyId provided, just return the note (backwards compatibility)
+      const result = await db.select().from(schema.notes).where(eq(schema.notes.id, id));
+      return result[0] as Note | undefined;
+    }
+    
+    // Join with projects to verify company ownership
+    const result = await db
+      .select({
+        id: schema.notes.id,
+        title: schema.notes.title,
+        content: schema.notes.content,
+        contentHtml: schema.notes.contentHtml,
+        contentText: schema.notes.contentText,
+        category: schema.notes.category,
+        priority: schema.notes.priority,
+        author: schema.notes.author,
+        ownerId: schema.notes.ownerId,
+        ownerName: schema.notes.ownerName,
+        visibility: schema.notes.visibility,
+        pinned: schema.notes.pinned,
+        customFields: schema.notes.customFields,
+        projectId: schema.notes.projectId,
+        type: schema.notes.type,
+        status: schema.notes.status,
+        assigneeId: schema.notes.assigneeId,
+        assigneeName: schema.notes.assigneeName,
+        dueDate: schema.notes.dueDate,
+        completedAt: schema.notes.completedAt,
+        tags: schema.notes.tags,
+        labels: schema.notes.labels,
+        parentTaskId: schema.notes.parentTaskId,
+        subtaskOrder: schema.notes.subtaskOrder,
+        recurringSettings: schema.notes.recurringSettings,
+        recurringParentId: schema.notes.recurringParentId,
+        templateId: schema.notes.templateId,
+        createdAt: schema.notes.createdAt,
+        updatedAt: schema.notes.updatedAt,
+      })
+      .from(schema.notes)
+      .leftJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id))
+      .where(and(
+        eq(schema.notes.id, id),
+        eq(schema.projects.companyId, companyId)
+      ));
+    
     return result[0] as Note | undefined;
   }
   async createNote(insertNote: InsertNote): Promise<Note> {

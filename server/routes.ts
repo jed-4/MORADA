@@ -146,7 +146,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/notes/:id", async (req, res) => {
     try {
-      const note = await storage.getNote(req.params.id);
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const note = await storage.getNote(req.params.id, companyId);
       if (!note) {
         return res.status(404).json({ error: "Note not found" });
       }
@@ -188,6 +195,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/notes/:id", async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const updateSchema = insertNoteSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -197,16 +211,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Verify the note belongs to the user's company before updating
+      const currentNote = await storage.getNote(req.params.id, companyId);
+      if (!currentNote) {
+        return res.status(404).json({ error: "Note not found" });
+      }
+
       // Check if trying to pin a note
       if (validationResult.data.pinned === true) {
-        // Get the note to find its projectId
-        const currentNote = await storage.getNote(req.params.id);
-        if (!currentNote) {
-          return res.status(404).json({ error: "Note not found" });
-        }
-
         // Count currently pinned notes for this project (excluding the note being updated)
-        const allNotes = await storage.getNotes(currentNote.projectId || undefined);
+        const allNotes = await storage.getNotes(currentNote.projectId || undefined, companyId);
         const pinnedCount = allNotes.filter(n => n.pinned && n.id !== req.params.id).length;
         
         if (pinnedCount >= 3) {
@@ -229,6 +243,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/notes/:id", async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify the note belongs to the user's company before deleting
+      const note = await storage.getNote(req.params.id, companyId);
+      if (!note) {
+        return res.status(404).json({ error: "Note not found" });
+      }
+      
       const success = await storage.deleteNote(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Note not found" });
