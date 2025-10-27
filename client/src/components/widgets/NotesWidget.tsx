@@ -15,9 +15,9 @@ export default function NotesWidget({ widget }: WidgetProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
-  const [newNoteVisibility, setNewNoteVisibility] = useState<"team_only" | "everyone" | "project_team">("team_only");
+  const [newNoteVisibility, setNewNoteVisibility] = useState<"team_only" | "everyone" | "project_team" | "private">("team_only");
   const [editContent, setEditContent] = useState("");
-  const [editVisibility, setEditVisibility] = useState<"team_only" | "everyone" | "project_team">("team_only");
+  const [editVisibility, setEditVisibility] = useState<"team_only" | "everyone" | "project_team" | "private">("team_only");
   const maxNotes = widget.config?.maxNotes || 3;
   const { currentProject } = useProject();
   const { toast } = useToast();
@@ -118,7 +118,7 @@ export default function NotesWidget({ widget }: WidgetProps) {
   const handleEditNote = (note: Note) => {
     setEditingNoteId(note.id);
     setEditContent(note.content);
-    setEditVisibility((note.visibility as "team_only" | "everyone" | "project_team") || "team_only");
+    setEditVisibility((note.visibility as "team_only" | "everyone" | "project_team" | "private") || "team_only");
   };
 
   const handleUpdateNote = (noteId: string) => {
@@ -145,6 +145,8 @@ export default function NotesWidget({ widget }: WidgetProps) {
         return "Everyone";
       case "project_team":
         return "Project team";
+      case "private":
+        return "Private";
       default:
         return "Team only";
     }
@@ -194,6 +196,7 @@ export default function NotesWidget({ widget }: WidgetProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="private">Private</SelectItem>
                 <SelectItem value="team_only">Team only</SelectItem>
                 <SelectItem value="project_team">Project team</SelectItem>
                 <SelectItem value="everyone">Everyone</SelectItem>
@@ -267,6 +270,7 @@ export default function NotesWidget({ widget }: WidgetProps) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="private">Private</SelectItem>
                         <SelectItem value="team_only">Team only</SelectItem>
                         <SelectItem value="project_team">Project team</SelectItem>
                         <SelectItem value="everyone">Everyone</SelectItem>
