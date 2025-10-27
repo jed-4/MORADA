@@ -982,9 +982,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Projects API Routes
   app.get("/api/projects", async (req, res) => {
     try {
-      const { ownerId } = req.query;
-      const projects = await storage.getProjects(ownerId as string | undefined);
-      res.json(projects);
+      const userId = (req.session as any).userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.companyId) {
+        return res.json([]); // Return empty array if user has no company
+      }
+
+      // Filter projects by company for multi-tenant isolation
+      const allProjects = await storage.getProjects();
+      const companyProjects = allProjects.filter(p => p.companyId === user.companyId);
+      
+      res.json(companyProjects);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch projects" });
     }
