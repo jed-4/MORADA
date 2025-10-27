@@ -76,7 +76,11 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
   });
 
   const onSubmit = (data: FormData) => {
-    createProjectMutation.mutate(data);
+    createProjectMutation.mutate({
+      ...data,
+      icon: "building",
+      status: "active",
+    } as InsertProject);
   };
 
   const handleClose = () => {
