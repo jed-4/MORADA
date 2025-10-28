@@ -2806,6 +2806,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get Google Calendar events
+  app.get('/api/google-calendar/events', async (req: any, res) => {
+    try {
+      const { getUncachableGoogleCalendarClient, isGoogleCalendarConnected } = await import('./utils/googleCalendar');
+      
+      const connected = await isGoogleCalendarConnected();
+      if (!connected) {
+        return res.json([]);
+      }
+
+      const calendar = await getUncachableGoogleCalendarClient();
+      
+      // Get events for the next 3 months and past 1 month
+      const timeMin = new Date();
+      timeMin.setMonth(timeMin.getMonth() - 1);
+      const timeMax = new Date();
+      timeMax.setMonth(timeMax.getMonth() + 3);
+
+      const response = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: 250,
+      });
+
+      const events = (response.data.items || []).map((event: any) => {
+        const start = event.start?.dateTime || event.start?.date;
+        const end = event.end?.dateTime || event.end?.date;
+        const isAllDay = !event.start?.dateTime;
+
+        // For all-day events, Google Calendar uses exclusive end dates
+        // (e.g., a 1-day event on May 1st has end date May 2nd)
+        // We need to subtract one day to get the actual end date
+        let endDate = end ? new Date(end) : new Date();
+        if (isAllDay && end) {
+          endDate = new Date(end);
+          endDate.setDate(endDate.getDate() - 1);
+        }
+
+        return {
+          id: `google-${event.id}`,
+          title: event.summary || '(No title)',
+          startDate: start ? new Date(start) : new Date(),
+          endDate,
+          startTime: isAllDay ? null : (event.start?.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null),
+          endTime: isAllDay ? null : (event.end?.dateTime ? new Date(event.end.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null),
+          type: 'google-calendar' as const,
+          color: '#4285f4', // Google Calendar blue
+          description: event.description || null,
+          location: event.location || null,
+          isCompleted: false,
+        };
+      });
+
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching Google Calendar events:", error);
+      res.status(500).json({ message: "Failed to fetch Google Calendar events" });
+    }
+  });
+
   // ============================================================
   // COMPANY ROUTES
   // ============================================================

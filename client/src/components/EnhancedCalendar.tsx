@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -26,9 +27,11 @@ export interface CalendarEvent {
   color?: string | null;
   projectId?: string | null;
   projectColor?: string | null;
-  type: "task" | "schedule" | "meeting";
+  type: "task" | "schedule" | "meeting" | "google-calendar";
   status?: string;
   isCompleted?: boolean;
+  description?: string | null;
+  location?: string | null;
 }
 
 interface EnhancedCalendarProps {
@@ -50,9 +53,11 @@ interface DraggableEventProps {
 }
 
 function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox }: DraggableEventProps) {
+  const isGoogleCalendarEvent = event.type === "google-calendar";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
     data: { event },
+    disabled: isGoogleCalendarEvent, // Disable dragging for Google Calendar events
   });
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
@@ -62,13 +67,15 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   return (
     <div
       ref={setNodeRef}
-      {...attributes}
-      {...listeners}
+      {...(!isGoogleCalendarEvent ? attributes : {})}
+      {...(!isGoogleCalendarEvent ? listeners : {})}
       key={`${event.id}-${index}`}
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-move mb-1 hover-elevate active-elevate-2 touch-none",
+        "group flex items-center gap-1.5 px-2 py-1 rounded-md text-xs mb-1 hover-elevate active-elevate-2",
+        !isGoogleCalendarEvent && "cursor-move touch-none",
+        isGoogleCalendarEvent && "cursor-pointer",
         isCompleted && "opacity-60",
         isDragging && "opacity-50"
       )}
@@ -92,9 +99,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           {isCompleted && <Check className="w-3 h-3" />}
         </button>
       )}
-      <div className="flex-1 min-w-0 overflow-hidden">
+      <div className="flex-1 min-w-0 overflow-hidden flex items-center gap-1">
         <div className={cn(
-          "font-medium truncate",
+          "font-medium truncate flex-1",
           isCompleted && "line-through"
         )}>
           {showTime && (
@@ -104,6 +111,16 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           )}
           {event.title}
         </div>
+        {isGoogleCalendarEvent && (
+          <Badge 
+            variant="outline" 
+            className="flex-shrink-0 text-[10px] px-1 py-0 h-4"
+            style={{ borderColor: '#4285f4', color: '#4285f4' }}
+            data-testid={`google-badge-${event.id}`}
+          >
+            G
+          </Badge>
+        )}
       </div>
     </div>
   );

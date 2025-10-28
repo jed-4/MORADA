@@ -6,8 +6,8 @@ BuildPro is a project management software designed for Australian residential bu
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## Google Calendar Integration (Ready - October 2025)
-**Status**: Using Replit Google Calendar connector for simplified OAuth
+## Google Calendar Integration (Complete - October 2025)
+**Status**: Using Replit Google Calendar connector for simplified OAuth with read-only event display
 
 **Implementation:**
 - ✅ Replit Google Calendar connector integrated
@@ -16,29 +16,44 @@ Preferred communication style: Simple, everyday language.
 - ✅ API routes for connection status and management
 - ✅ Automatic token management by Replit (no manual token storage needed)
 - ✅ No Google Cloud Console setup required by developers
+- ✅ Google Calendar events fetching and display in personal calendar
+- ✅ Visual distinction for Google Calendar events (blue "G" badge)
+- ✅ Read-only Google Calendar events (no drag-drop or completion checkboxes)
+- ✅ Error handling with user feedback when Google Calendar API fails
 
 **How It Works:**
 1. Users click "Connect Google Calendar" in their profile
 2. Replit connector handles OAuth flow automatically
 3. Each user connects their own Google Calendar account
 4. Replit manages token refresh and expiration
-5. Application can access user's calendar through connector API
+5. Application fetches and displays Google Calendar events in personal calendar
+6. Google Calendar events appear with blue "G" badge for visual distinction
+7. BuildPro tasks remain editable; Google Calendar events are read-only
 
 **API Endpoints:**
 - `GET /api/google-calendar/status` - Check connection status
 - `POST /api/google-calendar/connect` - Verify connection (OAuth handled by Replit)
 - `POST /api/google-calendar/disconnect` - Disconnect calendar
+- `GET /api/google-calendar/events` - Fetch Google Calendar events (past 1 month, future 3 months)
 
 **Server Utilities:**
 - `getUncachableGoogleCalendarClient()` - Get authenticated calendar client
 - `isGoogleCalendarConnected()` - Check if calendar is connected
 - `getGoogleCalendarConnectionInfo()` - Get connection details and calendar list
 
+**Event Display:**
+- Google Calendar events shown in personal calendar with blue color (#4285f4)
+- Events display title, time, description, and location
+- Visual badge ("G") distinguishes Google Calendar events from BuildPro tasks
+- Error badge shown in dialog header when Google Calendar API fails
+- Toast notification when Google Calendar events fail to load
+
 **Future Sync Features** (to be implemented):
 - Bi-directional sync between BuildPro and Google Calendar
 - Sync tasks with due dates to Google Calendar  
 - Sync schedule items to Google Calendar
 - Background sync job
+- Write support for Google Calendar events
 
 ## System Architecture
 
