@@ -215,10 +215,18 @@ export function EnhancedCalendar({
 
   // Get events for a specific date
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
+    // Normalize date to start of day for comparison
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
+    
     return events.filter(event => {
       const eventStart = new Date(event.startDate);
+      eventStart.setHours(0, 0, 0, 0);
+      
       const eventEnd = new Date(event.endDate);
-      return date >= eventStart && date <= eventEnd;
+      eventEnd.setHours(0, 0, 0, 0);
+      
+      return targetDate >= eventStart && targetDate <= eventEnd;
     }).sort((a, b) => {
       // Sort by time if available, otherwise by title
       if (a.startTime && b.startTime) {
