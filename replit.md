@@ -6,38 +6,38 @@ BuildPro is a project management software designed for Australian residential bu
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## Google Calendar Integration (In Progress - October 2025)
-**Status**: Manual OAuth implementation complete, troubleshooting Google Cloud Console setup
+## Google Calendar Integration (Ready - October 2025)
+**Status**: Using Replit Google Calendar connector for simplified OAuth
 
-**Note**: Replit Google Calendar connector was available but user opted for manual OAuth implementation.
-
-**What's Complete:**
+**Implementation:**
+- ✅ Replit Google Calendar connector integrated
 - ✅ User Profile page (/profile) with Google Calendar connection UI
-- ✅ Database schema with Google Calendar token fields (googleCalendarEmail, googleCalendarAccessToken, googleCalendarRefreshToken, googleCalendarTokenExpiry, googleCalendarConnectedAt)
-- ✅ Navigation added to header (User menu → Profile)
-- ✅ OAuth routes implemented with CSRF protection:
-  - `/api/auth/google/initiate` - Starts OAuth flow with state parameter
-  - `/api/auth/google/callback` - Handles OAuth callback with security validation
-  - `/api/auth/google/disconnect` - Disconnects and revokes calendar tokens
-- ✅ Comprehensive error handling and user feedback
-- ✅ Token storage and revocation
-- ✅ Secrets configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
-- ✅ Security review passed - all exit paths clear session state
+- ✅ Server utility functions to interact with Google Calendar API
+- ✅ API routes for connection status and management
+- ✅ Automatic token management by Replit (no manual token storage needed)
+- ✅ No Google Cloud Console setup required by developers
 
-**Google Cloud Console Setup (Required):**
-1. Enable Google Calendar API
-2. Configure OAuth consent screen (External, Testing mode)
-3. Add test users (user's email address)
-4. Add authorized redirect URI: `https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/auth/google/callback`
-5. Wait 5-10 minutes for changes to propagate
+**How It Works:**
+1. Users click "Connect Google Calendar" in their profile
+2. Replit connector handles OAuth flow automatically
+3. Each user connects their own Google Calendar account
+4. Replit manages token refresh and expiration
+5. Application can access user's calendar through connector API
 
-**Current Issue**: User experiencing 403 errors during OAuth flow - likely due to Google Cloud Console configuration propagation delay or test user setup.
+**API Endpoints:**
+- `GET /api/google-calendar/status` - Check connection status
+- `POST /api/google-calendar/connect` - Verify connection (OAuth handled by Replit)
+- `POST /api/google-calendar/disconnect` - Disconnect calendar
+
+**Server Utilities:**
+- `getUncachableGoogleCalendarClient()` - Get authenticated calendar client
+- `isGoogleCalendarConnected()` - Check if calendar is connected
+- `getGoogleCalendarConnectionInfo()` - Get connection details and calendar list
 
 **Future Sync Features** (to be implemented):
 - Bi-directional sync between BuildPro and Google Calendar
 - Sync tasks with due dates to Google Calendar  
 - Sync schedule items to Google Calendar
-- Auto-refresh expired tokens
 - Background sync job
 
 ## System Architecture
