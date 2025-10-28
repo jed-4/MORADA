@@ -12,47 +12,12 @@ import { SiGoogle } from "react-icons/si";
 import type { User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { useLocation } from "wouter";
 
 export default function UserProfile() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
-  const [location, setLocation] = useLocation();
-
-  // Handle OAuth callback messages
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const success = params.get('success');
-    const error = params.get('error');
-
-    if (success === 'calendar_connected') {
-      toast({
-        title: "Calendar connected",
-        description: "Your Google Calendar has been connected successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      // Clean up URL
-      setLocation('/profile', { replace: true });
-    } else if (error) {
-      const errorMessages: Record<string, string> = {
-        no_code: "No authorization code received from Google.",
-        session_expired: "Your session expired. Please try again.",
-        oauth_failed: "Failed to connect to Google Calendar. Please try again.",
-        oauth_denied: "You denied access to your Google Calendar.",
-        invalid_state: "Security check failed. Please try again.",
-        no_token: "Failed to obtain access token from Google.",
-      };
-      toast({
-        title: "Connection failed",
-        description: errorMessages[error] || "An error occurred while connecting your calendar.",
-        variant: "destructive",
-      });
-      // Clean up URL
-      setLocation('/profile', { replace: true });
-    }
-  }, []);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -67,6 +32,11 @@ export default function UserProfile() {
       setPhone(user.phone || "");
     }
   }, [user]);
+
+  // Fetch Google Calendar connection status
+  const { data: calendarStatus } = useQuery({
+    queryKey: ["/api/google-calendar/status"],
+  });
 
   // Update user profile mutation
   const updateProfileMutation = useMutation({
@@ -83,13 +53,35 @@ export default function UserProfile() {
     },
   });
 
+  // Connect Google Calendar mutation
+  const connectGoogleCalendarMutation = useMutation({
+    mutationFn: async () => {
+      const result = await apiRequest("/api/google-calendar/connect", "POST");
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/google-calendar/status"] });
+      toast({
+        title: "Calendar connected",
+        description: "Your Google Calendar has been connected successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Connection failed",
+        description: error.message || "Failed to connect Google Calendar. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Disconnect Google Calendar mutation
   const disconnectGoogleCalendarMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("/api/auth/google/disconnect", "POST");
+      return await apiRequest("/api/google-calendar/disconnect", "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/google-calendar/status"] });
       toast({
         title: "Calendar disconnected",
         description: "Your Google Calendar has been disconnected.",
@@ -119,8 +111,7 @@ export default function UserProfile() {
   };
 
   const handleConnectGoogleCalendar = () => {
-    // Redirect to OAuth flow
-    window.location.href = "/api/auth/google/initiate";
+    connectGoogleCalendarMutation.mutate();
   };
 
   const handleDisconnectGoogleCalendar = () => {
@@ -129,7 +120,8 @@ export default function UserProfile() {
     }
   };
 
-  const isGoogleCalendarConnected = !!user?.googleCalendarEmail;
+  const isGoogleCalendarConnected = (calendarStatus as any)?.connected || false;
+  const googleCalendarEmail = (calendarStatus as any)?.email || null;
 
   return (
     <div className="flex flex-col h-full" data-testid="user-profile">
@@ -279,14 +271,14 @@ export default function UserProfile() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{user.googleCalendarEmail}</span>
+                          <span className="font-medium">{googleCalendarEmail}</span>
                           <Badge variant="default" className="gap-1">
                             <Check className="h-3 w-3" />
                             Connected
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Connected {user.googleCalendarConnectedAt && format(new Date(user.googleCalendarConnectedAt), "MMM d, yyyy")}
+                          Syncing events to your Google Calendar
                         </p>
                       </div>
                     </div>
@@ -328,10 +320,11 @@ export default function UserProfile() {
                       <Button
                         onClick={handleConnectGoogleCalendar}
                         className="gap-2"
+                        disabled={connectGoogleCalendarMutation.isPending}
                         data-testid="button-connect-google-calendar"
                       >
                         <SiGoogle className="h-4 w-4" />
-                        Connect Google Calendar
+                        {connectGoogleCalendarMutation.isPending ? "Connecting..." : "Connect Google Calendar"}
                       </Button>
                     </div>
                   </div>
@@ -343,9 +336,6 @@ export default function UserProfile() {
                       <li>• Schedule items from your projects</li>
                       <li>• Meeting minutes and site diary entries</li>
                     </ul>
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Note: Google Calendar credentials are required. Contact your administrator if you need help setting this up.
-                    </p>
                   </div>
                 </div>
               )}

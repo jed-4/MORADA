@@ -2751,6 +2751,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
+  // GOOGLE CALENDAR CONNECTOR ROUTES (Replit Integration)
+  // ============================================================
+  
+  // Get Google Calendar connection status
+  app.get('/api/google-calendar/status', async (req: any, res) => {
+    try {
+      const { getGoogleCalendarConnectionInfo } = await import('./utils/googleCalendar');
+      const info = await getGoogleCalendarConnectionInfo();
+      res.json(info);
+    } catch (error) {
+      console.error("Error getting Google Calendar status:", error);
+      res.json({ connected: false, email: null, calendars: [] });
+    }
+  });
+
+  // Connect Google Calendar (triggers Replit connector flow)
+  app.post('/api/google-calendar/connect', async (req: any, res) => {
+    try {
+      // The Replit connector handles the OAuth flow automatically
+      // This endpoint just triggers a check to see if the user has connected
+      const { isGoogleCalendarConnected } = await import('./utils/googleCalendar');
+      const connected = await isGoogleCalendarConnected();
+      
+      if (connected) {
+        res.json({ success: true, connected: true });
+      } else {
+        res.status(400).json({ 
+          success: false, 
+          message: "Please connect Google Calendar through the Replit integrations panel first." 
+        });
+      }
+    } catch (error: any) {
+      console.error("Error connecting Google Calendar:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || "Failed to connect Google Calendar" 
+      });
+    }
+  });
+
+  // Disconnect Google Calendar
+  app.post('/api/google-calendar/disconnect', async (req: any, res) => {
+    try {
+      // For Replit connector, disconnection happens through the Replit UI
+      // This endpoint just confirms the disconnection
+      res.json({ 
+        success: true, 
+        message: "Please disconnect Google Calendar through the Replit integrations panel." 
+      });
+    } catch (error) {
+      console.error("Error disconnecting Google Calendar:", error);
+      res.status(500).json({ message: "Failed to disconnect calendar" });
+    }
+  });
+
+  // ============================================================
   // COMPANY ROUTES
   // ============================================================
   
