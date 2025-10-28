@@ -6,8 +6,10 @@ BuildPro is a project management software designed for Australian residential bu
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## Google Calendar Integration (Ready for Testing - October 2025)
-**Status**: OAuth implementation complete, ready for user testing
+## Google Calendar Integration (In Progress - October 2025)
+**Status**: Manual OAuth implementation complete, troubleshooting Google Cloud Console setup
+
+**Note**: Replit Google Calendar connector was available but user opted for manual OAuth implementation.
 
 **What's Complete:**
 - ✅ User Profile page (/profile) with Google Calendar connection UI
@@ -20,23 +22,16 @@ Preferred communication style: Simple, everyday language.
 - ✅ Comprehensive error handling and user feedback
 - ✅ Token storage and revocation
 - ✅ Secrets configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+- ✅ Security review passed - all exit paths clear session state
 
-**Setup Required in Google Cloud Console:**
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Navigate to: APIs & Services → Credentials
-3. Click on your OAuth 2.0 Client ID
-4. Add this **Authorized redirect URI**:
-   ```
-   https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/auth/google/callback
-   ```
-5. Click "Save"
+**Google Cloud Console Setup (Required):**
+1. Enable Google Calendar API
+2. Configure OAuth consent screen (External, Testing mode)
+3. Add test users (user's email address)
+4. Add authorized redirect URI: `https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/auth/google/callback`
+5. Wait 5-10 minutes for changes to propagate
 
-**How to Test:**
-1. Log in to BuildPro
-2. Click user menu (top right) → Profile
-3. In the "Google Calendar Integration" section, click "Connect Google Calendar"
-4. Authorize BuildPro to access your Google Calendar
-5. You should be redirected back to the profile page with a success message
+**Current Issue**: User experiencing 403 errors during OAuth flow - likely due to Google Cloud Console configuration propagation delay or test user setup.
 
 **Future Sync Features** (to be implemented):
 - Bi-directional sync between BuildPro and Google Calendar
