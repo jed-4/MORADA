@@ -53,13 +53,13 @@ export function CalendarEventDetailDialog({ event, open, onOpenChange }: Calenda
 
   const handleNavigate = () => {
     if (isTask && event.projectId) {
-      navigate(`/project/${event.projectId}/tasks`);
+      navigate(`/projects/${event.projectId}/tasks`);
       onOpenChange(false);
     } else if (isSchedule && event.projectId) {
-      navigate(`/project/${event.projectId}/schedule`);
+      navigate(`/projects/${event.projectId}/schedule`);
       onOpenChange(false);
     } else if (isMeeting && event.projectId) {
-      navigate(`/project/${event.projectId}/meetings`);
+      navigate(`/projects/${event.projectId}/minutes`);
       onOpenChange(false);
     }
   };
