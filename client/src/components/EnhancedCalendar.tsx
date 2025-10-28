@@ -376,6 +376,39 @@ export function EnhancedCalendar({
             </div>
           ))}
         </div>
+
+        {/* All-Day Events Section */}
+        <div className="grid grid-cols-8 border-b bg-muted/20 sticky top-[73px] z-10">
+          <div className="p-2 border-r w-10 text-xs text-muted-foreground flex items-center justify-center">
+            All Day
+          </div>
+          {dateRange.map((date, dayIdx) => {
+            const dayEvents = getEventsForDate(date);
+            const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
+            
+            return (
+              <div 
+                key={dayIdx} 
+                className={cn(
+                  "border-r last:border-r-0 p-1 min-h-[40px]",
+                  isToday(date) && "bg-primary/5"
+                )}
+                data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
+              >
+                {allDayEvents.map((event, idx) => (
+                  <DraggableEvent
+                    key={`${event.id}-${idx}`}
+                    event={event}
+                    index={idx}
+                    onEventClick={onEventClick}
+                    onToggleComplete={handleToggleComplete}
+                    showCompletionCheckbox={showCompletionCheckbox}
+                  />
+                ))}
+              </div>
+            );
+          })}
+        </div>
         
         <div className="grid grid-cols-8">
           <div className="border-r w-10">
@@ -388,6 +421,7 @@ export function EnhancedCalendar({
           
           {dateRange.map((date, dayIdx) => {
             const dayEvents = getEventsForDate(date);
+            const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
             
             return (
               <DroppableDateCell
@@ -405,7 +439,7 @@ export function EnhancedCalendar({
                   ))}
                   <div className="absolute inset-0 pointer-events-none">
                     <div className="relative h-full">
-                      {dayEvents.map((event, idx) => {
+                      {timedEvents.map((event, idx) => {
                         const startHour = event.startTime 
                           ? parseInt(event.startTime.split(":")[0]) 
                           : 0;
