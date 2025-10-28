@@ -5,6 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { db, pool } from "./db";
 import bcrypt from "bcrypt";
+import { google } from "googleapis";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -2580,6 +2581,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // ============================================================
+  // GOOGLE CALENDAR OAUTH ROUTES
+  // ============================================================
+
+  // Initialize Google OAuth2 client
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    `${process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : 'http://localhost:5000'}/api/auth/google/callback`
+  );
+
+  // Initiate Google OAuth flow
+  app.get('/api/auth/google/initiate', async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Store user ID in session for callback
+      (req.session as any).googleOAuthUserId = userId;
+
+      const authUrl = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://www.googleapis.com/auth/calendar'],
+        prompt: 'consent', // Force consent to get refresh token
+      });
+
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error("Error initiating Google OAuth:", error);
+      res.status(500).json({ message: "Failed to initiate OAuth" });
+    }
+  });
+
+  // Handle Google OAuth callback
+  app.get('/api/auth/google/callback', async (req: any, res) => {
+    try {
+      const { code } = req.query;
+      const userId = (req.session as any)?.googleOAuthUserId;
+
+      if (!code) {
+        return res.redirect('/profile?error=no_code');
+      }
+
+      if (!userId) {
+        return res.redirect('/profile?error=session_expired');
+      }
+
+      // Exchange code for tokens
+      const { tokens } = await oauth2Client.getToken(code as string);
+      oauth2Client.setCredentials(tokens);
+
+      // Get user's Google account email
+      const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+      const { data } = await oauth2.userinfo.get();
+
+      // Update user with Google Calendar tokens
+      await storage.updateUser(userId, {
+        googleCalendarAccessToken: tokens.access_token || null,
+        googleCalendarRefreshToken: tokens.refresh_token || null,
+        googleCalendarEmail: data.email || null,
+        googleCalendarTokenExpiry: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+        googleCalendarConnectedAt: new Date(),
+      });
+
+      // Clear OAuth session data
+      delete (req.session as any).googleOAuthUserId;
+
+      res.redirect('/profile?success=calendar_connected');
+    } catch (error) {
+      console.error("Error in Google OAuth callback:", error);
+      res.redirect('/profile?error=oauth_failed');
+    }
+  });
+
+  // Disconnect Google Calendar
+  app.post('/api/auth/google/disconnect', async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Revoke Google token if exists
+      if (user.googleCalendarAccessToken) {
+        try {
+          await oauth2Client.revokeToken(user.googleCalendarAccessToken);
+        } catch (revokeError) {
+          console.error("Error revoking Google token:", revokeError);
+          // Continue anyway to clear local tokens
+        }
+      }
+
+      // Clear Google Calendar tokens from database
+      await storage.updateUser(userId, {
+        googleCalendarAccessToken: null,
+        googleCalendarRefreshToken: null,
+        googleCalendarEmail: null,
+        googleCalendarTokenExpiry: null,
+        googleCalendarConnectedAt: null,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error disconnecting Google Calendar:", error);
+      res.status(500).json({ message: "Failed to disconnect calendar" });
     }
   });
 
