@@ -132,7 +132,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       content: task?.content || "",
       priority: (task?.priority as "low" | "medium" | "high") || "medium",
       status: task?.status || finalStatusKeys[0] || "todo",
-      assigneeId: task?.assigneeId || "",
+      assigneeId: task?.assigneeId || "unassigned",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
       tags: (task?.tags as string[]) || [],
       labels: (task?.labels as string[]) || [],
@@ -182,7 +182,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
-      const assignee = companyUsers.find((u: any) => u.id === data.assigneeId);
+      const assigneeId = data.assigneeId === "unassigned" ? undefined : data.assigneeId;
+      const assignee = assigneeId ? companyUsers.find((u: any) => u.id === assigneeId) : null;
       const payload: InsertTask = {
         title: data.title,
         content: data.content,
@@ -191,7 +192,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         priority: data.priority,
         status: data.status,
         projectId: data.projectId || projectId,
-        assigneeId: data.assigneeId || undefined,
+        assigneeId: assigneeId,
         assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
@@ -243,14 +244,15 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
     mutationFn: async (data: TaskFormData) => {
       if (!task) throw new Error("No task to update");
       
-      const assignee = companyUsers.find((u: any) => u.id === data.assigneeId);
+      const assigneeId = data.assigneeId === "unassigned" ? undefined : data.assigneeId;
+      const assignee = assigneeId ? companyUsers.find((u: any) => u.id === assigneeId) : null;
       const payload: Partial<InsertTask> = {
         title: data.title,
         content: data.content,
         priority: data.priority,
         status: data.status,
         projectId: data.projectId,
-        assigneeId: data.assigneeId || undefined,
+        assigneeId: assigneeId,
         assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
@@ -539,7 +541,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">Unassigned</SelectItem>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
                             {companyUsers.map((user: any) => (
                               <SelectItem key={user.id} value={user.id}>
                                 {user.firstName && user.lastName
