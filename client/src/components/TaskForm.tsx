@@ -396,8 +396,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6">
           <DialogTitle>
             {isEditing ? "Edit Task" : "Create New Task"}
           </DialogTitle>
@@ -410,7 +410,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         </DialogHeader>
         
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto px-6 py-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="basic" className="flex items-center gap-2">
@@ -1039,8 +1040,9 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                 )}
               </TabsContent>
             </Tabs>
+            </div>
             
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background sticky bottom-0">
               <Button 
                 type="button" 
                 variant="outline" 
