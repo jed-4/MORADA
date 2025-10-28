@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -54,6 +54,8 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
     status: z.enum(validStatuses as [string, ...string[]]).default(validStatuses[0]),
     assigneeId: z.string().optional(),
     dueDate: z.string().optional(), // HTML date input returns string
+    startTime: z.string().optional(), // HH:MM format
+    endTime: z.string().optional(), // HH:MM format
     tags: z.array(z.string()).default([]),
     labels: z.array(z.string()).default([]),
     projectId: z.string().optional(),
@@ -134,6 +136,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       status: task?.status || finalStatusKeys[0] || "todo",
       assigneeId: task?.assigneeId || "unassigned",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
+      startTime: task?.startTime || "",
+      endTime: task?.endTime || "",
       tags: (task?.tags as string[]) || [],
       labels: (task?.labels as string[]) || [],
       projectId: task?.projectId || projectId,
@@ -150,6 +154,37 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       recurringEndDate: task?.recurringEndDate ? new Date(task.recurringEndDate).toISOString().split('T')[0] : "",
     },
   });
+
+  // Reset form when task changes or dialog opens
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        // Basic Info
+        title: task?.title || "",
+        content: task?.content || "",
+        priority: (task?.priority as "low" | "medium" | "high") || "medium",
+        status: task?.status || finalStatusKeys[0] || "todo",
+        assigneeId: task?.assigneeId || "unassigned",
+        dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
+        startTime: task?.startTime || "",
+        endTime: task?.endTime || "",
+        tags: (task?.tags as string[]) || [],
+        labels: (task?.labels as string[]) || [],
+        projectId: task?.projectId || projectId,
+        // Advanced
+        category: task?.category || "General",
+        customFields: (task?.customFields as Record<string, any>) || {},
+        parentTaskId: task?.parentTaskId || undefined,
+        // Recurring
+        isRecurring: task?.isRecurring || false,
+        recurringType: task?.recurringType as "daily" | "weekly" | "monthly" | "yearly" | "custom" | undefined,
+        recurringInterval: task?.recurringInterval || 1,
+        recurringDays: (task?.recurringDays as number[]) || [],
+        recurringStartDate: task?.recurringStartDate ? new Date(task.recurringStartDate).toISOString().split('T')[0] : "",
+        recurringEndDate: task?.recurringEndDate ? new Date(task.recurringEndDate).toISOString().split('T')[0] : "",
+      });
+    }
+  }, [task, open, form, finalStatusKeys, projectId]);
 
   // Watch fields for reactive behavior
   const watchedTags = form.watch("tags");
@@ -195,6 +230,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         assigneeId: assigneeId,
         assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+        startTime: data.startTime || undefined,
+        endTime: data.endTime || undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
         labels: Array.isArray(data.labels) ? data.labels : [],
         // Advanced fields
@@ -255,6 +292,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         assigneeId: assigneeId,
         assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+        startTime: data.startTime || undefined,
+        endTime: data.endTime || undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
         labels: Array.isArray(data.labels) ? data.labels : [],
         // Advanced fields
@@ -567,6 +606,44 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                             type="date"
                             {...field}
                             data-testid="task-due-date-input"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Time Fields */}
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="startTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Time</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="time"
+                            {...field}
+                            data-testid="task-start-time-input"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="endTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Time</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="time"
+                            {...field}
+                            data-testid="task-end-time-input"
                           />
                         </FormControl>
                         <FormMessage />

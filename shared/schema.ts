@@ -313,6 +313,8 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   assigneeId: z.string().optional(),
   assigneeName: z.string().optional(),
   dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
+  startTime: z.string().optional(), // HH:MM format
+  endTime: z.string().optional(), // HH:MM format
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),
