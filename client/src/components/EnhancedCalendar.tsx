@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -213,6 +213,15 @@ export function EnhancedCalendar({
     setCurrentDate(new Date());
   }, []);
 
+  // Auto-scroll to 5am when calendar loads in week/day view
+  useEffect(() => {
+    if ((view === "week" || view === "day") && scrollContainerRef.current) {
+      const HOUR_HEIGHT = 40;
+      const scrollTo5am = 5 * HOUR_HEIGHT;
+      scrollContainerRef.current.scrollTop = scrollTo5am;
+    }
+  }, [view]);
+
   // Get events for a specific date
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
     // Normalize date to start of day for comparison
@@ -341,11 +350,12 @@ export function EnhancedCalendar({
   // Render week view
   const renderWeekView = () => {
     const hours = Array.from({ length: 24 }, (_, i) => i);
+    const HOUR_HEIGHT = 40; // Reduced from 64px to 40px
     
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
         <div className="grid grid-cols-8 border-b sticky top-0 bg-background z-10">
-          <div className="p-2 border-r w-16"></div>
+          <div className="p-2 border-r w-10"></div>
           {dateRange.map((date, idx) => (
             <div
               key={idx}
@@ -368,9 +378,9 @@ export function EnhancedCalendar({
         </div>
         
         <div className="grid grid-cols-8">
-          <div className="border-r">
+          <div className="border-r w-10">
             {hours.map((hour) => (
-              <div key={hour} className="h-16 p-1 text-xs text-muted-foreground border-b">
+              <div key={hour} className="h-10 p-1 text-xs text-muted-foreground border-b">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -389,7 +399,7 @@ export function EnhancedCalendar({
                   {hours.map((hour) => (
                     <div
                       key={hour}
-                      className="h-16 border-b hover:bg-muted/20 cursor-pointer"
+                      className="h-10 border-b hover:bg-muted/20 cursor-pointer"
                       onClick={() => onDateClick?.(date)}
                     />
                   ))}
@@ -399,7 +409,7 @@ export function EnhancedCalendar({
                         const startHour = event.startTime 
                           ? parseInt(event.startTime.split(":")[0]) 
                           : 0;
-                        const top = startHour * 64;
+                        const top = startHour * HOUR_HEIGHT;
                         
                         return (
                           <div
