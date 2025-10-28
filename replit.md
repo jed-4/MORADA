@@ -6,34 +6,44 @@ BuildPro is a project management software designed for Australian residential bu
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## Google Calendar Integration (In Progress - October 2025)
-**Status**: Awaiting Google OAuth credentials from user
+## Google Calendar Integration (Ready for Testing - October 2025)
+**Status**: OAuth implementation complete, ready for user testing
 
 **What's Complete:**
-- User Profile page (/profile) with Google Calendar connection UI
-- Database schema updated with Google Calendar token fields (google_calendar_email, google_calendar_access_token, google_calendar_refresh_token, google_calendar_token_expiry, google_calendar_connected_at)
-- Navigation added to header (User menu → Profile)
-- Frontend UI for connecting/disconnecting Google Calendar
+- ✅ User Profile page (/profile) with Google Calendar connection UI
+- ✅ Database schema with Google Calendar token fields (googleCalendarEmail, googleCalendarAccessToken, googleCalendarRefreshToken, googleCalendarTokenExpiry, googleCalendarConnectedAt)
+- ✅ Navigation added to header (User menu → Profile)
+- ✅ OAuth routes implemented with CSRF protection:
+  - `/api/auth/google/initiate` - Starts OAuth flow with state parameter
+  - `/api/auth/google/callback` - Handles OAuth callback with security validation
+  - `/api/auth/google/disconnect` - Disconnects and revokes calendar tokens
+- ✅ Comprehensive error handling and user feedback
+- ✅ Token storage and revocation
+- ✅ Secrets configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
 
-**Pending Implementation:**
-OAuth routes still need to be implemented (requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
-- `/api/auth/google/initiate` - Starts OAuth flow
-- `/api/auth/google/callback` - Handles OAuth callback
-- `/api/auth/google/disconnect` - Disconnects user's calendar
+**Setup Required in Google Cloud Console:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Navigate to: APIs & Services → Credentials
+3. Click on your OAuth 2.0 Client ID
+4. Add this **Authorized redirect URI**:
+   ```
+   https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/auth/google/callback
+   ```
+5. Click "Save"
 
-**User Action Required:**
-1. Set up Google Cloud Console project
-2. Enable Google Calendar API
-3. Create OAuth 2.0 credentials (Web application)
-4. Add authorized redirect URI: `https://[replit-url].replit.dev/api/auth/google/callback`
-5. Provide GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET as Replit secrets
+**How to Test:**
+1. Log in to BuildPro
+2. Click user menu (top right) → Profile
+3. In the "Google Calendar Integration" section, click "Connect Google Calendar"
+4. Authorize BuildPro to access your Google Calendar
+5. You should be redirected back to the profile page with a success message
 
 **Future Sync Features** (to be implemented):
 - Bi-directional sync between BuildPro and Google Calendar
-- Sync tasks with due dates to Google Calendar
+- Sync tasks with due dates to Google Calendar  
 - Sync schedule items to Google Calendar
-- Auto-refresh tokens when expired
-- Hourly sync job
+- Auto-refresh expired tokens
+- Background sync job
 
 ## System Architecture
 

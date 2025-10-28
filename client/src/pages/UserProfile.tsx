@@ -12,12 +12,47 @@ import { SiGoogle } from "react-icons/si";
 import type { User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
+import { useLocation } from "wouter";
 
 export default function UserProfile() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  const [location, setLocation] = useLocation();
+
+  // Handle OAuth callback messages
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    const error = params.get('error');
+
+    if (success === 'calendar_connected') {
+      toast({
+        title: "Calendar connected",
+        description: "Your Google Calendar has been connected successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      // Clean up URL
+      setLocation('/profile', { replace: true });
+    } else if (error) {
+      const errorMessages: Record<string, string> = {
+        no_code: "No authorization code received from Google.",
+        session_expired: "Your session expired. Please try again.",
+        oauth_failed: "Failed to connect to Google Calendar. Please try again.",
+        oauth_denied: "You denied access to your Google Calendar.",
+        invalid_state: "Security check failed. Please try again.",
+        no_token: "Failed to obtain access token from Google.",
+      };
+      toast({
+        title: "Connection failed",
+        description: errorMessages[error] || "An error occurred while connecting your calendar.",
+        variant: "destructive",
+      });
+      // Clean up URL
+      setLocation('/profile', { replace: true });
+    }
+  }, []);
 
   // Form state
   const [firstName, setFirstName] = useState("");

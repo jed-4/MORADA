@@ -6,6 +6,7 @@ import connectPgSimple from "connect-pg-simple";
 import { db, pool } from "./db";
 import bcrypt from "bcrypt";
 import { google } from "googleapis";
+import { randomBytes } from "crypto";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -2589,10 +2590,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
 
   // Initialize Google OAuth2 client
+  const getRedirectUri = () => {
+    if (process.env.REPLIT_DOMAINS) {
+      // Use the first domain from REPLIT_DOMAINS
+      const domain = process.env.REPLIT_DOMAINS.split(',')[0];
+      return `https://${domain}/api/auth/google/callback`;
+    }
+    return 'http://localhost:5000/api/auth/google/callback';
+  };
+
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    `${process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : 'http://localhost:5000'}/api/auth/google/callback`
+    getRedirectUri()
   );
 
   // Initiate Google OAuth flow
@@ -2603,13 +2613,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      // Store user ID in session for callback
+      // Generate CSRF protection state token
+      const state = randomBytes(32).toString('hex');
+      
+      // Store user ID and state in session for callback verification
       (req.session as any).googleOAuthUserId = userId;
+      (req.session as any).googleOAuthState = state;
 
       const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: ['https://www.googleapis.com/auth/calendar'],
         prompt: 'consent', // Force consent to get refresh token
+        state: state, // CSRF protection
       });
 
       res.redirect(authUrl);
@@ -2622,19 +2637,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Handle Google OAuth callback
   app.get('/api/auth/google/callback', async (req: any, res) => {
     try {
-      const { code } = req.query;
+      const { code, state, error: oauthError } = req.query;
       const userId = (req.session as any)?.googleOAuthUserId;
+      const storedState = (req.session as any)?.googleOAuthState;
+
+      // Handle OAuth errors from Google
+      if (oauthError) {
+        console.error("OAuth error from Google:", oauthError);
+        delete (req.session as any).googleOAuthUserId;
+        delete (req.session as any).googleOAuthState;
+        return res.redirect(`/profile?error=oauth_denied`);
+      }
 
       if (!code) {
+        console.error("No authorization code received");
+        delete (req.session as any).googleOAuthUserId;
+        delete (req.session as any).googleOAuthState;
         return res.redirect('/profile?error=no_code');
       }
 
       if (!userId) {
+        console.error("No userId in session");
+        delete (req.session as any).googleOAuthUserId;
+        delete (req.session as any).googleOAuthState;
         return res.redirect('/profile?error=session_expired');
+      }
+
+      // Verify CSRF state token
+      if (!state || !storedState || state !== storedState) {
+        console.error("State mismatch - CSRF protection triggered");
+        delete (req.session as any).googleOAuthUserId;
+        delete (req.session as any).googleOAuthState;
+        return res.redirect('/profile?error=invalid_state');
       }
 
       // Exchange code for tokens
       const { tokens } = await oauth2Client.getToken(code as string);
+      
+      // Validate tokens received
+      if (!tokens.access_token) {
+        console.error("No access token received from Google");
+        delete (req.session as any).googleOAuthUserId;
+        delete (req.session as any).googleOAuthState;
+        return res.redirect('/profile?error=no_token');
+      }
+
       oauth2Client.setCredentials(tokens);
 
       // Get user's Google account email
@@ -2643,7 +2690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update user with Google Calendar tokens
       await storage.updateUser(userId, {
-        googleCalendarAccessToken: tokens.access_token || null,
+        googleCalendarAccessToken: tokens.access_token,
         googleCalendarRefreshToken: tokens.refresh_token || null,
         googleCalendarEmail: data.email || null,
         googleCalendarTokenExpiry: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
@@ -2652,10 +2699,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Clear OAuth session data
       delete (req.session as any).googleOAuthUserId;
+      delete (req.session as any).googleOAuthState;
 
       res.redirect('/profile?success=calendar_connected');
     } catch (error) {
       console.error("Error in Google OAuth callback:", error);
+      // Clear session data on error
+      delete (req.session as any).googleOAuthUserId;
+      delete (req.session as any).googleOAuthState;
       res.redirect('/profile?error=oauth_failed');
     }
   });
