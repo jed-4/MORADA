@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -11,6 +11,7 @@ import { Calendar as CalendarIcon, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import type { Task, ScheduleItem, Project, FieldCategoryWithOptions } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import { CalendarEventDetailDialog } from "@/components/CalendarEventDetailDialog";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,6 +23,8 @@ interface UserCalendarDialogProps {
 export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
   // Fetch all projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -156,8 +159,8 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
   };
 
   const handleEventClick = (event: CalendarEvent) => {
-    // Could open task detail modal here
-    console.log("Event clicked:", event);
+    setSelectedEvent(event);
+    setDetailDialogOpen(true);
   };
 
   const isLoading = isLoadingTasks || isLoadingGoogleEvents;
@@ -217,6 +220,12 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
           />
         </div>
       </DialogContent>
+      
+      <CalendarEventDetailDialog
+        event={selectedEvent}
+        open={detailDialogOpen}
+        onOpenChange={setDetailDialogOpen}
+      />
     </Dialog>
   );
 }

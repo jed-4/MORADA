@@ -4750,39 +4750,18 @@ export class DbStorage implements IStorage {
   }
 
   async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
-    const tasks = await db.select({
-      id: schema.notes.id,
-      type: schema.notes.type,
-      title: schema.notes.title,
-      content: schema.notes.content,
-      status: schema.notes.status,
-      priority: schema.notes.priority,
-      category: schema.notes.category,
-      projectId: schema.notes.projectId,
-      assignedTo: schema.notes.assignedTo,
-      dueDate: schema.notes.dueDate,
-      completedAt: schema.notes.completedAt,
-      tags: schema.notes.tags,
-      customFields: schema.notes.customFields,
-      visibility: schema.notes.visibility,
-      visibleToUsers: schema.notes.visibleToUsers,
-      isPinned: schema.notes.isPinned,
-      pinnedAt: schema.notes.pinnedAt,
-      createdBy: schema.notes.createdBy,
-      createdAt: schema.notes.createdAt,
-      updatedAt: schema.notes.updatedAt,
-    })
+    const tasks = await db.select()
       .from(schema.notes)
       .innerJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id))
       .where(
         and(
           eq(schema.notes.type, "task"),
           eq(schema.projects.companyId, companyId),
-          sql`${schema.notes.assignedTo} @> ARRAY[${userId}]::text[]`
+          eq(schema.notes.assigneeId, userId)
         )
       )
       .orderBy(desc(schema.notes.createdAt));
-    return tasks as Task[];
+    return tasks.map((row: any) => row.notes) as Task[];
   }
 
   async getTask(id: string): Promise<Task | undefined> {

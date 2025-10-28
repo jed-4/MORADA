@@ -2847,13 +2847,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           endDate.setDate(endDate.getDate() - 1);
         }
 
+        // Extract time from ISO string to avoid timezone conversion issues
+        const extractTime = (dateTimeStr: string | undefined) => {
+          if (!dateTimeStr) return null;
+          try {
+            // ISO format: 2024-01-15T14:30:00+10:00
+            const timePart = dateTimeStr.split('T')[1];
+            if (!timePart) return null;
+            // Extract HH:MM from the time part
+            const [hours, minutes] = timePart.split(':');
+            return `${hours}:${minutes}`;
+          } catch {
+            return null;
+          }
+        };
+
         return {
           id: `google-${event.id}`,
           title: event.summary || '(No title)',
           startDate: start ? new Date(start) : new Date(),
           endDate,
-          startTime: isAllDay ? null : (event.start?.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null),
-          endTime: isAllDay ? null : (event.end?.dateTime ? new Date(event.end.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null),
+          startTime: isAllDay ? null : extractTime(event.start?.dateTime),
+          endTime: isAllDay ? null : extractTime(event.end?.dateTime),
           type: 'google-calendar' as const,
           color: '#4285f4', // Google Calendar blue
           description: event.description || null,

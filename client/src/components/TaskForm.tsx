@@ -52,21 +52,21 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
     content: z.string().default(""),
     priority: z.enum(["low", "medium", "high"]).default("medium"),
     status: z.enum(validStatuses as [string, ...string[]]).default(validStatuses[0]),
-  assigneeName: z.string().optional(),
-  dueDate: z.string().optional(), // HTML date input returns string
-  tags: z.array(z.string()).default([]),
-  labels: z.array(z.string()).default([]),
-  projectId: z.string().optional(),
-  // Advanced Tab
-  category: z.string().default("General"),
-  customFields: z.record(z.any()).default({}),
-  parentTaskId: z.string().optional(),
-  // Recurring Tab
-  isRecurring: z.boolean().default(false),
-  recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
-  recurringInterval: z.number().min(1).default(1),
-  recurringDays: z.array(z.number()).default([]),
-  recurringStartDate: z.string().optional(),
+    assigneeId: z.string().optional(),
+    dueDate: z.string().optional(), // HTML date input returns string
+    tags: z.array(z.string()).default([]),
+    labels: z.array(z.string()).default([]),
+    projectId: z.string().optional(),
+    // Advanced Tab
+    category: z.string().default("General"),
+    customFields: z.record(z.any()).default({}),
+    parentTaskId: z.string().optional(),
+    // Recurring Tab
+    isRecurring: z.boolean().default(false),
+    recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
+    recurringInterval: z.number().min(1).default(1),
+    recurringDays: z.array(z.number()).default([]),
+    recurringStartDate: z.string().optional(),
     recurringEndDate: z.string().optional(),
   });
 };
@@ -132,7 +132,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       content: task?.content || "",
       priority: (task?.priority as "low" | "medium" | "high") || "medium",
       status: task?.status || finalStatusKeys[0] || "todo",
-      assigneeName: task?.assigneeName || "",
+      assigneeId: task?.assigneeId || "",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
       tags: (task?.tags as string[]) || [],
       labels: (task?.labels as string[]) || [],
@@ -173,9 +173,16 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
     enabled: open && !!projectId,
   });
 
+  // Fetch company users for assignee dropdown
+  const { data: companyUsers = [] } = useQuery({
+    queryKey: ["/api/users"],
+    enabled: open,
+  });
+
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
+      const assignee = companyUsers.find((u: any) => u.id === data.assigneeId);
       const payload: InsertTask = {
         title: data.title,
         content: data.content,
@@ -184,7 +191,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         priority: data.priority,
         status: data.status,
         projectId: data.projectId || projectId,
-        assigneeName: data.assigneeName || undefined,
+        assigneeId: data.assigneeId || undefined,
+        assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
         labels: Array.isArray(data.labels) ? data.labels : [],
@@ -235,13 +243,15 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
     mutationFn: async (data: TaskFormData) => {
       if (!task) throw new Error("No task to update");
       
+      const assignee = companyUsers.find((u: any) => u.id === data.assigneeId);
       const payload: Partial<InsertTask> = {
         title: data.title,
         content: data.content,
         priority: data.priority,
         status: data.status,
         projectId: data.projectId,
-        assigneeName: data.assigneeName || undefined,
+        assigneeId: data.assigneeId || undefined,
+        assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
         labels: Array.isArray(data.labels) ? data.labels : [],
@@ -518,17 +528,27 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
 
                   <FormField
                     control={form.control}
-                    name="assigneeName"
+                    name="assigneeId"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assignee</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., John Smith"
-                            {...field}
-                            data-testid="task-assignee-input"
-                          />
-                        </FormControl>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="task-assignee-select">
+                              <SelectValue placeholder="Unassigned" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">Unassigned</SelectItem>
+                            {companyUsers.map((user: any) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.firstName && user.lastName
+                                  ? `${user.firstName} ${user.lastName}`
+                                  : user.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
