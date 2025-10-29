@@ -652,14 +652,14 @@ export function EnhancedCalendar({
           >
             {dateRange.map((date, idx) => {
               const dayOfWeek = getDay(date);
-              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+              const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // Mon-Fri are 1-5
               
               return (
                 <div
                   key={idx}
                   className={cn(
                     "p-2 text-center border-r flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    isToday(date) ? "bg-primary/5" : isWeekday ? "bg-background" : "bg-muted/30",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -696,14 +696,14 @@ export function EnhancedCalendar({
               const visibleEvents = allDayEvents.slice(0, MAX_ALL_DAY_EVENTS);
               const hiddenCount = Math.max(0, allDayEvents.length - MAX_ALL_DAY_EVENTS);
               const dayOfWeek = getDay(date);
-              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // 0 = Sunday, 6 = Saturday
               
               return (
                 <div 
                   key={dayIdx} 
                   className={cn(
                     "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    isToday(date) ? "bg-primary/5" : isWeekday ? "bg-background" : "bg-muted/30",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -752,14 +752,14 @@ export function EnhancedCalendar({
               const dayEvents = getEventsForDate(date);
               const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
               const dayOfWeek = getDay(date);
-              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // 0 = Sunday, 6 = Saturday
               
               return (
                 <div
                   key={dayIdx}
                   className={cn(
                     "border-r relative flex-shrink-0 h-full",
-                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    isToday(date) ? "bg-primary/5" : isWeekday ? "bg-background" : "bg-muted/30",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
