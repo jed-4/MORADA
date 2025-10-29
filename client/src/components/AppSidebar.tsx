@@ -101,7 +101,6 @@ const projectItemsBase = [
 const businessItems = [
   { title: "Business Overview", url: "/business", icon: Home },
   { title: "Projects", url: "/business/projects", icon: FolderOpen },
-  { title: "My Calendar", url: "/my-calendar", icon: Calendar, isPersonalCalendar: true },
   { title: "Business Calendar", url: "/business/calendar", icon: Calendar },
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
@@ -258,6 +257,29 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
+        {/* My Calendar - Standalone */}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  tooltip={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() + "'s Calendar" : "My Calendar"}
+                  data-testid="nav-my-calendar"
+                  data-active={location === "/my-calendar"}
+                >
+                  <Link href="/my-calendar">
+                    <Calendar className="h-4 w-4" />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() + "'s Calendar" : "My Calendar"}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         {/* Company Section - Collapsible */}
         <Collapsible
           open={isCompanyOpen}
@@ -278,28 +300,21 @@ export function AppSidebar() {
             <CollapsibleContent>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {businessItems.map((item) => {
-                    // @ts-ignore - isPersonalCalendar is optional
-                    const isPersonalCalendar = item.isPersonalCalendar;
-                    const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
-                    const displayTitle = isPersonalCalendar && userName ? `${userName}'s Calendar` : item.title;
-                    
-                    return (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton 
-                          asChild
-                          tooltip={displayTitle}
-                          data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                          data-active={location === item.url}
-                        >
-                          <Link href={item.url}>
-                            <item.icon className="h-4 w-4" />
-                            <span className="group-data-[collapsible=icon]:hidden">{displayTitle}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
+                  {businessItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton 
+                        asChild
+                        tooltip={item.title}
+                        data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        data-active={location === item.url}
+                      >
+                        <Link href={item.url}>
+                          <item.icon className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
                 </SidebarMenu>
               </SidebarGroupContent>
             </CollapsibleContent>
