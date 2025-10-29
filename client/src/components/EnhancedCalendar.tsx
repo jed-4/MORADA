@@ -689,7 +689,7 @@ export function EnhancedCalendar({
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
+              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b border-border text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -719,7 +719,7 @@ export function EnhancedCalendar({
                         key={hour}
                         date={date}
                         hour={hour}
-                        className="h-10 border-b hover:bg-muted/20 cursor-pointer"
+                        className="h-10 border-b border-border hover:bg-muted/20 cursor-pointer"
                         onClick={() => onDateClick?.(date)}
                       />
                     ))}
