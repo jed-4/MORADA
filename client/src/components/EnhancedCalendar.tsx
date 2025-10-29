@@ -496,7 +496,7 @@ export function EnhancedCalendar({
                   "p-2 text-center border-r",
                   isToday(date) && "bg-primary/5"
                 )}
-                style={{ minWidth: `${DAY_WIDTH}px` }}
+                style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
               >
                 <div className="text-xs text-muted-foreground">
                   {format(date, "EEE")}
@@ -521,18 +521,21 @@ export function EnhancedCalendar({
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
+              const MAX_ALL_DAY_EVENTS = 2;
+              const visibleEvents = allDayEvents.slice(0, MAX_ALL_DAY_EVENTS);
+              const hiddenCount = Math.max(0, allDayEvents.length - MAX_ALL_DAY_EVENTS);
               
               return (
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r p-1 min-h-[36px]",
+                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden",
                     isToday(date) && "bg-primary/5"
                   )}
-                  style={{ minWidth: `${DAY_WIDTH}px` }}
+                  style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
                   data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
                 >
-                  {allDayEvents.map((event, idx) => (
+                  {visibleEvents.map((event, idx) => (
                     <DraggableEvent
                       key={`${event.id}-${idx}`}
                       event={event}
@@ -542,6 +545,11 @@ export function EnhancedCalendar({
                       showCompletionCheckbox={showCompletionCheckbox}
                     />
                   ))}
+                  {hiddenCount > 0 && (
+                    <div className="text-[10px] text-muted-foreground px-2 py-0.5">
+                      +{hiddenCount} more
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -565,7 +573,7 @@ export function EnhancedCalendar({
                 <div
                   key={dayIdx}
                   className="border-r relative"
-                  style={{ minWidth: `${DAY_WIDTH}px` }}
+                  style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
                 >
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
