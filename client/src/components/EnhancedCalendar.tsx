@@ -498,7 +498,7 @@ export function EnhancedCalendar({
         </div>
 
         {/* All-Day Events Section */}
-        <div className="flex border-b bg-background sticky top-[73px] z-10">
+        <div className="flex border-b bg-background sticky top-[61px] z-10">
           <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center">
             All Day
           </div>
