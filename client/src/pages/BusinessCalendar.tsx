@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -10,15 +11,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Calendar as CalendarIcon, Filter } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function BusinessCalendar() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedUser, setSelectedUser] = useState<string>("all");
   const [selectedProject, setSelectedProject] = useState<string>("all");
 
@@ -139,9 +143,30 @@ export default function BusinessCalendar() {
 
   // Convert tasks and schedule items to calendar events with filtering
   const events: CalendarEvent[] = useMemo(() => {
+    const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+    
     // Filter and convert tasks
     const taskEvents: CalendarEvent[] = allTasks
       .filter(task => task.dueDate)
+      .filter(task => {
+        // Tab-based filtering
+        if (activeTab === "my-events" && user?.id) {
+          return task.assigneeId === user.id;
+        }
+        if (activeTab === "week") {
+          const taskDate = parseISO(task.dueDate!);
+          return isWithinInterval(taskDate, { start: weekStart, end: weekEnd });
+        }
+        if (activeTab === "month") {
+          const taskDate = parseISO(task.dueDate!);
+          return isWithinInterval(taskDate, { start: monthStart, end: monthEnd });
+        }
+        return true; // "all" tab shows everything
+      })
       .filter(task => selectedUser === "all" || task.assigneeId === selectedUser)
       .filter(task => selectedProject === "all" || task.projectId === selectedProject)
       .map(task => {
@@ -178,6 +203,23 @@ export default function BusinessCalendar() {
         };
       })
       .filter(({ item, schedule, project }) => {
+        // Tab-based filtering
+        if (activeTab === "my-events" && user?.id) {
+          if (item.assignedToId !== user.id) return false;
+        }
+        if (activeTab === "week") {
+          const itemStart = parseISO(item.startDate);
+          const itemEnd = parseISO(item.endDate);
+          // Check if the schedule item overlaps with this week
+          if (itemEnd < weekStart || itemStart > weekEnd) return false;
+        }
+        if (activeTab === "month") {
+          const itemStart = parseISO(item.startDate);
+          const itemEnd = parseISO(item.endDate);
+          // Check if the schedule item overlaps with this month
+          if (itemEnd < monthStart || itemStart > monthEnd) return false;
+        }
+        
         // Filter by user
         if (selectedUser !== "all" && item.assignedToId !== selectedUser) return false;
         // Filter by project
@@ -204,7 +246,7 @@ export default function BusinessCalendar() {
       });
 
     return [...taskEvents, ...scheduleEvents];
-  }, [allTasks, allScheduleItems, schedules, projects, selectedUser, selectedProject, completedOption]);
+  }, [allTasks, allScheduleItems, schedules, projects, selectedUser, selectedProject, completedOption, activeTab, user?.id]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     const event = events.find(e => e.id === eventId);
@@ -283,67 +325,103 @@ export default function BusinessCalendar() {
     <div className="flex flex-col h-full" data-testid="business-calendar">
       <div className="flex-1 min-h-0 p-6">
         <Card className="h-full flex flex-col">
-          {/* Header with filters */}
-          <div className="flex flex-col gap-4 p-4 border-b">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5" />
-                <h2 className="text-lg font-semibold">Business Calendar</h2>
-                <Badge variant="secondary" data-testid="event-count">
-                  {events.length} events
-                </Badge>
-              </div>
-            </div>
-
-            {/* Filters */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Filters:</span>
-              </div>
-
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="w-[200px]" data-testid="select-project-filter">
-                  <SelectValue placeholder="All Projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map(project => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedUser} onValueChange={setSelectedUser}>
-                <SelectTrigger className="w-[200px]" data-testid="select-user-filter">
-                  <SelectValue placeholder="All Team Members" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Team Members</SelectItem>
-                  {users.filter(u => u.userCategory === "team").map(user => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5" />
+              <h2 className="text-lg font-semibold">Business Calendar</h2>
+              <Badge variant="secondary" data-testid="event-count">
+                {events.length} events
+              </Badge>
             </div>
           </div>
 
-          {/* Calendar */}
-          <div className="flex-1 min-h-0">
-            <EnhancedCalendar
-              events={events}
-              onEventClick={handleEventClick}
-              onEventComplete={handleEventComplete}
-              onEventReschedule={handleEventReschedule}
-              onEventResize={handleEventResize}
-              showCompletionCheckbox={true}
-              initialView="week"
-            />
-          </div>
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+            <div className="border-b border-border px-4">
+              <TabsList className="flex w-auto" data-testid="tabs-calendar-views">
+                <TabsTrigger
+                  value="all"
+                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
+                  data-testid="tab-all"
+                >
+                  All Events
+                </TabsTrigger>
+                <TabsTrigger
+                  value="my-events"
+                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
+                  data-testid="tab-my-events"
+                >
+                  My Events
+                </TabsTrigger>
+                <TabsTrigger
+                  value="week"
+                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
+                  data-testid="tab-week"
+                >
+                  This Week
+                </TabsTrigger>
+                <TabsTrigger
+                  value="month"
+                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
+                  data-testid="tab-month"
+                >
+                  This Month
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="border-b border-border/50 bg-muted/30 px-4 py-2">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Filters:</span>
+                </div>
+
+                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <SelectTrigger className="w-[200px]" data-testid="select-project-filter">
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map(project => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={selectedUser} onValueChange={setSelectedUser}>
+                  <SelectTrigger className="w-[200px]" data-testid="select-user-filter">
+                    <SelectValue placeholder="All Team Members" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Team Members</SelectItem>
+                    {users.filter(u => u.userCategory === "team").map(user => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Calendar */}
+            <div className="flex-1 min-h-0">
+              <EnhancedCalendar
+                events={events}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                showCompletionCheckbox={true}
+                initialView="week"
+              />
+            </div>
+          </Tabs>
         </Card>
       </div>
     </div>
