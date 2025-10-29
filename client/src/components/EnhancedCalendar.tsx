@@ -742,7 +742,7 @@ export function EnhancedCalendar({
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground text-center" style={{ borderBottom: '1px solid hsl(var(--border))' }}>
+              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b border-border text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -773,14 +773,13 @@ export function EnhancedCalendar({
                   
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
-                      <div key={hour} className="h-10" style={{ borderBottom: '1px solid hsl(var(--border))' }}>
-                        <DroppableTimeSlot
-                          date={date}
-                          hour={hour}
-                          className="h-full hover:bg-muted/20 cursor-pointer"
-                          onClick={() => onDateClick?.(date)}
-                        />
-                      </div>
+                      <DroppableTimeSlot
+                        key={hour}
+                        date={date}
+                        hour={hour}
+                        className="h-10 border-b border-border hover:bg-muted/20 cursor-pointer"
+                        onClick={() => onDateClick?.(date)}
+                      />
                     ))}
                     <div className="absolute inset-0 pointer-events-none">
                       <div className="relative h-full">
