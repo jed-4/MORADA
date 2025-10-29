@@ -184,7 +184,8 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         recurringEndDate: task?.recurringEndDate ? new Date(task.recurringEndDate).toISOString().split('T')[0] : "",
       });
     }
-  }, [task, open, form, finalStatusKeys, projectId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task, open, finalStatusKeys, projectId]);
 
   // Watch fields for reactive behavior
   const watchedTags = form.watch("tags");
