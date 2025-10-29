@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
+import pgSession from "connect-pg-simple";
 import { db, pool } from "./db";
 import bcrypt from "bcrypt";
 import { google } from "googleapis";
@@ -80,11 +80,16 @@ import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafe
 import multer from "multer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup session middleware
-  // Note: Using memory store for now due to Neon serverless compatibility issues
-  // TODO: Switch to PostgreSQL session store once we resolve the pool compatibility
+  // Setup session middleware with PostgreSQL session store
+  const PgSession = pgSession(session);
   app.use(
     session({
+      store: new PgSession({
+        pool: pool,
+        createTableIfMissing: true,
+        // Prune expired sessions every hour
+        pruneSessionInterval: 60 * 60,
+      }),
       secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
       resave: false,
       saveUninitialized: false,
