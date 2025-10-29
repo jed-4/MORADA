@@ -38,7 +38,7 @@ interface EnhancedCalendarProps {
   events: CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
   onEventComplete?: (eventId: string, completed: boolean) => void;
-  onEventReschedule?: (eventId: string, newDate: Date, eventType: CalendarEvent["type"]) => void;
+  onEventReschedule?: (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => void;
   onDateClick?: (date: Date) => void;
   showCompletionCheckbox?: boolean;
   initialView?: "month" | "week" | "day";
@@ -137,6 +137,35 @@ function DroppableDateCell({ date, children, className, onClick }: DroppableDate
   const { setNodeRef, isOver } = useDroppable({
     id: format(date, "yyyy-MM-dd"),
     data: { date },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onClick}
+      className={cn(
+        className,
+        isOver && "ring-2 ring-primary ring-inset"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+interface DroppableTimeSlotProps {
+  date: Date;
+  hour: number;
+  children?: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+
+function DroppableTimeSlot({ date, hour, children, className, onClick }: DroppableTimeSlotProps) {
+  const slotId = `${format(date, "yyyy-MM-dd")}-${hour}`;
+  const { setNodeRef, isOver } = useDroppable({
+    id: slotId,
+    data: { date, hour },
   });
 
   return (
@@ -267,9 +296,12 @@ export function EnhancedCalendar({
     if (over && active.id !== over.id && onEventReschedule) {
       const draggedEvent = active.data.current?.event as CalendarEvent;
       const targetDate = over.data.current?.date as Date;
+      const targetHour = over.data.current?.hour as number | undefined;
       
       if (draggedEvent && targetDate) {
-        onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type);
+        // If dropped on a specific time slot, format the time
+        const newTime = targetHour !== undefined ? `${targetHour.toString().padStart(2, '0')}:00` : undefined;
+        onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
       }
     }
     
@@ -424,15 +456,16 @@ export function EnhancedCalendar({
             const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
             
             return (
-              <DroppableDateCell
+              <div
                 key={dayIdx}
-                date={date}
                 className="border-r last:border-r-0 relative"
               >
                 <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                   {hours.map((hour) => (
-                    <div
+                    <DroppableTimeSlot
                       key={hour}
+                      date={date}
+                      hour={hour}
                       className="h-10 border-b hover:bg-muted/20 cursor-pointer"
                       onClick={() => onDateClick?.(date)}
                     />
@@ -464,7 +497,7 @@ export function EnhancedCalendar({
                     </div>
                   </div>
                 </div>
-              </DroppableDateCell>
+              </div>
             );
           })}
         </div>

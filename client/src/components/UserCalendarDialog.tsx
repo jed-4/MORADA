@@ -139,7 +139,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
     updateTaskMutation.mutate({ taskId: eventId, status: newStatus });
   };
 
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: CalendarEvent["type"]) => {
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => {
     // Don't allow rescheduling Google Calendar events
     if (eventType === "google-calendar") {
       toast({
@@ -151,10 +151,17 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
     }
     
     if (eventType === "task") {
-      rescheduleTaskMutation.mutate({ 
+      const updatePayload: any = { 
         taskId: eventId, 
         dueDate: format(newDate, "yyyy-MM-dd")
-      });
+      };
+      
+      // If time is provided, update startTime
+      if (newTime) {
+        updatePayload.startTime = newTime;
+      }
+      
+      rescheduleTaskMutation.mutate(updatePayload);
     }
   };
 

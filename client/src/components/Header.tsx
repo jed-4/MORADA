@@ -14,7 +14,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
-import { UserCalendarDialog } from "./UserCalendarDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -56,7 +55,6 @@ const allItemsMenuItems = projectItemsBase.filter(item => !excludedItems.has(ite
 export default function Header() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const { toast } = useToast();
   const { user, logout } = useAuth();
 
@@ -156,16 +154,6 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Calendar Button */}
-        <Button 
-          variant="outline" 
-          size="icon" 
-          onClick={() => setIsCalendarOpen(true)}
-          data-testid="button-calendar"
-        >
-          <Calendar className="h-4 w-4" />
-        </Button>
-
         {/* New Button with Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -245,12 +233,6 @@ export default function Header() {
       <CreateProjectDialog 
         open={isCreateProjectOpen} 
         onOpenChange={setIsCreateProjectOpen} 
-      />
-
-      {/* User Calendar Dialog */}
-      <UserCalendarDialog 
-        open={isCalendarOpen} 
-        onOpenChange={setIsCalendarOpen}
       />
     </header>
   );

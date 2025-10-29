@@ -52,6 +52,7 @@ import BusinessProjects from "@/pages/BusinessProjects";
 import Takeoff from "@/pages/Takeoff";
 import FieldSettings from "@/pages/FieldSettings";
 import BusinessCalendar from "@/pages/BusinessCalendar";
+import PersonalCalendar from "@/pages/PersonalCalendar";
 import UserProfile from "@/pages/UserProfile";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
@@ -80,6 +81,7 @@ function Router() {
       <Route path="/business" component={BusinessOverviewPage} />
       <Route path="/business/projects" component={BusinessProjects} />
       <Route path="/business/calendar" component={BusinessCalendar} />
+      <Route path="/my-calendar" component={PersonalCalendar} />
       <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
       <Route path="/business/timesheets" component={Timesheets} />
       <Route path="/business/minutes" component={Minutes} />

@@ -68,6 +68,7 @@ import { Project, CompanySettings } from "@shared/schema";
 import { useState, useEffect } from "react";
 import CreateProjectDialog from "./CreateProjectDialog";
 import { ProjectIcon } from "./ProjectIcon";
+import { useAuth } from "@/hooks/use-auth";
 
 // Project sections base configuration
 const projectItemsBase = [
@@ -100,7 +101,8 @@ const projectItemsBase = [
 const businessItems = [
   { title: "Business Overview", url: "/business", icon: Home },
   { title: "Projects", url: "/business/projects", icon: FolderOpen },
-  { title: "Calendar", url: "/business/calendar", icon: Calendar },
+  { title: "My Calendar", url: "/my-calendar", icon: Calendar, isPersonalCalendar: true },
+  { title: "Business Calendar", url: "/business/calendar", icon: Calendar },
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
   { title: "Messages", url: "/business/messages", icon: MessageSquare },
@@ -130,6 +132,7 @@ export function AppSidebar() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const { currentProject, setCurrentProject } = useProject();
+  const { user } = useAuth();
   const isBusinessContext = location.startsWith('/business');
   
   // Collapsible states with localStorage persistence
@@ -275,21 +278,28 @@ export function AppSidebar() {
             <CollapsibleContent>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {businessItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton 
-                        asChild
-                        tooltip={item.title}
-                        data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                        data-active={location === item.url}
-                      >
-                        <Link href={item.url}>
-                          <item.icon className="h-4 w-4" />
-                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  {businessItems.map((item) => {
+                    // @ts-ignore - isPersonalCalendar is optional
+                    const isPersonalCalendar = item.isPersonalCalendar;
+                    const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
+                    const displayTitle = isPersonalCalendar && userName ? `${userName}'s Calendar` : item.title;
+                    
+                    return (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton 
+                          asChild
+                          tooltip={displayTitle}
+                          data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          data-active={location === item.url}
+                        >
+                          <Link href={item.url}>
+                            <item.icon className="h-4 w-4" />
+                            <span className="group-data-[collapsible=icon]:hidden">{displayTitle}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </CollapsibleContent>

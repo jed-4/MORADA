@@ -72,8 +72,12 @@ export default function BusinessCalendar() {
 
   // Reschedule task mutation
   const rescheduleTaskMutation = useMutation({
-    mutationFn: async ({ taskId, dueDate }: { taskId: string; dueDate: string }) => {
-      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { dueDate });
+    mutationFn: async ({ taskId, dueDate, startTime }: { taskId: string; dueDate: string; startTime?: string }) => {
+      const payload: any = { dueDate };
+      if (startTime !== undefined) {
+        payload.startTime = startTime;
+      }
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
@@ -86,8 +90,15 @@ export default function BusinessCalendar() {
 
   // Reschedule schedule item mutation
   const rescheduleScheduleItemMutation = useMutation({
-    mutationFn: async ({ itemId, startDate, endDate }: { itemId: string; startDate: string; endDate: string }) => {
-      return await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { startDate, endDate });
+    mutationFn: async ({ itemId, startDate, endDate, startTime, endTime }: { itemId: string; startDate: string; endDate: string; startTime?: string; endTime?: string }) => {
+      const payload: any = { startDate, endDate };
+      if (startTime !== undefined) {
+        payload.startTime = startTime;
+      }
+      if (endTime !== undefined) {
+        payload.endTime = endTime;
+      }
+      return await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/all"] });
@@ -177,12 +188,19 @@ export default function BusinessCalendar() {
     }
   };
 
-  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting") => {
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
     if (eventType === "task") {
-      rescheduleTaskMutation.mutate({ 
+      const updatePayload: any = { 
         taskId: eventId, 
         dueDate: format(newDate, "yyyy-MM-dd")
-      });
+      };
+      
+      // If time is provided, update startTime
+      if (newTime) {
+        updatePayload.startTime = newTime;
+      }
+      
+      rescheduleTaskMutation.mutate(updatePayload);
     } else if (eventType === "schedule") {
       const event = allScheduleItems.find(item => item.id === eventId);
       if (event) {
@@ -193,11 +211,30 @@ export default function BusinessCalendar() {
         const newStartDate = format(newDate, "yyyy-MM-dd");
         const newEndDate = format(new Date(newDate.getTime() + duration), "yyyy-MM-dd");
         
-        rescheduleScheduleItemMutation.mutate({
+        const updatePayload: any = {
           itemId: eventId,
           startDate: newStartDate,
           endDate: newEndDate,
-        });
+        };
+        
+        // If time is provided, update startTime and calculate endTime
+        if (newTime) {
+          updatePayload.startTime = newTime;
+          // Calculate endTime based on duration if original had times
+          if (event.startTime && event.endTime) {
+            const [startHour, startMin] = event.startTime.split(':').map(Number);
+            const [endHour, endMin] = event.endTime.split(':').map(Number);
+            const durationMinutes = (endHour * 60 + endMin) - (startHour * 60 + startMin);
+            
+            const [newHour, newMin] = newTime.split(':').map(Number);
+            const endTotalMinutes = newHour * 60 + newMin + durationMinutes;
+            const endH = Math.floor(endTotalMinutes / 60) % 24;
+            const endM = endTotalMinutes % 60;
+            updatePayload.endTime = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+          }
+        }
+        
+        rescheduleScheduleItemMutation.mutate(updatePayload);
       }
     }
   };
