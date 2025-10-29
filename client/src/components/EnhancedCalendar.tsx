@@ -744,7 +744,7 @@ export function EnhancedCalendar({
             ))}
           </div>
           <div 
-            className={cn("flex overflow-auto hide-scrollbar", view === "day" && "flex-1")}
+            className={cn("flex overflow-auto hide-scrollbar h-full", view === "day" && "flex-1")}
             ref={timeGridScrollRef}
             onScroll={handleTimeGridScroll}
           >
