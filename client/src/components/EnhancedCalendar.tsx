@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth } from "date-fns";
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth, getDay } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
@@ -650,27 +650,32 @@ export function EnhancedCalendar({
             ref={scrollContainerRef}
             onScroll={handleHorizontalScroll('header')}
           >
-            {dateRange.map((date, idx) => (
-              <div
-                key={idx}
-                className={cn(
-                  "p-2 text-center border-r flex-shrink-0",
-                  isToday(date) ? "bg-primary/5" : "bg-background",
-                  view === "day" && "flex-1"
-                )}
-                style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
-              >
-                <div className="text-xs text-muted-foreground">
-                  {format(date, "EEE")}
+            {dateRange.map((date, idx) => {
+              const dayOfWeek = getDay(date);
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+              
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    "p-2 text-center border-r flex-shrink-0",
+                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    view === "day" && "flex-1"
+                  )}
+                  style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
+                >
+                  <div className="text-xs text-muted-foreground">
+                    {format(date, "EEE")}
+                  </div>
+                  <div className={cn(
+                    "text-lg font-semibold",
+                    isToday(date) && "text-primary"
+                  )}>
+                    {format(date, "d")}
+                  </div>
                 </div>
-                <div className={cn(
-                  "text-lg font-semibold",
-                  isToday(date) && "text-primary"
-                )}>
-                  {format(date, "d")}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -690,13 +695,15 @@ export function EnhancedCalendar({
               const MAX_ALL_DAY_EVENTS = 2;
               const visibleEvents = allDayEvents.slice(0, MAX_ALL_DAY_EVENTS);
               const hiddenCount = Math.max(0, allDayEvents.length - MAX_ALL_DAY_EVENTS);
+              const dayOfWeek = getDay(date);
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
               
               return (
                 <div 
                   key={dayIdx} 
                   className={cn(
                     "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : "bg-background",
+                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -744,24 +751,26 @@ export function EnhancedCalendar({
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
+              const dayOfWeek = getDay(date);
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
               
               return (
                 <div
                   key={dayIdx}
                   className={cn(
                     "border-r relative flex-shrink-0",
-                    isToday(date) && "bg-primary/5",
+                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
-                      <div key={hour} style={{ borderBottom: '1px solid hsl(var(--border))' }}>
+                      <div key={hour} className="h-10" style={{ borderBottom: '1px solid hsl(var(--border))' }}>
                         <DroppableTimeSlot
                           date={date}
                           hour={hour}
-                          className="h-10 hover:bg-muted/20 cursor-pointer"
+                          className="h-full hover:bg-muted/20 cursor-pointer"
                           onClick={() => onDateClick?.(date)}
                         />
                       </div>
