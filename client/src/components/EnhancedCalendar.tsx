@@ -765,7 +765,7 @@ export function EnhancedCalendar({
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
                   
-                  <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
+                  <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`} className="h-full">
                     {hours.map((hour) => (
                       <DroppableTimeSlot
                         key={hour}
