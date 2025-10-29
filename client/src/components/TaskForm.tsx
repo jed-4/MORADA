@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -101,21 +101,26 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   // Extract task status options with fallback handling
   const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = taskStatusCategory?.options || [];
-  const availableStatusKeys = statusOptions.map(opt => opt.key);
+  const availableStatusKeys = useMemo(() => statusOptions.map(opt => opt.key), [statusOptions]);
   
   // Extract task label options
   const taskLabelCategory = fieldCategories.find(cat => cat.key === "task.labels");
   const labelOptions = taskLabelCategory?.options || [];
   
   // Ensure we always have valid status options (stable during loading)
-  const defaultStatusKeys = ["todo", "in-progress", "done"];
-  const validStatusKeys = availableStatusKeys.length > 0 ? availableStatusKeys : defaultStatusKeys;
+  const validStatusKeys = useMemo(() => {
+    const defaultStatusKeys = ["todo", "in-progress", "done"];
+    return availableStatusKeys.length > 0 ? availableStatusKeys : defaultStatusKeys;
+  }, [availableStatusKeys]);
   
   // If editing an existing task, ensure its current status is included in the options
-  const taskCurrentStatus = task?.status;
-  const finalStatusKeys = taskCurrentStatus && !validStatusKeys.includes(taskCurrentStatus) 
-    ? [...validStatusKeys, taskCurrentStatus] 
-    : validStatusKeys;
+  // Memoize to prevent recreating the array on every render
+  const finalStatusKeys = useMemo(() => {
+    const taskCurrentStatus = task?.status;
+    return taskCurrentStatus && !validStatusKeys.includes(taskCurrentStatus) 
+      ? [...validStatusKeys, taskCurrentStatus] 
+      : validStatusKeys;
+  }, [task?.status, validStatusKeys]);
     
   const taskFormSchema = createTaskFormSchema(finalStatusKeys);
   
