@@ -73,7 +73,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group flex items-center gap-1.5 px-2 py-1 rounded-md text-xs mb-1 hover-elevate active-elevate-2",
+        "group flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] mb-1 hover-elevate active-elevate-2",
         !isGoogleCalendarEvent && "cursor-move touch-none",
         isGoogleCalendarEvent && "cursor-pointer",
         isCompleted && "opacity-60",
@@ -90,13 +90,13 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           onClick={(e) => onToggleComplete?.(e, event)}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors hover-elevate",
+            "flex-shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors hover-elevate",
             isCompleted 
               ? "bg-primary border-primary text-primary-foreground" 
               : "border-muted-foreground/40 hover:border-primary"
           )}
         >
-          {isCompleted && <Check className="w-3 h-3" />}
+          {isCompleted && <Check className="w-2.5 h-2.5" />}
         </button>
       )}
       <div className="flex-1 min-w-0 overflow-hidden flex items-center gap-1">
@@ -104,17 +104,12 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           "font-medium truncate flex-1",
           isCompleted && "line-through"
         )}>
-          {showTime && (
-            <span className="text-muted-foreground mr-1">
-              {event.startTime}
-            </span>
-          )}
           {event.title}
         </div>
         {isGoogleCalendarEvent && (
           <Badge 
             variant="outline" 
-            className="flex-shrink-0 text-[10px] px-1 py-0 h-4"
+            className="flex-shrink-0 text-[9px] px-1 py-0 h-3.5"
             style={{ borderColor: '#4285f4', color: '#4285f4' }}
             data-testid={`google-badge-${event.id}`}
           >
@@ -387,7 +382,7 @@ export function EnhancedCalendar({
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
         <div className="grid grid-cols-8 border-b sticky top-0 bg-background z-10">
-          <div className="p-2 border-r w-10"></div>
+          <div className="p-2 border-r w-16"></div>
           {dateRange.map((date, idx) => (
             <div
               key={idx}
@@ -410,8 +405,8 @@ export function EnhancedCalendar({
         </div>
 
         {/* All-Day Events Section */}
-        <div className="grid grid-cols-8 border-b bg-muted/20 sticky top-[73px] z-10">
-          <div className="p-2 border-r w-10 text-xs text-muted-foreground flex items-center justify-center">
+        <div className="grid grid-cols-8 border-b bg-background sticky top-[73px] z-10">
+          <div className="p-2 border-r w-16 text-[10px] text-muted-foreground flex items-center justify-center">
             All Day
           </div>
           {dateRange.map((date, dayIdx) => {
@@ -422,7 +417,7 @@ export function EnhancedCalendar({
               <div 
                 key={dayIdx} 
                 className={cn(
-                  "border-r last:border-r-0 p-1 min-h-[40px]",
+                  "border-r last:border-r-0 p-1 min-h-[36px]",
                   isToday(date) && "bg-primary/5"
                 )}
                 data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
@@ -443,9 +438,9 @@ export function EnhancedCalendar({
         </div>
         
         <div className="grid grid-cols-8">
-          <div className="border-r w-10">
+          <div className="border-r w-16">
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-xs text-muted-foreground border-b">
+              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -586,18 +581,13 @@ export function EnhancedCalendar({
       <DragOverlay>
         {activeEvent ? (
           <div
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-move opacity-90 shadow-lg"
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] cursor-move opacity-90 shadow-lg"
             style={{
               backgroundColor: `${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}25`,
               borderLeft: `3px solid ${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}`,
             }}
           >
             <div className="font-medium">
-              {activeEvent.startTime && (
-                <span className="text-muted-foreground mr-1">
-                  {activeEvent.startTime}
-                </span>
-              )}
               {activeEvent.title}
             </div>
           </div>
