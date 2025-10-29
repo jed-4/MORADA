@@ -473,7 +473,7 @@ export function EnhancedCalendar({
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
         <div className="grid grid-cols-8 border-b sticky top-0 bg-background z-10">
-          <div className="p-2 border-r w-16"></div>
+          <div className="p-2 border-r w-12"></div>
           {dateRange.map((date, idx) => (
             <div
               key={idx}
@@ -497,7 +497,7 @@ export function EnhancedCalendar({
 
         {/* All-Day Events Section */}
         <div className="grid grid-cols-8 border-b bg-background sticky top-[73px] z-10">
-          <div className="p-2 border-r w-16 text-[10px] text-muted-foreground flex items-center justify-center">
+          <div className="p-1 border-r w-12 text-[10px] text-muted-foreground flex items-center justify-end pr-1">
             All Day
           </div>
           {dateRange.map((date, dayIdx) => {
@@ -529,9 +529,9 @@ export function EnhancedCalendar({
         </div>
         
         <div className="grid grid-cols-8">
-          <div className="border-r w-16">
+          <div className="border-r w-12">
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
+              <div key={hour} className="h-10 px-1 py-0.5 text-[10px] text-muted-foreground border-b text-right flex items-start justify-end">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
