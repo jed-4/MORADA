@@ -758,14 +758,19 @@ export function EnhancedCalendar({
                 <div
                   key={dayIdx}
                   className={cn(
-                    "border-r relative flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
+                    "relative flex-shrink-0",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
                   
-                  <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
+                  <div 
+                    data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}
+                    className={cn(
+                      "border-r",
+                      isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50"
+                    )}
+                  >
                     {hours.map((hour) => (
                       <DroppableTimeSlot
                         key={hour}
