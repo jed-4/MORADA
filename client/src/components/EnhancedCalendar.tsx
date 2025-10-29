@@ -258,8 +258,9 @@ export function EnhancedCalendar({
       const weekEnd = endOfWeek(end, { weekStartsOn: 1 });
       return eachDayOfInterval({ start: weekStart, end: weekEnd });
     } else if (view === "week") {
-      const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-      const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+      // Show 4 weeks for horizontal scrolling
+      const start = startOfWeek(subWeeks(currentDate, 1), { weekStartsOn: 1 });
+      const end = endOfWeek(addWeeks(currentDate, 2), { weekStartsOn: 1 });
       return eachDayOfInterval({ start, end });
     } else {
       return [currentDate];
@@ -281,14 +282,26 @@ export function EnhancedCalendar({
     setCurrentDate(new Date());
   }, []);
 
-  // Auto-scroll to 5am when calendar loads in week/day view
+  // Auto-scroll to 5am and current week when calendar loads in week/day view
   useEffect(() => {
     if ((view === "week" || view === "day") && scrollContainerRef.current) {
       const HOUR_HEIGHT = 40;
       const scrollTo5am = 5 * HOUR_HEIGHT;
       scrollContainerRef.current.scrollTop = scrollTo5am;
+      
+      // For week view, scroll horizontally to show selected week
+      if (view === "week") {
+        const DAY_WIDTH = 140;
+        // Find the index of selected date (currentDate) in dateRange
+        const selectedIndex = dateRange.findIndex(date => isSameDay(date, currentDate));
+        if (selectedIndex >= 0) {
+          // Scroll to show the selected date, with some context before it
+          const scrollLeft = Math.max(0, (selectedIndex - 3) * DAY_WIDTH);
+          scrollContainerRef.current.scrollLeft = scrollLeft;
+        }
+      }
     }
-  }, [view]);
+  }, [view, dateRange]);
 
   // Get events for a specific date
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
@@ -469,19 +482,21 @@ export function EnhancedCalendar({
   const renderWeekView = () => {
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const HOUR_HEIGHT = 40; // Reduced from 64px to 40px
+    const DAY_WIDTH = 140; // Fixed width for each day column
     
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
         <div className="flex border-b sticky top-0 bg-background z-10">
-          <div className="p-2 border-r w-16 flex-shrink-0"></div>
-          <div className="flex flex-1">
+          <div className="p-2 border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20"></div>
+          <div className="flex">
             {dateRange.map((date, idx) => (
               <div
                 key={idx}
                 className={cn(
-                  "flex-1 p-2 text-center border-r last:border-r-0",
+                  "p-2 text-center border-r",
                   isToday(date) && "bg-primary/5"
                 )}
+                style={{ minWidth: `${DAY_WIDTH}px` }}
               >
                 <div className="text-xs text-muted-foreground">
                   {format(date, "EEE")}
@@ -499,10 +514,10 @@ export function EnhancedCalendar({
 
         {/* All-Day Events Section */}
         <div className="flex border-b bg-background sticky top-[61px] z-10">
-          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center">
+          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center sticky left-0 bg-background z-20">
             All Day
           </div>
-          <div className="flex flex-1">
+          <div className="flex">
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
@@ -511,9 +526,10 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "flex-1 border-r last:border-r-0 p-1 min-h-[36px]",
+                    "border-r p-1 min-h-[36px]",
                     isToday(date) && "bg-primary/5"
                   )}
+                  style={{ minWidth: `${DAY_WIDTH}px` }}
                   data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
                 >
                   {allDayEvents.map((event, idx) => (
@@ -533,14 +549,14 @@ export function EnhancedCalendar({
         </div>
         
         <div className="flex">
-          <div className="border-r w-16 flex-shrink-0">
+          <div className="border-r w-16 flex-shrink-0 sticky left-0 bg-background z-10">
             {hours.map((hour) => (
               <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
           </div>
-          <div className="flex flex-1">
+          <div className="flex">
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
@@ -548,7 +564,8 @@ export function EnhancedCalendar({
               return (
                 <div
                   key={dayIdx}
-                  className="flex-1 border-r last:border-r-0 relative"
+                  className="border-r relative"
+                  style={{ minWidth: `${DAY_WIDTH}px` }}
                 >
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
