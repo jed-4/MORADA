@@ -86,6 +86,17 @@ export default function PersonalCalendar() {
     },
   });
 
+  // Resize task mutation
+  const resizeTaskMutation = useMutation({
+    mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task time updated" });
+    },
+  });
+
   // Combine tasks and Google Calendar events
   const events = useMemo(() => {
     const taskEvents: CalendarEvent[] = userTasks
@@ -152,6 +163,22 @@ export default function PersonalCalendar() {
     }
   };
 
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => {
+    // Don't allow resizing Google Calendar events
+    if (eventType === "google-calendar") {
+      toast({
+        title: "Cannot resize Google Calendar event",
+        description: "Please update this event in Google Calendar directly.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (eventType === "task") {
+      resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
+    }
+  };
+
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
     setDetailDialogOpen(true);
@@ -214,6 +241,7 @@ export default function PersonalCalendar() {
             onEventClick={handleEventClick}
             onEventComplete={handleEventComplete}
             onEventReschedule={handleEventReschedule}
+            onEventResize={handleEventResize}
             showCompletionCheckbox={true}
             initialView="week"
           />

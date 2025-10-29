@@ -109,6 +109,34 @@ export default function BusinessCalendar() {
     },
   });
 
+  // Resize task mutation
+  const resizeTaskMutation = useMutation({
+    mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task time updated",
+        description: "Task time has been updated successfully.",
+      });
+    },
+  });
+
+  // Resize schedule item mutation
+  const resizeScheduleItemMutation = useMutation({
+    mutationFn: async ({ itemId, startTime, endTime }: { itemId: string; startTime: string; endTime: string }) => {
+      return await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { startTime, endTime });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-items/all"] });
+      toast({
+        title: "Event time updated",
+        description: "Schedule item time has been updated successfully.",
+      });
+    },
+  });
+
   // Convert tasks and schedule items to calendar events with filtering
   const events: CalendarEvent[] = useMemo(() => {
     // Filter and convert tasks
@@ -239,6 +267,14 @@ export default function BusinessCalendar() {
     }
   };
 
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
+    if (eventType === "task") {
+      resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
+    } else if (eventType === "schedule") {
+      resizeScheduleItemMutation.mutate({ itemId: eventId, startTime, endTime });
+    }
+  };
+
   const handleEventClick = (event: CalendarEvent) => {
     console.log("Event clicked:", event);
   };
@@ -303,6 +339,7 @@ export default function BusinessCalendar() {
               onEventClick={handleEventClick}
               onEventComplete={handleEventComplete}
               onEventReschedule={handleEventReschedule}
+              onEventResize={handleEventResize}
               showCompletionCheckbox={true}
               initialView="week"
             />

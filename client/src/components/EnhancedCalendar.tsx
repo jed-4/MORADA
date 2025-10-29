@@ -39,6 +39,7 @@ interface EnhancedCalendarProps {
   onEventClick?: (event: CalendarEvent) => void;
   onEventComplete?: (eventId: string, completed: boolean) => void;
   onEventReschedule?: (eventId: string, newDate: Date, eventType: CalendarEvent["type"], newTime?: string) => void;
+  onEventResize?: (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => void;
   onDateClick?: (date: Date) => void;
   showCompletionCheckbox?: boolean;
   initialView?: "month" | "week" | "day";
@@ -50,14 +51,28 @@ interface DraggableEventProps {
   onEventClick?: (event: CalendarEvent) => void;
   onToggleComplete?: (e: React.MouseEvent, event: CalendarEvent) => void;
   showCompletionCheckbox: boolean;
+  showResizeHandles?: boolean;
 }
 
-function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox }: DraggableEventProps) {
+function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
-    data: { event },
+    data: { event, type: 'move' },
     disabled: isGoogleCalendarEvent, // Disable dragging for Google Calendar events
+  });
+
+  // Separate draggable hooks for resize handles
+  const { attributes: topAttrs, listeners: topListeners, setNodeRef: setTopRef } = useDraggable({
+    id: `${event.id}:resize-start`,
+    data: { event, type: 'resize-start' },
+    disabled: isGoogleCalendarEvent || !showResizeHandles,
+  });
+
+  const { attributes: bottomAttrs, listeners: bottomListeners, setNodeRef: setBottomRef } = useDraggable({
+    id: `${event.id}:resize-end`,
+    data: { event, type: 'resize-end' },
+    disabled: isGoogleCalendarEvent || !showResizeHandles,
   });
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
@@ -73,8 +88,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] mb-1 hover-elevate active-elevate-2",
-        !isGoogleCalendarEvent && "cursor-move touch-none",
+        "group relative flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] mb-1 hover-elevate active-elevate-2",
+        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move touch-none",
         isGoogleCalendarEvent && "cursor-pointer",
         isCompleted && "opacity-60",
         isDragging && "opacity-50"
@@ -84,6 +99,20 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         borderLeft: `3px solid ${eventColor}`,
       }}
     >
+      {/* Top resize handle */}
+      {showResizeHandles && !isGoogleCalendarEvent && (
+        <div
+          ref={setTopRef}
+          {...topAttrs}
+          {...topListeners}
+          className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          onPointerDown={(e) => e.stopPropagation()}
+          data-testid={`resize-handle-top-${event.id}`}
+        >
+          <div className="h-0.5 bg-primary mx-auto w-8 rounded-full" />
+        </div>
+      )}
+
       {showCompletionCheckbox && event.type === "task" && (
         <button
           data-testid={`checkbox-complete-${event.id}`}
@@ -117,6 +146,20 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           </Badge>
         )}
       </div>
+
+      {/* Bottom resize handle */}
+      {showResizeHandles && !isGoogleCalendarEvent && (
+        <div
+          ref={setBottomRef}
+          {...bottomAttrs}
+          {...bottomListeners}
+          className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          onPointerDown={(e) => e.stopPropagation()}
+          data-testid={`resize-handle-bottom-${event.id}`}
+        >
+          <div className="h-0.5 bg-primary mx-auto w-8 rounded-full" />
+        </div>
+      )}
     </div>
   );
 }
@@ -182,6 +225,7 @@ export function EnhancedCalendar({
   onEventClick, 
   onEventComplete,
   onEventReschedule,
+  onEventResize,
   onDateClick,
   showCompletionCheckbox = true,
   initialView = "month"
@@ -288,19 +332,66 @@ export function EnhancedCalendar({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
-    if (over && active.id !== over.id && onEventReschedule) {
-      const draggedEvent = active.data.current?.event as CalendarEvent;
+    setActiveEvent(null);
+    
+    if (!over) {
+      return;
+    }
+
+    const dragType = active.data.current?.type;
+    const draggedEvent = active.data.current?.event as CalendarEvent;
+    
+    if (!draggedEvent) {
+      return;
+    }
+    
+    // Handle resize operations
+    if ((dragType === 'resize-start' || dragType === 'resize-end') && onEventResize) {
+      const targetHour = over.data.current?.hour as number | undefined;
+      
+      if (targetHour !== undefined) {
+        // Round to nearest 15 minutes (currently just using hour boundaries)
+        const roundedHour = targetHour;
+        const roundedMinutes = 0;
+        const newTime = `${roundedHour.toString().padStart(2, '0')}:${roundedMinutes.toString().padStart(2, '0')}`;
+        
+        // Get current start and end times
+        const currentStart = draggedEvent.startTime || '09:00';
+        const currentEnd = draggedEvent.endTime || '10:00';
+        
+        // Ensure start is before end
+        if (dragType === 'resize-start') {
+          // Resizing from top - update start time
+          // Only update if new time is before current end
+          const [newH, newM] = newTime.split(':').map(Number);
+          const [endH, endM] = currentEnd.split(':').map(Number);
+          if (newH * 60 + newM < endH * 60 + endM) {
+            onEventResize(draggedEvent.id, newTime, currentEnd, draggedEvent.type);
+          }
+        } else {
+          // Resizing from bottom - update end time
+          // Only update if new time is after current start
+          const [startH, startM] = currentStart.split(':').map(Number);
+          const [newH, newM] = newTime.split(':').map(Number);
+          if (newH * 60 + newM > startH * 60 + startM) {
+            onEventResize(draggedEvent.id, currentStart, newTime, draggedEvent.type);
+          }
+        }
+      }
+      return; // Exit early for resize operations
+    }
+    
+    // Handle move operations (default when not resizing)
+    if (active.id !== over.id && onEventReschedule) {
       const targetDate = over.data.current?.date as Date;
       const targetHour = over.data.current?.hour as number | undefined;
       
-      if (draggedEvent && targetDate) {
+      if (targetDate) {
         // If dropped on a specific time slot, format the time
         const newTime = targetHour !== undefined ? `${targetHour.toString().padStart(2, '0')}:00` : undefined;
         onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
       }
     }
-    
-    setActiveEvent(null);
   };
 
   // Render month view
@@ -485,6 +576,7 @@ export function EnhancedCalendar({
                               onEventClick={onEventClick}
                               onToggleComplete={handleToggleComplete}
                               showCompletionCheckbox={showCompletionCheckbox}
+                              showResizeHandles={true}
                             />
                           </div>
                         );
