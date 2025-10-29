@@ -658,12 +658,14 @@ export function EnhancedCalendar({
                 <div
                   key={idx}
                   className={cn(
-                    "p-2 text-center border-r flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    "p-2 text-center border-r flex-shrink-0 relative",
+                    isToday(date) ? "bg-primary/5" : "bg-background",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
+                  {/* Weekend background layer - sits behind everything */}
+                  {isWeekend && <div className="absolute inset-0 bg-muted/30 -z-10" />}
                   <div className="text-xs text-muted-foreground">
                     {format(date, "EEE")}
                   </div>
@@ -702,13 +704,15 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0 relative",
+                    isToday(date) ? "bg-primary/5" : "bg-background",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                   data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
                 >
+                  {/* Weekend background layer - sits behind everything */}
+                  {isWeekend && <div className="absolute inset-0 bg-muted/30 -z-10" />}
                   {visibleEvents.map((event, idx) => (
                     <DraggableEvent
                       key={`${event.id}-${idx}`}
@@ -759,11 +763,14 @@ export function EnhancedCalendar({
                   key={dayIdx}
                   className={cn(
                     "border-r relative flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekend ? "bg-muted/30" : "bg-background",
+                    isToday(date) ? "bg-primary/5" : "bg-background",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
+                  {/* Weekend background layer - sits behind everything */}
+                  {isWeekend && <div className="absolute inset-0 bg-muted/30 -z-10" />}
+                  
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
                       <div key={hour} className="h-10" style={{ borderBottom: '1px solid hsl(var(--border))' }}>
