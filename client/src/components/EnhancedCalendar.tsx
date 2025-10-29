@@ -234,6 +234,8 @@ export function EnhancedCalendar({
   const [view, setView] = useState<"month" | "week" | "day">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const allDayScrollRef = useRef<HTMLDivElement>(null);
+  const timeGridScrollRef = useRef<HTMLDivElement>(null);
 
   // Setup drag sensors
   const mouseSensor = useSensor(MouseSensor, {
@@ -297,26 +299,85 @@ export function EnhancedCalendar({
     setCurrentDate(new Date());
   }, []);
 
+  // Refs for vertical scroll synchronization
+  const hourLabelsRef = useRef<HTMLDivElement>(null);
+
+  // Synchronize horizontal scroll across date header, all-day, and time grid
+  const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid') => {
+    return (e: React.UIEvent<HTMLDivElement>) => {
+      const scrollLeft = e.currentTarget.scrollLeft;
+      
+      if (source !== 'header' && scrollContainerRef.current) {
+        scrollContainerRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== 'allDay' && allDayScrollRef.current) {
+        allDayScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== 'timeGrid' && timeGridScrollRef.current) {
+        timeGridScrollRef.current.scrollLeft = scrollLeft;
+      }
+    };
+  }, []);
+
+  // Synchronize vertical scroll between time grid and hour labels
+  const handleTimeGridScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollLeft = e.currentTarget.scrollLeft;
+    const scrollTop = e.currentTarget.scrollTop;
+    
+    // Sync horizontal
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft = scrollLeft;
+    }
+    if (allDayScrollRef.current) {
+      allDayScrollRef.current.scrollLeft = scrollLeft;
+    }
+    
+    // Sync vertical with hour labels
+    if (hourLabelsRef.current) {
+      hourLabelsRef.current.scrollTop = scrollTop;
+    }
+  }, []);
+
+  // Synchronize hour labels scroll back to time grid
+  const handleHourLabelsScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    
+    if (timeGridScrollRef.current) {
+      timeGridScrollRef.current.scrollTop = scrollTop;
+    }
+  }, []);
+
   // Auto-scroll to 5am and current week when calendar loads in week/day view
   useEffect(() => {
-    if ((view === "week" || view === "day") && scrollContainerRef.current) {
+    if (view === "week" || view === "day") {
+      // Vertical scroll to 5am for time grid and hour labels
       const HOUR_HEIGHT = 40;
       const scrollTo5am = 5 * HOUR_HEIGHT;
-      scrollContainerRef.current.scrollTop = scrollTo5am;
+      
+      if (timeGridScrollRef.current) {
+        timeGridScrollRef.current.scrollTop = scrollTo5am;
+      }
+      if (hourLabelsRef.current) {
+        hourLabelsRef.current.scrollTop = scrollTo5am;
+      }
       
       // For week view, scroll horizontally to show selected week
-      if (view === "week") {
+      if (view === "week" && scrollContainerRef.current) {
         const DAY_WIDTH = 140;
-        // Find the index of selected date (currentDate) in dateRange
         const selectedIndex = dateRange.findIndex(date => isSameDay(date, currentDate));
         if (selectedIndex >= 0) {
-          // Scroll to show the selected date, with some context before it
           const scrollLeft = Math.max(0, (selectedIndex - 3) * DAY_WIDTH);
           scrollContainerRef.current.scrollLeft = scrollLeft;
+          if (allDayScrollRef.current) {
+            allDayScrollRef.current.scrollLeft = scrollLeft;
+          }
+          if (timeGridScrollRef.current) {
+            timeGridScrollRef.current.scrollLeft = scrollLeft;
+          }
         }
       }
     }
-  }, [view, dateRange]);
+  }, [view, dateRange, currentDate]);
 
   // Get events for a specific date
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
@@ -538,16 +599,20 @@ export function EnhancedCalendar({
     const DAY_WIDTH = view === "day" ? undefined : 140; // Full width for day view, fixed width for week view
     
     return (
-      <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
-        {/* Date header row */}
-        <div className="flex border-b sticky top-0 z-10">
-          <div className="p-2 border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20 border-b"></div>
-          <div className={cn("flex", view === "day" && "flex-1")}>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Date header row - separate time column from scrollable days */}
+        <div className="flex border-b">
+          <div className="p-2 border-r w-16 flex-shrink-0 bg-background"></div>
+          <div 
+            className={cn("flex overflow-x-auto", view === "day" && "flex-1")} 
+            ref={scrollContainerRef}
+            onScroll={handleHorizontalScroll('header')}
+          >
             {dateRange.map((date, idx) => (
               <div
                 key={idx}
                 className={cn(
-                  "p-2 text-center border-r",
+                  "p-2 text-center border-r flex-shrink-0",
                   isToday(date) ? "bg-primary/5" : "bg-background",
                   view === "day" && "flex-1"
                 )}
@@ -567,12 +632,16 @@ export function EnhancedCalendar({
           </div>
         </div>
 
-        {/* All-Day Events Section */}
-        <div className="flex border-b sticky top-[61px] z-10">
-          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center sticky left-0 bg-background z-20 border-b">
+        {/* All-Day Events Section - separate time column from scrollable days */}
+        <div className="flex border-b">
+          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center bg-background">
             All Day
           </div>
-          <div className={cn("flex", view === "day" && "flex-1")}>
+          <div 
+            className={cn("flex overflow-x-auto", view === "day" && "flex-1")}
+            ref={allDayScrollRef}
+            onScroll={handleHorizontalScroll('allDay')}
+          >
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
@@ -584,7 +653,7 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden",
+                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
                     isToday(date) ? "bg-primary/5" : "bg-background",
                     view === "day" && "flex-1"
                   )}
@@ -612,15 +681,24 @@ export function EnhancedCalendar({
           </div>
         </div>
         
-        <div className="flex">
-          <div className="border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20">
+        {/* Time grid - separate time column from scrollable days */}
+        <div className="flex flex-1 overflow-hidden">
+          <div 
+            className="border-r w-16 flex-shrink-0 bg-background overflow-y-auto" 
+            ref={hourLabelsRef}
+            onScroll={handleHourLabelsScroll}
+          >
             {hours.map((hour) => (
               <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
           </div>
-          <div className={cn("flex", view === "day" && "flex-1")}>
+          <div 
+            className={cn("flex overflow-auto", view === "day" && "flex-1")}
+            ref={timeGridScrollRef}
+            onScroll={handleTimeGridScroll}
+          >
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
@@ -629,7 +707,7 @@ export function EnhancedCalendar({
                 <div
                   key={dayIdx}
                   className={cn(
-                    "border-r relative",
+                    "border-r relative flex-shrink-0",
                     isToday(date) && "bg-primary/5",
                     view === "day" && "flex-1"
                   )}
