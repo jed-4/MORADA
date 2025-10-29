@@ -236,6 +236,12 @@ export function EnhancedCalendar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
+  
+  // For infinite scrolling - track expanded date range
+  const [weekRangeStart, setWeekRangeStart] = useState(() => startOfWeek(subWeeks(new Date(), 4), { weekStartsOn: 1 }));
+  const [weekRangeEnd, setWeekRangeEnd] = useState(() => endOfWeek(addWeeks(new Date(), 4), { weekStartsOn: 1 }));
+  const [monthRangeStart, setMonthRangeStart] = useState(() => startOfMonth(subMonths(new Date(), 2)));
+  const [monthRangeEnd, setMonthRangeEnd] = useState(() => endOfMonth(addMonths(new Date(), 2)));
 
   // Setup drag sensors
   const mouseSensor = useSensor(MouseSensor, {
@@ -254,35 +260,17 @@ export function EnhancedCalendar({
   // Calculate visible date range based on view
   const dateRange = useMemo(() => {
     if (view === "month") {
-      // Show 3 months for vertical scrolling (1 before, current, 1 after)
-      const prevMonth = subMonths(currentDate, 1);
-      const nextMonth = addMonths(currentDate, 1);
-      
-      const prevStart = startOfMonth(prevMonth);
-      const prevEnd = endOfMonth(prevMonth);
-      const prevWeekStart = startOfWeek(prevStart, { weekStartsOn: 1 });
-      const prevWeekEnd = endOfWeek(prevEnd, { weekStartsOn: 1 });
-      
-      const currStart = startOfMonth(currentDate);
-      const currEnd = endOfMonth(currentDate);
-      const currWeekStart = startOfWeek(currStart, { weekStartsOn: 1 });
-      const currWeekEnd = endOfWeek(currEnd, { weekStartsOn: 1 });
-      
-      const nextStart = startOfMonth(nextMonth);
-      const nextEnd = endOfMonth(nextMonth);
-      const nextWeekStart = startOfWeek(nextStart, { weekStartsOn: 1 });
-      const nextWeekEnd = endOfWeek(nextEnd, { weekStartsOn: 1 });
-      
-      return eachDayOfInterval({ start: prevWeekStart, end: nextWeekEnd });
+      // Infinite scrolling - use expanded range with week alignment
+      const weekStart = startOfWeek(monthRangeStart, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(monthRangeEnd, { weekStartsOn: 1 });
+      return eachDayOfInterval({ start: weekStart, end: weekEnd });
     } else if (view === "week") {
-      // Show 4 weeks for horizontal scrolling
-      const start = startOfWeek(subWeeks(currentDate, 1), { weekStartsOn: 1 });
-      const end = endOfWeek(addWeeks(currentDate, 2), { weekStartsOn: 1 });
-      return eachDayOfInterval({ start, end });
+      // Infinite scrolling - use expanded range
+      return eachDayOfInterval({ start: weekRangeStart, end: weekRangeEnd });
     } else {
       return [currentDate];
     }
-  }, [currentDate, view]);
+  }, [currentDate, view, weekRangeStart, weekRangeEnd, monthRangeStart, monthRangeEnd]);
 
   // Navigate calendar
   const navigate = useCallback((direction: "prev" | "next") => {
@@ -302,11 +290,32 @@ export function EnhancedCalendar({
   // Refs for vertical scroll synchronization
   const hourLabelsRef = useRef<HTMLDivElement>(null);
 
+  // Expand date range when scrolling near edges for infinite scroll
+  const expandWeekRange = useCallback((direction: 'start' | 'end') => {
+    if (direction === 'start') {
+      setWeekRangeStart(prev => startOfWeek(subWeeks(prev, 2), { weekStartsOn: 1 }));
+    } else {
+      setWeekRangeEnd(prev => endOfWeek(addWeeks(prev, 2), { weekStartsOn: 1 }));
+    }
+  }, []);
+
+  const expandMonthRange = useCallback((direction: 'start' | 'end') => {
+    if (direction === 'start') {
+      setMonthRangeStart(prev => startOfMonth(subMonths(prev, 1)));
+    } else {
+      setMonthRangeEnd(prev => endOfMonth(addMonths(prev, 1)));
+    }
+  }, []);
+
   // Synchronize horizontal scroll across date header, all-day, and time grid
   const handleHorizontalScroll = useCallback((source: 'header' | 'allDay' | 'timeGrid') => {
     return (e: React.UIEvent<HTMLDivElement>) => {
-      const scrollLeft = e.currentTarget.scrollLeft;
+      const element = e.currentTarget;
+      const scrollLeft = element.scrollLeft;
+      const scrollWidth = element.scrollWidth;
+      const clientWidth = element.clientWidth;
       
+      // Sync scroll position
       if (source !== 'header' && scrollContainerRef.current) {
         scrollContainerRef.current.scrollLeft = scrollLeft;
       }
@@ -316,8 +325,23 @@ export function EnhancedCalendar({
       if (source !== 'timeGrid' && timeGridScrollRef.current) {
         timeGridScrollRef.current.scrollLeft = scrollLeft;
       }
+
+      // Check for infinite scroll expansion (week view only)
+      if (view === 'week') {
+        const EDGE_THRESHOLD = 200; // pixels from edge
+        
+        // Near left edge - expand to earlier dates
+        if (scrollLeft < EDGE_THRESHOLD) {
+          expandWeekRange('start');
+        }
+        
+        // Near right edge - expand to later dates
+        if (scrollLeft + clientWidth > scrollWidth - EDGE_THRESHOLD) {
+          expandWeekRange('end');
+        }
+      }
     };
-  }, []);
+  }, [view, expandWeekRange]);
 
   // Synchronize vertical scroll between time grid and hour labels
   const handleTimeGridScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -517,8 +541,26 @@ export function EnhancedCalendar({
       monthGroups.push({ month: currentMonthDate, weeks: currentMonthWeeks });
     }
 
+    const handleMonthScroll = (e: React.UIEvent<HTMLDivElement>) => {
+      const element = e.currentTarget;
+      const scrollTop = element.scrollTop;
+      const scrollHeight = element.scrollHeight;
+      const clientHeight = element.clientHeight;
+      const EDGE_THRESHOLD = 300; // pixels from edge
+      
+      // Near top edge - expand to earlier months
+      if (scrollTop < EDGE_THRESHOLD) {
+        expandMonthRange('start');
+      }
+      
+      // Near bottom edge - expand to later months
+      if (scrollTop + clientHeight > scrollHeight - EDGE_THRESHOLD) {
+        expandMonthRange('end');
+      }
+    };
+
     return (
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto hide-scrollbar" onScroll={handleMonthScroll}>
         <div className="grid grid-cols-7 border-b sticky top-0 bg-background z-10">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
             <div
@@ -604,7 +646,7 @@ export function EnhancedCalendar({
         <div className="flex border-b">
           <div className="p-2 border-r w-16 flex-shrink-0 bg-background"></div>
           <div 
-            className={cn("flex overflow-x-auto", view === "day" && "flex-1")} 
+            className={cn("flex overflow-x-auto hide-scrollbar", view === "day" && "flex-1")} 
             ref={scrollContainerRef}
             onScroll={handleHorizontalScroll('header')}
           >
@@ -638,7 +680,7 @@ export function EnhancedCalendar({
             All Day
           </div>
           <div 
-            className={cn("flex overflow-x-auto", view === "day" && "flex-1")}
+            className={cn("flex overflow-x-auto hide-scrollbar", view === "day" && "flex-1")}
             ref={allDayScrollRef}
             onScroll={handleHorizontalScroll('allDay')}
           >
@@ -684,18 +726,18 @@ export function EnhancedCalendar({
         {/* Time grid - separate time column from scrollable days */}
         <div className="flex flex-1 overflow-hidden">
           <div 
-            className="border-r w-16 flex-shrink-0 bg-background overflow-y-auto" 
+            className="border-r w-16 flex-shrink-0 bg-background overflow-y-auto hide-scrollbar" 
             ref={hourLabelsRef}
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b border-border text-center">
+              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground text-center" style={{ borderBottom: '1px solid hsl(var(--border))' }}>
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
           </div>
           <div 
-            className={cn("flex overflow-auto", view === "day" && "flex-1")}
+            className={cn("flex overflow-auto hide-scrollbar", view === "day" && "flex-1")}
             ref={timeGridScrollRef}
             onScroll={handleTimeGridScroll}
           >
@@ -715,13 +757,14 @@ export function EnhancedCalendar({
                 >
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
-                      <DroppableTimeSlot
-                        key={hour}
-                        date={date}
-                        hour={hour}
-                        className="h-10 border-b border-border hover:bg-muted/20 cursor-pointer"
-                        onClick={() => onDateClick?.(date)}
-                      />
+                      <div key={hour} style={{ borderBottom: '1px solid hsl(var(--border))' }}>
+                        <DroppableTimeSlot
+                          date={date}
+                          hour={hour}
+                          className="h-10 hover:bg-muted/20 cursor-pointer"
+                          onClick={() => onDateClick?.(date)}
+                        />
+                      </div>
                     ))}
                     <div className="absolute inset-0 pointer-events-none">
                       <div className="relative h-full">
