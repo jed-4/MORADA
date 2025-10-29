@@ -472,121 +472,126 @@ export function EnhancedCalendar({
     
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
-        <div className="grid grid-cols-8 border-b sticky top-0 bg-background z-10">
-          <div className="p-2 border-r w-12"></div>
-          {dateRange.map((date, idx) => (
-            <div
-              key={idx}
-              className={cn(
-                "p-2 text-center border-r last:border-r-0",
-                isToday(date) && "bg-primary/5"
-              )}
-            >
-              <div className="text-xs text-muted-foreground">
-                {format(date, "EEE")}
+        <div className="flex border-b sticky top-0 bg-background z-10">
+          <div className="p-2 border-r w-16 flex-shrink-0"></div>
+          <div className="flex flex-1">
+            {dateRange.map((date, idx) => (
+              <div
+                key={idx}
+                className={cn(
+                  "flex-1 p-2 text-center border-r last:border-r-0",
+                  isToday(date) && "bg-primary/5"
+                )}
+              >
+                <div className="text-xs text-muted-foreground">
+                  {format(date, "EEE")}
+                </div>
+                <div className={cn(
+                  "text-lg font-semibold",
+                  isToday(date) && "text-primary"
+                )}>
+                  {format(date, "d")}
+                </div>
               </div>
-              <div className={cn(
-                "text-lg font-semibold",
-                isToday(date) && "text-primary"
-              )}>
-                {format(date, "d")}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* All-Day Events Section */}
-        <div className="grid grid-cols-8 border-b bg-background sticky top-[73px] z-10">
-          <div className="p-1 border-r w-12 text-[10px] text-muted-foreground flex items-center justify-end pr-1">
+        <div className="flex border-b bg-background sticky top-[73px] z-10">
+          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center">
             All Day
           </div>
-          {dateRange.map((date, dayIdx) => {
-            const dayEvents = getEventsForDate(date);
-            const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
-            
-            return (
-              <div 
-                key={dayIdx} 
-                className={cn(
-                  "border-r last:border-r-0 p-1 min-h-[36px]",
-                  isToday(date) && "bg-primary/5"
-                )}
-                data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
-              >
-                {allDayEvents.map((event, idx) => (
-                  <DraggableEvent
-                    key={`${event.id}-${idx}`}
-                    event={event}
-                    index={idx}
-                    onEventClick={onEventClick}
-                    onToggleComplete={handleToggleComplete}
-                    showCompletionCheckbox={showCompletionCheckbox}
-                  />
-                ))}
-              </div>
-            );
-          })}
+          <div className="flex flex-1">
+            {dateRange.map((date, dayIdx) => {
+              const dayEvents = getEventsForDate(date);
+              const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
+              
+              return (
+                <div 
+                  key={dayIdx} 
+                  className={cn(
+                    "flex-1 border-r last:border-r-0 p-1 min-h-[36px]",
+                    isToday(date) && "bg-primary/5"
+                  )}
+                  data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
+                >
+                  {allDayEvents.map((event, idx) => (
+                    <DraggableEvent
+                      key={`${event.id}-${idx}`}
+                      event={event}
+                      index={idx}
+                      onEventClick={onEventClick}
+                      onToggleComplete={handleToggleComplete}
+                      showCompletionCheckbox={showCompletionCheckbox}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         </div>
         
-        <div className="grid grid-cols-8">
-          <div className="border-r w-12">
+        <div className="flex">
+          <div className="border-r w-16 flex-shrink-0">
             {hours.map((hour) => (
-              <div key={hour} className="h-10 px-1 py-0.5 text-[10px] text-muted-foreground border-b text-right flex items-start justify-end">
+              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
           </div>
-          
-          {dateRange.map((date, dayIdx) => {
-            const dayEvents = getEventsForDate(date);
-            const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
-            
-            return (
-              <div
-                key={dayIdx}
-                className="border-r last:border-r-0 relative"
-              >
-                <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
-                  {hours.map((hour) => (
-                    <DroppableTimeSlot
-                      key={hour}
-                      date={date}
-                      hour={hour}
-                      className="h-10 border-b hover:bg-muted/20 cursor-pointer"
-                      onClick={() => onDateClick?.(date)}
-                    />
-                  ))}
-                  <div className="absolute inset-0 pointer-events-none">
-                    <div className="relative h-full">
-                      {timedEvents.map((event, idx) => {
-                        const startHour = event.startTime 
-                          ? parseInt(event.startTime.split(":")[0]) 
-                          : 0;
-                        const top = startHour * HOUR_HEIGHT;
-                        
-                        return (
-                          <div
-                            key={`${event.id}-${idx}`}
-                            className="absolute left-1 right-1 pointer-events-auto"
-                            style={{ top: `${top}px` }}
-                          >
-                            <DraggableEvent
-                              event={event}
-                              index={idx}
-                              onEventClick={onEventClick}
-                              onToggleComplete={handleToggleComplete}
-                              showCompletionCheckbox={showCompletionCheckbox}
-                              showResizeHandles={true}
-                            />
-                          </div>
-                        );
-                      })}
+          <div className="flex flex-1">
+            {dateRange.map((date, dayIdx) => {
+              const dayEvents = getEventsForDate(date);
+              const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
+              
+              return (
+                <div
+                  key={dayIdx}
+                  className="flex-1 border-r last:border-r-0 relative"
+                >
+                  <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
+                    {hours.map((hour) => (
+                      <DroppableTimeSlot
+                        key={hour}
+                        date={date}
+                        hour={hour}
+                        className="h-10 border-b hover:bg-muted/20 cursor-pointer"
+                        onClick={() => onDateClick?.(date)}
+                      />
+                    ))}
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className="relative h-full">
+                        {timedEvents.map((event, idx) => {
+                          const startHour = event.startTime 
+                            ? parseInt(event.startTime.split(":")[0]) 
+                            : 0;
+                          const top = startHour * HOUR_HEIGHT;
+                          
+                          return (
+                            <div
+                              key={`${event.id}-${idx}`}
+                              className="absolute left-1 right-1 pointer-events-auto"
+                              style={{ top: `${top}px` }}
+                            >
+                              <DraggableEvent
+                                event={event}
+                                index={idx}
+                                onEventClick={onEventClick}
+                                onToggleComplete={handleToggleComplete}
+                                showCompletionCheckbox={showCompletionCheckbox}
+                                showResizeHandles={true}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     );
