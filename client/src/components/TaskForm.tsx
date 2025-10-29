@@ -1043,7 +1043,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
             </Tabs>
             </div>
             
-            <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background sticky bottom-0">
+            <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background">
               <Button 
                 type="button" 
                 variant="outline" 
