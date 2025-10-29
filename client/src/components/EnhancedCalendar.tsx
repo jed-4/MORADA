@@ -659,7 +659,7 @@ export function EnhancedCalendar({
                   key={idx}
                   className={cn(
                     "p-2 text-center border-r flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekday ? "bg-background" : "bg-muted/50",
+                    isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -703,7 +703,7 @@ export function EnhancedCalendar({
                   key={dayIdx} 
                   className={cn(
                     "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : isWeekday ? "bg-background" : "bg-muted/50",
+                    isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -759,7 +759,7 @@ export function EnhancedCalendar({
                   key={dayIdx}
                   className={cn(
                     "border-r relative flex-shrink-0 h-full",
-                    isToday(date) ? "bg-primary/5" : isWeekday ? "bg-background" : "bg-muted/50",
+                    isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
