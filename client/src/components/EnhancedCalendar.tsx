@@ -424,9 +424,36 @@ export function EnhancedCalendar({
 
   // Render month view
   const renderMonthView = () => {
+    // Group dates into weeks for each month
+    const monthGroups: { month: Date; weeks: Date[][] }[] = [];
+    
+    // Split dateRange into weeks
     const weeks: Date[][] = [];
     for (let i = 0; i < dateRange.length; i += 7) {
       weeks.push(dateRange.slice(i, i + 7));
+    }
+    
+    // Group weeks by month (based on the majority of days in the week)
+    let currentMonthWeeks: Date[][] = [];
+    let currentMonthDate: Date | null = null;
+
+    weeks.forEach((week) => {
+      // Determine the month for this week (use the first in-month date)
+      const monthDate = week.find(d => isSameMonth(d, week[3])) || week[3];
+      const monthKey = format(monthDate, "yyyy-MM");
+      
+      if (!currentMonthDate || format(currentMonthDate, "yyyy-MM") !== monthKey) {
+        if (currentMonthWeeks.length > 0 && currentMonthDate) {
+          monthGroups.push({ month: currentMonthDate, weeks: currentMonthWeeks });
+        }
+        currentMonthDate = monthDate;
+        currentMonthWeeks = [week];
+      } else {
+        currentMonthWeeks.push(week);
+      }
+    });
+    if (currentMonthWeeks.length > 0 && currentMonthDate) {
+      monthGroups.push({ month: currentMonthDate, weeks: currentMonthWeeks });
     }
 
     return (
@@ -441,54 +468,65 @@ export function EnhancedCalendar({
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 flex-1">
-          {dateRange.map((date, idx) => {
-            const dayEvents = getEventsForDate(date);
-            const isCurrentMonth = isSameMonth(date, currentDate);
-            
-            return (
-              <DroppableDateCell
-                key={idx}
-                date={date}
-                onClick={() => onDateClick?.(date)}
-                className={cn(
-                  "min-h-[120px] p-2 border-r border-b last:border-r-0 hover-elevate cursor-pointer",
-                  !isCurrentMonth && "bg-muted/20 text-muted-foreground",
-                  isToday(date) && "bg-primary/5"
-                )}
-              >
-                <div
-                  data-testid={`day-cell-${format(date, "yyyy-MM-dd")}`}
-                  className="h-full"
-                >
-                  <div className={cn(
-                    "text-sm font-medium mb-1",
-                    isToday(date) && "text-primary"
-                  )}>
-                    {format(date, "d")}
-                  </div>
-                  <div className="space-y-1 overflow-y-auto max-h-[80px]">
-                    {dayEvents.slice(0, 3).map((event, i) => (
-                      <DraggableEvent
-                        key={`${event.id}-${i}`}
-                        event={event}
-                        index={i}
-                        onEventClick={onEventClick}
-                        onToggleComplete={handleToggleComplete}
-                        showCompletionCheckbox={showCompletionCheckbox}
-                      />
-                    ))}
-                    {dayEvents.length > 3 && (
-                      <div className="text-xs text-muted-foreground px-2">
-                        +{dayEvents.length - 3} more
+        {monthGroups.map((group, groupIdx) => (
+          <div key={groupIdx}>
+            {/* Month header */}
+            <div className="bg-muted/30 border-b-2 border-primary/20 px-4 py-2">
+              <h3 className="text-lg font-semibold">{format(group.month, "MMMM yyyy")}</h3>
+            </div>
+            {/* Month grid - organized by weeks */}
+            <div className="grid grid-cols-7">
+              {group.weeks.flatMap((week) => 
+                week.map((date, idx) => {
+                  const dayEvents = getEventsForDate(date);
+                  const isCurrentMonth = isSameMonth(date, group.month);
+                  
+                  return (
+                    <DroppableDateCell
+                      key={`${format(date, "yyyy-MM-dd")}`}
+                      date={date}
+                      onClick={() => onDateClick?.(date)}
+                      className={cn(
+                        "min-h-[120px] p-2 border-r border-b last:border-r-0 hover-elevate cursor-pointer",
+                        !isCurrentMonth && "bg-muted/20 text-muted-foreground",
+                        isToday(date) && "bg-primary/5"
+                      )}
+                    >
+                      <div
+                        data-testid={`day-cell-${format(date, "yyyy-MM-dd")}`}
+                        className="h-full"
+                      >
+                        <div className={cn(
+                          "text-sm font-medium mb-1",
+                          isToday(date) && "text-primary"
+                        )}>
+                          {format(date, "d")}
+                        </div>
+                        <div className="space-y-1 overflow-y-auto max-h-[80px]">
+                          {dayEvents.slice(0, 3).map((event, i) => (
+                            <DraggableEvent
+                              key={`${event.id}-${i}`}
+                              event={event}
+                              index={i}
+                              onEventClick={onEventClick}
+                              onToggleComplete={handleToggleComplete}
+                              showCompletionCheckbox={showCompletionCheckbox}
+                            />
+                          ))}
+                          {dayEvents.length > 3 && (
+                            <div className="text-xs text-muted-foreground px-2">
+                              +{dayEvents.length - 3} more
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </DroppableDateCell>
-            );
-          })}
-        </div>
+                    </DroppableDateCell>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
@@ -497,21 +535,22 @@ export function EnhancedCalendar({
   const renderWeekView = () => {
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const HOUR_HEIGHT = 40; // Reduced from 64px to 40px
-    const DAY_WIDTH = 140; // Fixed width for each day column
+    const DAY_WIDTH = view === "day" ? undefined : 140; // Full width for day view, fixed width for week view
     
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
         <div className="flex border-b sticky top-0 bg-background z-10">
           <div className="p-2 border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20"></div>
-          <div className="flex">
+          <div className={cn("flex", view === "day" && "flex-1")}>
             {dateRange.map((date, idx) => (
               <div
                 key={idx}
                 className={cn(
                   "p-2 text-center border-r bg-background",
-                  isToday(date) && "bg-primary/5"
+                  isToday(date) && "bg-primary/5",
+                  view === "day" && "flex-1"
                 )}
-                style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
+                style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
               >
                 <div className="text-xs text-muted-foreground">
                   {format(date, "EEE")}
@@ -532,7 +571,7 @@ export function EnhancedCalendar({
           <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center sticky left-0 bg-background z-20">
             All Day
           </div>
-          <div className="flex">
+          <div className={cn("flex", view === "day" && "flex-1")}>
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
@@ -545,9 +584,10 @@ export function EnhancedCalendar({
                   key={dayIdx} 
                   className={cn(
                     "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden bg-background",
-                    isToday(date) && "bg-primary/5"
+                    isToday(date) && "bg-primary/5",
+                    view === "day" && "flex-1"
                   )}
-                  style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
+                  style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                   data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
                 >
                   {visibleEvents.map((event, idx) => (
@@ -571,15 +611,15 @@ export function EnhancedCalendar({
           </div>
         </div>
         
-        <div className="flex">
-          <div className="border-r w-16 flex-shrink-0 sticky left-0 bg-background z-10">
+        <div className="relative flex">
+          <div className="border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20">
             {hours.map((hour) => (
               <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
           </div>
-          <div className="flex">
+          <div className={cn("flex", view === "day" && "flex-1")}>
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const timedEvents = dayEvents.filter(event => event.startTime || event.endTime);
@@ -587,8 +627,8 @@ export function EnhancedCalendar({
               return (
                 <div
                   key={dayIdx}
-                  className="border-r relative"
-                  style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
+                  className={cn("border-r relative", view === "day" && "flex-1")}
+                  style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
                     {hours.map((hour) => (
