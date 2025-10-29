@@ -252,11 +252,26 @@ export function EnhancedCalendar({
   // Calculate visible date range based on view
   const dateRange = useMemo(() => {
     if (view === "month") {
-      const start = startOfMonth(currentDate);
-      const end = endOfMonth(currentDate);
-      const weekStart = startOfWeek(start, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(end, { weekStartsOn: 1 });
-      return eachDayOfInterval({ start: weekStart, end: weekEnd });
+      // Show 3 months for vertical scrolling (1 before, current, 1 after)
+      const prevMonth = subMonths(currentDate, 1);
+      const nextMonth = addMonths(currentDate, 1);
+      
+      const prevStart = startOfMonth(prevMonth);
+      const prevEnd = endOfMonth(prevMonth);
+      const prevWeekStart = startOfWeek(prevStart, { weekStartsOn: 1 });
+      const prevWeekEnd = endOfWeek(prevEnd, { weekStartsOn: 1 });
+      
+      const currStart = startOfMonth(currentDate);
+      const currEnd = endOfMonth(currentDate);
+      const currWeekStart = startOfWeek(currStart, { weekStartsOn: 1 });
+      const currWeekEnd = endOfWeek(currEnd, { weekStartsOn: 1 });
+      
+      const nextStart = startOfMonth(nextMonth);
+      const nextEnd = endOfMonth(nextMonth);
+      const nextWeekStart = startOfWeek(nextStart, { weekStartsOn: 1 });
+      const nextWeekEnd = endOfWeek(nextEnd, { weekStartsOn: 1 });
+      
+      return eachDayOfInterval({ start: prevWeekStart, end: nextWeekEnd });
     } else if (view === "week") {
       // Show 4 weeks for horizontal scrolling
       const start = startOfWeek(subWeeks(currentDate, 1), { weekStartsOn: 1 });
@@ -493,7 +508,7 @@ export function EnhancedCalendar({
               <div
                 key={idx}
                 className={cn(
-                  "p-2 text-center border-r",
+                  "p-2 text-center border-r bg-background",
                   isToday(date) && "bg-primary/5"
                 )}
                 style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
@@ -529,7 +544,7 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden",
+                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden bg-background",
                     isToday(date) && "bg-primary/5"
                   )}
                   style={{ minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }}
