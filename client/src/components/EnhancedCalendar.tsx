@@ -758,7 +758,7 @@ export function EnhancedCalendar({
                 <div
                   key={dayIdx}
                   className={cn(
-                    "border-r relative flex-shrink-0 flex flex-col min-h-full",
+                    "border-r relative flex-shrink-0 flex flex-col h-full",
                     isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
                     view === "day" && "flex-1"
                   )}
