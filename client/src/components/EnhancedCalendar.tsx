@@ -539,15 +539,16 @@ export function EnhancedCalendar({
     
     return (
       <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
-        <div className="flex border-b sticky top-0 bg-background z-10">
-          <div className="p-2 border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20"></div>
+        {/* Date header row */}
+        <div className="flex border-b sticky top-0 z-10">
+          <div className="p-2 border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20 border-b"></div>
           <div className={cn("flex", view === "day" && "flex-1")}>
             {dateRange.map((date, idx) => (
               <div
                 key={idx}
                 className={cn(
-                  "p-2 text-center border-r bg-background",
-                  isToday(date) && "bg-primary/5",
+                  "p-2 text-center border-r",
+                  isToday(date) ? "bg-primary/5" : "bg-background",
                   view === "day" && "flex-1"
                 )}
                 style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -567,8 +568,8 @@ export function EnhancedCalendar({
         </div>
 
         {/* All-Day Events Section */}
-        <div className="flex border-b bg-background sticky top-[61px] z-10">
-          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center sticky left-0 bg-background z-20">
+        <div className="flex border-b sticky top-[61px] z-10">
+          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center sticky left-0 bg-background z-20 border-b">
             All Day
           </div>
           <div className={cn("flex", view === "day" && "flex-1")}>
@@ -583,8 +584,8 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden bg-background",
-                    isToday(date) && "bg-primary/5",
+                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden",
+                    isToday(date) ? "bg-primary/5" : "bg-background",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -611,7 +612,7 @@ export function EnhancedCalendar({
           </div>
         </div>
         
-        <div className="relative flex">
+        <div className="flex">
           <div className="border-r w-16 flex-shrink-0 sticky left-0 bg-background z-20">
             {hours.map((hour) => (
               <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b text-center">
@@ -627,7 +628,11 @@ export function EnhancedCalendar({
               return (
                 <div
                   key={dayIdx}
-                  className={cn("border-r relative", view === "day" && "flex-1")}
+                  className={cn(
+                    "border-r relative",
+                    isToday(date) && "bg-primary/5",
+                    view === "day" && "flex-1"
+                  )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
                   <div data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}>
