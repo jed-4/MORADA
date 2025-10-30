@@ -3120,7 +3120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
-      const validationResult = insertUserRoleSchema.safeParse(req.body);
+      const validationResult = insertUserRoleSchema.omit({ companyId: true, displayOrder: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 

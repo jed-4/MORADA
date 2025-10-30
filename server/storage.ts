@@ -5003,11 +5003,12 @@ export class DbStorage implements IStorage {
 
   async createUserRole(role: InsertUserRole): Promise<UserRole> {
     try {
-      // Calculate displayOrder: max(existing displayOrder) + 1
+      // Calculate displayOrder: max(existing displayOrder) + 1 per company
       let displayOrder = role.displayOrder;
       if (displayOrder === undefined || displayOrder === null) {
         const maxResult = await db.select({ maxOrder: sql<number>`COALESCE(MAX(${schema.userRoles.displayOrder}), -1)` })
-          .from(schema.userRoles);
+          .from(schema.userRoles)
+          .where(eq(schema.userRoles.companyId, role.companyId));
         displayOrder = (maxResult[0]?.maxOrder ?? -1) + 1;
       }
       
