@@ -3078,9 +3078,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user-roles", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
       const user = req.user as any;
-      console.log("DEBUG /api/user-roles - req.user:", JSON.stringify(user, null, 2));
       const companyId = user?.companyId;
-      console.log("DEBUG /api/user-roles - companyId:", companyId);
       
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
