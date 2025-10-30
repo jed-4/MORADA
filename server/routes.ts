@@ -3075,7 +3075,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User Role Management Routes
-  app.get("/api/user-roles", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+  app.get("/api/user-roles", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       console.log("DEBUG /api/user-roles - req.user:", JSON.stringify(user, null, 2));
@@ -3094,7 +3094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+  app.get("/api/user-roles/:id", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -3113,7 +3113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user-roles", requireTeamMember, requirePermission("admin.roles", "add"), async (req, res) => {
+  app.post("/api/user-roles", requireAuth, requireTeamMember, requirePermission("admin.roles", "add"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -3137,7 +3137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/user-roles/reorder", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+  app.patch("/api/user-roles/reorder", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -3168,7 +3168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+  app.patch("/api/user-roles/:id", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -3196,7 +3196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "delete"), async (req, res) => {
+  app.delete("/api/user-roles/:id", requireAuth, requireTeamMember, requirePermission("admin.roles", "delete"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -3277,7 +3277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Role-Permission Matrix Routes
-  app.get("/api/user-roles/:roleId/permissions", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
+  app.get("/api/user-roles/:roleId/permissions", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
       const rolePermissions = await storage.getRolePermissions(req.params.roleId);
       res.json(rolePermissions);
@@ -3286,7 +3286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user-roles/:roleId/permissions", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+  app.post("/api/user-roles/:roleId/permissions", requireAuth, requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
       const { permissions } = req.body;
       if (!Array.isArray(permissions)) {
