@@ -136,7 +136,7 @@ export const userInvitations = pgTable("user_invitations", {
   lastName: text("last_name"),
   company: text("company"),
   phone: text("phone"),
-  userCategory: text("user_category").notNull(), // "supplier" | "client"
+  userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
   roleId: varchar("role_id").notNull().references(() => userRoles.id),
   projectIds: json("project_ids").default([]), // Array of project IDs they'll have access to
   invitedBy: varchar("invited_by").notNull().references(() => users.id),

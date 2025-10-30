@@ -56,6 +56,7 @@ import PersonalCalendar from "@/pages/PersonalCalendar";
 import UserProfile from "@/pages/UserProfile";
 import BusinessTasks from "@/pages/BusinessTasks";
 import Systems from "@/pages/Systems";
+import TeamManagement from "@/pages/TeamManagement";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
@@ -94,6 +95,9 @@ function Router() {
       
       {/* Systems Section */}
       <Route path="/systems" component={Systems} />
+      
+      {/* Team Management */}
+      <Route path="/business-team" component={TeamManagement} />
       
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
