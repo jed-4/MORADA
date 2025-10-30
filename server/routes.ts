@@ -3114,6 +3114,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/user-roles/reorder", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+    try {
+      const reorderSchema = z.object({
+        updates: z.array(z.object({
+          id: z.string(),
+          displayOrder: z.number().int()
+        }))
+      });
+
+      const validationResult = reorderSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      await storage.updateUserRolesOrder(validationResult.data.updates);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder user roles" });
+    }
+  });
+
   app.patch("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
       const updateSchema = insertUserRoleSchema.partial();
@@ -3144,30 +3168,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete user role" });
-    }
-  });
-
-  app.patch("/api/user-roles/reorder", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
-    try {
-      const reorderSchema = z.object({
-        updates: z.array(z.object({
-          id: z.string(),
-          displayOrder: z.number().int()
-        }))
-      });
-
-      const validationResult = reorderSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      await storage.updateUserRolesOrder(validationResult.data.updates);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to reorder user roles" });
     }
   });
 
