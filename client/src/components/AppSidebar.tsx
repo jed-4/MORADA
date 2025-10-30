@@ -101,6 +101,7 @@ const projectItemsBase = [
 const businessItems = [
   { title: "Business Overview", url: "/business", icon: Home },
   { title: "Projects", url: "/business/projects", icon: FolderOpen },
+  { title: "Business Tasks", url: "/business/tasks", icon: CheckSquare },
   { title: "Business Calendar", url: "/business/calendar", icon: Calendar },
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
@@ -109,6 +110,13 @@ const businessItems = [
   { title: "Sick Days & Leave", url: "/business/leave", icon: Calendar },
   { title: "Bills", url: "/bills", icon: Receipt },
   { title: "Team", url: "/business-team", icon: Users },
+];
+
+// Systems sections (templates, processes, documents)
+const systemsItems = [
+  { title: "Task Templates", url: "/systems/task-templates", icon: LayoutTemplate },
+  { title: "Documents", url: "/systems/documents", icon: FileText },
+  { title: "Processes", url: "/systems/processes", icon: ClipboardList },
 ];
 
 // System sections
@@ -150,6 +158,11 @@ export function AppSidebar() {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const [isSystemsOpen, setIsSystemsOpen] = useState(() => {
+    const saved = localStorage.getItem("sidebar-systems-open");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(() => {
     const saved = localStorage.getItem("sidebar-settings-open");
     return saved !== null ? JSON.parse(saved) : true;
@@ -176,6 +189,10 @@ export function AppSidebar() {
   useEffect(() => {
     localStorage.setItem("sidebar-settings-open", JSON.stringify(isSettingsOpen));
   }, [isSettingsOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-systems-open", JSON.stringify(isSystemsOpen));
+  }, [isSystemsOpen]);
 
   // Generate project-scoped URLs
   const getProjectItems = () => {
@@ -306,6 +323,47 @@ export function AppSidebar() {
                         asChild
                         tooltip={item.title}
                         data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        data-active={location === item.url}
+                      >
+                        <Link href={item.url}>
+                          <item.icon className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </SidebarGroup>
+        </Collapsible>
+
+        {/* Systems Section - Collapsible */}
+        <Collapsible
+          open={isSystemsOpen}
+          onOpenChange={setIsSystemsOpen}
+          className="group/collapsible"
+        >
+          <SidebarGroup className={!isSystemsOpen && !isCompanyOpen ? "pt-0 pb-0" : !isSystemsOpen ? "pb-0" : ""}>
+            <SidebarGroupLabel asChild>
+              <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
+                <span className="font-medium">Systems</span>
+                {isSystemsOpen ? (
+                  <ChevronDown className="h-4 w-4 transition-transform" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 transition-transform" />
+                )}
+              </CollapsibleTrigger>
+            </SidebarGroupLabel>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {systemsItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton 
+                        asChild
+                        tooltip={item.title}
+                        data-testid={`nav-systems-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                         data-active={location === item.url}
                       >
                         <Link href={item.url}>

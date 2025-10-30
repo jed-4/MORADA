@@ -409,8 +409,8 @@ export default function BusinessCalendar() {
               </div>
             </div>
 
-            {/* Calendar */}
-            <div className="flex-1 min-h-0">
+            {/* Tab Content - All views show the same calendar with different filters */}
+            <TabsContent value="all" className="flex-1 min-h-0 m-0">
               <EnhancedCalendar
                 events={events}
                 onEventClick={handleEventClick}
@@ -420,7 +420,40 @@ export default function BusinessCalendar() {
                 showCompletionCheckbox={true}
                 initialView="week"
               />
-            </div>
+            </TabsContent>
+            <TabsContent value="my-events" className="flex-1 min-h-0 m-0">
+              <EnhancedCalendar
+                events={events}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                showCompletionCheckbox={true}
+                initialView="week"
+              />
+            </TabsContent>
+            <TabsContent value="week" className="flex-1 min-h-0 m-0">
+              <EnhancedCalendar
+                events={events}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                showCompletionCheckbox={true}
+                initialView="week"
+              />
+            </TabsContent>
+            <TabsContent value="month" className="flex-1 min-h-0 m-0">
+              <EnhancedCalendar
+                events={events}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                showCompletionCheckbox={true}
+                initialView="week"
+              />
+            </TabsContent>
           </Tabs>
         </Card>
       </div>

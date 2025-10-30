@@ -54,6 +54,10 @@ import FieldSettings from "@/pages/FieldSettings";
 import BusinessCalendar from "@/pages/BusinessCalendar";
 import PersonalCalendar from "@/pages/PersonalCalendar";
 import UserProfile from "@/pages/UserProfile";
+import BusinessTasks from "@/pages/BusinessTasks";
+import SystemTaskTemplates from "@/pages/SystemTaskTemplates";
+import SystemDocuments from "@/pages/SystemDocuments";
+import SystemProcesses from "@/pages/SystemProcesses";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
@@ -80,6 +84,7 @@ function Router() {
       {/* Business Project */}
       <Route path="/business" component={BusinessOverviewPage} />
       <Route path="/business/projects" component={BusinessProjects} />
+      <Route path="/business/tasks" component={BusinessTasks} />
       <Route path="/business/calendar" component={BusinessCalendar} />
       <Route path="/my-calendar" component={PersonalCalendar} />
       <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
@@ -88,6 +93,11 @@ function Router() {
       <Route path="/business/minutes/:id" component={MinuteDetail} />
       <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
       <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
+      
+      {/* Systems Section */}
+      <Route path="/systems/task-templates" component={SystemTaskTemplates} />
+      <Route path="/systems/documents" component={SystemDocuments} />
+      <Route path="/systems/processes" component={SystemProcesses} />
       
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
