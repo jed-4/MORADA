@@ -40,7 +40,6 @@ const inviteFormSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phone: z.string().optional(),
-  userCategory: z.enum(["team", "supplier", "client"]),
   roleId: z.string().min(1, "Role is required"),
   projectIds: z.array(z.string()).default([]),
 });
@@ -81,11 +80,13 @@ export default function InviteUserDialog({
       firstName: "",
       lastName: "",
       phone: "",
-      userCategory: "team",
       roleId: "",
       projectIds: [],
     },
   });
+
+  // Filter roles to only show team member roles
+  const teamRoles = roles.filter((role: any) => role.userCategory === "team");
 
   const inviteMutation = useMutation({
     mutationFn: async (data: InviteFormValues) => {
@@ -93,6 +94,7 @@ export default function InviteUserDialog({
         method: "POST",
         body: JSON.stringify({
           ...data,
+          userCategory: "team",
           invitedBy: user?.id,
           company: user?.company,
         }),
@@ -143,9 +145,9 @@ export default function InviteUserDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Invite User</DialogTitle>
+          <DialogTitle>Invite Team Member</DialogTitle>
           <DialogDescription>
-            Send an invitation to join your company
+            Send an invitation to a team member to join your company
           </DialogDescription>
         </DialogHeader>
 
@@ -275,32 +277,6 @@ export default function InviteUserDialog({
 
               <FormField
                 control={form.control}
-                name="userCategory"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>User Category</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-user-category">
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="team">Team Member</SelectItem>
-                        <SelectItem value="supplier">Supplier</SelectItem>
-                        <SelectItem value="client">Client</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
                 name="roleId"
                 render={({ field }) => (
                   <FormItem>
@@ -315,7 +291,7 @@ export default function InviteUserDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {roles.map((role: any) => (
+                        {teamRoles.map((role: any) => (
                           <SelectItem key={role.id} value={role.id}>
                             {role.name}
                           </SelectItem>

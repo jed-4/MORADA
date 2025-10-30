@@ -29,9 +29,12 @@ export default function TeamManagement() {
   const { toast } = useToast();
 
   // Fetch current team members
-  const { data: users = [], isLoading: usersLoading } = useQuery({
+  const { data: allUsers = [], isLoading: usersLoading } = useQuery({
     queryKey: ["/api/users"],
   });
+
+  // Filter out users without names (incomplete data)
+  const users = allUsers.filter((user: any) => user.firstName && user.lastName);
 
   // Fetch pending invitations
   const { data: invitations = [], isLoading: invitationsLoading } = useQuery({
@@ -70,7 +73,7 @@ export default function TeamManagement() {
               data-testid="button-invite-user"
             >
               <UserPlus className="h-4 w-4 mr-2" />
-              Invite User
+              Invite Team Member
             </Button>
           </div>
 
