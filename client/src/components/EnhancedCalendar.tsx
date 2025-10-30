@@ -107,11 +107,11 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           ref={setTopRef}
           {...topAttrs}
           {...topListeners}
-          className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          className="absolute -top-1 left-0 right-0 h-3 cursor-ns-resize z-10 flex items-center justify-center"
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-top-${event.id}`}
         >
-          <div className="h-0.5 bg-primary mx-auto w-8 rounded-full" />
+          <div className="h-1 bg-primary/40 group-hover:bg-primary w-12 rounded-full transition-colors" />
         </div>
       )}
 
@@ -155,11 +155,11 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           ref={setBottomRef}
           {...bottomAttrs}
           {...bottomListeners}
-          className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          className="absolute -bottom-1 left-0 right-0 h-3 cursor-ns-resize z-10 flex items-center justify-center"
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-bottom-${event.id}`}
         >
-          <div className="h-0.5 bg-primary mx-auto w-8 rounded-full" />
+          <div className="h-1 bg-primary/40 group-hover:bg-primary w-12 rounded-full transition-colors" />
         </div>
       )}
     </div>
@@ -249,13 +249,13 @@ export function EnhancedCalendar({
   // Setup drag sensors
   const mouseSensor = useSensor(MouseSensor, {
     activationConstraint: {
-      distance: 10,
+      distance: 3,
     },
   });
   const touchSensor = useSensor(TouchSensor, {
     activationConstraint: {
-      delay: 250,
-      tolerance: 5,
+      delay: 100,
+      tolerance: 3,
     },
   });
   const sensors = useSensors(mouseSensor, touchSensor);
