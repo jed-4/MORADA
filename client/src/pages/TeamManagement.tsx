@@ -33,8 +33,26 @@ export default function TeamManagement() {
     queryKey: ["/api/users"],
   });
 
-  // Filter out users without names (incomplete data)
-  const users = allUsers.filter((user: any) => user.firstName && user.lastName);
+  // Fetch roles to determine display order
+  const { data: roles = [] } = useQuery({
+    queryKey: ["/api/user-roles"],
+  });
+
+  // Filter out users without names (incomplete data) and sort by role order
+  const users = allUsers
+    .filter((user: any) => user.firstName && user.lastName)
+    .sort((a: any, b: any) => {
+      // Find role index for each user
+      const roleAIndex = roles.findIndex((r: any) => r.id === a.roleId);
+      const roleBIndex = roles.findIndex((r: any) => r.id === b.roleId);
+      
+      // Users without roles go to the end
+      if (roleAIndex === -1) return 1;
+      if (roleBIndex === -1) return -1;
+      
+      // Sort by role order
+      return roleAIndex - roleBIndex;
+    });
 
   // Fetch pending invitations
   const { data: invitations = [], isLoading: invitationsLoading } = useQuery({
