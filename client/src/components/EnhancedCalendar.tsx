@@ -883,10 +883,10 @@ export function EnhancedCalendar({
                             const [endH, endM] = (event.endTime || `${startH + 1}:00`).split(':').map(Number);
                             const endMinutes = endH * 60 + endM;
                             
-                            // Calculate position and height
+                            // Calculate position and height (95% to create visual separation)
                             const top = (startMinutes / 60) * HOUR_HEIGHT;
                             const durationMinutes = endMinutes - startMinutes;
-                            const height = (durationMinutes / 60) * HOUR_HEIGHT;
+                            const height = (durationMinutes / 60) * HOUR_HEIGHT * 0.95;
                             
                             return {
                               event,
