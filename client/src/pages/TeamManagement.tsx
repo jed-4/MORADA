@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import InviteUserDialog from "@/components/InviteUserDialog";
 
 export default function TeamManagement() {
+  const [, navigate] = useLocation();
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const { toast } = useToast();
@@ -104,7 +106,13 @@ export default function TeamManagement() {
                     {users.map((user: any) => (
                       <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
                         <TableCell className="font-medium">
-                          {user.firstName} {user.lastName}
+                          <button
+                            onClick={() => navigate(`/business-team/${user.id}`)}
+                            className="hover-elevate text-left hover:text-primary transition-colors"
+                            data-testid={`link-user-${user.id}`}
+                          >
+                            {user.firstName} {user.lastName}
+                          </button>
                         </TableCell>
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
@@ -116,8 +124,17 @@ export default function TeamManagement() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={user.isInvitePending ? "secondary" : "default"}>
-                            {user.isInvitePending ? "Pending" : "Active"}
+                          <Badge 
+                            variant={
+                              !user.isActive ? "destructive" : 
+                              user.isInvitePending ? "secondary" : 
+                              "default"
+                            }
+                            data-testid={`badge-status-${user.id}`}
+                          >
+                            {!user.isActive ? "Disabled" : 
+                             user.isInvitePending ? "Pending" : 
+                             "Active"}
                           </Badge>
                         </TableCell>
                       </TableRow>

@@ -82,7 +82,7 @@ export interface IStorage {
   upsertUser(user: import("@shared/schema").UpsertUser): Promise<User>; // Required for Replit Auth
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
-  getUsers(category?: UserCategory): Promise<User[]>;
+  getUsers(category?: UserCategory): Promise<UserWithRole[]>;
 
   // User column preferences
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
@@ -1458,12 +1458,16 @@ export class MemStorage implements IStorage {
     return await this.updateUser(id, { password: newPassword });
   }
 
-  async getUsers(category?: UserCategory): Promise<User[]> {
+  async getUsers(category?: UserCategory): Promise<UserWithRole[]> {
     const allUsers = Array.from(this.users.values());
-    if (category) {
-      return allUsers.filter(user => user.userCategory === category && user.isActive);
-    }
-    return allUsers.filter(user => user.isActive);
+    const filteredUsers = category
+      ? allUsers.filter(user => user.userCategory === category && user.isActive)
+      : allUsers.filter(user => user.isActive);
+    
+    return filteredUsers.map(user => ({
+      ...user,
+      role: user.roleId ? this.userRoles.get(user.roleId) : undefined,
+    }));
   }
 
   async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
@@ -4689,11 +4693,27 @@ export class DbStorage implements IStorage {
     return user;
   }
 
-  async getUsers(category?: UserCategory): Promise<User[]> {
-    if (category) {
-      return await db.select().from(schema.users).where(eq(schema.users.userCategory, category));
-    }
-    return await db.select().from(schema.users);
+  async getUsers(category?: UserCategory): Promise<UserWithRole[]> {
+    const whereConditions = category
+      ? and(
+          eq(schema.users.userCategory, category),
+          eq(schema.users.isActive, true)
+        )
+      : eq(schema.users.isActive, true);
+
+    const results = await db
+      .select({
+        user: schema.users,
+        role: schema.userRoles,
+      })
+      .from(schema.users)
+      .leftJoin(schema.userRoles, eq(schema.users.roleId, schema.userRoles.id))
+      .where(whereConditions);
+
+    return results.map(({ user, role }) => ({
+      ...user,
+      role: role || undefined,
+    }));
   }
 
   async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
