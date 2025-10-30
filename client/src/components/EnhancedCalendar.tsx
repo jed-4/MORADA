@@ -89,7 +89,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       onClick={() => onEventClick?.(event)}
       className={cn(
         "group relative flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] mb-1 hover-elevate active-elevate-2",
-        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move touch-none",
+        !isGoogleCalendarEvent && "touch-none",
+        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move",
+        showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer",
         isGoogleCalendarEvent && "cursor-pointer",
         isCompleted && "opacity-60",
         isDragging && "opacity-50"
