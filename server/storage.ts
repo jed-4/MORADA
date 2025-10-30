@@ -94,6 +94,7 @@ export interface IStorage {
   createUserRole(role: InsertUserRole): Promise<UserRole>;
   updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined>;
   deleteUserRole(id: string): Promise<boolean>;
+  updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
 
   // Permission operations
   getPermissions(category?: string): Promise<Permission[]>;
@@ -1522,10 +1523,17 @@ export class MemStorage implements IStorage {
   // User Role operations
   async getUserRoles(category?: UserCategory): Promise<UserRole[]> {
     const allRoles = Array.from(this.userRoles.values());
-    if (category) {
-      return allRoles.filter(role => role.userCategory === category && role.isActive);
-    }
-    return allRoles.filter(role => role.isActive);
+    const filteredRoles = category 
+      ? allRoles.filter(role => role.userCategory === category && role.isActive)
+      : allRoles.filter(role => role.isActive);
+    
+    // Sort by displayOrder first, then by name as fallback
+    return filteredRoles.sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) {
+        return a.displayOrder - b.displayOrder;
+      }
+      return a.name.localeCompare(b.name);
+    });
   }
 
   async getUserRole(id: string): Promise<UserRole | undefined> {
@@ -1535,12 +1543,20 @@ export class MemStorage implements IStorage {
   async createUserRole(insertRole: InsertUserRole): Promise<UserRole> {
     const id = randomUUID();
     const now = new Date();
+    
+    // Calculate displayOrder: max(existing displayOrder) + 1
+    const existingRoles = Array.from(this.userRoles.values());
+    const maxDisplayOrder = existingRoles.length > 0 
+      ? Math.max(...existingRoles.map(r => r.displayOrder)) 
+      : -1;
+    
     const role: UserRole = {
       ...insertRole,
       id,
       description: insertRole.description || null,
       isBuiltIn: insertRole.isBuiltIn ?? false,
       isActive: insertRole.isActive ?? true,
+      displayOrder: insertRole.displayOrder ?? (maxDisplayOrder + 1),
       createdAt: now,
       updatedAt: now,
     };
@@ -1573,6 +1589,21 @@ export class MemStorage implements IStorage {
     };
     this.userRoles.set(id, updatedRole);
     return true;
+  }
+
+  async updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+    const now = new Date();
+    for (const update of updates) {
+      const role = this.userRoles.get(update.id);
+      if (role) {
+        const updatedRole: UserRole = {
+          ...role,
+          displayOrder: update.displayOrder,
+          updatedAt: now,
+        };
+        this.userRoles.set(update.id, updatedRole);
+      }
+    }
   }
 
   // Permission operations
@@ -4895,12 +4926,12 @@ export class DbStorage implements IStorage {
       if (category) {
         return await db.select()
           .from(schema.userRoles)
-          .where(eq(schema.userRoles.category, category))
-          .orderBy(schema.userRoles.name);
+          .where(eq(schema.userRoles.userCategory, category))
+          .orderBy(asc(schema.userRoles.displayOrder), asc(schema.userRoles.name));
       }
       return await db.select()
         .from(schema.userRoles)
-        .orderBy(schema.userRoles.name);
+        .orderBy(asc(schema.userRoles.displayOrder), asc(schema.userRoles.name));
     } catch (error) {
       console.error("Database error in getUserRoles:", error);
       throw error;
@@ -4922,8 +4953,16 @@ export class DbStorage implements IStorage {
 
   async createUserRole(role: InsertUserRole): Promise<UserRole> {
     try {
+      // Calculate displayOrder: max(existing displayOrder) + 1
+      let displayOrder = role.displayOrder;
+      if (displayOrder === undefined || displayOrder === null) {
+        const maxResult = await db.select({ maxOrder: sql<number>`COALESCE(MAX(${schema.userRoles.displayOrder}), -1)` })
+          .from(schema.userRoles);
+        displayOrder = (maxResult[0]?.maxOrder ?? -1) + 1;
+      }
+      
       const results = await db.insert(schema.userRoles)
-        .values(role)
+        .values({ ...role, displayOrder })
         .returning();
       return results[0];
     } catch (error) {
@@ -4953,6 +4992,22 @@ export class DbStorage implements IStorage {
       return results.length > 0;
     } catch (error) {
       console.error("Database error in deleteUserRole:", error);
+      throw error;
+    }
+  }
+
+  async updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+    try {
+      // Update each role's displayOrder in a transaction
+      await db.transaction(async (tx) => {
+        for (const update of updates) {
+          await tx.update(schema.userRoles)
+            .set({ displayOrder: update.displayOrder, updatedAt: new Date() })
+            .where(eq(schema.userRoles.id, update.id));
+        }
+      });
+    } catch (error) {
+      console.error("Database error in updateUserRolesOrder:", error);
       throw error;
     }
   }

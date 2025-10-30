@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,8 +33,23 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertUserRoleSchema, type UserRole, type Permission, type RolePermission } from "@shared/schema";
-import { Search, Plus, Star, Loader2, Shield } from "lucide-react";
+import { Search, Plus, Star, Loader2, Shield, GripVertical } from "lucide-react";
 import { z } from "zod";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type PermissionAction = "view" | "add" | "edit" | "delete";
 
@@ -42,6 +57,64 @@ interface PermissionMatrix {
   [roleId: string]: {
     [permissionId: string]: PermissionAction[];
   };
+}
+
+// Sortable Role Item Component
+function SortableRoleItem({
+  role,
+  isSelected,
+  onSelect,
+}: {
+  role: UserRole;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: role.id, disabled: role.isBuiltIn });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <button
+        onClick={onSelect}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+          isSelected
+            ? "bg-primary text-primary-foreground"
+            : "hover-elevate active-elevate-2"
+        }`}
+        data-testid={`role-item-${role.name.toLowerCase().replace(/\s+/g, '-')}`}
+      >
+        {!role.isBuiltIn && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing"
+            data-testid={`drag-handle-${role.name.toLowerCase().replace(/\s+/g, '-')}`}
+          >
+            <GripVertical className="h-4 w-4 flex-shrink-0 opacity-50" />
+          </div>
+        )}
+        {role.isBuiltIn && (
+          <Star className="h-4 w-4 flex-shrink-0 opacity-50" />
+        )}
+        <span className="flex-1 text-sm">{role.name}</span>
+        {role.isBuiltIn && (
+          <Badge variant="secondary" className="text-xs">Built-in</Badge>
+        )}
+      </button>
+    </div>
+  );
 }
 
 export default function RolesPermissions() {
@@ -52,11 +125,25 @@ export default function RolesPermissions() {
   const [isEditRoleOpen, setIsEditRoleOpen] = useState(false);
   const [permissionMatrix, setPermissionMatrix] = useState<PermissionMatrix>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [localRoles, setLocalRoles] = useState<UserRole[]>([]);
 
   // Fetch roles
   const { data: roles = [], isLoading: rolesLoading } = useQuery<UserRole[]>({
     queryKey: ["/api/user-roles"],
   });
+
+  // Update localRoles whenever roles data changes
+  useEffect(() => {
+    if (roles.length > 0) {
+      setLocalRoles(roles);
+    }
+  }, [roles]);
+
+  // Set up sensors for drag and drop
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor)
+  );
 
   // Fetch permissions
   const { data: permissions = [], isLoading: permissionsLoading } = useQuery<Permission[]>({
@@ -70,7 +157,7 @@ export default function RolesPermissions() {
   });
 
   // Initialize permission matrix when role permissions load
-  useState(() => {
+  useEffect(() => {
     if (selectedRoleId && rolePermissions.length > 0) {
       const matrix: PermissionMatrix = {};
       if (!matrix[selectedRoleId]) {
@@ -82,6 +169,30 @@ export default function RolesPermissions() {
       setPermissionMatrix(matrix);
       setHasUnsavedChanges(false);
     }
+  }, [selectedRoleId, rolePermissions]);
+
+  // Reorder roles mutation
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; displayOrder: number }[]) => {
+      return await apiRequest("/api/user-roles/reorder", "PATCH", { updates });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-roles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Roles reordered",
+        description: "Role order has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to reorder roles.",
+        variant: "destructive",
+      });
+      // Revert to original order on error
+      setLocalRoles(roles);
+    },
   });
 
   // Save role permissions
@@ -150,12 +261,45 @@ export default function RolesPermissions() {
     return permissionMatrix[selectedRoleId]?.[permissionId]?.includes(action) || false;
   };
 
-  // Filter and select role
-  const filteredRoles = roles.filter((role) =>
+  // Handle drag end
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const oldIndex = localRoles.findIndex((role) => role.id === active.id);
+    const newIndex = localRoles.findIndex((role) => role.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) {
+      return;
+    }
+
+    // Create new order
+    const newRoles = [...localRoles];
+    const [movedRole] = newRoles.splice(oldIndex, 1);
+    newRoles.splice(newIndex, 0, movedRole);
+
+    // Optimistically update localRoles
+    setLocalRoles(newRoles);
+
+    // Create updates array with new display orders
+    const updates = newRoles.map((role, index) => ({
+      id: role.id,
+      displayOrder: index,
+    }));
+
+    // Call mutation
+    reorderMutation.mutate(updates);
+  };
+
+  // Filter and select role - use localRoles instead of roles
+  const filteredRoles = localRoles.filter((role) =>
     role.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const selectedRole = roles.find((r) => r.id === selectedRoleId);
+  const selectedRole = localRoles.find((r) => r.id === selectedRoleId);
 
   // Group permissions by category
   const groupedPermissions = permissions.reduce((acc, permission) => {
@@ -184,8 +328,8 @@ export default function RolesPermissions() {
   }
 
   // Auto-select first role if none selected
-  if (!selectedRoleId && roles.length > 0) {
-    setSelectedRoleId(roles[0].id);
+  if (!selectedRoleId && localRoles.length > 0) {
+    setSelectedRoleId(localRoles[0].id);
   }
 
   return (
@@ -222,24 +366,25 @@ export default function RolesPermissions() {
         <div className="flex-1 overflow-y-auto">
           <div className="p-2">
             <p className="text-xs text-muted-foreground px-3 py-2">Team roles</p>
-            {filteredRoles.map((role) => (
-              <button
-                key={role.id}
-                onClick={() => setSelectedRoleId(role.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                  selectedRoleId === role.id
-                    ? "bg-primary text-primary-foreground"
-                    : "hover-elevate active-elevate-2"
-                }`}
-                data-testid={`role-item-${role.name.toLowerCase().replace(/\s+/g, '-')}`}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={filteredRoles.map((role) => role.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <Star className="h-4 w-4 flex-shrink-0 opacity-50" />
-                <span className="flex-1 text-sm">{role.name}</span>
-                {role.isBuiltIn && (
-                  <Badge variant="secondary" className="text-xs">Built-in</Badge>
-                )}
-              </button>
-            ))}
+                {filteredRoles.map((role) => (
+                  <SortableRoleItem
+                    key={role.id}
+                    role={role}
+                    isSelected={selectedRoleId === role.id}
+                    onSelect={() => setSelectedRoleId(role.id)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
         </div>
       </div>

@@ -3147,6 +3147,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/user-roles/reorder", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
+    try {
+      const reorderSchema = z.object({
+        updates: z.array(z.object({
+          id: z.string(),
+          displayOrder: z.number().int()
+        }))
+      });
+
+      const validationResult = reorderSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      await storage.updateUserRolesOrder(validationResult.data.updates);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder user roles" });
+    }
+  });
+
   // Permission Management Routes
   app.get("/api/permissions", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
