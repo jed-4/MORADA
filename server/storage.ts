@@ -217,23 +217,23 @@ export interface IStorage {
   duplicateEstimateItem(id: string): Promise<EstimateItem>;
   copyItemToEstimate(itemId: string, targetEstimateId: string): Promise<EstimateItem>;
 
-  // Cost Categories CRUD (business-wide)
-  getCostCategories(): Promise<CostCategory[]>;
-  getCostCategory(id: string): Promise<CostCategory | undefined>;
+  // Cost Categories CRUD (company-specific)
+  getCostCategories(companyId: string): Promise<CostCategory[]>;
+  getCostCategory(id: string, companyId: string): Promise<CostCategory | undefined>;
   createCostCategory(category: InsertCostCategory): Promise<CostCategory>;
-  updateCostCategory(id: string, category: Partial<InsertCostCategory>): Promise<CostCategory | undefined>;
-  deleteCostCategory(id: string): Promise<boolean>;
-  archiveCostCategory(id: string): Promise<CostCategory | undefined>;
-  mergeCostCategories(sourceId: string, targetId: string): Promise<void>;
+  updateCostCategory(id: string, category: Partial<InsertCostCategory>, companyId: string): Promise<CostCategory | undefined>;
+  deleteCostCategory(id: string, companyId: string): Promise<boolean>;
+  archiveCostCategory(id: string, companyId: string): Promise<CostCategory | undefined>;
+  mergeCostCategories(sourceId: string, targetId: string, companyId: string): Promise<void>;
 
-  // Cost Codes CRUD (business-wide)
-  getCostCodes(): Promise<CostCode[]>;
-  getCostCode(id: string): Promise<CostCode | undefined>;
+  // Cost Codes CRUD (company-specific)
+  getCostCodes(companyId: string): Promise<CostCode[]>;
+  getCostCode(id: string, companyId: string): Promise<CostCode | undefined>;
   createCostCode(costCode: InsertCostCode): Promise<CostCode>;
-  updateCostCode(id: string, costCode: Partial<InsertCostCode>): Promise<CostCode | undefined>;
-  deleteCostCode(id: string): Promise<boolean>;
-  archiveCostCode(id: string): Promise<CostCode | undefined>;
-  mergeCostCodes(sourceId: string, targetId: string): Promise<boolean>;
+  updateCostCode(id: string, costCode: Partial<InsertCostCode>, companyId: string): Promise<CostCode | undefined>;
+  deleteCostCode(id: string, companyId: string): Promise<boolean>;
+  archiveCostCode(id: string, companyId: string): Promise<CostCode | undefined>;
+  mergeCostCodes(sourceId: string, targetId: string, companyId: string): Promise<boolean>;
 
   // Versioning and Locking
   createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate>;
@@ -6195,13 +6195,16 @@ export class DbStorage implements IStorage {
     }
   }
 
-  // Cost Categories CRUD operations (business-wide)
-  async getCostCategories(): Promise<CostCategory[]> {
+  // Cost Categories CRUD operations (company-specific)
+  async getCostCategories(companyId: string): Promise<CostCategory[]> {
     try {
       return await db
         .select()
         .from(schema.costCategories)
-        .where(eq(schema.costCategories.isActive, true))
+        .where(and(
+          eq(schema.costCategories.companyId, companyId),
+          eq(schema.costCategories.isActive, true)
+        ))
         .orderBy(schema.costCategories.sortOrder);
     } catch (error) {
       console.error("Database error in getCostCategories:", error);
@@ -6209,12 +6212,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getCostCategory(id: string): Promise<CostCategory | undefined> {
+  async getCostCategory(id: string, companyId: string): Promise<CostCategory | undefined> {
     try {
       const result = await db
         .select()
         .from(schema.costCategories)
-        .where(eq(schema.costCategories.id, id))
+        .where(and(
+          eq(schema.costCategories.id, id),
+          eq(schema.costCategories.companyId, companyId)
+        ))
         .limit(1);
       return result[0];
     } catch (error) {
@@ -6236,7 +6242,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateCostCategory(id: string, updateCategory: Partial<InsertCostCategory>): Promise<CostCategory | undefined> {
+  async updateCostCategory(id: string, updateCategory: Partial<InsertCostCategory>, companyId: string): Promise<CostCategory | undefined> {
     try {
       const result = await db
         .update(schema.costCategories)
@@ -6244,7 +6250,10 @@ export class DbStorage implements IStorage {
           ...updateCategory,
           updatedAt: new Date(),
         })
-        .where(eq(schema.costCategories.id, id))
+        .where(and(
+          eq(schema.costCategories.id, id),
+          eq(schema.costCategories.companyId, companyId)
+        ))
         .returning();
       return result[0];
     } catch (error) {
@@ -6253,11 +6262,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteCostCategory(id: string): Promise<boolean> {
+  async deleteCostCategory(id: string, companyId: string): Promise<boolean> {
     try {
       await db
         .delete(schema.costCategories)
-        .where(eq(schema.costCategories.id, id));
+        .where(and(
+          eq(schema.costCategories.id, id),
+          eq(schema.costCategories.companyId, companyId)
+        ));
       return true;
     } catch (error) {
       console.error("Database error in deleteCostCategory:", error);
@@ -6265,12 +6277,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async archiveCostCategory(id: string): Promise<CostCategory | undefined> {
+  async archiveCostCategory(id: string, companyId: string): Promise<CostCategory | undefined> {
     try {
       const result = await db
         .update(schema.costCategories)
         .set({ isActive: false })
-        .where(eq(schema.costCategories.id, id))
+        .where(and(
+          eq(schema.costCategories.id, id),
+          eq(schema.costCategories.companyId, companyId)
+        ))
         .returning();
       
       return result[0];
@@ -6280,32 +6295,41 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async mergeCostCategories(sourceId: string, targetId: string): Promise<void> {
+  async mergeCostCategories(sourceId: string, targetId: string, companyId: string): Promise<void> {
     try {
-      // Update all cost codes from source category to target category
+      // Update all cost codes from source category to target category (within same company)
       await db
         .update(schema.costCodes)
         .set({ categoryId: targetId })
-        .where(eq(schema.costCodes.categoryId, sourceId));
+        .where(and(
+          eq(schema.costCodes.categoryId, sourceId),
+          eq(schema.costCodes.companyId, companyId)
+        ));
 
       // Archive the source category
       await db
         .update(schema.costCategories)
         .set({ isActive: false })
-        .where(eq(schema.costCategories.id, sourceId));
+        .where(and(
+          eq(schema.costCategories.id, sourceId),
+          eq(schema.costCategories.companyId, companyId)
+        ));
     } catch (error) {
       console.error("Database error in mergeCostCategories:", error);
       throw error;
     }
   }
 
-  // Cost Codes CRUD operations (business-wide)
-  async getCostCodes(): Promise<CostCode[]> {
+  // Cost Codes CRUD operations (company-specific)
+  async getCostCodes(companyId: string): Promise<CostCode[]> {
     try {
       return await db
         .select()
         .from(schema.costCodes)
-        .where(eq(schema.costCodes.isActive, true))
+        .where(and(
+          eq(schema.costCodes.companyId, companyId),
+          eq(schema.costCodes.isActive, true)
+        ))
         .orderBy(schema.costCodes.sortOrder);
     } catch (error) {
       console.error("Database error in getCostCodes:", error);
@@ -6313,12 +6337,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getCostCode(id: string): Promise<CostCode | undefined> {
+  async getCostCode(id: string, companyId: string): Promise<CostCode | undefined> {
     try {
       const result = await db
         .select()
         .from(schema.costCodes)
-        .where(eq(schema.costCodes.id, id))
+        .where(and(
+          eq(schema.costCodes.id, id),
+          eq(schema.costCodes.companyId, companyId)
+        ))
         .limit(1);
       return result[0];
     } catch (error) {
@@ -6340,7 +6367,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateCostCode(id: string, updateCode: Partial<InsertCostCode>): Promise<CostCode | undefined> {
+  async updateCostCode(id: string, updateCode: Partial<InsertCostCode>, companyId: string): Promise<CostCode | undefined> {
     try {
       const result = await db
         .update(schema.costCodes)
@@ -6348,7 +6375,10 @@ export class DbStorage implements IStorage {
           ...updateCode,
           updatedAt: new Date(),
         })
-        .where(eq(schema.costCodes.id, id))
+        .where(and(
+          eq(schema.costCodes.id, id),
+          eq(schema.costCodes.companyId, companyId)
+        ))
         .returning();
       return result[0];
     } catch (error) {
@@ -6357,11 +6387,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteCostCode(id: string): Promise<boolean> {
+  async deleteCostCode(id: string, companyId: string): Promise<boolean> {
     try {
       await db
         .delete(schema.costCodes)
-        .where(eq(schema.costCodes.id, id));
+        .where(and(
+          eq(schema.costCodes.id, id),
+          eq(schema.costCodes.companyId, companyId)
+        ));
       return true;
     } catch (error) {
       console.error("Database error in deleteCostCode:", error);
@@ -6369,7 +6402,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async archiveCostCode(id: string): Promise<CostCode | undefined> {
+  async archiveCostCode(id: string, companyId: string): Promise<CostCode | undefined> {
     try {
       const result = await db
         .update(schema.costCodes)
@@ -6378,7 +6411,10 @@ export class DbStorage implements IStorage {
           isActive: false,
           updatedAt: new Date(),
         })
-        .where(eq(schema.costCodes.id, id))
+        .where(and(
+          eq(schema.costCodes.id, id),
+          eq(schema.costCodes.companyId, companyId)
+        ))
         .returning();
       return result[0];
     } catch (error) {
@@ -6387,16 +6423,17 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async mergeCostCodes(sourceId: string, targetId: string): Promise<boolean> {
+  async mergeCostCodes(sourceId: string, targetId: string, companyId: string): Promise<boolean> {
     try {
-      // Update all bill line items that reference the source cost code
+      // Update all bill line items that reference the source cost code (within same company)
+      // Note: This assumes billLineItems also filters by company through joins/foreign keys
       await db
         .update(schema.billLineItems)
         .set({ costCodeId: targetId })
         .where(eq(schema.billLineItems.costCodeId, sourceId));
       
       // Archive the source cost code
-      await this.archiveCostCode(sourceId);
+      await this.archiveCostCode(sourceId, companyId);
       
       return true;
     } catch (error) {
