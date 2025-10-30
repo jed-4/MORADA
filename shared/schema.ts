@@ -62,6 +62,7 @@ export const userRoles = pgTable("user_roles", {
   userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
   isBuiltIn: boolean("is_built_in").notNull().default(false), // System-defined roles
   isActive: boolean("is_active").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0), // Order for display in roles list
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
