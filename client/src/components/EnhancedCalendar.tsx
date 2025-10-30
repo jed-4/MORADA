@@ -79,6 +79,83 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   const eventColor = event.projectColor || event.color || "hsl(215 35% 45%)";
   const showTime = event.startTime || event.endTime;
 
+  // Convert color to proper format with 87% opacity
+  const backgroundColor = (() => {
+    const color = eventColor.trim();
+    
+    // Handle HSL
+    if (color.startsWith('hsl(') && !color.startsWith('hsla(')) {
+      const values = color.slice(4, -1).trim();
+      // Remove any trailing slash-alpha (hsl(... / 0.5) → hsl(...))
+      const cleaned = values.split('/')[0].trim();
+      // Normalize to commas
+      const normalized = cleaned.includes(',') ? cleaned : cleaned.replace(/\s+/g, ', ');
+      return `hsla(${normalized}, 0.87)`;
+    }
+    
+    // Handle HSLA - normalize alpha to 0.87
+    if (color.startsWith('hsla(')) {
+      const values = color.slice(5, -1).trim();
+      // Split on slash first to remove alpha
+      const baseValues = values.split('/')[0].trim();
+      // Then split on commas or spaces to get components
+      const parts = baseValues.split(/[\s,]+/).filter(p => p);
+      if (parts.length >= 3) {
+        return `hsla(${parts[0]}, ${parts[1]}, ${parts[2]}, 0.87)`;
+      }
+      return color;
+    }
+    
+    // Handle hex colors
+    if (color.startsWith('#')) {
+      const hex = color.slice(1);
+      if (hex.length === 3) {
+        const r = hex[0] + hex[0];
+        const g = hex[1] + hex[1];
+        const b = hex[2] + hex[2];
+        return `#${r}${g}${b}dd`;
+      } else if (hex.length === 6) {
+        return `${color}dd`;
+      } else if (hex.length === 4 || hex.length === 8) {
+        // Has alpha - replace it
+        const base = hex.length === 4 
+          ? hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]
+          : hex.slice(0, 6);
+        return `#${base}dd`;
+      }
+      return color;
+    }
+    
+    // Handle RGB
+    if (color.startsWith('rgb(') && !color.startsWith('rgba(')) {
+      const values = color.slice(4, -1).trim();
+      const cleaned = values.split('/')[0].trim();
+      const normalized = cleaned.includes(',') ? cleaned : cleaned.replace(/\s+/g, ', ');
+      return `rgba(${normalized}, 0.87)`;
+    }
+    
+    // Handle RGBA - normalize alpha to 0.87
+    if (color.startsWith('rgba(')) {
+      const values = color.slice(5, -1).trim();
+      // Split on slash first to remove alpha
+      const baseValues = values.split('/')[0].trim();
+      // Then split on commas or spaces to get components
+      const parts = baseValues.split(/[\s,]+/).filter(p => p);
+      if (parts.length >= 3) {
+        return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, 0.87)`;
+      }
+      return color;
+    }
+    
+    // Handle CSS variables
+    if (color.startsWith('var(')) {
+      return `color-mix(in srgb, ${color} 87%, transparent)`;
+    }
+    
+    // Fallback: return as-is (named colors, etc.)
+    return color;
+  })();
+
   return (
     <div
       ref={setNodeRef}
@@ -88,8 +165,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] hover-elevate active-elevate-2",
-        showResizeHandles ? "h-full" : "mb-1",
+        "group relative flex items-start gap-1.5 px-2 pt-1 pb-0.5 rounded-md text-[11px] hover-elevate active-elevate-2 mb-1",
+        showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
         !isGoogleCalendarEvent && !showResizeHandles && "cursor-move",
         showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer",
@@ -98,7 +175,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         isDragging && "opacity-50"
       )}
       style={{
-        backgroundColor: `${eventColor}15`,
+        backgroundColor,
         borderLeft: `3px solid ${eventColor}`,
       }}
     >
@@ -131,9 +208,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           {isCompleted && <Check className="w-2.5 h-2.5" />}
         </button>
       )}
-      <div className="flex-1 min-w-0 overflow-hidden flex items-center gap-1">
+      <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col gap-0.5">
         <div className={cn(
-          "font-medium truncate flex-1",
+          "font-medium truncate w-full text-white",
           isCompleted && "line-through"
         )}>
           {event.title}
@@ -141,7 +218,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         {isGoogleCalendarEvent && (
           <Badge 
             variant="outline" 
-            className="flex-shrink-0 text-[9px] px-1 py-0 h-3.5"
+            className="flex-shrink-0 text-[9px] px-1 py-0 h-3.5 bg-white"
             style={{ borderColor: '#4285f4', color: '#4285f4' }}
             data-testid={`google-badge-${event.id}`}
           >
