@@ -89,12 +89,12 @@ export interface IStorage {
   saveUserColumnPreferences(preferences: InsertUserColumnPreferences): Promise<UserColumnPreferences>;
 
   // User Role operations  
-  getUserRoles(category?: UserCategory): Promise<UserRole[]>;
-  getUserRole(id: string): Promise<UserRole | undefined>;
+  getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]>;
+  getUserRole(id: string, companyId?: string): Promise<UserRole | undefined>;
   createUserRole(role: InsertUserRole): Promise<UserRole>;
-  updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined>;
-  deleteUserRole(id: string): Promise<boolean>;
-  updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
+  updateUserRole(id: string, role: Partial<InsertUserRole>, companyId?: string): Promise<UserRole | undefined>;
+  deleteUserRole(id: string, companyId?: string): Promise<boolean>;
+  updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>, companyId?: string): Promise<void>;
 
   // Permission operations
   getPermissions(category?: string): Promise<Permission[]>;
@@ -1521,11 +1521,16 @@ export class MemStorage implements IStorage {
   }
 
   // User Role operations
-  async getUserRoles(category?: UserCategory): Promise<UserRole[]> {
+  async getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]> {
     const allRoles = Array.from(this.userRoles.values());
-    const filteredRoles = category 
+    let filteredRoles = category 
       ? allRoles.filter(role => role.userCategory === category && role.isActive)
       : allRoles.filter(role => role.isActive);
+    
+    // Filter by companyId if provided
+    if (companyId) {
+      filteredRoles = filteredRoles.filter(role => role.companyId === companyId);
+    }
     
     // Sort by displayOrder first, then by name as fallback
     return filteredRoles.sort((a, b) => {
@@ -1536,8 +1541,16 @@ export class MemStorage implements IStorage {
     });
   }
 
-  async getUserRole(id: string): Promise<UserRole | undefined> {
-    return this.userRoles.get(id);
+  async getUserRole(id: string, companyId?: string): Promise<UserRole | undefined> {
+    const role = this.userRoles.get(id);
+    if (!role) return undefined;
+    
+    // Check companyId matches if provided
+    if (companyId && role.companyId !== companyId) {
+      return undefined;
+    }
+    
+    return role;
   }
 
   async createUserRole(insertRole: InsertUserRole): Promise<UserRole> {
@@ -1564,9 +1577,14 @@ export class MemStorage implements IStorage {
     return role;
   }
 
-  async updateUserRole(id: string, updateData: Partial<InsertUserRole>): Promise<UserRole | undefined> {
+  async updateUserRole(id: string, updateData: Partial<InsertUserRole>, companyId?: string): Promise<UserRole | undefined> {
     const existingRole = this.userRoles.get(id);
     if (!existingRole) return undefined;
+
+    // Verify companyId matches if provided
+    if (companyId && existingRole.companyId !== companyId) {
+      return undefined;
+    }
 
     const updatedRole: UserRole = {
       ...existingRole,
@@ -1577,9 +1595,14 @@ export class MemStorage implements IStorage {
     return updatedRole;
   }
 
-  async deleteUserRole(id: string): Promise<boolean> {
+  async deleteUserRole(id: string, companyId?: string): Promise<boolean> {
     const role = this.userRoles.get(id);
     if (!role || role.isBuiltIn) return false; // Cannot delete built-in roles
+
+    // Verify companyId matches if provided
+    if (companyId && role.companyId !== companyId) {
+      return false;
+    }
 
     // Check if any active users have this roleId assigned
     const usersWithRole = Array.from(this.users.values()).filter(
@@ -1599,11 +1622,16 @@ export class MemStorage implements IStorage {
     return true;
   }
 
-  async updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+  async updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>, companyId?: string): Promise<void> {
     const now = new Date();
     for (const update of updates) {
       const role = this.userRoles.get(update.id);
       if (role) {
+        // Verify companyId matches if provided
+        if (companyId && role.companyId !== companyId) {
+          continue; // Skip roles that don't belong to this company
+        }
+        
         const updatedRole: UserRole = {
           ...role,
           displayOrder: update.displayOrder,
@@ -4929,14 +4957,23 @@ export class DbStorage implements IStorage {
   }
 
   // User Roles CRUD
-  async getUserRoles(category?: UserCategory): Promise<UserRole[]> {
+  async getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]> {
     try {
+      const conditions = [];
       if (category) {
+        conditions.push(eq(schema.userRoles.userCategory, category));
+      }
+      if (companyId) {
+        conditions.push(eq(schema.userRoles.companyId, companyId));
+      }
+      
+      if (conditions.length > 0) {
         return await db.select()
           .from(schema.userRoles)
-          .where(eq(schema.userRoles.userCategory, category))
+          .where(and(...conditions))
           .orderBy(asc(schema.userRoles.displayOrder), asc(schema.userRoles.name));
       }
+      
       return await db.select()
         .from(schema.userRoles)
         .orderBy(asc(schema.userRoles.displayOrder), asc(schema.userRoles.name));
@@ -4946,11 +4983,16 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getUserRole(id: string): Promise<UserRole | undefined> {
+  async getUserRole(id: string, companyId?: string): Promise<UserRole | undefined> {
     try {
+      const conditions = [eq(schema.userRoles.id, id)];
+      if (companyId) {
+        conditions.push(eq(schema.userRoles.companyId, companyId));
+      }
+      
       const results = await db.select()
         .from(schema.userRoles)
-        .where(eq(schema.userRoles.id, id))
+        .where(and(...conditions))
         .limit(1);
       return results[0];
     } catch (error) {
@@ -4979,11 +5021,16 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateUserRole(id: string, role: Partial<InsertUserRole>): Promise<UserRole | undefined> {
+  async updateUserRole(id: string, role: Partial<InsertUserRole>, companyId?: string): Promise<UserRole | undefined> {
     try {
+      const conditions = [eq(schema.userRoles.id, id)];
+      if (companyId) {
+        conditions.push(eq(schema.userRoles.companyId, companyId));
+      }
+      
       const results = await db.update(schema.userRoles)
         .set({ ...role, updatedAt: new Date() })
-        .where(eq(schema.userRoles.id, id))
+        .where(and(...conditions))
         .returning();
       return results[0];
     } catch (error) {
@@ -4992,12 +5039,12 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteUserRole(id: string): Promise<boolean> {
+  async deleteUserRole(id: string, companyId?: string): Promise<boolean> {
     try {
       // First check if role exists
-      const role = await this.getUserRole(id);
+      const role = await this.getUserRole(id, companyId);
       if (!role) {
-        return false; // Role doesn't exist
+        return false; // Role doesn't exist or doesn't belong to company
       }
 
       // Check if role is built-in
@@ -5018,8 +5065,13 @@ export class DbStorage implements IStorage {
       }
 
       // Hard delete the role
+      const conditions = [eq(schema.userRoles.id, id)];
+      if (companyId) {
+        conditions.push(eq(schema.userRoles.companyId, companyId));
+      }
+      
       const results = await db.delete(schema.userRoles)
-        .where(eq(schema.userRoles.id, id))
+        .where(and(...conditions))
         .returning();
       return results.length > 0;
     } catch (error) {
@@ -5028,14 +5080,19 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+  async updateUserRolesOrder(updates: Array<{id: string, displayOrder: number}>, companyId?: string): Promise<void> {
     try {
       // Update each role's displayOrder in a transaction
       await db.transaction(async (tx) => {
         for (const update of updates) {
+          const conditions = [eq(schema.userRoles.id, update.id)];
+          if (companyId) {
+            conditions.push(eq(schema.userRoles.companyId, companyId));
+          }
+          
           await tx.update(schema.userRoles)
             .set({ displayOrder: update.displayOrder, updatedAt: new Date() })
-            .where(eq(schema.userRoles.id, update.id));
+            .where(and(...conditions));
         }
       });
     } catch (error) {

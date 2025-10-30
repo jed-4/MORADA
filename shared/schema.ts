@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -57,7 +57,8 @@ export type Client = typeof clients.$inferSelect;
 // User roles (Admin, Project Manager, Carpenter, Subcontractor, Client, etc.)
 export const userRoles = pgTable("user_roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull().unique(),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  name: text("name").notNull(),
   description: text("description"),
   userCategory: text("user_category").notNull(), // "team" | "supplier" | "client"
   isBuiltIn: boolean("is_built_in").notNull().default(false), // System-defined roles
@@ -65,7 +66,10 @@ export const userRoles = pgTable("user_roles", {
   displayOrder: integer("display_order").notNull().default(0), // Custom sort order
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Composite unique constraint: role names must be unique per company
+  uniqueNamePerCompany: uniqueIndex("user_roles_company_name_unique").on(table.companyId, table.name),
+}));
 
 // Users table with email/password authentication
 export const users = pgTable("users", {

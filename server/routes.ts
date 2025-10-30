@@ -3077,8 +3077,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User Role Management Routes
   app.get("/api/user-roles", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const { category } = req.query;
-      const roles = await storage.getUserRoles(category as any);
+      const roles = await storage.getUserRoles(category as any, companyId);
       res.json(roles);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch user roles" });
@@ -3087,7 +3094,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
-      const role = await storage.getUserRole(req.params.id);
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const role = await storage.getUserRole(req.params.id, companyId);
       if (!role) {
         return res.status(404).json({ error: "User role not found" });
       }
@@ -3099,6 +3113,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user-roles", requireTeamMember, requirePermission("admin.roles", "add"), async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const validationResult = insertUserRoleSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -3107,7 +3128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const role = await storage.createUserRole(validationResult.data);
+      const role = await storage.createUserRole({ ...validationResult.data, companyId });
       res.status(201).json(role);
     } catch (error) {
       res.status(500).json({ error: "Failed to create user role" });
@@ -3116,6 +3137,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/user-roles/reorder", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const reorderSchema = z.object({
         updates: z.array(z.object({
           id: z.string(),
@@ -3131,7 +3159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      await storage.updateUserRolesOrder(validationResult.data.updates);
+      await storage.updateUserRolesOrder(validationResult.data.updates, companyId);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to reorder user roles" });
@@ -3140,6 +3168,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "edit"), async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const updateSchema = insertUserRoleSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -3149,7 +3184,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const role = await storage.updateUserRole(req.params.id, validationResult.data);
+      const role = await storage.updateUserRole(req.params.id, validationResult.data, companyId);
       if (!role) {
         return res.status(404).json({ error: "User role not found" });
       }
@@ -3161,8 +3196,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "delete"), async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       // First check if the role exists
-      const role = await storage.getUserRole(req.params.id);
+      const role = await storage.getUserRole(req.params.id, companyId);
       if (!role) {
         return res.status(404).json({ error: "User role not found" });
       }
@@ -3181,7 +3223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Attempt to delete the role
-      const success = await storage.deleteUserRole(req.params.id);
+      const success = await storage.deleteUserRole(req.params.id, companyId);
       if (!success) {
         return res.status(400).json({ error: "Failed to delete user role" });
       }

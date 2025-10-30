@@ -611,10 +611,14 @@ function AddRoleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       onOpenChange(false);
       form.reset();
     },
-    onError: () => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || "Failed to create role.";
+      const isDuplicateName = errorMessage.includes("duplicate key") || errorMessage.includes("already exists");
       toast({
         title: "Error",
-        description: "Failed to create role.",
+        description: isDuplicateName 
+          ? "A role with this name already exists. Please choose a different name."
+          : errorMessage,
         variant: "destructive",
       });
     },
@@ -731,10 +735,14 @@ function EditRoleDialog({
       });
       onOpenChange(false);
     },
-    onError: () => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || "Failed to update role.";
+      const isDuplicateName = errorMessage.includes("duplicate key") || errorMessage.includes("already exists");
       toast({
         title: "Error",
-        description: "Failed to update role.",
+        description: isDuplicateName 
+          ? "A role with this name already exists. Please choose a different name."
+          : errorMessage,
         variant: "destructive",
       });
     },
