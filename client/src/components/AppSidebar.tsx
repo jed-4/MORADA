@@ -110,9 +110,7 @@ const businessItems = [
   { title: "Sick Days & Leave", url: "/business/leave", icon: Calendar },
   { title: "Bills", url: "/bills", icon: Receipt },
   { title: "Team", url: "/business-team", icon: Users },
-  { title: "Task Templates", url: "/systems/task-templates", icon: LayoutTemplate },
-  { title: "Documents", url: "/systems/documents", icon: FileText },
-  { title: "Processes", url: "/systems/processes", icon: ClipboardList },
+  { title: "Systems", url: "/systems", icon: Settings },
 ];
 
 // System sections

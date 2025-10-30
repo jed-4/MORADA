@@ -55,9 +55,7 @@ import BusinessCalendar from "@/pages/BusinessCalendar";
 import PersonalCalendar from "@/pages/PersonalCalendar";
 import UserProfile from "@/pages/UserProfile";
 import BusinessTasks from "@/pages/BusinessTasks";
-import SystemTaskTemplates from "@/pages/SystemTaskTemplates";
-import SystemDocuments from "@/pages/SystemDocuments";
-import SystemProcesses from "@/pages/SystemProcesses";
+import Systems from "@/pages/Systems";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
@@ -95,9 +93,7 @@ function Router() {
       <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
       
       {/* Systems Section */}
-      <Route path="/systems/task-templates" component={SystemTaskTemplates} />
-      <Route path="/systems/documents" component={SystemDocuments} />
-      <Route path="/systems/processes" component={SystemProcesses} />
+      <Route path="/systems" component={Systems} />
       
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
