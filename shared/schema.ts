@@ -728,9 +728,10 @@ export const insertSystemConfigurationSchema = createInsertSchema(systemConfigur
 export type InsertSystemConfiguration = z.infer<typeof insertSystemConfigurationSchema>;
 export type SystemConfiguration = typeof systemConfiguration.$inferSelect;
 
-// Cost Categories (business-wide categories for cost codes)
+// Cost Categories (company-specific categories for cost codes)
 export const costCategories = pgTable("cost_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
   code: text("code").notNull(), // e.g., "001", "002", "5,000"
   title: text("title").notNull(), // e.g., "Preliminaries", "Site Services", "Finishing Trades"
   isActive: boolean("is_active").notNull().default(true),
@@ -748,9 +749,10 @@ export const insertCostCategorySchema = createInsertSchema(costCategories).omit(
 export type InsertCostCategory = z.infer<typeof insertCostCategorySchema>;
 export type CostCategory = typeof costCategories.$inferSelect;
 
-// Cost Codes (business-wide cost codes that can belong to categories)
+// Cost Codes (company-specific cost codes that can belong to categories)
 export const costCodes = pgTable("cost_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
   code: text("code").notNull(), // e.g., "FLRT", "100", "5,200"
   title: text("title").notNull(), // e.g., "Flat rate", "Preliminaries", "Interior Trim"
   categoryId: varchar("category_id").references(() => costCategories.id, { onDelete: "set null" }), // Nullable - can exist without category
