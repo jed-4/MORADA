@@ -3140,15 +3140,16 @@ export class MemStorage implements IStorage {
     return newItem;
   }
 
-  // Cost Categories CRUD operations (business-wide)
-  async getCostCategories(): Promise<CostCategory[]> {
+  // Cost Categories CRUD operations (company-specific)
+  async getCostCategories(companyId: string): Promise<CostCategory[]> {
     const categories = Array.from(this.costCategories.values())
-      .filter(category => category.isActive);
+      .filter(category => category.isActive && category.companyId === companyId);
     return categories.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
 
-  async getCostCategory(id: string): Promise<CostCategory | undefined> {
-    return this.costCategories.get(id);
+  async getCostCategory(id: string, companyId: string): Promise<CostCategory | undefined> {
+    const category = this.costCategories.get(id);
+    return category && category.companyId === companyId ? category : undefined;
   }
 
   async createCostCategory(insertCategory: InsertCostCategory): Promise<CostCategory> {
@@ -3166,9 +3167,9 @@ export class MemStorage implements IStorage {
     return category;
   }
 
-  async updateCostCategory(id: string, updateCategory: Partial<InsertCostCategory>): Promise<CostCategory | undefined> {
+  async updateCostCategory(id: string, updateCategory: Partial<InsertCostCategory>, companyId: string): Promise<CostCategory | undefined> {
     const category = this.costCategories.get(id);
-    if (!category) {
+    if (!category || category.companyId !== companyId) {
       return undefined;
     }
 
@@ -3181,13 +3182,17 @@ export class MemStorage implements IStorage {
     return updatedCategory;
   }
 
-  async deleteCostCategory(id: string): Promise<boolean> {
+  async deleteCostCategory(id: string, companyId: string): Promise<boolean> {
+    const category = this.costCategories.get(id);
+    if (!category || category.companyId !== companyId) {
+      return false;
+    }
     return this.costCategories.delete(id);
   }
 
-  async archiveCostCategory(id: string): Promise<CostCategory | undefined> {
+  async archiveCostCategory(id: string, companyId: string): Promise<CostCategory | undefined> {
     const category = this.costCategories.get(id);
-    if (!category) {
+    if (!category || category.companyId !== companyId) {
       return undefined;
     }
 
@@ -3200,17 +3205,17 @@ export class MemStorage implements IStorage {
     return updatedCategory;
   }
 
-  async mergeCostCategories(sourceId: string, targetId: string): Promise<void> {
+  async mergeCostCategories(sourceId: string, targetId: string, companyId: string): Promise<void> {
     const sourceCategory = this.costCategories.get(sourceId);
     const targetCategory = this.costCategories.get(targetId);
 
-    if (!sourceCategory || !targetCategory) {
+    if (!sourceCategory || !targetCategory || sourceCategory.companyId !== companyId || targetCategory.companyId !== companyId) {
       throw new Error("Source or target category not found");
     }
 
-    // Update all cost codes from source category to target category
+    // Update all cost codes from source category to target category (within same company)
     for (const [id, code] of this.costCodes.entries()) {
-      if (code.categoryId === sourceId) {
+      if (code.categoryId === sourceId && code.companyId === companyId) {
         this.costCodes.set(id, {
           ...code,
           categoryId: targetId,
@@ -3219,18 +3224,19 @@ export class MemStorage implements IStorage {
     }
 
     // Archive the source category
-    await this.archiveCostCategory(sourceId);
+    await this.archiveCostCategory(sourceId, companyId);
   }
 
-  // Cost Codes CRUD operations (business-wide)
-  async getCostCodes(): Promise<CostCode[]> {
+  // Cost Codes CRUD operations (company-specific)
+  async getCostCodes(companyId: string): Promise<CostCode[]> {
     const codes = Array.from(this.costCodes.values())
-      .filter(code => code.isActive);
+      .filter(code => code.isActive && code.companyId === companyId);
     return codes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
 
-  async getCostCode(id: string): Promise<CostCode | undefined> {
-    return this.costCodes.get(id);
+  async getCostCode(id: string, companyId: string): Promise<CostCode | undefined> {
+    const code = this.costCodes.get(id);
+    return code && code.companyId === companyId ? code : undefined;
   }
 
   async createCostCode(insertCode: InsertCostCode): Promise<CostCode> {
@@ -3253,9 +3259,9 @@ export class MemStorage implements IStorage {
     return code;
   }
 
-  async updateCostCode(id: string, updateCode: Partial<InsertCostCode>): Promise<CostCode | undefined> {
+  async updateCostCode(id: string, updateCode: Partial<InsertCostCode>, companyId: string): Promise<CostCode | undefined> {
     const code = this.costCodes.get(id);
-    if (!code) {
+    if (!code || code.companyId !== companyId) {
       return undefined;
     }
 
@@ -3268,13 +3274,17 @@ export class MemStorage implements IStorage {
     return updatedCode;
   }
 
-  async deleteCostCode(id: string): Promise<boolean> {
+  async deleteCostCode(id: string, companyId: string): Promise<boolean> {
+    const code = this.costCodes.get(id);
+    if (!code || code.companyId !== companyId) {
+      return false;
+    }
     return this.costCodes.delete(id);
   }
 
-  async archiveCostCode(id: string): Promise<CostCode | undefined> {
+  async archiveCostCode(id: string, companyId: string): Promise<CostCode | undefined> {
     const code = this.costCodes.get(id);
-    if (!code) {
+    if (!code || code.companyId !== companyId) {
       return undefined;
     }
 
@@ -3288,9 +3298,16 @@ export class MemStorage implements IStorage {
     return updatedCode;
   }
 
-  async mergeCostCodes(sourceId: string, targetId: string): Promise<boolean> {
+  async mergeCostCodes(sourceId: string, targetId: string, companyId: string): Promise<boolean> {
+    const sourceCode = this.costCodes.get(sourceId);
+    const targetCode = this.costCodes.get(targetId);
+    
+    if (!sourceCode || !targetCode || sourceCode.companyId !== companyId || targetCode.companyId !== companyId) {
+      return false;
+    }
+    
     // Archive the source cost code
-    await this.archiveCostCode(sourceId);
+    await this.archiveCostCode(sourceId, companyId);
     return true;
   }
 

@@ -5322,10 +5322,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cost Categories routes (business-wide)
-  app.get("/api/cost-categories", async (req, res) => {
+  // Cost Categories routes (company-specific)
+  app.get("/api/cost-categories", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const categories = await storage.getCostCategories();
+      const categories = await storage.getCostCategories(req.user!.companyId);
       res.json(categories);
     } catch (error: any) {
       res.status(500).json({ 
@@ -5335,9 +5335,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/cost-categories/:id", async (req, res) => {
+  app.get("/api/cost-categories/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const category = await storage.getCostCategory(req.params.id);
+      const category = await storage.getCostCategory(req.params.id, req.user!.companyId);
       if (!category) {
         return res.status(404).json({ error: "Cost category not found" });
       }
@@ -5350,9 +5350,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-categories", async (req, res) => {
+  app.post("/api/cost-categories", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertCostCategorySchema.safeParse(req.body);
+      const validationResult = insertCostCategorySchema.omit({ companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -5360,7 +5360,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const category = await storage.createCostCategory(validationResult.data);
+      const category = await storage.createCostCategory({
+        ...validationResult.data,
+        companyId: req.user!.companyId
+      });
       res.status(201).json(category);
     } catch (error: any) {
       res.status(500).json({ 
@@ -5370,9 +5373,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/cost-categories/:id", async (req, res) => {
+  app.patch("/api/cost-categories/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertCostCategorySchema.partial().safeParse(req.body);
+      const validationResult = insertCostCategorySchema.omit({ companyId: true }).partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -5380,7 +5383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const category = await storage.updateCostCategory(req.params.id, validationResult.data);
+      const category = await storage.updateCostCategory(req.params.id, validationResult.data, req.user!.companyId);
       if (!category) {
         return res.status(404).json({ error: "Cost category not found" });
       }
@@ -5393,9 +5396,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/cost-categories/:id", async (req, res) => {
+  app.delete("/api/cost-categories/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const success = await storage.deleteCostCategory(req.params.id);
+      const success = await storage.deleteCostCategory(req.params.id, req.user!.companyId);
       if (!success) {
         return res.status(404).json({ error: "Cost category not found" });
       }
@@ -5408,9 +5411,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-categories/:id/archive", async (req, res) => {
+  app.post("/api/cost-categories/:id/archive", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const category = await storage.archiveCostCategory(req.params.id);
+      const category = await storage.archiveCostCategory(req.params.id, req.user!.companyId);
       if (!category) {
         return res.status(404).json({ error: "Cost category not found" });
       }
@@ -5423,7 +5426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-categories/merge", async (req, res) => {
+  app.post("/api/cost-categories/merge", requireAuth, requireTeamMember, async (req, res) => {
     try {
       // Validate request body
       const validationResult = z.object({
@@ -5444,10 +5447,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Cannot merge a category into itself" });
       }
 
-      // Check if both categories exist
+      const companyId = req.user!.companyId;
+
+      // Check if both categories exist and belong to the user's company
       const [sourceCategory, targetCategory] = await Promise.all([
-        storage.getCostCategory(sourceId),
-        storage.getCostCategory(targetId)
+        storage.getCostCategory(sourceId, companyId),
+        storage.getCostCategory(targetId, companyId)
       ]);
 
       if (!sourceCategory) {
@@ -5463,7 +5468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Cannot merge into an archived category" });
       }
 
-      await storage.mergeCostCategories(sourceId, targetId);
+      await storage.mergeCostCategories(sourceId, targetId, companyId);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ 
@@ -5473,10 +5478,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cost Codes routes (business-wide)
-  app.get("/api/cost-codes", async (req, res) => {
+  // Cost Codes routes (company-specific)
+  app.get("/api/cost-codes", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const codes = await storage.getCostCodes();
+      const codes = await storage.getCostCodes(req.user!.companyId);
       res.json(codes);
     } catch (error: any) {
       res.status(500).json({ 
@@ -5486,9 +5491,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/cost-codes/:id", async (req, res) => {
+  app.get("/api/cost-codes/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const code = await storage.getCostCode(req.params.id);
+      const code = await storage.getCostCode(req.params.id, req.user!.companyId);
       if (!code) {
         return res.status(404).json({ error: "Cost code not found" });
       }
@@ -5501,9 +5506,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-codes", async (req, res) => {
+  app.post("/api/cost-codes", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertCostCodeSchema.safeParse(req.body);
+      const validationResult = insertCostCodeSchema.omit({ companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -5511,15 +5516,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Verify category exists if provided
+      const companyId = req.user!.companyId;
+
+      // Verify category exists if provided and belongs to the user's company
       if (validationResult.data.categoryId) {
-        const category = await storage.getCostCategory(validationResult.data.categoryId);
+        const category = await storage.getCostCategory(validationResult.data.categoryId, companyId);
         if (!category) {
           return res.status(400).json({ error: "Cost category not found" });
         }
       }
 
-      const code = await storage.createCostCode(validationResult.data);
+      const code = await storage.createCostCode({
+        ...validationResult.data,
+        companyId
+      });
       res.status(201).json(code);
     } catch (error: any) {
       res.status(500).json({ 
@@ -5529,9 +5539,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/cost-codes/:id", async (req, res) => {
+  app.patch("/api/cost-codes/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertCostCodeSchema.partial().safeParse(req.body);
+      const validationResult = insertCostCodeSchema.omit({ companyId: true }).partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -5539,15 +5549,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Verify category exists if being updated
+      const companyId = req.user!.companyId;
+
+      // Verify category exists if being updated and belongs to the user's company
       if (validationResult.data.categoryId) {
-        const category = await storage.getCostCategory(validationResult.data.categoryId);
+        const category = await storage.getCostCategory(validationResult.data.categoryId, companyId);
         if (!category) {
           return res.status(400).json({ error: "Cost category not found" });
         }
       }
 
-      const code = await storage.updateCostCode(req.params.id, validationResult.data);
+      const code = await storage.updateCostCode(req.params.id, validationResult.data, companyId);
       if (!code) {
         return res.status(404).json({ error: "Cost code not found" });
       }
@@ -5560,9 +5572,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/cost-codes/:id", async (req, res) => {
+  app.delete("/api/cost-codes/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const success = await storage.deleteCostCode(req.params.id);
+      const success = await storage.deleteCostCode(req.params.id, req.user!.companyId);
       if (!success) {
         return res.status(404).json({ error: "Cost code not found" });
       }
@@ -5575,9 +5587,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-codes/:id/archive", async (req, res) => {
+  app.post("/api/cost-codes/:id/archive", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const code = await storage.archiveCostCode(req.params.id);
+      const code = await storage.archiveCostCode(req.params.id, req.user!.companyId);
       if (!code) {
         return res.status(404).json({ error: "Cost code not found" });
       }
@@ -5590,7 +5602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-codes/merge", async (req, res) => {
+  app.post("/api/cost-codes/merge", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { sourceId, targetId } = req.body;
       
@@ -5606,9 +5618,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Verify both codes exist
-      const sourceCode = await storage.getCostCode(sourceId);
-      const targetCode = await storage.getCostCode(targetId);
+      const companyId = req.user!.companyId;
+
+      // Verify both codes exist and belong to the user's company
+      const sourceCode = await storage.getCostCode(sourceId, companyId);
+      const targetCode = await storage.getCostCode(targetId, companyId);
 
       if (!sourceCode) {
         return res.status(404).json({ error: "Source cost code not found" });
@@ -5618,7 +5632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Target cost code not found" });
       }
 
-      const success = await storage.mergeCostCodes(sourceId, targetId);
+      const success = await storage.mergeCostCodes(sourceId, targetId, companyId);
       res.json({ success });
     } catch (error: any) {
       res.status(500).json({ 
@@ -5628,7 +5642,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cost-codes/import", async (req, res) => {
+  app.post("/api/cost-codes/import", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { items } = req.body;
       
@@ -5638,12 +5652,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const companyId = req.user!.companyId;
       const categoryMap = new Map<string, string>(); // code -> categoryId
       let categoriesCreated = 0;
       let codesCreated = 0;
 
-      // Get existing categories
-      const existingCategories = await storage.getCostCategories();
+      // Get existing categories for this company
+      const existingCategories = await storage.getCostCategories(companyId);
       for (const cat of existingCategories) {
         categoryMap.set(cat.code, cat.id);
       }
@@ -5658,6 +5673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const newCategory = await storage.createCostCategory({
               code: item.categoryCode,
               title: item.categoryTitle,
+              companyId,
             });
             categoryMap.set(item.categoryCode, newCategory.id);
             categoriesCreated++;
@@ -5674,6 +5690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             title: item.costCodeTitle,
             categoryId,
             availableInTimesheets: true,
+            companyId,
           });
           codesCreated++;
         }
