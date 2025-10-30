@@ -590,13 +590,23 @@ function AddRoleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const { toast } = useToast();
 
   const form = useForm({
-    resolver: zodResolver(insertUserRoleSchema.omit({ isBuiltIn: true, isActive: true })),
+    resolver: zodResolver(insertUserRoleSchema.omit({ isBuiltIn: true, isActive: true, companyId: true, displayOrder: true })),
     defaultValues: {
       name: "",
       description: "",
       userCategory: "team" as const,
     },
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        name: "",
+        description: "",
+        userCategory: "team" as const,
+      });
+    }
+  }, [open, form]);
 
   const createRoleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof insertUserRoleSchema>) => {
@@ -715,7 +725,7 @@ function EditRoleDialog({
   const { toast } = useToast();
 
   const form = useForm({
-    resolver: zodResolver(insertUserRoleSchema.partial().omit({ isBuiltIn: true, isActive: true })),
+    resolver: zodResolver(insertUserRoleSchema.partial().omit({ isBuiltIn: true, isActive: true, companyId: true, displayOrder: true })),
     values: {
       name: role.name,
       description: role.description || "",
