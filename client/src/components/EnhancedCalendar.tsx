@@ -194,16 +194,17 @@ function DroppableDateCell({ date, children, className, onClick }: DroppableDate
 interface DroppableTimeSlotProps {
   date: Date;
   hour: number;
+  quarter: number; // 0, 15, 30, or 45
   children?: React.ReactNode;
   className?: string;
   onClick?: () => void;
 }
 
-function DroppableTimeSlot({ date, hour, children, className, onClick }: DroppableTimeSlotProps) {
-  const slotId = `${format(date, "yyyy-MM-dd")}-${hour}`;
+function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }: DroppableTimeSlotProps) {
+  const slotId = `${format(date, "yyyy-MM-dd")}-${hour}:${quarter.toString().padStart(2, '0')}`;
   const { setNodeRef, isOver } = useDroppable({
     id: slotId,
-    data: { date, hour },
+    data: { date, hour, quarter },
   });
 
   return (
@@ -461,32 +462,31 @@ export function EnhancedCalendar({
     // Handle resize operations
     if ((dragType === 'resize-start' || dragType === 'resize-end') && onEventResize) {
       const targetHour = over.data.current?.hour as number | undefined;
+      const targetQuarter = over.data.current?.quarter as number | undefined;
       
-      if (targetHour !== undefined) {
-        // Round to nearest 15 minutes (currently just using hour boundaries)
-        const roundedHour = targetHour;
-        const roundedMinutes = 0;
-        const newTime = `${roundedHour.toString().padStart(2, '0')}:${roundedMinutes.toString().padStart(2, '0')}`;
+      if (targetHour !== undefined && targetQuarter !== undefined) {
+        // Create time string from the drop zone
+        const newTime = `${targetHour.toString().padStart(2, '0')}:${targetQuarter.toString().padStart(2, '0')}`;
         
         // Get current start and end times
         const currentStart = draggedEvent.startTime || '09:00';
         const currentEnd = draggedEvent.endTime || '10:00';
         
-        // Ensure start is before end
+        // Ensure start is before end (with minimum 15 minute duration)
         if (dragType === 'resize-start') {
           // Resizing from top - update start time
-          // Only update if new time is before current end
           const [newH, newM] = newTime.split(':').map(Number);
           const [endH, endM] = currentEnd.split(':').map(Number);
-          if (newH * 60 + newM < endH * 60 + endM) {
+          // Allow exactly 15 minutes minimum duration
+          if (newH * 60 + newM <= endH * 60 + endM - 15) {
             onEventResize(draggedEvent.id, newTime, currentEnd, draggedEvent.type);
           }
         } else {
           // Resizing from bottom - update end time
-          // Only update if new time is after current start
           const [startH, startM] = currentStart.split(':').map(Number);
           const [newH, newM] = newTime.split(':').map(Number);
-          if (newH * 60 + newM > startH * 60 + startM) {
+          // Allow exactly 15 minutes minimum duration
+          if (newH * 60 + newM >= startH * 60 + startM + 15) {
             onEventResize(draggedEvent.id, currentStart, newTime, draggedEvent.type);
           }
         }
@@ -498,11 +498,16 @@ export function EnhancedCalendar({
     if (active.id !== over.id && onEventReschedule) {
       const targetDate = over.data.current?.date as Date;
       const targetHour = over.data.current?.hour as number | undefined;
+      const targetQuarter = over.data.current?.quarter as number | undefined;
       
       if (targetDate) {
-        // If dropped on a specific time slot, format the time
-        const newTime = targetHour !== undefined ? `${targetHour.toString().padStart(2, '0')}:00` : undefined;
-        onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
+        // If dropped on a specific time slot, use the quarter-hour slot
+        if (targetHour !== undefined && targetQuarter !== undefined) {
+          const newTime = `${targetHour.toString().padStart(2, '0')}:${targetQuarter.toString().padStart(2, '0')}`;
+          onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
+        } else {
+          onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, undefined);
+        }
       }
     }
   };
@@ -772,39 +777,107 @@ export function EnhancedCalendar({
                     )}
                   >
                     {hours.map((hour) => (
-                      <DroppableTimeSlot
-                        key={hour}
-                        date={date}
-                        hour={hour}
-                        className="h-10 border-b border-border hover:bg-muted/20 cursor-pointer"
-                        onClick={() => onDateClick?.(date)}
-                      />
+                      <div key={hour} className="relative h-10 border-b border-border">
+                        {[0, 15, 30, 45].map((quarter) => (
+                          <DroppableTimeSlot
+                            key={`${hour}-${quarter}`}
+                            date={date}
+                            hour={hour}
+                            quarter={quarter}
+                            className="h-2.5 hover:bg-muted/20 cursor-pointer"
+                            onClick={() => onDateClick?.(date)}
+                          />
+                        ))}
+                      </div>
                     ))}
                     <div className="absolute inset-0 pointer-events-none">
                       <div className="relative h-full">
-                        {timedEvents.map((event, idx) => {
-                          const startHour = event.startTime 
-                            ? parseInt(event.startTime.split(":")[0]) 
-                            : 0;
-                          const top = startHour * HOUR_HEIGHT;
-                          
-                          return (
-                            <div
-                              key={`${event.id}-${idx}`}
-                              className="absolute left-1 right-1 pointer-events-auto"
-                              style={{ top: `${top}px` }}
-                            >
-                              <DraggableEvent
-                                event={event}
-                                index={idx}
-                                onEventClick={onEventClick}
-                                onToggleComplete={handleToggleComplete}
-                                showCompletionCheckbox={showCompletionCheckbox}
-                                showResizeHandles={true}
-                              />
-                            </div>
-                          );
-                        })}
+                        {(() => {
+                          // Calculate overlaps and position events
+                          const eventsWithPosition = timedEvents.map((event) => {
+                            // Parse start time
+                            const [startH, startM] = (event.startTime || '09:00').split(':').map(Number);
+                            const startMinutes = startH * 60 + startM;
+                            
+                            // Parse end time - default to 1 hour if not specified
+                            const [endH, endM] = (event.endTime || `${startH + 1}:00`).split(':').map(Number);
+                            const endMinutes = endH * 60 + endM;
+                            
+                            // Calculate position and height
+                            const top = (startMinutes / 60) * HOUR_HEIGHT;
+                            const durationMinutes = endMinutes - startMinutes;
+                            const height = (durationMinutes / 60) * HOUR_HEIGHT;
+                            
+                            return {
+                              event,
+                              startMinutes,
+                              endMinutes,
+                              top,
+                              height: Math.max(height, 15), // Minimum 15px height
+                            };
+                          });
+
+                          // Detect overlaps and assign columns
+                          type EventPosition = {
+                            event: CalendarEvent;
+                            startMinutes: number;
+                            endMinutes: number;
+                            top: number;
+                            height: number;
+                          };
+                          const columns: EventPosition[][] = [];
+                          eventsWithPosition.forEach((eventPos) => {
+                            // Find first column where this event doesn't overlap
+                            let placed = false;
+                            for (const column of columns) {
+                              const hasOverlap = column.some((existing) => {
+                                return !(
+                                  eventPos.endMinutes <= existing.startMinutes ||
+                                  eventPos.startMinutes >= existing.endMinutes
+                                );
+                              });
+                              if (!hasOverlap) {
+                                column.push(eventPos);
+                                placed = true;
+                                break;
+                              }
+                            }
+                            if (!placed) {
+                              columns.push([eventPos]);
+                            }
+                          });
+
+                          // Flatten and assign width/left based on column count
+                          return columns.flatMap((column, colIdx) => {
+                            const totalColumns = columns.length;
+                            return column.map((eventPos, idx) => {
+                              const widthPercent = 100 / totalColumns;
+                              const leftPercent = (colIdx * 100) / totalColumns;
+                              
+                              return (
+                                <div
+                                  key={`${eventPos.event.id}-${idx}`}
+                                  className="absolute pointer-events-auto"
+                                  style={{ 
+                                    top: `${eventPos.top}px`,
+                                    height: `${eventPos.height}px`,
+                                    left: `${leftPercent}%`,
+                                    width: `${widthPercent - 2}%`, // Subtract 2% for visual gap
+                                  }}
+                                >
+                                  <DraggableEvent
+                                    event={eventPos.event}
+                                    index={idx}
+                                    onEventClick={onEventClick}
+                                    onToggleComplete={handleToggleComplete}
+                                    showCompletionCheckbox={showCompletionCheckbox}
+                                    showResizeHandles={true}
+                                  />
+                                </div>
+                              );
+                            });
+                          });
+                        })()}
                       </div>
                     </div>
                   </div>
