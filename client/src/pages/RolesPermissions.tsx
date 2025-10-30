@@ -14,6 +14,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -33,7 +43,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertUserRoleSchema, type UserRole, type Permission, type RolePermission } from "@shared/schema";
-import { Search, Plus, Star, Loader2, Shield, GripVertical } from "lucide-react";
+import { Search, Plus, Star, Loader2, Shield, GripVertical, Edit, Trash2 } from "lucide-react";
 import { z } from "zod";
 import {
   DndContext,
@@ -123,6 +133,7 @@ export default function RolesPermissions() {
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
   const [isEditRoleOpen, setIsEditRoleOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [permissionMatrix, setPermissionMatrix] = useState<PermissionMatrix>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [localRoles, setLocalRoles] = useState<UserRole[]>([]);
@@ -225,6 +236,39 @@ export default function RolesPermissions() {
       toast({
         title: "Error",
         description: "Failed to save role permissions.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete role mutation
+  const deleteRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedRoleId) return;
+      return await apiRequest(`/api/user-roles/${selectedRoleId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-roles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsDeleteDialogOpen(false);
+      
+      // Select first remaining role
+      const remainingRoles = localRoles.filter(r => r.id !== selectedRoleId);
+      if (remainingRoles.length > 0) {
+        setSelectedRoleId(remainingRoles[0].id);
+      } else {
+        setSelectedRoleId(null);
+      }
+      
+      toast({
+        title: "Role deleted",
+        description: "Role has been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete role.",
         variant: "destructive",
       });
     },
@@ -405,20 +449,39 @@ export default function RolesPermissions() {
                     )}
                   </div>
                 </div>
-                <Button
-                  onClick={() => savePermissionsMutation.mutate()}
-                  disabled={!hasUnsavedChanges || savePermissionsMutation.isPending}
-                  data-testid="button-save-changes"
-                >
-                  {savePermissionsMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Save Changes"
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsEditRoleOpen(true)}
+                    data-testid="button-edit-role"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    disabled={selectedRole.isBuiltIn}
+                    data-testid="button-delete-role"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                  <Button
+                    onClick={() => savePermissionsMutation.mutate()}
+                    disabled={!hasUnsavedChanges || savePermissionsMutation.isPending}
+                    data-testid="button-save-changes"
+                  >
+                    {savePermissionsMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -495,6 +558,29 @@ export default function RolesPermissions() {
           onOpenChange={setIsEditRoleOpen}
         />
       )}
+
+      {/* Delete Role Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Role?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the role '{selectedRole?.name}'? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => deleteRoleMutation.mutate()}
+              disabled={deleteRoleMutation.isPending}
+              data-testid="button-confirm-delete-role"
+            >
+              {deleteRoleMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1581,6 +1581,14 @@ export class MemStorage implements IStorage {
     const role = this.userRoles.get(id);
     if (!role || role.isBuiltIn) return false; // Cannot delete built-in roles
 
+    // Check if any active users have this roleId assigned
+    const usersWithRole = Array.from(this.users.values()).filter(
+      user => user.roleId === id && user.isActive
+    );
+    if (usersWithRole.length > 0) {
+      return false; // Cannot delete role with assigned users
+    }
+
     // Soft delete by setting isActive to false
     const updatedRole: UserRole = {
       ...role,
@@ -4986,6 +4994,30 @@ export class DbStorage implements IStorage {
 
   async deleteUserRole(id: string): Promise<boolean> {
     try {
+      // First check if role exists
+      const role = await this.getUserRole(id);
+      if (!role) {
+        return false; // Role doesn't exist
+      }
+
+      // Check if role is built-in
+      if (role.isBuiltIn) {
+        return false; // Cannot delete built-in roles
+      }
+
+      // Check if any active users have this roleId assigned
+      const userCount = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(schema.users)
+        .where(and(
+          eq(schema.users.roleId, id),
+          eq(schema.users.isActive, true)
+        ));
+      
+      if (userCount[0]?.count > 0) {
+        return false; // Cannot delete role with assigned users
+      }
+
+      // Hard delete the role
       const results = await db.delete(schema.userRoles)
         .where(eq(schema.userRoles.id, id))
         .returning();

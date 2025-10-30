@@ -3161,10 +3161,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/user-roles/:id", requireTeamMember, requirePermission("admin.roles", "delete"), async (req, res) => {
     try {
+      // First check if the role exists
+      const role = await storage.getUserRole(req.params.id);
+      if (!role) {
+        return res.status(404).json({ error: "User role not found" });
+      }
+
+      // Check if role is built-in
+      if (role.isBuiltIn) {
+        return res.status(400).json({ error: "Cannot delete built-in roles." });
+      }
+
+      // Check if any users are assigned to this role
+      const users = await storage.getUsers();
+      const usersWithRole = users.filter(user => user.roleId === req.params.id && user.isActive);
+      
+      if (usersWithRole.length > 0) {
+        return res.status(400).json({ error: "Cannot delete role. Users are currently assigned to this role." });
+      }
+
+      // Attempt to delete the role
       const success = await storage.deleteUserRole(req.params.id);
       if (!success) {
-        return res.status(404).json({ error: "User role not found or cannot be deleted" });
+        return res.status(400).json({ error: "Failed to delete user role" });
       }
+      
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete user role" });
