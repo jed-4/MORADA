@@ -13,7 +13,8 @@ import {
   Trash2, 
   Edit, 
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  GripVertical
 } from "lucide-react";
 import {
   Dialog,
@@ -32,15 +33,135 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { SystemFolder, SystemDocument } from "@shared/schema";
+
+interface SortableFolderProps {
+  folder: SystemFolder;
+  depth: number;
+  isExpanded: boolean;
+  hasChildren: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onAddSubfolder: () => void;
+  onAddDocument: () => void;
+}
+
+function SortableFolder({
+  folder,
+  depth,
+  isExpanded,
+  hasChildren,
+  onToggle,
+  onEdit,
+  onDelete,
+  onAddSubfolder,
+  onAddDocument,
+}: SortableFolderProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `folder-${folder.id}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
+      data-paddingLeft={`${depth * 20 + 8}px`}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        data-testid={`drag-handle-folder-${folder.id}`}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="flex items-center gap-1 flex-1 cursor-pointer" onClick={onToggle}>
+        {hasChildren && (
+          isExpanded ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )
+        )}
+        {!hasChildren && <div className="w-4" />}
+        {isExpanded ? (
+          <FolderOpen className="h-4 w-4 text-primary" />
+        ) : (
+          <Folder className="h-4 w-4 text-muted-foreground" />
+        )}
+        <span className="text-sm">{folder.name}</span>
+      </div>
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`folder-menu-${folder.id}`}>
+            <MoreVertical className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onAddSubfolder} data-testid="menu-add-subfolder">
+            <FolderPlus className="h-4 w-4 mr-2" />
+            Add Subfolder
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onAddDocument} data-testid="menu-add-document">
+            <FilePlus className="h-4 w-4 mr-2" />
+            Add Document
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onEdit} data-testid="menu-edit-folder">
+            <Edit className="h-4 w-4 mr-2" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onDelete}
+            className="text-destructive"
+            data-testid="menu-delete-folder"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
 
 export function FolderTree() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
   const [editingFolder, setEditingFolder] = useState<SystemFolder | null>(null);
-  const [editingDocument, setEditingDocument] = useState<SystemDocument | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Folder form state
@@ -59,6 +180,14 @@ export function FolderTree() {
     fileUrl: "",
     folderId: null as string | null,
   });
+
+  // Setup sensors for drag and drop
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Fetch folders
   const { data: folders = [], isLoading: foldersLoading } = useQuery<SystemFolder[]>({
@@ -109,6 +238,18 @@ export function FolderTree() {
     },
     onError: () => {
       toast({ title: "Failed to delete folder", variant: "destructive" });
+    },
+  });
+
+  // Reorder folders mutation
+  const reorderFoldersMutation = useMutation({
+    mutationFn: ({ folders }: { folders: { id: string; displayOrder: number }[] }) =>
+      apiRequest("/api/systems/folders/reorder", "POST", { updates: folders }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/folders"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to reorder folders", variant: "destructive" });
     },
   });
 
@@ -176,7 +317,6 @@ export function FolderTree() {
   };
 
   const openNewDocumentDialog = (folderId: string | null = null) => {
-    setEditingDocument(null);
     setDocumentForm({ ...documentForm, folderId });
     setShowDocumentDialog(true);
   };
@@ -193,6 +333,73 @@ export function FolderTree() {
     createDocumentMutation.mutate(documentForm);
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over || active.id === over.id) return;
+
+    const isDraggingFolder = String(active.id).startsWith('folder-');
+    const isOverFolder = String(over.id).startsWith('folder-');
+
+    if (!isDraggingFolder) return;
+
+    const draggedFolderId = String(active.id).replace('folder-', '');
+    const draggedFolder = folders.find(f => f.id === draggedFolderId);
+
+    if (!draggedFolder) return;
+
+    if (isOverFolder) {
+      // Dropping onto another folder - nest it
+      const overFolderId = String(over.id).replace('folder-', '');
+      const overFolder = folders.find(f => f.id === overFolderId);
+
+      if (!overFolder || draggedFolderId === overFolderId) return;
+
+      // Prevent circular nesting
+      let checkFolder = overFolder;
+      while (checkFolder.parentId) {
+        if (checkFolder.parentId === draggedFolderId) {
+          toast({ title: "Cannot nest folder into its own descendant", variant: "destructive" });
+          return;
+        }
+        checkFolder = folders.find(f => f.id === checkFolder.parentId) || checkFolder;
+        if (checkFolder.id === overFolder.id) break;
+      }
+
+      // Update parent and move to new location
+      const siblingsInNewParent = folders.filter(f => f.parentId === overFolderId);
+      const newOrder = siblingsInNewParent.length;
+
+      updateFolderMutation.mutate({
+        id: draggedFolderId,
+        data: { parentId: overFolderId, displayOrder: newOrder }
+      });
+    } else {
+      // Reordering within same level
+      const sameLevelFolders = folders
+        .filter(f => f.parentId === draggedFolder.parentId)
+        .sort((a, b) => a.displayOrder - b.displayOrder);
+
+      const oldIndex = sameLevelFolders.findIndex(f => f.id === draggedFolderId);
+      const newIndex = sameLevelFolders.findIndex(f => `folder-${f.id}` === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        const reorderedFolders = arrayMove(sameLevelFolders, oldIndex, newIndex);
+        const updates = reorderedFolders.map((f, index) => ({
+          id: f.id,
+          displayOrder: index
+        }));
+
+        reorderFoldersMutation.mutate({ folders: updates });
+      }
+    }
+  };
+
   // Build folder hierarchy
   const buildFolderTree = (parentId: string | null = null): SystemFolder[] => {
     return folders
@@ -204,65 +411,25 @@ export function FolderTree() {
     return documents.filter((d) => d.folderId === folderId);
   };
 
-  const renderFolder = (folder: SystemFolder, depth: number = 0) => {
+  const renderFolder = (folder: SystemFolder, depth: number = 0): React.ReactNode => {
     const isExpanded = expandedFolders.has(folder.id);
     const childFolders = buildFolderTree(folder.id);
     const folderDocs = getFolderDocuments(folder.id);
     const hasChildren = childFolders.length > 0 || folderDocs.length > 0;
 
     return (
-      <div key={folder.id} className="select-none">
-        <div
-          className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md cursor-pointer group"
-          style={{ paddingLeft: `${depth * 20 + 8}px` }}
-        >
-          <div className="flex items-center gap-1 flex-1" onClick={() => toggleFolder(folder.id)}>
-            {hasChildren && (
-              isExpanded ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )
-            )}
-            {!hasChildren && <div className="w-4" />}
-            {isExpanded ? (
-              <FolderOpen className="h-4 w-4 text-primary" />
-            ) : (
-              <Folder className="h-4 w-4 text-muted-foreground" />
-            )}
-            <span className="text-sm">{folder.name}</span>
-          </div>
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`folder-menu-${folder.id}`}>
-                <MoreVertical className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => openNewFolderDialog(folder.id)} data-testid="menu-add-subfolder">
-                <FolderPlus className="h-4 w-4 mr-2" />
-                Add Subfolder
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openNewDocumentDialog(folder.id)} data-testid="menu-add-document">
-                <FilePlus className="h-4 w-4 mr-2" />
-                Add Document
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openEditFolderDialog(folder)} data-testid="menu-edit-folder">
-                <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => deleteFolderMutation.mutate(folder.id)}
-                className="text-destructive"
-                data-testid="menu-delete-folder"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+      <div key={folder.id}>
+        <SortableFolder
+          folder={folder}
+          depth={depth}
+          isExpanded={isExpanded}
+          hasChildren={hasChildren}
+          onToggle={() => toggleFolder(folder.id)}
+          onEdit={() => openEditFolderDialog(folder)}
+          onDelete={() => deleteFolderMutation.mutate(folder.id)}
+          onAddSubfolder={() => openNewFolderDialog(folder.id)}
+          onAddDocument={() => openNewDocumentDialog(folder.id)}
+        />
 
         {isExpanded && (
           <div>
@@ -302,6 +469,7 @@ export function FolderTree() {
 
   const rootFolders = buildFolderTree(null);
   const rootDocuments = getFolderDocuments(null);
+  const allFolderIds = folders.map(f => `folder-${f.id}`);
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -322,27 +490,36 @@ export function FolderTree() {
             No folders or documents yet. Create your first folder to get started.
           </div>
         ) : (
-          <div>
-            {rootFolders.map((folder) => renderFolder(folder, 0))}
-            {rootDocuments.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
-              >
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm flex-1">{doc.title}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                  onClick={() => deleteDocumentMutation.mutate(doc.id)}
-                  data-testid={`delete-document-${doc.id}`}
-                >
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={allFolderIds} strategy={verticalListSortingStrategy}>
+              <div>
+                {rootFolders.map((folder) => renderFolder(folder, 0))}
+                {rootDocuments.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm flex-1">{doc.title}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                      onClick={() => deleteDocumentMutation.mutate(doc.id)}
+                      data-testid={`delete-document-${doc.id}`}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
         )}
       </Card>
 
@@ -393,7 +570,6 @@ export function FolderTree() {
       <Dialog open={showDocumentDialog} onOpenChange={(open) => {
         setShowDocumentDialog(open);
         if (!open) {
-          setEditingDocument(null);
           resetDocumentForm();
         }
       }}>
