@@ -68,6 +68,7 @@ import {
   updateScheduleItemSchema,
   insertScheduleTemplateSchema,
   updateScheduleTemplateSchema,
+  insertCalendarViewSchema,
   insertTimesheetAllowanceSchema,
   insertAllowanceItemSchema,
   insertDefectSchema,
@@ -6970,6 +6971,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to delete schedule template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Calendar Views API Routes
+  app.get("/api/calendar-views", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { calendarType } = req.query;
+      if (!calendarType || (calendarType !== "personal" && calendarType !== "business")) {
+        return res.status(400).json({ error: "Invalid calendar type. Must be 'personal' or 'business'" });
+      }
+      
+      const views = await storage.getCalendarViews(
+        req.user!.id,
+        calendarType as "personal" | "business",
+        req.user!.companyId!
+      );
+      res.json(views);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch calendar views",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/calendar-views/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const view = await storage.getCalendarView(req.params.id, req.user!.companyId!);
+      if (!view) {
+        return res.status(404).json({ error: "Calendar view not found" });
+      }
+      res.json(view);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch calendar view",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/calendar-views", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertCalendarViewSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const view = await storage.createCalendarView({
+        ...validationResult.data,
+        userId: req.user!.id,
+        companyId: req.user!.companyId!,
+      });
+      res.status(201).json(view);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create calendar view",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/calendar-views/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertCalendarViewSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      
+      const view = await storage.updateCalendarView(
+        req.params.id,
+        validationResult.data,
+        req.user!.companyId!
+      );
+      if (!view) {
+        return res.status(404).json({ error: "Calendar view not found" });
+      }
+      res.json(view);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update calendar view",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/calendar-views/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deleteCalendarView(req.params.id, req.user!.companyId!);
+      if (!success) {
+        return res.status(404).json({ error: "Calendar view not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete calendar view",
         details: error.message 
       });
     }
