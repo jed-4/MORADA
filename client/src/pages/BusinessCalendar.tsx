@@ -410,7 +410,7 @@ export default function BusinessCalendar() {
                 filters={filters}
                 onFiltersChange={setFilters}
                 availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
-                availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.label }))}
+                availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.name }))}
                 availableAssignees={users
                   .filter((u: any) => {
                     if (u.userCategory !== "team") return false;
