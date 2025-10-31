@@ -307,7 +307,7 @@ export function TaskLibrary() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto space-y-3">
+      <div className="flex-1 overflow-auto">
         {templates.length === 0 ? (
           <Card className="p-8">
             <div className="text-center text-muted-foreground">
@@ -315,124 +315,137 @@ export function TaskLibrary() {
             </div>
           </Card>
         ) : (
-          templates.map((template) => {
-            const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
-            const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
-            const hasGoal = !!template.goal;
-            
-            return (
-              <Card key={template.id} className="p-3" data-testid={`template-card-${template.id}`}>
-                <div className="flex items-center gap-4 overflow-x-auto">
-                  <div className="flex-shrink-0 min-w-[200px]">
-                    <div className="font-medium">{template.title}</div>
-                    {hasGoal && (
-                      <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                        <Target className="h-3 w-3" />
-                        {template.goal}
-                      </div>
-                    )}
-                  </div>
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[250px]">Title & Goal</TableHead>
+                  <TableHead className="w-[200px]">Info</TableHead>
+                  <TableHead className="w-[150px]">Role</TableHead>
+                  <TableHead className="w-[150px]">Frequency</TableHead>
+                  <TableHead className="w-[100px]">Status</TableHead>
+                  <TableHead className="w-[80px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {templates.map((template) => {
+                  const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
+                  const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
+                  const hasGoal = !!template.goal;
                   
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {template.status && (
-                      <Badge variant={template.status === 'active' ? 'default' : template.status === 'draft' ? 'secondary' : 'outline'}>
-                        {template.status}
-                      </Badge>
-                    )}
-                    {template.category && (() => {
-                      const categoryInfo = getCategoryInfo(template.category);
-                      return (
-                        <Badge 
-                          variant="outline" 
-                          style={{ 
-                            borderColor: categoryInfo?.color || '#6B7280',
-                            color: categoryInfo?.color || '#6B7280'
-                          }}
-                        >
-                          {categoryInfo?.name || template.category}
-                        </Badge>
-                      );
-                    })()}
-                    {checklistCount > 0 && (
-                      <Badge variant="outline" className="gap-1">
-                        <CheckSquare className="h-3 w-3" />
-                        {checklistCount}
-                      </Badge>
-                    )}
-                    {linksCount > 0 && (
-                      <Badge variant="outline" className="gap-1">
-                        <Link className="h-3 w-3" />
-                        {linksCount}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="flex-shrink-0 text-sm text-muted-foreground min-w-[120px]">
-                    {getRoleName(template.defaultRoleId)}
-                  </div>
-                  
-                  <div className="flex-shrink-0 text-sm min-w-[150px]">
-                    {getFrequencyLabel(template)}
-                  </div>
-
-                  <div className="flex-shrink-0 ml-auto flex items-center gap-2">
-                    {template.isActive ? (
-                      <Badge variant="outline" className="gap-1">
-                        <Power className="h-3 w-3 text-green-600" />
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="gap-1">
-                        <PowerOff className="h-3 w-3" />
-                        Inactive
-                      </Badge>
-                    )}
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => toggleActiveMutation.mutate({ 
-                        id: template.id, 
-                        isActive: !template.isActive 
-                      })}
-                      data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
-                    >
-                      {template.isActive ? (
-                        <>
-                          <PowerOff className="h-4 w-4 mr-2" />
-                          Deactivate
-                        </>
-                      ) : (
-                        <>
-                          <Power className="h-4 w-4 mr-2" />
-                          Activate
-                        </>
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => deleteTemplateMutation.mutate(template.id)}
-                      className="text-destructive"
-                      data-testid="menu-delete-template"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
+                  return (
+                    <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
+                      <TableCell>
+                        <div className="font-medium">{template.title}</div>
+                        {hasGoal && (
+                          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                            <Target className="h-3 w-3" />
+                            {template.goal}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {template.status && (
+                            <Badge variant={template.status === 'active' ? 'default' : template.status === 'draft' ? 'secondary' : 'outline'}>
+                              {template.status}
+                            </Badge>
+                          )}
+                          {template.category && (() => {
+                            const categoryInfo = getCategoryInfo(template.category);
+                            return (
+                              <Badge 
+                                variant="outline" 
+                                style={{ 
+                                  borderColor: categoryInfo?.color || '#6B7280',
+                                  color: categoryInfo?.color || '#6B7280'
+                                }}
+                              >
+                                {categoryInfo?.name || template.category}
+                              </Badge>
+                            );
+                          })()}
+                          {checklistCount > 0 && (
+                            <Badge variant="outline" className="gap-1">
+                              <CheckSquare className="h-3 w-3" />
+                              {checklistCount}
+                            </Badge>
+                          )}
+                          {linksCount > 0 && (
+                            <Badge variant="outline" className="gap-1">
+                              <Link className="h-3 w-3" />
+                              {linksCount}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {getRoleName(template.defaultRoleId)}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {getFrequencyLabel(template)}
+                      </TableCell>
+                      <TableCell>
+                        {template.isActive ? (
+                          <Badge variant="outline" className="gap-1">
+                            <Power className="h-3 w-3 text-green-600" />
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1">
+                            <PowerOff className="h-3 w-3" />
+                            Inactive
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => toggleActiveMutation.mutate({ 
+                                id: template.id, 
+                                isActive: !template.isActive 
+                              })}
+                              data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
+                            >
+                              {template.isActive ? (
+                                <>
+                                  <PowerOff className="h-4 w-4 mr-2" />
+                                  Deactivate
+                                </>
+                              ) : (
+                                <>
+                                  <Power className="h-4 w-4 mr-2" />
+                                  Activate
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => deleteTemplateMutation.mutate(template.id)}
+                              className="text-destructive"
+                              data-testid="menu-delete-template"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </Card>
-            );
-          })
         )}
       </div>
 
@@ -450,12 +463,15 @@ export function TaskLibrary() {
           </DialogHeader>
           <div className="flex flex-col gap-4 max-h-[calc(90vh-150px)] overflow-y-auto pr-2">
             <div>
-              <Label>Title</Label>
+              <Label>
+                Title <span className="text-destructive">*</span>
+              </Label>
               <Input
                 value={templateForm.title}
                 onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })}
                 placeholder="Task template title"
                 data-testid="input-template-title"
+                required
               />
             </div>
             <div>
