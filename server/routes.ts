@@ -7015,10 +7015,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/calendar-views", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      console.log("Creating calendar view with body:", JSON.stringify(req.body, null, 2));
       const validationResult = insertCalendarViewSchema.safeParse(req.body);
       if (!validationResult.success) {
-        console.log("Validation error:", JSON.stringify(validationResult.error, null, 2));
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
