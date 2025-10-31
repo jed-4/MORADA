@@ -7079,6 +7079,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/calendar-views/cleanup-duplicates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { calendarType } = req.body;
+      if (!calendarType || (calendarType !== "personal" && calendarType !== "business")) {
+        return res.status(400).json({ error: "Invalid calendar type" });
+      }
+
+      const views = await storage.getCalendarViews(
+        req.user!.userId!,
+        req.user!.companyId!,
+        calendarType
+      );
+
+      // Find all default views with the same name
+      const defaultViews = views.filter(v => v.isDefault && v.name === "All Events");
+      
+      if (defaultViews.length <= 1) {
+        return res.json({ message: "No duplicates found", deleted: 0 });
+      }
+
+      // Keep the first one, delete the rest
+      const toDelete = defaultViews.slice(1);
+      let deletedCount = 0;
+
+      for (const view of toDelete) {
+        const success = await storage.deleteCalendarView(view.id, req.user!.companyId!);
+        if (success) deletedCount++;
+      }
+
+      res.json({ message: "Duplicates cleaned up", deleted: deletedCount });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to cleanup duplicates",
+        details: error.message 
+      });
+    }
+  });
+
   // Defects API Routes
   app.get("/api/defects", async (req, res) => {
     try {

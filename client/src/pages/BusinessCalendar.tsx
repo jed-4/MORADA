@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -32,6 +32,7 @@ export default function BusinessCalendar() {
   const [filters, setFilters] = useState<CalendarFiltersType>({});
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
+  const defaultViewCreationAttempted = useRef(false);
 
   // Fetch all projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -77,6 +78,17 @@ export default function BusinessCalendar() {
     enabled: !!user,
   });
 
+  const cleanupDuplicatesMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/calendar-views/cleanup-duplicates", "POST", {
+        calendarType: "business",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
+    },
+  });
+
   const createDefaultViewMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("/api/calendar-views", "POST", {
@@ -93,12 +105,26 @@ export default function BusinessCalendar() {
     },
   });
 
-  // Create default view if none exists
+  // Cleanup duplicates on first load, then create default view if none exists
   useEffect(() => {
-    if (user && views.length === 0 && !createDefaultViewMutation.isPending) {
+    if (!user || defaultViewCreationAttempted.current) return;
+    
+    defaultViewCreationAttempted.current = true;
+
+    // First cleanup any duplicates
+    if (views.length > 1) {
+      const defaultViews = views.filter((v: CalendarView) => v.isDefault && v.name === "All Events");
+      if (defaultViews.length > 1) {
+        cleanupDuplicatesMutation.mutate();
+        return;
+      }
+    }
+
+    // Then create default view if none exists
+    if (views.length === 0 && !createDefaultViewMutation.isPending) {
       createDefaultViewMutation.mutate();
     }
-  }, [user, views.length]);
+  }, [user, views]);
 
   // Set selected view to default on load
   useEffect(() => {
