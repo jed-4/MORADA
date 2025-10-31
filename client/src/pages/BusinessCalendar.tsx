@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, parseISO, isWithinInterval } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
@@ -372,63 +371,47 @@ export default function BusinessCalendar() {
     setCalendarMode(view.calendarMode || "week");
   };
 
-  const taskCount = filteredEvents.filter(e => e.type === "task").length;
-  const scheduleCount = filteredEvents.filter(e => e.type === "schedule").length;
-
   return (
     <div className="flex flex-col h-full" data-testid="business-calendar">
+      {/* Top Bar with Title, Views, and Filters */}
+      <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
+        <div className="flex items-center gap-2">
+          <CalendarIcon className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">Business Calendar</h2>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <SavedViews
+            calendarType="business"
+            currentFilters={filters}
+            currentCalendarMode={calendarMode}
+            onViewSelect={handleViewSelect}
+            selectedViewId={selectedViewId}
+          />
+          <CalendarFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
+            availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.name }))}
+            availableAssignees={users
+              .filter((u: any) => {
+                if (u.userCategory !== "team") return false;
+                const hasName = (u.firstName && u.firstName.trim()) || (u.lastName && u.lastName.trim());
+                const hasEmail = u.email && u.email.trim();
+                return hasName || hasEmail;
+              })
+              .map((u: any) => ({ 
+                id: u.id, 
+                name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Unknown User'
+              }))}
+            showEventTypeFilter={true}
+            calendarType="business"
+          />
+        </div>
+      </div>
+
+      {/* Calendar Card */}
       <div className="flex-1 min-h-0 p-6">
         <Card className="h-full flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <div className="flex items-center gap-2">
-              <CalendarIcon className="h-5 w-5" />
-              <h2 className="text-lg font-semibold">Business Calendar</h2>
-              <Badge variant="secondary" data-testid="event-count">
-                {filteredEvents.length} events
-              </Badge>
-              <Badge variant="outline" data-testid="task-count">
-                {taskCount} tasks
-              </Badge>
-              <Badge variant="outline" data-testid="schedule-count">
-                {scheduleCount} schedule items
-              </Badge>
-            </div>
-          </div>
-
-          {/* Filters and Saved Views */}
-          <div className="flex items-center justify-between gap-4 p-4 border-b flex-wrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <SavedViews
-                calendarType="business"
-                currentFilters={filters}
-                currentCalendarMode={calendarMode}
-                onViewSelect={handleViewSelect}
-                selectedViewId={selectedViewId}
-              />
-              <CalendarFilters
-                filters={filters}
-                onFiltersChange={setFilters}
-                availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
-                availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.name }))}
-                availableAssignees={users
-                  .filter((u: any) => {
-                    if (u.userCategory !== "team") return false;
-                    const hasName = (u.firstName && u.firstName.trim()) || (u.lastName && u.lastName.trim());
-                    const hasEmail = u.email && u.email.trim();
-                    return hasName || hasEmail;
-                  })
-                  .map((u: any) => ({ 
-                    id: u.id, 
-                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Unknown User'
-                  }))}
-                showEventTypeFilter={true}
-                calendarType="business"
-              />
-            </div>
-          </div>
-
-          {/* Calendar */}
           <div className="flex-1 min-h-0">
             <EnhancedCalendar
               events={filteredEvents}
