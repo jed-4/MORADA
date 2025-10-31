@@ -412,7 +412,7 @@ export default function BusinessCalendar() {
                 availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
                 availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.label }))}
                 availableAssignees={users
-                  .filter((u: any) => u.userCategory === "team")
+                  .filter((u: any) => u.userCategory === "team" && (u.firstName || u.lastName || u.email))
                   .map((u: any) => ({ 
                     id: u.id, 
                     name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email 
