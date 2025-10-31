@@ -72,7 +72,12 @@ import {
   insertTimesheetAllowanceSchema,
   insertAllowanceItemSchema,
   insertDefectSchema,
-  insertMinuteSchema
+  insertMinuteSchema,
+  insertSystemFolderSchema,
+  insertSystemDocumentSchema,
+  insertTaskTemplateSchema,
+  insertWorkflowTemplateSchema,
+  insertProjectWorkflowSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -7186,6 +7191,436 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete defect" });
+    }
+  });
+
+  // ============================================================
+  // SYSTEMS LIBRARY API Routes
+  // ============================================================
+
+  // System Folders
+  app.get("/api/systems/folders", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { parentId } = req.query;
+      const folders = await storage.getSystemFolders(
+        companyId, 
+        parentId === 'null' ? null : parentId as string | undefined
+      );
+      res.json(folders);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch system folders" });
+    }
+  });
+
+  app.get("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const folder = await storage.getSystemFolder(req.params.id, companyId);
+      if (!folder) {
+        return res.status(404).json({ error: "Folder not found" });
+      }
+      res.json(folder);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch folder" });
+    }
+  });
+
+  app.post("/api/systems/folders", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSystemFolderSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const createdBy = req.user!.id;
+      const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const folder = await storage.createSystemFolder({
+        ...validationResult.data,
+        companyId,
+        createdBy,
+        createdByName,
+      });
+      res.status(201).json(folder);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create folder" });
+    }
+  });
+
+  app.patch("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSystemFolderSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const folder = await storage.updateSystemFolder(req.params.id, validationResult.data, companyId);
+      if (!folder) {
+        return res.status(404).json({ error: "Folder not found" });
+      }
+      res.json(folder);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update folder" });
+    }
+  });
+
+  app.delete("/api/systems/folders/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      await storage.deleteSystemFolder(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete folder" });
+    }
+  });
+
+  app.post("/api/systems/folders/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { updates } = req.body;
+      await storage.updateSystemFoldersOrder(updates, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder folders" });
+    }
+  });
+
+  // System Documents
+  app.get("/api/systems/documents", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { folderId } = req.query;
+      const documents = await storage.getSystemDocuments(
+        companyId,
+        folderId === 'null' ? null : folderId as string | undefined
+      );
+      res.json(documents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch documents" });
+    }
+  });
+
+  app.get("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const document = await storage.getSystemDocument(req.params.id, companyId);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json(document);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch document" });
+    }
+  });
+
+  app.post("/api/systems/documents", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSystemDocumentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const createdBy = req.user!.id;
+      const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const document = await storage.createSystemDocument({
+        ...validationResult.data,
+        companyId,
+        createdBy,
+        createdByName,
+      });
+      res.status(201).json(document);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create document" });
+    }
+  });
+
+  app.patch("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSystemDocumentSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const updatedBy = req.user!.id;
+      const updatedByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const document = await storage.updateSystemDocument(req.params.id, {
+        ...validationResult.data,
+        updatedBy,
+        updatedByName,
+      }, companyId);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json(document);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update document" });
+    }
+  });
+
+  app.delete("/api/systems/documents/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      await storage.deleteSystemDocument(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
+  // Task Templates
+  app.get("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { isActive } = req.query;
+      const templates = await storage.getTaskTemplates(
+        companyId,
+        isActive === 'true' ? true : isActive === 'false' ? false : undefined
+      );
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch task templates" });
+    }
+  });
+
+  app.get("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const template = await storage.getTaskTemplate(req.params.id, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Task template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch task template" });
+    }
+  });
+
+  app.post("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertTaskTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const createdBy = req.user!.id;
+      const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const template = await storage.createTaskTemplate({
+        ...validationResult.data,
+        companyId,
+        createdBy,
+        createdByName,
+      });
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create task template" });
+    }
+  });
+
+  app.patch("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertTaskTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const template = await storage.updateTaskTemplate(req.params.id, validationResult.data, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Task template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update task template" });
+    }
+  });
+
+  app.delete("/api/systems/task-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      await storage.deleteTaskTemplate(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete task template" });
+    }
+  });
+
+  // Workflow Templates
+  app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { isActive } = req.query;
+      const templates = await storage.getWorkflowTemplates(
+        companyId,
+        isActive === 'true' ? true : isActive === 'false' ? false : undefined
+      );
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch workflow templates" });
+    }
+  });
+
+  app.get("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const template = await storage.getWorkflowTemplate(req.params.id, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Workflow template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch workflow template" });
+    }
+  });
+
+  app.post("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertWorkflowTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const createdBy = req.user!.id;
+      const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
+
+      const template = await storage.createWorkflowTemplate({
+        ...validationResult.data,
+        companyId,
+        createdBy,
+        createdByName,
+      });
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create workflow template" });
+    }
+  });
+
+  app.patch("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertWorkflowTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const template = await storage.updateWorkflowTemplate(req.params.id, validationResult.data, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Workflow template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update workflow template" });
+    }
+  });
+
+  app.delete("/api/systems/workflow-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      await storage.deleteWorkflowTemplate(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete workflow template" });
+    }
+  });
+
+  // Project Workflows
+  app.get("/api/projects/:projectId/workflows", requireAuth, async (req, res) => {
+    try {
+      const workflows = await storage.getProjectWorkflows(req.params.projectId);
+      res.json(workflows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project workflows" });
+    }
+  });
+
+  app.get("/api/project-workflows/:id", requireAuth, async (req, res) => {
+    try {
+      const workflow = await storage.getProjectWorkflow(req.params.id);
+      if (!workflow) {
+        return res.status(404).json({ error: "Project workflow not found" });
+      }
+      res.json(workflow);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project workflow" });
+    }
+  });
+
+  app.post("/api/project-workflows", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertProjectWorkflowSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const workflow = await storage.createProjectWorkflow(validationResult.data);
+      res.status(201).json(workflow);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create project workflow" });
+    }
+  });
+
+  app.patch("/api/project-workflows/:id", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertProjectWorkflowSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const workflow = await storage.updateProjectWorkflow(req.params.id, validationResult.data);
+      if (!workflow) {
+        return res.status(404).json({ error: "Project workflow not found" });
+      }
+      res.json(workflow);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update project workflow" });
+    }
+  });
+
+  app.delete("/api/project-workflows/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteProjectWorkflow(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete project workflow" });
     }
   });
 
