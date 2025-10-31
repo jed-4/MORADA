@@ -70,7 +70,7 @@ export default function BusinessCalendar() {
   const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
 
   // Create default view on first load
-  const { data: views = [] } = useQuery({
+  const { data: views = [], isLoading: isLoadingViews } = useQuery({
     queryKey: ["/api/calendar-views", "business"],
     queryFn: async () => {
       return await apiRequest("/api/calendar-views?calendarType=business", "GET");
@@ -107,7 +107,7 @@ export default function BusinessCalendar() {
 
   // Cleanup duplicates on first load, then create default view if none exists
   useEffect(() => {
-    if (!user || defaultViewCreationAttempted.current) return;
+    if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
     
     defaultViewCreationAttempted.current = true;
 
@@ -124,7 +124,7 @@ export default function BusinessCalendar() {
     if (views.length === 0 && !createDefaultViewMutation.isPending) {
       createDefaultViewMutation.mutate();
     }
-  }, [user, views]);
+  }, [user, views, isLoadingViews]);
 
   // Set selected view to default on load
   useEffect(() => {

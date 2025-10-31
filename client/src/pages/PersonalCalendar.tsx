@@ -108,7 +108,7 @@ export default function PersonalCalendar() {
   const completedOption = statusOptions.find((opt: any) => opt.key === "done");
 
   // Create default view on first load
-  const { data: views = [] } = useQuery({
+  const { data: views = [], isLoading: isLoadingViews } = useQuery({
     queryKey: ["/api/calendar-views", "personal"],
     queryFn: async () => {
       return await apiRequest("/api/calendar-views?calendarType=personal", "GET");
@@ -145,7 +145,7 @@ export default function PersonalCalendar() {
 
   // Cleanup duplicates on first load, then create default view if none exists
   useEffect(() => {
-    if (!user || defaultViewCreationAttempted.current) return;
+    if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
     
     defaultViewCreationAttempted.current = true;
 
@@ -162,7 +162,7 @@ export default function PersonalCalendar() {
     if (views.length === 0 && !createDefaultViewMutation.isPending) {
       createDefaultViewMutation.mutate();
     }
-  }, [user, views]);
+  }, [user, views, isLoadingViews]);
 
   // Set selected view to default on load
   useEffect(() => {
