@@ -1,30 +1,38 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Calendar as CalendarIcon, Filter } from "lucide-react";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from "date-fns";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { format, parseISO, isWithinInterval } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import CalendarFilters, { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
+import SavedViews, { CalendarView } from "@/components/SavedViews";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+
+// Helper function to normalize filter dates from API responses
+function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
+  const normalized = { ...filters };
+  
+  if (normalized.dateFrom && typeof normalized.dateFrom === 'string') {
+    normalized.dateFrom = new Date(normalized.dateFrom);
+  }
+  if (normalized.dateTo && typeof normalized.dateTo === 'string') {
+    normalized.dateTo = new Date(normalized.dateTo);
+  }
+  
+  return normalized;
+}
 
 export default function BusinessCalendar() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>("all");
-  const [selectedUser, setSelectedUser] = useState<string>("all");
-  const [selectedProject, setSelectedProject] = useState<string>("all");
+  const [filters, setFilters] = useState<CalendarFiltersType>({});
+  const [calendarMode, setCalendarMode] = useState<string>("week");
+  const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
 
   // Fetch all projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -57,8 +65,51 @@ export default function BusinessCalendar() {
   });
 
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const statusOptions = statusCategory?.options || [];
   const completedOption = statusCategory?.options.find(opt => opt.isCompleted);
   const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
+
+  // Create default view on first load
+  const { data: views = [] } = useQuery({
+    queryKey: ["/api/calendar-views", "business"],
+    enabled: !!user,
+  });
+
+  const createDefaultViewMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/calendar-views", "POST", {
+        name: "All Events",
+        calendarType: "business",
+        filters: {},
+        calendarMode: "week",
+        isDefault: true,
+        sharedWith: null,
+      });
+    },
+    onSuccess: (newView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views"] });
+      setSelectedViewId(newView.id);
+    },
+  });
+
+  // Create default view if none exists
+  useEffect(() => {
+    if (user && views.length === 0 && !createDefaultViewMutation.isPending) {
+      createDefaultViewMutation.mutate();
+    }
+  }, [user, views.length]);
+
+  // Set selected view to default on load
+  useEffect(() => {
+    if (views.length > 0 && !selectedViewId) {
+      const defaultView = views.find((v: CalendarView) => v.isDefault);
+      if (defaultView) {
+        setSelectedViewId(defaultView.id);
+        setFilters(normalizeFilterDates(defaultView.filters || {}));
+        setCalendarMode(defaultView.calendarMode || "week");
+      }
+    }
+  }, [views, selectedViewId]);
 
   // Update task status mutation
   const updateTaskMutation = useMutation({
@@ -142,33 +193,10 @@ export default function BusinessCalendar() {
   });
 
   // Convert tasks and schedule items to calendar events with filtering
-  const events: CalendarEvent[] = useMemo(() => {
-    const now = new Date();
-    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-    
-    // Filter and convert tasks
+  const filteredEvents: CalendarEvent[] = useMemo(() => {
+    // Convert tasks to calendar events
     const taskEvents: CalendarEvent[] = allTasks
       .filter(task => task.dueDate)
-      .filter(task => {
-        // Tab-based filtering
-        if (activeTab === "my-events" && user?.id) {
-          return task.assigneeId === user.id;
-        }
-        if (activeTab === "week") {
-          const taskDate = parseISO(task.dueDate!);
-          return isWithinInterval(taskDate, { start: weekStart, end: weekEnd });
-        }
-        if (activeTab === "month") {
-          const taskDate = parseISO(task.dueDate!);
-          return isWithinInterval(taskDate, { start: monthStart, end: monthEnd });
-        }
-        return true; // "all" tab shows everything
-      })
-      .filter(task => selectedUser === "all" || task.assigneeId === selectedUser)
-      .filter(task => selectedProject === "all" || task.projectId === selectedProject)
       .map(task => {
         const project = projects.find(p => p.id === task.projectId);
         const isCompleted = task.status === completedOption?.key;
@@ -186,47 +214,15 @@ export default function BusinessCalendar() {
           type: "task" as const,
           status: task.status,
           isCompleted,
+          assigneeId: task.assigneeId,
         };
       });
 
-    // Filter and convert schedule items
+    // Convert schedule items to calendar events
     const scheduleEvents: CalendarEvent[] = allScheduleItems
       .map(item => {
-        // Find the schedule to get the project
         const schedule = schedules.find(s => s.id === item.scheduleId);
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
-        
-        return {
-          item,
-          schedule,
-          project,
-        };
-      })
-      .filter(({ item, schedule, project }) => {
-        // Tab-based filtering
-        if (activeTab === "my-events" && user?.id) {
-          if (item.assignedToId !== user.id) return false;
-        }
-        if (activeTab === "week") {
-          const itemStart = parseISO(item.startDate);
-          const itemEnd = parseISO(item.endDate);
-          // Check if the schedule item overlaps with this week
-          if (itemEnd < weekStart || itemStart > weekEnd) return false;
-        }
-        if (activeTab === "month") {
-          const itemStart = parseISO(item.startDate);
-          const itemEnd = parseISO(item.endDate);
-          // Check if the schedule item overlaps with this month
-          if (itemEnd < monthStart || itemStart > monthEnd) return false;
-        }
-        
-        // Filter by user
-        if (selectedUser !== "all" && item.assignedToId !== selectedUser) return false;
-        // Filter by project
-        if (selectedProject !== "all" && schedule?.projectId !== selectedProject) return false;
-        return true;
-      })
-      .map(({ item, project }) => {
         const isCompleted = item.status === "completed";
         
         return {
@@ -242,14 +238,66 @@ export default function BusinessCalendar() {
           type: "schedule" as const,
           status: item.status,
           isCompleted,
+          assigneeId: item.assignedToId,
         };
       });
 
-    return [...taskEvents, ...scheduleEvents];
-  }, [allTasks, allScheduleItems, schedules, projects, selectedUser, selectedProject, completedOption, activeTab, user?.id]);
+    const allEvents = [...taskEvents, ...scheduleEvents];
+
+    // Apply filters
+    let filtered = allEvents;
+
+    // Event type filter
+    if (filters.eventTypes && filters.eventTypes.length > 0) {
+      filtered = filtered.filter(event => {
+        if (event.type === "schedule") {
+          return filters.eventTypes!.includes("schedule-item");
+        }
+        return filters.eventTypes!.includes(event.type);
+      });
+    }
+
+    // Project filter
+    if (filters.projects && filters.projects.length > 0) {
+      filtered = filtered.filter(event => 
+        event.projectId && filters.projects!.includes(event.projectId)
+      );
+    }
+
+    // Status filter
+    if (filters.status && filters.status.length > 0) {
+      filtered = filtered.filter(event => 
+        event.status && filters.status!.includes(event.status)
+      );
+    }
+
+    // Assignee filter
+    if (filters.assignees && filters.assignees.length > 0) {
+      filtered = filtered.filter(event => 
+        event.assigneeId && filters.assignees!.includes(event.assigneeId)
+      );
+    }
+
+    // Date range filter
+    if (filters.dateFrom || filters.dateTo) {
+      filtered = filtered.filter(event => {
+        const eventDate = event.startDate;
+        if (filters.dateFrom && filters.dateTo) {
+          return isWithinInterval(eventDate, { start: filters.dateFrom, end: filters.dateTo });
+        } else if (filters.dateFrom) {
+          return eventDate >= filters.dateFrom;
+        } else if (filters.dateTo) {
+          return eventDate <= filters.dateTo;
+        }
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
-    const event = events.find(e => e.id === eventId);
+    const event = filteredEvents.find(e => e.id === eventId);
     if (event?.type === "task") {
       const newStatus = completed 
         ? (completedOption?.key || "done") 
@@ -265,7 +313,6 @@ export default function BusinessCalendar() {
         dueDate: format(newDate, "yyyy-MM-dd")
       };
       
-      // If time is provided, update startTime
       if (newTime) {
         updatePayload.startTime = newTime;
       }
@@ -287,10 +334,8 @@ export default function BusinessCalendar() {
           endDate: newEndDate,
         };
         
-        // If time is provided, update startTime and calculate endTime
         if (newTime) {
           updatePayload.startTime = newTime;
-          // Calculate endTime based on duration if original had times
           if (event.startTime && event.endTime) {
             const [startHour, startMin] = event.startTime.split(':').map(Number);
             const [endHour, endMin] = event.endTime.split(':').map(Number);
@@ -321,6 +366,15 @@ export default function BusinessCalendar() {
     console.log("Event clicked:", event);
   };
 
+  const handleViewSelect = (view: CalendarView) => {
+    setSelectedViewId(view.id);
+    setFilters(normalizeFilterDates(view.filters || {}));
+    setCalendarMode(view.calendarMode || "week");
+  };
+
+  const taskCount = filteredEvents.filter(e => e.type === "task").length;
+  const scheduleCount = filteredEvents.filter(e => e.type === "schedule").length;
+
   return (
     <div className="flex flex-col h-full" data-testid="business-calendar">
       <div className="flex-1 min-h-0 p-6">
@@ -331,130 +385,57 @@ export default function BusinessCalendar() {
               <CalendarIcon className="h-5 w-5" />
               <h2 className="text-lg font-semibold">Business Calendar</h2>
               <Badge variant="secondary" data-testid="event-count">
-                {events.length} events
+                {filteredEvents.length} events
+              </Badge>
+              <Badge variant="outline" data-testid="task-count">
+                {taskCount} tasks
+              </Badge>
+              <Badge variant="outline" data-testid="schedule-count">
+                {scheduleCount} schedule items
               </Badge>
             </div>
           </div>
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-            <div className="border-b border-border px-4">
-              <TabsList className="flex w-auto" data-testid="tabs-calendar-views">
-                <TabsTrigger
-                  value="all"
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
-                  data-testid="tab-all"
-                >
-                  All Events
-                </TabsTrigger>
-                <TabsTrigger
-                  value="my-events"
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
-                  data-testid="tab-my-events"
-                >
-                  My Events
-                </TabsTrigger>
-                <TabsTrigger
-                  value="week"
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
-                  data-testid="tab-week"
-                >
-                  This Week
-                </TabsTrigger>
-                <TabsTrigger
-                  value="month"
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground"
-                  data-testid="tab-month"
-                >
-                  This Month
-                </TabsTrigger>
-              </TabsList>
+          {/* Filters and Saved Views */}
+          <div className="flex items-center justify-between gap-4 p-4 border-b flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <SavedViews
+                calendarType="business"
+                currentFilters={filters}
+                currentCalendarMode={calendarMode}
+                onViewSelect={handleViewSelect}
+                selectedViewId={selectedViewId}
+              />
+              <CalendarFilters
+                filters={filters}
+                onFiltersChange={setFilters}
+                availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
+                availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.label }))}
+                availableAssignees={users
+                  .filter((u: any) => u.userCategory === "team")
+                  .map((u: any) => ({ 
+                    id: u.id, 
+                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email 
+                  }))}
+                showEventTypeFilter={true}
+                calendarType="business"
+              />
             </div>
+          </div>
 
-            {/* Filter Bar */}
-            <div className="border-b border-border/50 bg-muted/30 px-4 py-2">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Filters:</span>
-                </div>
-
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger className="w-[200px]" data-testid="select-project-filter">
-                    <SelectValue placeholder="All Projects" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Projects</SelectItem>
-                    {projects.map(project => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={selectedUser} onValueChange={setSelectedUser}>
-                  <SelectTrigger className="w-[200px]" data-testid="select-user-filter">
-                    <SelectValue placeholder="All Team Members" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Team Members</SelectItem>
-                    {users.filter(u => u.userCategory === "team").map(user => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.firstName} {user.lastName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Tab Content - All views show the same calendar with different filters */}
-            <TabsContent value="all" className="flex-1 min-h-0 m-0">
-              <EnhancedCalendar
-                events={events}
-                onEventClick={handleEventClick}
-                onEventComplete={handleEventComplete}
-                onEventReschedule={handleEventReschedule}
-                onEventResize={handleEventResize}
-                showCompletionCheckbox={true}
-                initialView="week"
-              />
-            </TabsContent>
-            <TabsContent value="my-events" className="flex-1 min-h-0 m-0">
-              <EnhancedCalendar
-                events={events}
-                onEventClick={handleEventClick}
-                onEventComplete={handleEventComplete}
-                onEventReschedule={handleEventReschedule}
-                onEventResize={handleEventResize}
-                showCompletionCheckbox={true}
-                initialView="week"
-              />
-            </TabsContent>
-            <TabsContent value="week" className="flex-1 min-h-0 m-0">
-              <EnhancedCalendar
-                events={events}
-                onEventClick={handleEventClick}
-                onEventComplete={handleEventComplete}
-                onEventReschedule={handleEventReschedule}
-                onEventResize={handleEventResize}
-                showCompletionCheckbox={true}
-                initialView="week"
-              />
-            </TabsContent>
-            <TabsContent value="month" className="flex-1 min-h-0 m-0">
-              <EnhancedCalendar
-                events={events}
-                onEventClick={handleEventClick}
-                onEventComplete={handleEventComplete}
-                onEventReschedule={handleEventReschedule}
-                onEventResize={handleEventResize}
-                showCompletionCheckbox={true}
-                initialView="week"
-              />
-            </TabsContent>
-          </Tabs>
+          {/* Calendar */}
+          <div className="flex-1 min-h-0">
+            <EnhancedCalendar
+              events={filteredEvents}
+              onEventClick={handleEventClick}
+              onEventComplete={handleEventComplete}
+              onEventReschedule={handleEventReschedule}
+              onEventResize={handleEventResize}
+              showCompletionCheckbox={true}
+              initialView={calendarMode as any}
+              onViewChange={setCalendarMode}
+            />
+          </div>
         </Card>
       </div>
     </div>
