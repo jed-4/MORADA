@@ -49,12 +49,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useTaskTemplateCategoryOptions } from "@/hooks/useTaskTemplateCategoryOptions";
 import type { TaskTemplate, UserRole } from "@shared/schema";
 
 export function TaskLibrary() {
   const [showDialog, setShowDialog] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const { toast } = useToast();
+  const { categoryOptions, getCategoryInfo } = useTaskTemplateCategoryOptions();
 
   // Form state
   const [templateForm, setTemplateForm] = useState({
@@ -337,9 +339,20 @@ export function TaskLibrary() {
                         {template.status}
                       </Badge>
                     )}
-                    {template.category && (
-                      <Badge variant="outline">{template.category}</Badge>
-                    )}
+                    {template.category && (() => {
+                      const categoryInfo = getCategoryInfo(template.category);
+                      return (
+                        <Badge 
+                          variant="outline" 
+                          style={{ 
+                            borderColor: categoryInfo?.color || '#6B7280',
+                            color: categoryInfo?.color || '#6B7280'
+                          }}
+                        >
+                          {categoryInfo?.name || template.category}
+                        </Badge>
+                      );
+                    })()}
                     {checklistCount > 0 && (
                       <Badge variant="outline" className="gap-1">
                         <CheckSquare className="h-3 w-3" />
@@ -566,12 +579,21 @@ export function TaskLibrary() {
             
             <div>
               <Label>Category</Label>
-              <Input
+              <Select
                 value={templateForm.category}
-                onChange={(e) => setTemplateForm({ ...templateForm, category: e.target.value })}
-                placeholder="e.g., Admin, Finance, Operations"
-                data-testid="input-template-category"
-              />
+                onValueChange={(value) => setTemplateForm({ ...templateForm, category: value })}
+              >
+                <SelectTrigger data-testid="select-template-category">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoryOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Estimated Duration (minutes)</Label>
