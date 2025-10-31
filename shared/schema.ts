@@ -2250,6 +2250,8 @@ export const calendarViews = pgTable("calendar_views", {
 
 export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
   id: true,
+  userId: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
