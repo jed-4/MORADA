@@ -53,6 +53,7 @@ import {
   type Schedule, type InsertSchedule,
   type ScheduleItem, type InsertScheduleItem,
   type ScheduleTemplate, type InsertScheduleTemplate,
+  type CalendarView, type InsertCalendarView,
   type Proposal, type InsertProposal,
   type ProposalSection, type InsertProposalSection,
   type ProposalItem, type InsertProposalItem,
@@ -528,6 +529,13 @@ export interface IStorage {
   updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>): Promise<ScheduleTemplate | undefined>;
   deleteScheduleTemplate(id: string): Promise<boolean>;
 
+  // Calendar Views CRUD
+  getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
+  getCalendarView(id: string, companyId: string): Promise<CalendarView | undefined>;
+  createCalendarView(view: InsertCalendarView): Promise<CalendarView>;
+  updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined>;
+  deleteCalendarView(id: string, companyId: string): Promise<boolean>;
+
   // Defects CRUD
   getDefects(projectId?: string, status?: string): Promise<Defect[]>;
   getDefectById(id: string): Promise<Defect | null>;
@@ -573,6 +581,7 @@ export class MemStorage implements IStorage {
   private clientSelections: Map<string, ClientSelection>;
   private siteDiaryTemplates: Map<string, SiteDiaryTemplate>;
   private siteDiaryEntries: Map<string, SiteDiaryEntry>;
+  private calendarViews: Map<string, CalendarView>;
 
   constructor() {
     this.users = new Map();
@@ -602,6 +611,7 @@ export class MemStorage implements IStorage {
     this.clientSelections = new Map();
     this.siteDiaryTemplates = new Map();
     this.siteDiaryEntries = new Map();
+    this.calendarViews = new Map();
     this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
     this.initializeDefaultFieldCategories();
@@ -4122,6 +4132,55 @@ export class MemStorage implements IStorage {
 
   async deleteSiteDiaryEntry(id: string): Promise<boolean> {
     return this.siteDiaryEntries.delete(id);
+  }
+
+  // Calendar Views CRUD
+  async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
+    return Array.from(this.calendarViews.values())
+      .filter(v => v.userId === userId && v.calendarType === calendarType && v.companyId === companyId && !v.isArchived)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(v => structuredClone(v));
+  }
+
+  async getCalendarView(id: string, companyId: string): Promise<CalendarView | undefined> {
+    const view = this.calendarViews.get(id);
+    if (!view || view.companyId !== companyId) return undefined;
+    return structuredClone(view);
+  }
+
+  async createCalendarView(view: InsertCalendarView): Promise<CalendarView> {
+    const id = randomUUID();
+    const now = new Date();
+    const newView: CalendarView = {
+      id,
+      ...structuredClone(view),
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+    } as CalendarView;
+    this.calendarViews.set(id, structuredClone(newView));
+    return structuredClone(newView);
+  }
+
+  async updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined> {
+    const existing = this.calendarViews.get(id);
+    if (!existing || existing.companyId !== companyId) return undefined;
+    
+    const updated: CalendarView = {
+      ...existing,
+      ...structuredClone(view),
+      id,
+      updatedAt: new Date(),
+    } as CalendarView;
+    const stored = structuredClone(updated);
+    this.calendarViews.set(id, stored);
+    return structuredClone(stored);
+  }
+
+  async deleteCalendarView(id: string, companyId: string): Promise<boolean> {
+    const existing = this.calendarViews.get(id);
+    if (!existing || existing.companyId !== companyId) return false;
+    return this.calendarViews.delete(id);
   }
 
   async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
@@ -9214,6 +9273,83 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteScheduleTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Calendar Views CRUD
+  async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
+    try {
+      return await db.select()
+        .from(schema.calendarViews)
+        .where(and(
+          eq(schema.calendarViews.userId, userId),
+          eq(schema.calendarViews.calendarType, calendarType),
+          eq(schema.calendarViews.companyId, companyId),
+          eq(schema.calendarViews.isArchived, false)
+        ))
+        .orderBy(asc(schema.calendarViews.sortOrder));
+    } catch (error) {
+      console.error("Database error in getCalendarViews:", error);
+      throw error;
+    }
+  }
+
+  async getCalendarView(id: string, companyId: string): Promise<CalendarView | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.calendarViews)
+        .where(and(
+          eq(schema.calendarViews.id, id),
+          eq(schema.calendarViews.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getCalendarView:", error);
+      throw error;
+    }
+  }
+
+  async createCalendarView(view: InsertCalendarView): Promise<CalendarView> {
+    try {
+      const result = await db.insert(schema.calendarViews)
+        .values(view)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createCalendarView:", error);
+      throw error;
+    }
+  }
+
+  async updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined> {
+    try {
+      const result = await db.update(schema.calendarViews)
+        .set({ ...view, updatedAt: new Date() })
+        .where(and(
+          eq(schema.calendarViews.id, id),
+          eq(schema.calendarViews.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateCalendarView:", error);
+      throw error;
+    }
+  }
+
+  async deleteCalendarView(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.calendarViews)
+        .where(and(
+          eq(schema.calendarViews.id, id),
+          eq(schema.calendarViews.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteCalendarView:", error);
       throw error;
     }
   }
