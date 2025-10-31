@@ -58,7 +58,12 @@ import {
   type ProposalSection, type InsertProposalSection,
   type ProposalItem, type InsertProposalItem,
   type ProposalAcceptance, type InsertProposalAcceptance,
-  type Minute, type InsertMinute
+  type Minute, type InsertMinute,
+  type SystemFolder, type InsertSystemFolder,
+  type SystemDocument, type InsertSystemDocument,
+  type TaskTemplate, type InsertTaskTemplate,
+  type WorkflowTemplate, type InsertWorkflowTemplate,
+  type ProjectWorkflow, type InsertProjectWorkflow
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -549,6 +554,42 @@ export interface IStorage {
   createMinute(minute: InsertMinute): Promise<Minute>;
   updateMinute(id: string, minute: Partial<InsertMinute>): Promise<Minute | undefined>;
   deleteMinute(id: string): Promise<boolean>;
+
+  // Systems Library - Folders
+  getSystemFolders(companyId: string, parentId?: string | null): Promise<SystemFolder[]>;
+  getSystemFolder(id: string, companyId: string): Promise<SystemFolder | undefined>;
+  createSystemFolder(folder: InsertSystemFolder & { companyId: string }): Promise<SystemFolder>;
+  updateSystemFolder(id: string, folder: Partial<InsertSystemFolder>, companyId: string): Promise<SystemFolder | undefined>;
+  deleteSystemFolder(id: string, companyId: string): Promise<boolean>;
+  updateSystemFoldersOrder(updates: Array<{id: string, displayOrder: number}>, companyId: string): Promise<void>;
+
+  // Systems Library - Documents
+  getSystemDocuments(companyId: string, folderId?: string | null): Promise<SystemDocument[]>;
+  getSystemDocument(id: string, companyId: string): Promise<SystemDocument | undefined>;
+  createSystemDocument(document: InsertSystemDocument & { companyId: string }): Promise<SystemDocument>;
+  updateSystemDocument(id: string, document: Partial<InsertSystemDocument>, companyId: string): Promise<SystemDocument | undefined>;
+  deleteSystemDocument(id: string, companyId: string): Promise<boolean>;
+
+  // Systems Library - Task Templates
+  getTaskTemplates(companyId: string, isActive?: boolean): Promise<TaskTemplate[]>;
+  getTaskTemplate(id: string, companyId: string): Promise<TaskTemplate | undefined>;
+  createTaskTemplate(template: InsertTaskTemplate & { companyId: string }): Promise<TaskTemplate>;
+  updateTaskTemplate(id: string, template: Partial<InsertTaskTemplate>, companyId: string): Promise<TaskTemplate | undefined>;
+  deleteTaskTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Systems Library - Workflow Templates
+  getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]>;
+  getWorkflowTemplate(id: string, companyId: string): Promise<WorkflowTemplate | undefined>;
+  createWorkflowTemplate(template: InsertWorkflowTemplate & { companyId: string }): Promise<WorkflowTemplate>;
+  updateWorkflowTemplate(id: string, template: Partial<InsertWorkflowTemplate>, companyId: string): Promise<WorkflowTemplate | undefined>;
+  deleteWorkflowTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Systems Library - Project Workflows
+  getProjectWorkflows(projectId: string): Promise<ProjectWorkflow[]>;
+  getProjectWorkflow(id: string): Promise<ProjectWorkflow | undefined>;
+  createProjectWorkflow(workflow: InsertProjectWorkflow): Promise<ProjectWorkflow>;
+  updateProjectWorkflow(id: string, workflow: Partial<InsertProjectWorkflow>): Promise<ProjectWorkflow | undefined>;
+  deleteProjectWorkflow(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -9493,6 +9534,413 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteMinute:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // SYSTEMS LIBRARY - Folders
+  // ============================================================
+
+  async getSystemFolders(companyId: string, parentId?: string | null): Promise<SystemFolder[]> {
+    try {
+      let query = db.select()
+        .from(schema.systemFolders)
+        .where(eq(schema.systemFolders.companyId, companyId))
+        .orderBy(asc(schema.systemFolders.displayOrder));
+
+      if (parentId === null) {
+        query = query.where(sql`${schema.systemFolders.parentId} IS NULL`) as any;
+      } else if (parentId) {
+        query = query.where(eq(schema.systemFolders.parentId, parentId)) as any;
+      }
+
+      const folders = await query;
+      return folders as SystemFolder[];
+    } catch (error) {
+      console.error("Database error in getSystemFolders:", error);
+      throw error;
+    }
+  }
+
+  async getSystemFolder(id: string, companyId: string): Promise<SystemFolder | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.systemFolders)
+        .where(and(
+          eq(schema.systemFolders.id, id),
+          eq(schema.systemFolders.companyId, companyId)
+        ));
+      return result[0] as SystemFolder | undefined;
+    } catch (error) {
+      console.error("Database error in getSystemFolder:", error);
+      throw error;
+    }
+  }
+
+  async createSystemFolder(folder: InsertSystemFolder & { companyId: string }): Promise<SystemFolder> {
+    try {
+      const result = await db.insert(schema.systemFolders)
+        .values(folder)
+        .returning();
+      return result[0] as SystemFolder;
+    } catch (error) {
+      console.error("Database error in createSystemFolder:", error);
+      throw error;
+    }
+  }
+
+  async updateSystemFolder(id: string, folder: Partial<InsertSystemFolder>, companyId: string): Promise<SystemFolder | undefined> {
+    try {
+      const result = await db.update(schema.systemFolders)
+        .set({ ...folder, updatedAt: new Date() })
+        .where(and(
+          eq(schema.systemFolders.id, id),
+          eq(schema.systemFolders.companyId, companyId)
+        ))
+        .returning();
+      return result[0] as SystemFolder | undefined;
+    } catch (error) {
+      console.error("Database error in updateSystemFolder:", error);
+      throw error;
+    }
+  }
+
+  async deleteSystemFolder(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.systemFolders)
+        .where(and(
+          eq(schema.systemFolders.id, id),
+          eq(schema.systemFolders.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteSystemFolder:", error);
+      throw error;
+    }
+  }
+
+  async updateSystemFoldersOrder(updates: Array<{id: string, displayOrder: number}>, companyId: string): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db.update(schema.systemFolders)
+          .set({ displayOrder: update.displayOrder })
+          .where(and(
+            eq(schema.systemFolders.id, update.id),
+            eq(schema.systemFolders.companyId, companyId)
+          ));
+      }
+    } catch (error) {
+      console.error("Database error in updateSystemFoldersOrder:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // SYSTEMS LIBRARY - Documents
+  // ============================================================
+
+  async getSystemDocuments(companyId: string, folderId?: string | null): Promise<SystemDocument[]> {
+    try {
+      let query = db.select()
+        .from(schema.systemDocuments)
+        .where(eq(schema.systemDocuments.companyId, companyId))
+        .orderBy(desc(schema.systemDocuments.createdAt));
+
+      if (folderId !== undefined) {
+        if (folderId === null) {
+          query = query.where(sql`${schema.systemDocuments.folderId} IS NULL`) as any;
+        } else {
+          query = query.where(eq(schema.systemDocuments.folderId, folderId)) as any;
+        }
+      }
+
+      const documents = await query;
+      return documents as SystemDocument[];
+    } catch (error) {
+      console.error("Database error in getSystemDocuments:", error);
+      throw error;
+    }
+  }
+
+  async getSystemDocument(id: string, companyId: string): Promise<SystemDocument | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.systemDocuments)
+        .where(and(
+          eq(schema.systemDocuments.id, id),
+          eq(schema.systemDocuments.companyId, companyId)
+        ));
+      return result[0] as SystemDocument | undefined;
+    } catch (error) {
+      console.error("Database error in getSystemDocument:", error);
+      throw error;
+    }
+  }
+
+  async createSystemDocument(document: InsertSystemDocument & { companyId: string }): Promise<SystemDocument> {
+    try {
+      const result = await db.insert(schema.systemDocuments)
+        .values(document)
+        .returning();
+      return result[0] as SystemDocument;
+    } catch (error) {
+      console.error("Database error in createSystemDocument:", error);
+      throw error;
+    }
+  }
+
+  async updateSystemDocument(id: string, document: Partial<InsertSystemDocument>, companyId: string): Promise<SystemDocument | undefined> {
+    try {
+      const result = await db.update(schema.systemDocuments)
+        .set({ ...document, updatedAt: new Date() })
+        .where(and(
+          eq(schema.systemDocuments.id, id),
+          eq(schema.systemDocuments.companyId, companyId)
+        ))
+        .returning();
+      return result[0] as SystemDocument | undefined;
+    } catch (error) {
+      console.error("Database error in updateSystemDocument:", error);
+      throw error;
+    }
+  }
+
+  async deleteSystemDocument(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.systemDocuments)
+        .where(and(
+          eq(schema.systemDocuments.id, id),
+          eq(schema.systemDocuments.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteSystemDocument:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // SYSTEMS LIBRARY - Task Templates
+  // ============================================================
+
+  async getTaskTemplates(companyId: string, isActive?: boolean): Promise<TaskTemplate[]> {
+    try {
+      let query = db.select()
+        .from(schema.taskTemplates)
+        .where(eq(schema.taskTemplates.companyId, companyId))
+        .orderBy(asc(schema.taskTemplates.title));
+
+      if (isActive !== undefined) {
+        query = query.where(eq(schema.taskTemplates.isActive, isActive)) as any;
+      }
+
+      const templates = await query;
+      return templates as TaskTemplate[];
+    } catch (error) {
+      console.error("Database error in getTaskTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getTaskTemplate(id: string, companyId: string): Promise<TaskTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.taskTemplates)
+        .where(and(
+          eq(schema.taskTemplates.id, id),
+          eq(schema.taskTemplates.companyId, companyId)
+        ));
+      return result[0] as TaskTemplate | undefined;
+    } catch (error) {
+      console.error("Database error in getTaskTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createTaskTemplate(template: InsertTaskTemplate & { companyId: string }): Promise<TaskTemplate> {
+    try {
+      const result = await db.insert(schema.taskTemplates)
+        .values(template)
+        .returning();
+      return result[0] as TaskTemplate;
+    } catch (error) {
+      console.error("Database error in createTaskTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskTemplate(id: string, template: Partial<InsertTaskTemplate>, companyId: string): Promise<TaskTemplate | undefined> {
+    try {
+      const result = await db.update(schema.taskTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.taskTemplates.id, id),
+          eq(schema.taskTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0] as TaskTemplate | undefined;
+    } catch (error) {
+      console.error("Database error in updateTaskTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteTaskTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.taskTemplates)
+        .where(and(
+          eq(schema.taskTemplates.id, id),
+          eq(schema.taskTemplates.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteTaskTemplate:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // SYSTEMS LIBRARY - Workflow Templates
+  // ============================================================
+
+  async getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]> {
+    try {
+      let query = db.select()
+        .from(schema.workflowTemplates)
+        .where(eq(schema.workflowTemplates.companyId, companyId))
+        .orderBy(asc(schema.workflowTemplates.name));
+
+      if (isActive !== undefined) {
+        query = query.where(eq(schema.workflowTemplates.isActive, isActive)) as any;
+      }
+
+      const templates = await query;
+      return templates as WorkflowTemplate[];
+    } catch (error) {
+      console.error("Database error in getWorkflowTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getWorkflowTemplate(id: string, companyId: string): Promise<WorkflowTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.workflowTemplates)
+        .where(and(
+          eq(schema.workflowTemplates.id, id),
+          eq(schema.workflowTemplates.companyId, companyId)
+        ));
+      return result[0] as WorkflowTemplate | undefined;
+    } catch (error) {
+      console.error("Database error in getWorkflowTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createWorkflowTemplate(template: InsertWorkflowTemplate & { companyId: string }): Promise<WorkflowTemplate> {
+    try {
+      const result = await db.insert(schema.workflowTemplates)
+        .values(template)
+        .returning();
+      return result[0] as WorkflowTemplate;
+    } catch (error) {
+      console.error("Database error in createWorkflowTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateWorkflowTemplate(id: string, template: Partial<InsertWorkflowTemplate>, companyId: string): Promise<WorkflowTemplate | undefined> {
+    try {
+      const result = await db.update(schema.workflowTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.workflowTemplates.id, id),
+          eq(schema.workflowTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0] as WorkflowTemplate | undefined;
+    } catch (error) {
+      console.error("Database error in updateWorkflowTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteWorkflowTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.workflowTemplates)
+        .where(and(
+          eq(schema.workflowTemplates.id, id),
+          eq(schema.workflowTemplates.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteWorkflowTemplate:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // SYSTEMS LIBRARY - Project Workflows
+  // ============================================================
+
+  async getProjectWorkflows(projectId: string): Promise<ProjectWorkflow[]> {
+    try {
+      const workflows = await db.select()
+        .from(schema.projectWorkflows)
+        .where(eq(schema.projectWorkflows.projectId, projectId))
+        .orderBy(desc(schema.projectWorkflows.triggeredAt));
+      return workflows as ProjectWorkflow[];
+    } catch (error) {
+      console.error("Database error in getProjectWorkflows:", error);
+      throw error;
+    }
+  }
+
+  async getProjectWorkflow(id: string): Promise<ProjectWorkflow | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.projectWorkflows)
+        .where(eq(schema.projectWorkflows.id, id));
+      return result[0] as ProjectWorkflow | undefined;
+    } catch (error) {
+      console.error("Database error in getProjectWorkflow:", error);
+      throw error;
+    }
+  }
+
+  async createProjectWorkflow(workflow: InsertProjectWorkflow): Promise<ProjectWorkflow> {
+    try {
+      const result = await db.insert(schema.projectWorkflows)
+        .values(workflow)
+        .returning();
+      return result[0] as ProjectWorkflow;
+    } catch (error) {
+      console.error("Database error in createProjectWorkflow:", error);
+      throw error;
+    }
+  }
+
+  async updateProjectWorkflow(id: string, workflow: Partial<InsertProjectWorkflow>): Promise<ProjectWorkflow | undefined> {
+    try {
+      const result = await db.update(schema.projectWorkflows)
+        .set({ ...workflow, updatedAt: new Date() })
+        .where(eq(schema.projectWorkflows.id, id))
+        .returning();
+      return result[0] as ProjectWorkflow | undefined;
+    } catch (error) {
+      console.error("Database error in updateProjectWorkflow:", error);
+      throw error;
+    }
+  }
+
+  async deleteProjectWorkflow(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.projectWorkflows)
+        .where(eq(schema.projectWorkflows.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteProjectWorkflow:", error);
       throw error;
     }
   }
