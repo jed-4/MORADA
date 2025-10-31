@@ -82,7 +82,7 @@ export default function SavedViews({
       });
     },
     onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", calendarType] });
       toast({ title: "View created successfully" });
       setCreateDialogOpen(false);
       setViewName("");
@@ -102,7 +102,7 @@ export default function SavedViews({
       });
     },
     onSuccess: (updatedView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", calendarType] });
       toast({ title: "View updated successfully" });
       setEditDialogOpen(false);
       setViewName("");
@@ -119,7 +119,7 @@ export default function SavedViews({
       await apiRequest(`/api/calendar-views/${id}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", calendarType] });
       toast({ title: "View deleted successfully" });
       setDeleteDialogOpen(false);
       setSelectedView(null);
