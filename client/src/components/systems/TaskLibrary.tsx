@@ -17,7 +17,11 @@ import {
   Trash2, 
   Edit, 
   Power,
-  PowerOff
+  PowerOff,
+  X,
+  Link,
+  CheckSquare,
+  Target
 } from "lucide-react";
 import {
   Dialog,
@@ -55,15 +59,19 @@ export function TaskLibrary() {
   // Form state
   const [templateForm, setTemplateForm] = useState({
     title: "",
+    goal: "",
     description: "",
     defaultRoleId: "",
     frequency: "once",
     category: "",
     estimatedDuration: 0,
+    status: "active" as "active" | "draft" | "archived",
     isActive: true,
     dueTime: "",
     dueDayOfWeek: [] as number[],
     dueDayOfMonth: 1,
+    checklist: [] as Array<{ text: string; completed: boolean }>,
+    externalLinks: [] as string[],
   });
 
   // Fetch task templates
@@ -134,15 +142,19 @@ export function TaskLibrary() {
   const resetForm = () => {
     setTemplateForm({
       title: "",
+      goal: "",
       description: "",
       defaultRoleId: "",
       frequency: "once",
       category: "",
       estimatedDuration: 0,
+      status: "active",
       isActive: true,
       dueTime: "",
       dueDayOfWeek: [],
       dueDayOfMonth: 1,
+      checklist: [],
+      externalLinks: [],
     });
   };
 
@@ -156,15 +168,19 @@ export function TaskLibrary() {
     setEditingTemplate(template);
     setTemplateForm({
       title: template.title,
+      goal: template.goal || "",
       description: template.description || "",
       defaultRoleId: template.defaultRoleId || "",
       frequency: template.frequency || "once",
       category: template.category || "",
       estimatedDuration: template.estimatedDuration || 0,
+      status: (template.status as "active" | "draft" | "archived") || "active",
       isActive: template.isActive,
       dueTime: template.dueTime || "",
-      dueDayOfWeek: template.dueDayOfWeek ? (typeof template.dueDayOfWeek === 'string' ? JSON.parse(template.dueDayOfWeek) : template.dueDayOfWeek) : [],
+      dueDayOfWeek: template.dueDayOfWeek ? (Array.isArray(template.dueDayOfWeek) ? template.dueDayOfWeek : JSON.parse(template.dueDayOfWeek as string)) : [],
       dueDayOfMonth: template.dueDayOfMonth || 1,
+      checklist: template.checklist ? (Array.isArray(template.checklist) ? template.checklist : JSON.parse(template.checklist as string)) : [],
+      externalLinks: template.externalLinks ? (Array.isArray(template.externalLinks) ? template.externalLinks : JSON.parse(template.externalLinks as string)) : [],
     });
     setShowDialog(true);
   };
@@ -211,6 +227,54 @@ export function TaskLibrary() {
     }));
   };
 
+  // Checklist management
+  const addChecklistItem = () => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      checklist: [...prev.checklist, { text: "", completed: false }]
+    }));
+  };
+
+  const updateChecklistItem = (index: number, text: string) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      checklist: prev.checklist.map((item, i) => 
+        i === index ? { ...item, text } : item
+      )
+    }));
+  };
+
+  const removeChecklistItem = (index: number) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      checklist: prev.checklist.filter((_, i) => i !== index)
+    }));
+  };
+
+  // External links management
+  const addExternalLink = () => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      externalLinks: [...prev.externalLinks, ""]
+    }));
+  };
+
+  const updateExternalLink = (index: number, value: string) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      externalLinks: prev.externalLinks.map((link, i) => 
+        i === index ? value : link
+      )
+    }));
+  };
+
+  const removeExternalLink = (index: number) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      externalLinks: prev.externalLinks.filter((_, i) => i !== index)
+    }));
+  };
+
   if (templatesLoading) {
     return (
       <Card className="p-6">
@@ -249,27 +313,56 @@ export function TaskLibrary() {
             </div>
           </Card>
         ) : (
-          templates.map((template) => (
-            <Card key={template.id} className="p-3" data-testid={`template-card-${template.id}`}>
-              <div className="flex items-center gap-4">
-                <div className="flex-1 grid grid-cols-7 gap-3 items-center">
-                  <div className="col-span-2 font-medium truncate">{template.title}</div>
-                  <div className="col-span-2 text-sm text-muted-foreground truncate">
-                    {template.description || "-"}
-                  </div>
-                  <div className="text-sm">{getRoleName(template.defaultRoleId)}</div>
-                  <div className="text-sm">{getFrequencyLabel(template)}</div>
-                  <div className="text-sm">
-                    {template.category ? (
-                      <Badge variant="secondary">{template.category}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
+          templates.map((template) => {
+            const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
+            const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
+            const hasGoal = !!template.goal;
+            
+            return (
+              <Card key={template.id} className="p-3" data-testid={`template-card-${template.id}`}>
+                <div className="flex items-center gap-4 overflow-x-auto">
+                  <div className="flex-shrink-0 min-w-[200px]">
+                    <div className="font-medium">{template.title}</div>
+                    {hasGoal && (
+                      <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                        <Target className="h-3 w-3" />
+                        {template.goal}
+                      </div>
                     )}
                   </div>
-                  <div className="text-sm">
-                    {template.estimatedDuration ? `${template.estimatedDuration} min` : "-"}
+                  
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {template.status && (
+                      <Badge variant={template.status === 'active' ? 'default' : template.status === 'draft' ? 'secondary' : 'outline'}>
+                        {template.status}
+                      </Badge>
+                    )}
+                    {template.category && (
+                      <Badge variant="outline">{template.category}</Badge>
+                    )}
+                    {checklistCount > 0 && (
+                      <Badge variant="outline" className="gap-1">
+                        <CheckSquare className="h-3 w-3" />
+                        {checklistCount}
+                      </Badge>
+                    )}
+                    {linksCount > 0 && (
+                      <Badge variant="outline" className="gap-1">
+                        <Link className="h-3 w-3" />
+                        {linksCount}
+                      </Badge>
+                    )}
                   </div>
-                  <div>
+
+                  <div className="flex-shrink-0 text-sm text-muted-foreground min-w-[120px]">
+                    {getRoleName(template.defaultRoleId)}
+                  </div>
+                  
+                  <div className="flex-shrink-0 text-sm min-w-[150px]">
+                    {getFrequencyLabel(template)}
+                  </div>
+
+                  <div className="flex-shrink-0 ml-auto flex items-center gap-2">
                     {template.isActive ? (
                       <Badge variant="outline" className="gap-1">
                         <Power className="h-3 w-3 text-green-600" />
@@ -281,17 +374,15 @@ export function TaskLibrary() {
                         Inactive
                       </Badge>
                     )}
-                  </div>
-                </div>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
@@ -325,8 +416,10 @@ export function TaskLibrary() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            </Card>
-          ))
+            </div>
+          </Card>
+            );
+          })
         )}
       </div>
 
@@ -338,11 +431,11 @@ export function TaskLibrary() {
           resetForm();
         }
       }}>
-        <DialogContent data-testid="dialog-template">
+        <DialogContent className="max-h-[90vh] overflow-y-auto" data-testid="dialog-template">
           <DialogHeader>
             <DialogTitle>{editingTemplate ? "Edit Template" : "New Task Template"}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 max-h-[calc(90vh-150px)] overflow-y-auto pr-2">
             <div>
               <Label>Title</Label>
               <Input
@@ -353,13 +446,38 @@ export function TaskLibrary() {
               />
             </div>
             <div>
+              <Label>Goal</Label>
+              <Input
+                value={templateForm.goal}
+                onChange={(e) => setTemplateForm({ ...templateForm, goal: e.target.value })}
+                placeholder="Brief, to-the-point goal"
+                data-testid="input-template-goal"
+              />
+            </div>
+            <div>
               <Label>Description</Label>
               <Textarea
                 value={templateForm.description}
                 onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })}
-                placeholder="Optional description"
+                placeholder="Detailed description"
                 data-testid="input-template-description"
               />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={templateForm.status}
+                onValueChange={(value: "active" | "draft" | "archived") => setTemplateForm({ ...templateForm, status: value })}
+              >
+                <SelectTrigger data-testid="select-template-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Default Role</Label>
@@ -465,6 +583,80 @@ export function TaskLibrary() {
                 data-testid="input-template-duration"
               />
             </div>
+            
+            {/* Checklist */}
+            <div>
+              <Label className="flex items-center justify-between">
+                <span>Checklist</span>
+                <Button type="button" variant="outline" size="sm" onClick={addChecklistItem} data-testid="button-add-checklist">
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Item
+                </Button>
+              </Label>
+              {templateForm.checklist.length > 0 ? (
+                <div className="space-y-2 mt-2">
+                  {templateForm.checklist.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={item.text}
+                        onChange={(e) => updateChecklistItem(index, e.target.value)}
+                        placeholder="Checklist item"
+                        data-testid={`input-checklist-${index}`}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeChecklistItem(index)}
+                        data-testid={`button-remove-checklist-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground mt-2">No checklist items</div>
+              )}
+            </div>
+
+            {/* External Links */}
+            <div>
+              <Label className="flex items-center justify-between">
+                <span>External Links</span>
+                <Button type="button" variant="outline" size="sm" onClick={addExternalLink} data-testid="button-add-link">
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Link
+                </Button>
+              </Label>
+              {templateForm.externalLinks.length > 0 ? (
+                <div className="space-y-2 mt-2">
+                  {templateForm.externalLinks.map((link, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={link}
+                        onChange={(e) => updateExternalLink(index, e.target.value)}
+                        placeholder="https://example.com"
+                        type="url"
+                        data-testid={`input-link-${index}`}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeExternalLink(index)}
+                        data-testid={`button-remove-link-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground mt-2">No external links</div>
+              )}
+            </div>
+            
             <div className="flex items-center justify-between">
               <Label>Active</Label>
               <Switch

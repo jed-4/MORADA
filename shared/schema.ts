@@ -2490,7 +2490,8 @@ export const taskTemplates = pgTable("task_templates", {
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   
   title: text("title").notNull(),
-  description: text("description"),
+  goal: text("goal"), // Brief, to-the-point goal
+  description: text("description"), // Detailed description
   
   // Role assignment
   defaultRoleId: varchar("default_role_id").references(() => userRoles.id), // Default role to assign
@@ -2499,7 +2500,7 @@ export const taskTemplates = pgTable("task_templates", {
   // Scheduling
   frequency: text("frequency"), // "daily" | "weekly" | "monthly" | "yearly" | "once"
   frequencyInterval: integer("frequency_interval").default(1), // Every N days/weeks/months
-  dueDayOfWeek: integer("due_day_of_week"), // For weekly: 0-6 (Sun-Sat)
+  dueDayOfWeek: json("due_day_of_week"), // For weekly: array of 0-6 (Sun-Sat)
   dueDayOfMonth: integer("due_day_of_month"), // For monthly: 1-31
   dueTime: text("due_time"), // HH:MM format
   dueOffsetDays: integer("due_offset_days").default(0), // Days relative to trigger
@@ -2507,7 +2508,11 @@ export const taskTemplates = pgTable("task_templates", {
   // Checklist
   checklist: json("checklist").default([]), // Array of checklist items [{text, completed}]
   
+  // Attachments and links
+  externalLinks: json("external_links").default([]), // Array of URLs
+  
   // Status
+  status: text("status").default("active"), // "active" | "draft" | "archived"
   isActive: boolean("is_active").default(true),
   
   // Metadata
@@ -2527,9 +2532,10 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  goal: z.string().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),
   frequencyInterval: z.number().optional(),
-  dueDayOfWeek: z.number().min(0).max(6).optional(), // 0-6 for Sun-Sat
+  dueDayOfWeek: z.array(z.number().min(0).max(6)).optional(), // Array of 0-6 for Sun-Sat
   dueDayOfMonth: z.number().min(1).max(31).optional(),
   dueTime: z.string().optional(), // HH:MM format
   dueOffsetDays: z.number().optional(),
@@ -2537,13 +2543,41 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
     text: z.string(),
     completed: z.boolean().default(false),
   })).optional(),
+  externalLinks: z.array(z.string().url()).optional(), // Array of valid URLs
   tags: z.array(z.string()).optional(),
+  status: z.enum(["active", "draft", "archived"]).optional(),
   estimatedDuration: z.number().optional(),
   isActive: z.boolean().optional(),
 });
 
 export type InsertTaskTemplate = z.infer<typeof insertTaskTemplateSchema>;
 export type TaskTemplate = typeof taskTemplates.$inferSelect;
+
+// Task Template Attachments - File attachments for task templates
+export const taskTemplateAttachments = pgTable("task_template_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskTemplateId: varchar("task_template_id").notNull().references(() => taskTemplates.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  originalName: text("original_name").notNull(),
+  storageKey: text("storage_key").notNull(), // Path in object storage
+  mimeType: text("mime_type"),
+  byteSize: integer("byte_size"),
+  
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskTemplateAttachmentSchema = createInsertSchema(taskTemplateAttachments).omit({
+  id: true,
+  taskTemplateId: true,
+  companyId: true,
+  createdAt: true,
+});
+
+export type InsertTaskTemplateAttachment = z.infer<typeof insertTaskTemplateAttachmentSchema>;
+export type TaskTemplateAttachment = typeof taskTemplateAttachments.$inferSelect;
 
 // Workflow Templates - Automation rules that trigger task creation
 export const workflowTemplates = pgTable("workflow_templates", {
