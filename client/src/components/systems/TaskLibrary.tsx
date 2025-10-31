@@ -3,13 +3,19 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { 
   Plus, 
   MoreVertical, 
   Trash2, 
   Edit, 
-  Clock,
-  User,
   Power,
   PowerOff
 } from "lucide-react";
@@ -163,7 +169,7 @@ export function TaskLibrary() {
   };
 
   const getRoleName = (roleId: string | null) => {
-    if (!roleId) return "Unassigned";
+    if (!roleId) return "-";
     const role = roles.find((r) => r.id === roleId);
     return role?.name || "Unknown";
   };
@@ -203,46 +209,58 @@ export function TaskLibrary() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto space-y-4">
-        {activeTemplates.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium mb-2 text-muted-foreground">Active Templates</h3>
-            <div className="grid gap-3">
-              {activeTemplates.map((template) => (
-                <Card key={template.id} className="p-4" data-testid={`template-card-${template.id}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-medium">{template.title}</h4>
-                        <Badge variant="outline" className="gap-1">
-                          <Power className="h-3 w-3 text-green-600" />
-                          Active
-                        </Badge>
-                      </div>
-                      {template.description && (
-                        <p className="text-sm text-muted-foreground mb-2">{template.description}</p>
-                      )}
-                      <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          {getRoleName(template.defaultRoleId)}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {getFrequencyLabel(template.frequency)}
-                        </div>
-                        {template.estimatedDuration && (
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {template.estimatedDuration} min
-                          </div>
-                        )}
-                        {template.category && (
-                          <Badge variant="secondary">{template.category}</Badge>
-                        )}
-                      </div>
-                    </div>
-
+      <Card className="flex-1 overflow-auto">
+        {templates.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            No task templates yet. Create your first template to get started.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Frequency</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[50px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {templates.map((template) => (
+                <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
+                  <TableCell className="font-medium">{template.title}</TableCell>
+                  <TableCell className="max-w-[300px] truncate text-muted-foreground text-sm">
+                    {template.description || "-"}
+                  </TableCell>
+                  <TableCell>{getRoleName(template.defaultRoleId)}</TableCell>
+                  <TableCell>{getFrequencyLabel(template.frequency)}</TableCell>
+                  <TableCell>
+                    {template.category ? (
+                      <Badge variant="secondary">{template.category}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {template.estimatedDuration ? `${template.estimatedDuration} min` : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {template.isActive ? (
+                      <Badge variant="outline" className="gap-1">
+                        <Power className="h-3 w-3 text-green-600" />
+                        Active
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="gap-1">
+                        <PowerOff className="h-3 w-3" />
+                        Inactive
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
@@ -255,11 +273,23 @@ export function TaskLibrary() {
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem 
-                          onClick={() => toggleActiveMutation.mutate({ id: template.id, isActive: false })}
-                          data-testid="menu-deactivate-template"
+                          onClick={() => toggleActiveMutation.mutate({ 
+                            id: template.id, 
+                            isActive: !template.isActive 
+                          })}
+                          data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
                         >
-                          <PowerOff className="h-4 w-4 mr-2" />
-                          Deactivate
+                          {template.isActive ? (
+                            <>
+                              <PowerOff className="h-4 w-4 mr-2" />
+                              Deactivate
+                            </>
+                          ) : (
+                            <>
+                              <Power className="h-4 w-4 mr-2" />
+                              Activate
+                            </>
+                          )}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => deleteTemplateMutation.mutate(template.id)}
@@ -271,86 +301,13 @@ export function TaskLibrary() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                </Card>
+                  </TableCell>
+                </TableRow>
               ))}
-            </div>
-          </div>
+            </TableBody>
+          </Table>
         )}
-
-        {inactiveTemplates.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium mb-2 text-muted-foreground">Inactive Templates</h3>
-            <div className="grid gap-3">
-              {inactiveTemplates.map((template) => (
-                <Card key={template.id} className="p-4 opacity-60" data-testid={`template-card-${template.id}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-medium">{template.title}</h4>
-                        <Badge variant="outline" className="gap-1">
-                          <PowerOff className="h-3 w-3" />
-                          Inactive
-                        </Badge>
-                      </div>
-                      {template.description && (
-                        <p className="text-sm text-muted-foreground mb-2">{template.description}</p>
-                      )}
-                      <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          {getRoleName(template.defaultRoleId)}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {getFrequencyLabel(template.frequency)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem 
-                          onClick={() => toggleActiveMutation.mutate({ id: template.id, isActive: true })}
-                          data-testid="menu-activate-template"
-                        >
-                          <Power className="h-4 w-4 mr-2" />
-                          Activate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => deleteTemplateMutation.mutate(template.id)}
-                          className="text-destructive"
-                          data-testid="menu-delete-template"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {templates.length === 0 && (
-          <Card className="p-8">
-            <div className="text-center text-muted-foreground">
-              No task templates yet. Create your first template to get started.
-            </div>
-          </Card>
-        )}
-      </div>
+      </Card>
 
       {/* Template Dialog */}
       <Dialog open={showDialog} onOpenChange={(open) => {
