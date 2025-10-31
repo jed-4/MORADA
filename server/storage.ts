@@ -637,6 +637,7 @@ export class MemStorage implements IStorage {
       { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
       
       // Financial category
       { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },

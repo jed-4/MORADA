@@ -2218,6 +2218,61 @@ export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
 export const updateScheduleSchema = insertScheduleSchema.partial();
 export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;
 
+// Calendar Views (saved filter combinations and views for calendars)
+export const calendarViews = pgTable("calendar_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // Owner of the view
+  name: text("name").notNull(), // e.g., "My Tasks", "Team Schedule", "Project X Only"
+  calendarType: text("calendar_type").notNull(), // "personal" | "business"
+  calendarMode: text("calendar_mode").notNull().default("month"), // "month" | "week" | "day"
+  
+  // Filters stored as JSON
+  filters: jsonb("filters").notNull().default({
+    projectIds: [],
+    statuses: [],
+    eventTypes: [],
+    assigneeIds: [],
+    dateRange: null,
+  }), // { projectIds: string[], statuses: string[], eventTypes: string[], assigneeIds: string[], dateRange: {start: Date, end: Date} | null }
+  
+  // Sharing
+  sharedWith: json("shared_with").default([]), // Array of user IDs or role IDs who can access this view
+  isDefault: boolean("is_default").notNull().default(false), // Is this the default view for the user
+  
+  // Metadata
+  sortOrder: integer("sort_order").notNull().default(0), // For ordering tabs
+  isArchived: boolean("is_archived").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  calendarType: z.enum(["personal", "business"]),
+  calendarMode: z.enum(["month", "week", "day"]).default("month"),
+  filters: z.object({
+    projectIds: z.array(z.string()).optional(),
+    statuses: z.array(z.string()).optional(),
+    eventTypes: z.array(z.string()).optional(),
+    assigneeIds: z.array(z.string()).optional(),
+    dateRange: z.object({
+      start: z.coerce.date(),
+      end: z.coerce.date(),
+    }).optional().nullable(),
+  }).optional(),
+  sharedWith: z.array(z.string()).optional(),
+  isDefault: z.boolean().default(false),
+  sortOrder: z.number().default(0),
+});
+
+export type InsertCalendarView = z.infer<typeof insertCalendarViewSchema>;
+export type CalendarView = typeof calendarViews.$inferSelect;
+
 export const updateScheduleItemSchema = insertScheduleItemSchema.partial();
 export type UpdateScheduleItem = z.infer<typeof updateScheduleItemSchema>;
 
