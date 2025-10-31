@@ -9,13 +9,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   CalendarIcon,
   Filter,
   X,
@@ -189,7 +182,7 @@ export default function CalendarFilters({
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <FolderOpen className="h-4 w-4 text-muted-foreground" />
-                  <Label className="text-sm font-medium">Project</Label>
+                  <Label className="text-sm font-medium">Projects</Label>
                   {filters.projects && filters.projects.length > 0 && (
                     <Button
                       variant="ghost"
@@ -201,36 +194,30 @@ export default function CalendarFilters({
                     </Button>
                   )}
                 </div>
-                <Select
-                  value={filters.projects?.[0] || ""}
-                  onValueChange={(value) => {
-                    if (value) {
-                      updateFilter("projects", [value]);
-                    } else {
-                      clearFilter("projects");
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full" data-testid="select-project-filter">
-                    <SelectValue placeholder="Select project..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">All Projects</SelectItem>
-                    {availableProjects.map(project => (
-                      <SelectItem key={project.id} value={project.id}>
-                        <div className="flex items-center gap-2">
-                          {project.color && (
-                            <div 
-                              className="w-2 h-2 rounded-full" 
-                              style={{ backgroundColor: project.color }}
-                            />
-                          )}
-                          {project.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">
+                  {availableProjects.map(project => (
+                    <div key={project.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`project-${project.id}`}
+                        checked={filters.projects?.includes(project.id) || false}
+                        onCheckedChange={() => toggleArrayFilter("projects", project.id)}
+                        data-testid={`filter-project-${project.id}`}
+                      />
+                      <Label 
+                        htmlFor={`project-${project.id}`}
+                        className="text-sm font-normal cursor-pointer flex items-center gap-2"
+                      >
+                        {project.color && (
+                          <div 
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: project.color }}
+                          />
+                        )}
+                        {project.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

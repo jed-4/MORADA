@@ -412,10 +412,15 @@ export default function BusinessCalendar() {
                 availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
                 availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.label }))}
                 availableAssignees={users
-                  .filter((u: any) => u.userCategory === "team" && (u.firstName || u.lastName || u.email))
+                  .filter((u: any) => {
+                    if (u.userCategory !== "team") return false;
+                    const hasName = (u.firstName && u.firstName.trim()) || (u.lastName && u.lastName.trim());
+                    const hasEmail = u.email && u.email.trim();
+                    return hasName || hasEmail;
+                  })
                   .map((u: any) => ({ 
                     id: u.id, 
-                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email 
+                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Unknown User'
                   }))}
                 showEventTypeFilter={true}
                 calendarType="business"
