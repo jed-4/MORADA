@@ -421,7 +421,6 @@ export default function BusinessCalendar() {
               onEventResize={handleEventResize}
               showCompletionCheckbox={true}
               initialView={calendarMode as any}
-              onViewChange={setCalendarMode}
             />
           </div>
         </Card>

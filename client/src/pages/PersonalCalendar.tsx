@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isWithinInterval } from "date-fns";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -321,8 +320,6 @@ export default function PersonalCalendar() {
   const userName = displayedUser 
     ? `${displayedUser.firstName || ''} ${displayedUser.lastName || ''}`.trim() || (displayedUserId === user?.id ? 'My' : 'User')
     : (displayedUserId === user?.id ? 'My' : 'User');
-  const taskCount = filteredEvents.filter(e => e.type === "task").length;
-  const googleEventCount = filteredEvents.filter(e => e.type === "google-calendar").length;
 
   if (isLoading) {
     return (
@@ -335,25 +332,13 @@ export default function PersonalCalendar() {
   }
 
   return (
-    <div className="flex flex-col h-full p-6" data-testid="personal-calendar">
-      <Card className="h-full flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-4 p-4 border-b">
+    <div className="flex flex-col h-full" data-testid="personal-calendar">
+      {/* Top Bar with Title, Team Selector, Views, and Filters */}
+      <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
+        <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <CalendarIcon className="h-5 w-5" />
             <h2 className="text-lg font-semibold">{userName} Calendar</h2>
-            <Badge variant="secondary" data-testid="task-count">
-              {taskCount} {taskCount === 1 ? 'task' : 'tasks'}
-            </Badge>
-            {googleEventCount > 0 && (
-              <Badge 
-                variant="outline" 
-                style={{ borderColor: '#4285f4', color: '#4285f4' }}
-                data-testid="google-event-count"
-              >
-                {googleEventCount} Google {googleEventCount === 1 ? 'event' : 'events'}
-              </Badge>
-            )}
           </div>
 
           {/* Team Calendar Selector */}
@@ -380,53 +365,53 @@ export default function PersonalCalendar() {
           )}
         </div>
 
-        {/* Filters and Saved Views */}
-        <div className="flex items-center justify-between gap-4 p-4 border-b flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <SavedViews
-              calendarType="personal"
-              currentFilters={filters}
-              currentCalendarMode={calendarMode}
-              onViewSelect={handleViewSelect}
-              selectedViewId={selectedViewId}
-            />
-            <CalendarFilters
-              filters={filters}
-              onFiltersChange={setFilters}
-              availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
-              availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.label }))}
-              showEventTypeFilter={displayedUserId === user?.id}
-              calendarType="personal"
-            />
-          </div>
-        </div>
-
-        {/* Google Calendar Error Alert */}
-        {googleCalendarError && displayedUserId === user?.id && (
-          <div className="p-4 border-b">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Failed to load Google Calendar events. Please check your connection in Profile settings.
-              </AlertDescription>
-            </Alert>
-          </div>
-        )}
-
-        {/* Calendar */}
-        <div className="flex-1 min-h-0">
-          <EnhancedCalendar
-            events={filteredEvents}
-            onEventClick={handleEventClick}
-            onEventComplete={handleEventComplete}
-            onEventReschedule={handleEventReschedule}
-            onEventResize={handleEventResize}
-            showCompletionCheckbox={true}
-            initialView={calendarMode as any}
-            onViewChange={setCalendarMode}
+        <div className="flex items-center gap-2 flex-wrap">
+          <SavedViews
+            calendarType="personal"
+            currentFilters={filters}
+            currentCalendarMode={calendarMode}
+            onViewSelect={handleViewSelect}
+            selectedViewId={selectedViewId}
+          />
+          <CalendarFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
+            availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.name }))}
+            showEventTypeFilter={displayedUserId === user?.id}
+            calendarType="personal"
           />
         </div>
-      </Card>
+      </div>
+
+      {/* Google Calendar Error Alert */}
+      {googleCalendarError && displayedUserId === user?.id && (
+        <div className="px-6 pt-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load Google Calendar events. Please check your connection in Profile settings.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
+      {/* Calendar Card */}
+      <div className="flex-1 min-h-0 p-6">
+        <Card className="h-full flex flex-col">
+          <div className="flex-1 min-h-0">
+            <EnhancedCalendar
+              events={filteredEvents}
+              onEventClick={handleEventClick}
+              onEventComplete={handleEventComplete}
+              onEventReschedule={handleEventReschedule}
+              onEventResize={handleEventResize}
+              showCompletionCheckbox={true}
+              initialView={calendarMode as any}
+            />
+          </div>
+        </Card>
+      </div>
 
       <CalendarEventDetailDialog
         event={selectedEvent}
