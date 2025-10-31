@@ -1,0 +1,73 @@
+Build a full "Systems Library" section under Business in my Casva app.
+
+REQUIREMENTS:
+1. Add a new page at /business/systems
+2. Use Supabase (I will provide URL & key in .env)
+3. Create these tables in Supabase:
+   - system_folders (id, name, parent_id, role_ids[], area, icon, order)
+   - system_documents (id, folder_id, title, type, url, version, updated_at)
+   - task_templates (id, title, description, role_id, frequency, due_day, checklist[], is_active)
+   - workflow_templates (id, name, trigger_stage, task_ids[])
+   - project_workflows (project_id, workflow_template_id, status, tasks[])
+
+4. UI: 3 tabs — Folders | Tasks | Workflows
+   - Folders: File explorer tree (Admin > Invoicing, PM > Contracts, etc.)
+   - Tasks: List of reusable tasks (e.g. "Approve Timesheets", role: Bookkeeper, every Monday)
+   - Workflows: Drag-drop stages (e.g. "Contract Signed" → auto-create 3 tasks)
+
+5. Features:
+   - Folder tree: drag to reorder, right-click → "Add Document"
+   - Task Library: toggle active/inactive, assign role, set weekly/monthly
+   - Workflows: when project stage changes, auto-create tasks
+   - Role-based visibility (Admin sees all, PM sees PM & On-site)
+
+6. Use Tailwind CSS + ShadCN components
+7. Add loading states and error handling
+8. Make it mobile-responsive
+
+9. Add route in App.jsx:
+   <Route path="/business/systems" element={<SystemsLibrary />} />
+
+10. Add nav link in sidebar (only for admin/PM):
+    <Link to="/business/systems">Systems Library</Link>
+
+11. Create .env file with:
+    VITE_SUPABASE_URL=your-supabase-url
+    VITE_SUPABASE_ANON_KEY=your-anon-key
+
+12. Use React Context for auth/roles
+
+DO NOT ask questions. Build it now. Start with Supabase client, then database, then UI. Use the code structure below as a guide.
+
+---
+
+// GUIDE CODE (use this structure)
+import { createClient } from '@supabase/supabase-js';
+const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+// SystemsLibrary.jsx
+export default function SystemsLibrary() {
+  const [tab, setTab] = useState('folders');
+  // fetch folders, tasks, workflows
+  return (
+    <div className="p-6">
+      <h1 className="text-3xl font-bold">Systems Library</h1>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="folders">Folders</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="workflows">Workflows</TabsTrigger>
+        </TabsList>
+        <TabsContent value="folders"><FolderTree /></TabsContent>
+        <TabsContent value="tasks"><TaskLibrary /></TabsContent>
+        <TabsContent value="workflows"><WorkflowBuilder /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// Add FolderTree, TaskLibrary, WorkflowBuilder components
+// Use drag-and-drop for folders and workflow stages
+// Auto-create tasks when project stage changes
+
+Build it step by step. Show progress. When done, say: "SYSTEMS LIBRARY COMPLETE — TEST AT /business/systems"

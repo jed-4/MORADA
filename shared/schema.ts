@@ -2398,3 +2398,227 @@ export const insertMinuteSchema = createInsertSchema(minutes).omit({
 
 export type InsertMinute = z.infer<typeof insertMinuteSchema>;
 export type Minute = typeof minutes.$inferSelect;
+
+// ============================================================
+// SYSTEMS LIBRARY - Company-wide processes and templates
+// ============================================================
+
+// System Folders - Hierarchical folder structure for organizing documents
+export const systemFolders = pgTable("system_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  parentId: varchar("parent_id").references((): any => systemFolders.id), // Self-reference for hierarchy
+  icon: text("icon").default("folder"), // Lucide icon name
+  color: text("color"), // Optional color coding
+  
+  // Role-based access control
+  roleIds: json("role_ids").default([]), // Array of role IDs that can access this folder
+  isPublic: boolean("is_public").default(true), // If true, all roles can view
+  
+  // Display ordering
+  displayOrder: integer("display_order").default(0),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemFolderSchema = createInsertSchema(systemFolders).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  roleIds: z.array(z.string()).optional(),
+  isPublic: z.boolean().optional(),
+  displayOrder: z.number().optional(),
+});
+
+export type InsertSystemFolder = z.infer<typeof insertSystemFolderSchema>;
+export type SystemFolder = typeof systemFolders.$inferSelect;
+
+// System Documents - Documents stored in folders
+export const systemDocuments = pgTable("system_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  folderId: varchar("folder_id").references(() => systemFolders.id, { onDelete: "cascade" }),
+  
+  title: text("title").notNull(),
+  description: text("description"),
+  type: text("type").notNull().default("document"), // "document" | "policy" | "procedure" | "template" | "reference"
+  
+  // File storage
+  fileUrl: text("file_url"), // External URL or path to file
+  fileName: text("file_name"),
+  fileSize: integer("file_size"), // Size in bytes
+  fileType: text("file_type"), // MIME type
+  
+  // Version control
+  version: text("version").default("1.0"),
+  
+  // Metadata
+  tags: json("tags").default([]), // Array of tags for searching
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedByName: text("updated_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemDocumentSchema = createInsertSchema(systemDocuments).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["document", "policy", "procedure", "template", "reference"]).default("document"),
+  tags: z.array(z.string()).optional(),
+  fileSize: z.number().optional(),
+});
+
+export type InsertSystemDocument = z.infer<typeof insertSystemDocumentSchema>;
+export type SystemDocument = typeof systemDocuments.$inferSelect;
+
+// Task Templates - Reusable task templates with scheduling
+export const taskTemplates = pgTable("task_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  title: text("title").notNull(),
+  description: text("description"),
+  
+  // Role assignment
+  defaultRoleId: varchar("default_role_id").references(() => userRoles.id), // Default role to assign
+  defaultRoleName: text("default_role_name"), // Cached for performance
+  
+  // Scheduling
+  frequency: text("frequency"), // "daily" | "weekly" | "monthly" | "yearly" | "once"
+  frequencyInterval: integer("frequency_interval").default(1), // Every N days/weeks/months
+  dueDayOfWeek: integer("due_day_of_week"), // For weekly: 0-6 (Sun-Sat)
+  dueDayOfMonth: integer("due_day_of_month"), // For monthly: 1-31
+  dueTime: text("due_time"), // HH:MM format
+  dueOffsetDays: integer("due_offset_days").default(0), // Days relative to trigger
+  
+  // Checklist
+  checklist: json("checklist").default([]), // Array of checklist items [{text, completed}]
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  // Metadata
+  category: text("category"), // Custom categorization
+  tags: json("tags").default([]), // Array of tags
+  estimatedDuration: integer("estimated_duration"), // Estimated minutes to complete
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),
+  frequencyInterval: z.number().optional(),
+  dueDayOfWeek: z.number().min(0).max(6).optional(), // 0-6 for Sun-Sat
+  dueDayOfMonth: z.number().min(1).max(31).optional(),
+  dueTime: z.string().optional(), // HH:MM format
+  dueOffsetDays: z.number().optional(),
+  checklist: z.array(z.object({
+    text: z.string(),
+    completed: z.boolean().default(false),
+  })).optional(),
+  tags: z.array(z.string()).optional(),
+  estimatedDuration: z.number().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertTaskTemplate = z.infer<typeof insertTaskTemplateSchema>;
+export type TaskTemplate = typeof taskTemplates.$inferSelect;
+
+// Workflow Templates - Automation rules that trigger task creation
+export const workflowTemplates = pgTable("workflow_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(),
+  description: text("description"),
+  
+  // Trigger configuration
+  triggerType: text("trigger_type").notNull().default("stage_change"), // "stage_change" | "status_change" | "manual" | "date"
+  triggerStage: text("trigger_stage"), // Project stage that triggers this workflow
+  triggerStatus: text("trigger_status"), // Project status that triggers this workflow
+  
+  // Task templates to create
+  taskTemplateIds: json("task_template_ids").default([]), // Array of task template IDs to create
+  taskConfigs: json("task_configs").default([]), // Array of {templateId, offsetDays, assigneeRoleId} for customization
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertWorkflowTemplateSchema = createInsertSchema(workflowTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  triggerType: z.enum(["stage_change", "status_change", "manual", "date"]).default("stage_change"),
+  taskTemplateIds: z.array(z.string()).optional(),
+  taskConfigs: z.array(z.object({
+    templateId: z.string(),
+    offsetDays: z.number().optional(),
+    assigneeRoleId: z.string().optional(),
+  })).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertWorkflowTemplate = z.infer<typeof insertWorkflowTemplateSchema>;
+export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
+
+// Project Workflows - Instances of workflows on specific projects
+export const projectWorkflows = pgTable("project_workflows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workflowTemplateId: varchar("workflow_template_id").notNull().references(() => workflowTemplates.id),
+  
+  status: text("status").notNull().default("pending"), // "pending" | "in_progress" | "completed" | "cancelled"
+  
+  // Track created tasks
+  createdTaskIds: json("created_task_ids").default([]), // Array of task IDs created by this workflow
+  
+  // Execution details
+  triggeredAt: timestamp("triggered_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectWorkflowSchema = createInsertSchema(projectWorkflows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["pending", "in_progress", "completed", "cancelled"]).default("pending"),
+  createdTaskIds: z.array(z.string()).optional(),
+  triggeredAt: z.coerce.date().optional(),
+  completedAt: z.coerce.date().optional(),
+});
+
+export type InsertProjectWorkflow = z.infer<typeof insertProjectWorkflowSchema>;
+export type ProjectWorkflow = typeof projectWorkflows.$inferSelect;
