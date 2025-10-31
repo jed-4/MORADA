@@ -109,6 +109,9 @@ export default function PersonalCalendar() {
   // Create default view on first load
   const { data: views = [] } = useQuery({
     queryKey: ["/api/calendar-views", "personal"],
+    queryFn: async () => {
+      return await apiRequest("/api/calendar-views?calendarType=personal", "GET");
+    },
     enabled: !!user,
   });
 
@@ -123,7 +126,7 @@ export default function PersonalCalendar() {
       });
     },
     onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
       setSelectedViewId(newView.id);
     },
   });

@@ -71,6 +71,9 @@ export default function BusinessCalendar() {
   // Create default view on first load
   const { data: views = [] } = useQuery({
     queryKey: ["/api/calendar-views", "business"],
+    queryFn: async () => {
+      return await apiRequest("/api/calendar-views?calendarType=business", "GET");
+    },
     enabled: !!user,
   });
 
@@ -85,7 +88,7 @@ export default function BusinessCalendar() {
       });
     },
     onSuccess: (newView) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
       setSelectedViewId(newView.id);
     },
   });
