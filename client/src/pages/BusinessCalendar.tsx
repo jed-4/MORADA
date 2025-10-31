@@ -82,7 +82,6 @@ export default function BusinessCalendar() {
         filters: {},
         calendarMode: "week",
         isDefault: true,
-        sharedWith: null,
       });
     },
     onSuccess: (newView) => {

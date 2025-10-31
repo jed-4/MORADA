@@ -38,7 +38,7 @@ export interface CalendarView {
   calendarType: "personal" | "business";
   filters: CalendarFilters;
   calendarMode: string;
-  sharedWith: string[] | null;
+  sharedWith?: string[];
   isDefault: boolean;
 }
 
@@ -79,7 +79,6 @@ export default function SavedViews({
         filters: data.filters,
         calendarMode: data.calendarMode,
         isDefault: data.isDefault,
-        sharedWith: null,
       });
     },
     onSuccess: (newView) => {

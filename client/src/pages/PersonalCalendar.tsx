@@ -120,7 +120,6 @@ export default function PersonalCalendar() {
         filters: {},
         calendarMode: "week",
         isDefault: true,
-        sharedWith: null,
       });
     },
     onSuccess: (newView) => {
