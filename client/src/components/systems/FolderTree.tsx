@@ -42,6 +42,8 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
+  DragOverEvent,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -58,6 +60,7 @@ interface SortableFolderProps {
   depth: number;
   isExpanded: boolean;
   hasChildren: boolean;
+  isOver: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -70,6 +73,7 @@ function SortableFolder({
   depth,
   isExpanded,
   hasChildren,
+  isOver,
   onToggle,
   onEdit,
   onDelete,
@@ -83,6 +87,7 @@ function SortableFolder({
     transform,
     transition,
     isDragging,
+    isOver: isSortableOver,
   } = useSortable({ id: `folder-${folder.id}` });
 
   const style = {
@@ -98,7 +103,7 @@ function SortableFolder({
         ...style,
         paddingLeft: `${depth * 20 + 8}px`
       }}
-      className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
+      className={`flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group ${isOver || isSortableOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
     >
       <div
         {...attributes}
@@ -164,6 +169,7 @@ export function FolderTree() {
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
   const [editingFolder, setEditingFolder] = useState<SystemFolder | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Folder form state
@@ -339,9 +345,15 @@ export function FolderTree() {
     setActiveId(String(event.active.id));
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setOverId(over ? String(over.id) : null);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    setOverId(null);
 
     if (!over || active.id === over.id) return;
 
@@ -418,6 +430,7 @@ export function FolderTree() {
     const childFolders = buildFolderTree(folder.id);
     const folderDocs = getFolderDocuments(folder.id);
     const hasChildren = childFolders.length > 0 || folderDocs.length > 0;
+    const isOver = overId === `folder-${folder.id}`;
 
     return (
       <div key={folder.id}>
@@ -426,6 +439,7 @@ export function FolderTree() {
           depth={depth}
           isExpanded={isExpanded}
           hasChildren={hasChildren}
+          isOver={isOver}
           onToggle={() => toggleFolder(folder.id)}
           onEdit={() => openEditFolderDialog(folder)}
           onDelete={() => deleteFolderMutation.mutate(folder.id)}
@@ -496,6 +510,7 @@ export function FolderTree() {
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
           >
             <SortableContext items={allFolderIds} strategy={verticalListSortingStrategy}>
@@ -521,6 +536,19 @@ export function FolderTree() {
                 ))}
               </div>
             </SortableContext>
+            <DragOverlay>
+              {activeId && (() => {
+                const folderId = activeId.replace('folder-', '');
+                const draggedFolder = folders.find(f => f.id === folderId);
+                return draggedFolder ? (
+                  <div className="flex items-center gap-2 py-1.5 px-2 bg-card border rounded-md shadow-lg">
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    <Folder className="h-4 w-4 text-primary" />
+                    <span className="text-sm">{draggedFolder.name}</span>
+                  </div>
+                ) : null;
+              })()}
+            </DragOverlay>
           </DndContext>
         )}
       </Card>
