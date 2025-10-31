@@ -61,6 +61,9 @@ export function TaskLibrary() {
     category: "",
     estimatedDuration: 0,
     isActive: true,
+    dueTime: "",
+    dueDayOfWeek: [] as number[],
+    dueDayOfMonth: 1,
   });
 
   // Fetch task templates
@@ -137,6 +140,9 @@ export function TaskLibrary() {
       category: "",
       estimatedDuration: 0,
       isActive: true,
+      dueTime: "",
+      dueDayOfWeek: [],
+      dueDayOfMonth: 1,
     });
   };
 
@@ -156,6 +162,9 @@ export function TaskLibrary() {
       category: template.category || "",
       estimatedDuration: template.estimatedDuration || 0,
       isActive: template.isActive,
+      dueTime: template.dueTime || "",
+      dueDayOfWeek: template.dueDayOfWeek ? (typeof template.dueDayOfWeek === 'string' ? JSON.parse(template.dueDayOfWeek) : template.dueDayOfWeek) : [],
+      dueDayOfMonth: template.dueDayOfMonth || 1,
     });
     setShowDialog(true);
   };
@@ -174,9 +183,32 @@ export function TaskLibrary() {
     return role?.name || "Unknown";
   };
 
-  const getFrequencyLabel = (frequency: string | null) => {
-    if (!frequency) return "Once";
-    return frequency.charAt(0).toUpperCase() + frequency.slice(1);
+  const getFrequencyLabel = (template: TaskTemplate) => {
+    const freq = template.frequency || "once";
+    let label = freq.charAt(0).toUpperCase() + freq.slice(1);
+    
+    if (freq === "daily" && template.dueTime) {
+      label += ` at ${template.dueTime}`;
+    } else if (freq === "weekly" && template.dueDayOfWeek) {
+      const days = typeof template.dueDayOfWeek === 'string' ? JSON.parse(template.dueDayOfWeek) : template.dueDayOfWeek;
+      if (Array.isArray(days) && days.length > 0) {
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        label += ` (${days.map((d: number) => dayNames[d]).join(", ")})`;
+      }
+    } else if (freq === "monthly" && template.dueDayOfMonth) {
+      label += ` on day ${template.dueDayOfMonth}`;
+    }
+    
+    return label;
+  };
+
+  const toggleDayOfWeek = (day: number) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      dueDayOfWeek: prev.dueDayOfWeek.includes(day)
+        ? prev.dueDayOfWeek.filter((d) => d !== day)
+        : [...prev.dueDayOfWeek, day].sort()
+    }));
   };
 
   if (templatesLoading) {
@@ -226,7 +258,7 @@ export function TaskLibrary() {
                     {template.description || "-"}
                   </div>
                   <div className="text-sm">{getRoleName(template.defaultRoleId)}</div>
-                  <div className="text-sm">{getFrequencyLabel(template.frequency)}</div>
+                  <div className="text-sm">{getFrequencyLabel(template)}</div>
                   <div className="text-sm">
                     {template.category ? (
                       <Badge variant="secondary">{template.category}</Badge>
@@ -365,6 +397,55 @@ export function TaskLibrary() {
                 </SelectContent>
               </Select>
             </div>
+            
+            {/* Conditional frequency fields */}
+            {templateForm.frequency === "daily" && (
+              <div>
+                <Label>Time</Label>
+                <Input
+                  type="time"
+                  value={templateForm.dueTime}
+                  onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
+                  data-testid="input-template-time"
+                />
+              </div>
+            )}
+            
+            {templateForm.frequency === "weekly" && (
+              <div>
+                <Label>Days of Week</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => (
+                    <Button
+                      key={day}
+                      type="button"
+                      variant={templateForm.dueDayOfWeek.includes(index) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleDayOfWeek(index)}
+                      data-testid={`button-day-${day.toLowerCase()}`}
+                    >
+                      {day}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {templateForm.frequency === "monthly" && (
+              <div>
+                <Label>Day of Month</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={templateForm.dueDayOfMonth}
+                  onChange={(e) => setTemplateForm({ ...templateForm, dueDayOfMonth: parseInt(e.target.value) || 1 })}
+                  placeholder="1-31"
+                  data-testid="input-template-day-of-month"
+                />
+              </div>
+            )}
+            
             <div>
               <Label>Category</Label>
               <Input
