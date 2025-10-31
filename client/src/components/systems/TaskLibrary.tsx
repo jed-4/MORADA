@@ -209,105 +209,115 @@ export function TaskLibrary() {
         </Button>
       </div>
 
-      <Card className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto space-y-3">
         {templates.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            No task templates yet. Create your first template to get started.
-          </div>
+          <Card className="p-8">
+            <div className="text-center text-muted-foreground">
+              No task templates yet. Create your first template to get started.
+            </div>
+          </Card>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Frequency</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {templates.map((template) => (
-                <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
-                  <TableCell className="font-medium">{template.title}</TableCell>
-                  <TableCell className="max-w-[300px] truncate text-muted-foreground text-sm">
-                    {template.description || "-"}
-                  </TableCell>
-                  <TableCell>{getRoleName(template.defaultRoleId)}</TableCell>
-                  <TableCell>{getFrequencyLabel(template.frequency)}</TableCell>
-                  <TableCell>
-                    {template.category ? (
-                      <Badge variant="secondary">{template.category}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {template.estimatedDuration ? `${template.estimatedDuration} min` : "-"}
-                  </TableCell>
-                  <TableCell>
-                    {template.isActive ? (
-                      <Badge variant="outline" className="gap-1">
-                        <Power className="h-3 w-3 text-green-600" />
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="gap-1">
-                        <PowerOff className="h-3 w-3" />
-                        Inactive
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => toggleActiveMutation.mutate({ 
-                            id: template.id, 
-                            isActive: !template.isActive 
-                          })}
-                          data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
-                        >
-                          {template.isActive ? (
-                            <>
-                              <PowerOff className="h-4 w-4 mr-2" />
-                              Deactivate
-                            </>
-                          ) : (
-                            <>
-                              <Power className="h-4 w-4 mr-2" />
-                              Activate
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => deleteTemplateMutation.mutate(template.id)}
-                          className="text-destructive"
-                          data-testid="menu-delete-template"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          templates.map((template) => (
+            <Card key={template.id} className="p-4" data-testid={`template-card-${template.id}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 grid grid-cols-6 gap-4 items-start">
+                  <div className="col-span-2">
+                    <div className="text-xs text-muted-foreground mb-1">Title</div>
+                    <div className="font-medium">{template.title}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-xs text-muted-foreground mb-1">Description</div>
+                    <div className="text-sm text-muted-foreground truncate">
+                      {template.description || "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Role</div>
+                    <div className="text-sm">{getRoleName(template.defaultRoleId)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Frequency</div>
+                    <div className="text-sm">{getFrequencyLabel(template.frequency)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Category</div>
+                    <div className="text-sm">
+                      {template.category ? (
+                        <Badge variant="secondary">{template.category}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Duration</div>
+                    <div className="text-sm">
+                      {template.estimatedDuration ? `${template.estimatedDuration} min` : "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Status</div>
+                    <div>
+                      {template.isActive ? (
+                        <Badge variant="outline" className="gap-1">
+                          <Power className="h-3 w-3 text-green-600" />
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="gap-1">
+                          <PowerOff className="h-3 w-3" />
+                          Inactive
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => toggleActiveMutation.mutate({ 
+                        id: template.id, 
+                        isActive: !template.isActive 
+                      })}
+                      data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
+                    >
+                      {template.isActive ? (
+                        <>
+                          <PowerOff className="h-4 w-4 mr-2" />
+                          Deactivate
+                        </>
+                      ) : (
+                        <>
+                          <Power className="h-4 w-4 mr-2" />
+                          Activate
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => deleteTemplateMutation.mutate(template.id)}
+                      className="text-destructive"
+                      data-testid="menu-delete-template"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </Card>
+          ))
         )}
-      </Card>
+      </div>
 
       {/* Template Dialog */}
       <Dialog open={showDialog} onOpenChange={(open) => {
