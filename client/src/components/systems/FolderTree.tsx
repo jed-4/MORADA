@@ -94,9 +94,11 @@ function SortableFolder({
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{
+        ...style,
+        paddingLeft: `${depth * 20 + 8}px`
+      }}
       className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
-      data-paddingLeft={`${depth * 20 + 8}px`}
     >
       <div
         {...attributes}

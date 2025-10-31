@@ -218,58 +218,37 @@ export function TaskLibrary() {
           </Card>
         ) : (
           templates.map((template) => (
-            <Card key={template.id} className="p-4" data-testid={`template-card-${template.id}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 grid grid-cols-6 gap-4 items-start">
-                  <div className="col-span-2">
-                    <div className="text-xs text-muted-foreground mb-1">Title</div>
-                    <div className="font-medium">{template.title}</div>
+            <Card key={template.id} className="p-3" data-testid={`template-card-${template.id}`}>
+              <div className="flex items-center gap-4">
+                <div className="flex-1 grid grid-cols-7 gap-3 items-center">
+                  <div className="col-span-2 font-medium truncate">{template.title}</div>
+                  <div className="col-span-2 text-sm text-muted-foreground truncate">
+                    {template.description || "-"}
                   </div>
-                  <div className="col-span-2">
-                    <div className="text-xs text-muted-foreground mb-1">Description</div>
-                    <div className="text-sm text-muted-foreground truncate">
-                      {template.description || "-"}
-                    </div>
+                  <div className="text-sm">{getRoleName(template.defaultRoleId)}</div>
+                  <div className="text-sm">{getFrequencyLabel(template.frequency)}</div>
+                  <div className="text-sm">
+                    {template.category ? (
+                      <Badge variant="secondary">{template.category}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Role</div>
-                    <div className="text-sm">{getRoleName(template.defaultRoleId)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Frequency</div>
-                    <div className="text-sm">{getFrequencyLabel(template.frequency)}</div>
+                  <div className="text-sm">
+                    {template.estimatedDuration ? `${template.estimatedDuration} min` : "-"}
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground mb-1">Category</div>
-                    <div className="text-sm">
-                      {template.category ? (
-                        <Badge variant="secondary">{template.category}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Duration</div>
-                    <div className="text-sm">
-                      {template.estimatedDuration ? `${template.estimatedDuration} min` : "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Status</div>
-                    <div>
-                      {template.isActive ? (
-                        <Badge variant="outline" className="gap-1">
-                          <Power className="h-3 w-3 text-green-600" />
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="gap-1">
-                          <PowerOff className="h-3 w-3" />
-                          Inactive
-                        </Badge>
-                      )}
-                    </div>
+                    {template.isActive ? (
+                      <Badge variant="outline" className="gap-1">
+                        <Power className="h-3 w-3 text-green-600" />
+                        Active
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="gap-1">
+                        <PowerOff className="h-3 w-3" />
+                        Inactive
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
