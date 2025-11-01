@@ -213,10 +213,13 @@ export function FolderTree() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
+  const [showDocumentViewDialog, setShowDocumentViewDialog] = useState(false);
   const [editingFolder, setEditingFolder] = useState<SystemFolder | null>(null);
+  const [editingDocument, setEditingDocument] = useState<SystemDocument | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<SystemDocument | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  const { toast } = useToast();
+  const { toast} = useToast();
 
   // Folder form state
   const [folderForm, setFolderForm] = useState({
@@ -321,6 +324,22 @@ export function FolderTree() {
     },
   });
 
+  // Update document mutation
+  const updateDocumentMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => 
+      apiRequest(`/api/systems/documents/${id}`, "PATCH", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/documents"] });
+      setShowDocumentDialog(false);
+      setEditingDocument(null);
+      resetDocumentForm();
+      toast({ title: "Document updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update document", variant: "destructive" });
+    },
+  });
+
   // Delete document mutation
   const deleteDocumentMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/systems/documents/${id}`, "DELETE"),
@@ -371,8 +390,26 @@ export function FolderTree() {
   };
 
   const openNewDocumentDialog = (folderId: string | null = null) => {
+    setEditingDocument(null);
     setDocumentForm({ ...documentForm, folderId });
     setShowDocumentDialog(true);
+  };
+
+  const openEditDocumentDialog = (doc: SystemDocument) => {
+    setEditingDocument(doc);
+    setDocumentForm({
+      title: doc.title,
+      description: doc.description || "",
+      type: doc.type || "document",
+      fileUrl: doc.fileUrl || "",
+      folderId: doc.folderId || null,
+    });
+    setShowDocumentDialog(true);
+  };
+
+  const openViewDocumentDialog = (doc: SystemDocument) => {
+    setViewingDocument(doc);
+    setShowDocumentViewDialog(true);
   };
 
   const handleSaveFolder = () => {
@@ -384,7 +421,11 @@ export function FolderTree() {
   };
 
   const handleSaveDocument = () => {
-    createDocumentMutation.mutate(documentForm);
+    if (editingDocument) {
+      updateDocumentMutation.mutate({ id: editingDocument.id, data: documentForm });
+    } else {
+      createDocumentMutation.mutate(documentForm);
+    }
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -674,16 +715,43 @@ export function FolderTree() {
                 style={{ paddingLeft: `${(depth + 1) * 20 + 24}px` }}
               >
                 <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm flex-1">{doc.title}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                  onClick={() => deleteDocumentMutation.mutate(doc.id)}
-                  data-testid={`delete-document-${doc.id}`}
+                <span 
+                  className="text-sm flex-1 cursor-pointer"
+                  onClick={() => openViewDocumentDialog(doc)}
+                  data-testid={`view-document-${doc.id}`}
                 >
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
+                  {doc.title}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100" 
+                      data-testid={`document-menu-${doc.id}`}
+                    >
+                      <MoreVertical className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => openViewDocumentDialog(doc)} data-testid="menu-view-document">
+                      <FileText className="h-4 w-4 mr-2" />
+                      View
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEditDocumentDialog(doc)} data-testid="menu-edit-document">
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => deleteDocumentMutation.mutate(doc.id)}
+                      className="text-destructive"
+                      data-testid="menu-delete-document"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))}
           </div>
@@ -753,16 +821,43 @@ export function FolderTree() {
                     className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
                   >
                     <FileText className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm flex-1">{doc.title}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                      onClick={() => deleteDocumentMutation.mutate(doc.id)}
-                      data-testid={`delete-document-${doc.id}`}
+                    <span 
+                      className="text-sm flex-1 cursor-pointer"
+                      onClick={() => openViewDocumentDialog(doc)}
+                      data-testid={`view-document-${doc.id}`}
                     >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
+                      {doc.title}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100" 
+                          data-testid={`document-menu-${doc.id}`}
+                        >
+                          <MoreVertical className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openViewDocumentDialog(doc)} data-testid="menu-view-document">
+                          <FileText className="h-4 w-4 mr-2" />
+                          View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEditDocumentDialog(doc)} data-testid="menu-edit-document">
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => deleteDocumentMutation.mutate(doc.id)}
+                          className="text-destructive"
+                          data-testid="menu-delete-document"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 ))}
               </div>
@@ -827,16 +922,17 @@ export function FolderTree() {
         </DialogContent>
       </Dialog>
 
-      {/* Document Dialog */}
+      {/* Document Edit Dialog */}
       <Dialog open={showDocumentDialog} onOpenChange={(open) => {
         setShowDocumentDialog(open);
         if (!open) {
+          setEditingDocument(null);
           resetDocumentForm();
         }
       }}>
         <DialogContent data-testid="dialog-document">
           <DialogHeader>
-            <DialogTitle>New Document</DialogTitle>
+            <DialogTitle>{editingDocument ? "Edit Document" : "New Document"}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div>
@@ -872,7 +968,70 @@ export function FolderTree() {
               Cancel
             </Button>
             <Button onClick={handleSaveDocument} data-testid="button-save-document">
-              Create
+              {editingDocument ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Document View Dialog */}
+      <Dialog open={showDocumentViewDialog} onOpenChange={(open) => {
+        setShowDocumentViewDialog(open);
+        if (!open) {
+          setViewingDocument(null);
+        }
+      }}>
+        <DialogContent data-testid="dialog-document-view">
+          <DialogHeader>
+            <DialogTitle>{viewingDocument?.title}</DialogTitle>
+          </DialogHeader>
+          {viewingDocument && (
+            <div className="flex flex-col gap-4">
+              {viewingDocument.description && (
+                <div>
+                  <Label className="text-muted-foreground">Description</Label>
+                  <p className="text-sm mt-1">{viewingDocument.description}</p>
+                </div>
+              )}
+              {viewingDocument.type && (
+                <div>
+                  <Label className="text-muted-foreground">Type</Label>
+                  <p className="text-sm mt-1 capitalize">{viewingDocument.type}</p>
+                </div>
+              )}
+              {viewingDocument.fileUrl && (
+                <div>
+                  <Label className="text-muted-foreground">File</Label>
+                  <a
+                    href={viewingDocument.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm mt-1 text-primary hover:underline block"
+                    data-testid="link-document-file"
+                  >
+                    Open File
+                  </a>
+                </div>
+              )}
+              {viewingDocument.createdByName && (
+                <div>
+                  <Label className="text-muted-foreground">Created By</Label>
+                  <p className="text-sm mt-1">{viewingDocument.createdByName}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDocumentViewDialog(false)} data-testid="button-close-view">
+              Close
+            </Button>
+            <Button onClick={() => {
+              if (viewingDocument) {
+                setShowDocumentViewDialog(false);
+                openEditDocumentDialog(viewingDocument);
+              }
+            }} data-testid="button-edit-from-view">
+              Edit
             </Button>
           </DialogFooter>
         </DialogContent>
