@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Hash, Plus, Send, Loader2, Sparkles } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, Menu, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
 
@@ -65,6 +65,7 @@ export default function Communications() {
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Mention picker state
   const [showMentionPicker, setShowMentionPicker] = useState(false);
@@ -356,12 +357,35 @@ export default function Communications() {
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex">
+    <div className="h-[calc(100vh-3.5rem)] flex relative">
+      {/* Mobile Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          data-testid="sidebar-overlay"
+        />
+      )}
+      
       {/* Left Sidebar - Channels List */}
-      <Card className="w-64 flex flex-col border-r rounded-none border-l-0 border-t-0 border-b-0">
+      <Card className={`
+        w-64 flex flex-col border-r rounded-none border-l-0 border-t-0 border-b-0
+        absolute md:relative inset-y-0 left-0 z-50 md:z-0
+        transform transition-transform duration-200 ease-in-out
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         <div className="p-4 border-b flex items-center justify-between">
           <h2 className="font-semibold text-lg" data-testid="text-communications">Communications</h2>
           <div className="flex gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="md:hidden"
+              onClick={() => setIsSidebarOpen(false)}
+              data-testid="button-close-sidebar"
+            >
+              <X className="h-4 w-4" />
+            </Button>
             <Button
               size="icon"
               variant="ghost"
@@ -404,7 +428,10 @@ export default function Communications() {
                     key={channel.id}
                     variant={selectedChannelId === channel.id ? "secondary" : "ghost"}
                     className="w-full justify-between gap-2"
-                    onClick={() => setSelectedChannelId(channel.id)}
+                    onClick={() => {
+                      setSelectedChannelId(channel.id);
+                      setIsSidebarOpen(false); // Close sidebar on mobile
+                    }}
                     data-testid={`channel-${channel.id}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -438,6 +465,15 @@ export default function Communications() {
             {/* Channel Header */}
             <div className="p-4 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="md:hidden"
+                  onClick={() => setIsSidebarOpen(true)}
+                  data-testid="button-toggle-sidebar"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
                 <Hash className="h-5 w-5 text-muted-foreground" />
                 <h3 className="font-semibold text-lg" data-testid="text-channel-name">{selectedChannel.name}</h3>
               </div>
