@@ -211,7 +211,7 @@ function SortableDocument({
       }}
       className="hover-elevate rounded-md group mb-2"
     >
-      <Card className="p-3">
+      <Card className="p-2">
         <div className="flex items-start gap-2">
           <div
             {...attributes}
@@ -233,11 +233,11 @@ function SortableDocument({
                   {document.title}
                 </div>
                 {document.description && (
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                     {document.description}
                   </p>
                 )}
-                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                   {document.role && (
                     <Badge variant="outline" className="text-xs">
                       {document.role}
