@@ -105,7 +105,7 @@ const businessItems = [
   { title: "Business Calendar", url: "/business/calendar", icon: Calendar },
   { title: "Expenses", url: "/business/expenses", icon: CreditCard },
   { title: "Timesheets", url: "/business/timesheets", icon: Timer },
-  { title: "Messages", url: "/business/messages", icon: MessageSquare },
+  { title: "Communications", url: "/communications", icon: MessageSquare },
   { title: "Minutes", url: "/business/minutes", icon: ClipboardList },
   { title: "Sick Days & Leave", url: "/business/leave", icon: Calendar },
   { title: "Bills", url: "/bills", icon: Receipt },
