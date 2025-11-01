@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import TaskCard from "./TaskCard";
+import TaskCardCompact from "./TaskCardCompact";
 import TaskForm from "./TaskForm";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 
@@ -61,7 +61,7 @@ interface TaskBoardProps {
 }
 
 // Draggable Task Card wrapper
-function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task; onTaskClick?: (task: Task) => void; displaySettings?: CardDisplaySettings }) {
+function DraggableTaskCard({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Task) => void }) {
   const {
     attributes,
     listeners,
@@ -80,9 +80,7 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task;
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   };
-
 
   return (
     <div
@@ -92,7 +90,26 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task;
       {...listeners}
       className="touch-none"
     >
-      <TaskCard task={task} showSubtasks={true} onClick={() => onTaskClick?.(task)} displaySettings={displaySettings} />
+      <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} />
+    </div>
+  );
+}
+
+// Loading skeleton card - exactly 80px
+function SkeletonCard() {
+  return (
+    <div className="h-20 rounded-lg border border-border/50 bg-muted/20 animate-pulse p-2">
+      <div className="flex items-start gap-1.5">
+        <div className="w-3.5 h-3.5 bg-muted rounded mt-0.5" />
+        <div className="flex-1 space-y-1.5">
+          <div className="h-3 bg-muted rounded w-3/4" />
+          <div className="h-2 bg-muted rounded w-1/2" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <div className="h-3 w-16 bg-muted rounded-full" />
+        <div className="w-5 h-5 bg-muted rounded-full" />
+      </div>
     </div>
   );
 }
@@ -103,13 +120,11 @@ function DroppableColumn({
   tasks, 
   onAddTask,
   onTaskClick,
-  displaySettings
 }: { 
   column: { id: string; title: string; status: string; color?: string }; 
   tasks: Task[]; 
   onAddTask: () => void;
   onTaskClick?: (task: Task) => void;
-  displaySettings?: CardDisplaySettings;
 }) {
   const {
     setNodeRef,
@@ -123,41 +138,49 @@ function DroppableColumn({
   });
 
   return (
-    <Card 
+    <div
       ref={setNodeRef}
-      className={`h-fit transition-colors ${isOver ? "ring-2 ring-primary" : ""}`}
+      className={`rounded-lg border transition-all duration-200 ${
+        isOver ? 'border-2 border-blue-500 border-dashed bg-blue-500/5' : 'border-border bg-background'
+      }`}
     >
-      <CardHeader className="pb-3">
+      {/* Column Header - Asana style */}
+      <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium">{column.title}</CardTitle>
-          <Badge variant="secondary" className="text-xs">
+          <h3 className="text-sm font-semibold text-foreground">{column.title}</h3>
+          <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-muted/50 no-default-hover-elevate">
             {tasks.length}
           </Badge>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-            <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
+      </div>
+
+      {/* Cards Container - max height with scroll for 6-8 cards */}
+      <div className="p-2 space-y-1.5 max-h-[calc(100vh-300px)] overflow-y-auto">
+        <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
           {tasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No tasks yet
+            <div className="text-center py-12 text-xs text-muted-foreground">
+              No tasks
             </div>
           ) : (
             tasks.map((task) => (
-              <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} displaySettings={displaySettings} />
+              <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} />
             ))
           )}
         </SortableContext>
+
+        {/* Add Task Button - compact */}
         <Button 
           variant="ghost" 
-          className="w-full h-auto py-2 px-3 border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/50"
+          size="sm"
+          className="w-full h-7 text-xs border border-dashed border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/30 mt-1"
           onClick={onAddTask}
           data-testid={`add-task-${column.id}`}
         >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Task
+          <Plus className="h-3 w-3 mr-1" />
+          Add
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -365,20 +388,22 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
         </div>
-        <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
              style={{ scrollbarWidth: 'thin' }}>
           {columns.map((column) => (
-            <Card key={column.id} className={`h-fit ${getColumnWidthClass()} flex-shrink-0`}>
-              <CardHeader className="pb-3">
+            <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0 rounded-lg border border-border bg-background`}>
+              <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium">{column.title}</CardTitle>
-                  <Badge variant="secondary" className="text-xs">...</Badge>
+                  <h3 className="text-sm font-semibold">{column.title}</h3>
+                  <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-muted/50">...</Badge>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-center py-4 text-muted-foreground">Loading tasks...</div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="p-2 space-y-1.5">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -465,7 +490,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
 
         <div 
           ref={scrollContainerRef}
-          className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+          className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
           style={{ 
             scrollbarWidth: 'thin', 
             scrollBehavior: 'smooth'
@@ -481,7 +506,6 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                     tasks={columnTasks}
                     onAddTask={() => handleAddTaskToColumn(column.status)}
                     onTaskClick={onTaskClick}
-                    displaySettings={displaySettings}
                   />
                 </div>
               );
@@ -501,8 +525,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         {/* Drag Overlay */}
         <DragOverlay>
           {activeTask ? (
-            <div className="opacity-90 transform rotate-3 shadow-lg">
-              <DraggableTaskCard task={activeTask} onTaskClick={onTaskClick} displaySettings={displaySettings} />
+            <div className="rotate-2">
+              <TaskCardCompact task={activeTask} onClick={() => {}} isDragging={true} />
             </div>
           ) : null}
         </DragOverlay>
