@@ -7336,11 +7336,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const createdBy = req.user!.id;
       const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
 
+      // Populate task template name if taskTemplateId is provided
+      let taskTemplateName = null;
+      if (validationResult.data.taskTemplateId) {
+        const template = await storage.getTaskTemplate(validationResult.data.taskTemplateId, companyId);
+        if (template) {
+          taskTemplateName = template.title;
+        }
+      }
+
       const document = await storage.createSystemDocument({
         ...validationResult.data,
         companyId,
         createdBy,
         createdByName,
+        taskTemplateName,
       });
       res.status(201).json(document);
     } catch (error) {
@@ -7362,10 +7372,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedBy = req.user!.id;
       const updatedByName = `${req.user!.firstName} ${req.user!.lastName}`;
 
+      // Populate task template name if taskTemplateId is provided
+      let taskTemplateName = validationResult.data.taskTemplateName;
+      if (validationResult.data.taskTemplateId) {
+        const template = await storage.getTaskTemplate(validationResult.data.taskTemplateId, companyId);
+        if (template) {
+          taskTemplateName = template.title;
+        }
+      } else if (validationResult.data.taskTemplateId === null) {
+        // If taskTemplateId is explicitly set to null, clear the name
+        taskTemplateName = null;
+      }
+
       const document = await storage.updateSystemDocument(req.params.id, {
         ...validationResult.data,
         updatedBy,
         updatedByName,
+        taskTemplateName,
       }, companyId);
       if (!document) {
         return res.status(404).json({ error: "Document not found" });

@@ -2464,6 +2464,10 @@ export const systemDocuments = pgTable("system_documents", {
   role: text("role"), // Role responsible for this document
   status: text("status"), // Status from field settings
   
+  // Task Template Link
+  taskTemplateId: varchar("task_template_id").references(() => taskTemplates.id, { onDelete: "set null" }),
+  taskTemplateName: text("task_template_name"), // Cached for performance
+  
   // Display ordering
   displayOrder: integer("display_order").default(0),
   
@@ -2480,12 +2484,14 @@ export const insertSystemDocumentSchema = createInsertSchema(systemDocuments).om
   companyId: true,
   createdAt: true,
   updatedAt: true,
+  taskTemplateName: true, // Server will populate this
 }).extend({
   type: z.enum(["document", "policy", "procedure", "template", "reference"]).default("document"),
   tags: z.array(z.string()).optional(),
   fileSize: z.number().optional(),
   role: z.string().optional(),
   status: z.string().optional(),
+  taskTemplateId: z.string().optional(),
 });
 
 export type InsertSystemDocument = z.infer<typeof insertSystemDocumentSchema>;
