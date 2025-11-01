@@ -8,7 +8,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { GripVertical, Calendar as CalendarIcon, Flag } from "lucide-react";
 import { format } from "date-fns";
-import { FixedSizeList as List } from "react-window";
 
 interface TaskListCompactProps {
   tasks?: Task[];
@@ -280,48 +279,20 @@ export default function TaskListCompact({
     );
   }
 
-  // Virtualized list for large datasets (>50 tasks)
-  if (tasks.length > 50) {
-    const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-      const task = tasks[index];
-      return (
-        <div style={style}>
+  // Scrollable list with max height for all sizes
+  return (
+    <div className="border border-border rounded-md bg-background overflow-hidden">
+      <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+        {tasks.map(task => (
           <TaskRow
+            key={task.id}
             task={task}
             onClick={() => handleTaskClick(task)}
             onToggleComplete={(checked) => handleToggleComplete(task, checked)}
             isCompleted={isTaskCompleted(task)}
           />
-        </div>
-      );
-    };
-
-    return (
-      <div className="border border-border rounded-md bg-background overflow-hidden">
-        <List
-          height={Math.min(800, window.innerHeight - 300)}
-          itemCount={tasks.length}
-          itemSize={40}
-          width="100%"
-        >
-          {Row}
-        </List>
+        ))}
       </div>
-    );
-  }
-
-  // Regular list for smaller datasets
-  return (
-    <div className="border border-border rounded-md bg-background overflow-hidden">
-      {tasks.map(task => (
-        <TaskRow
-          key={task.id}
-          task={task}
-          onClick={() => handleTaskClick(task)}
-          onToggleComplete={(checked) => handleToggleComplete(task, checked)}
-          isCompleted={isTaskCompleted(task)}
-        />
-      ))}
     </div>
   );
 }
