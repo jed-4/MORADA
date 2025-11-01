@@ -42,7 +42,7 @@ interface EnhancedCalendarProps {
   onEventResize?: (eventId: string, startTime: string, endTime: string, eventType: CalendarEvent["type"]) => void;
   onDateClick?: (date: Date) => void;
   showCompletionCheckbox?: boolean;
-  initialView?: "month" | "week" | "day";
+  initialView?: "month" | "week" | "day" | "roster";
 }
 
 interface DraggableEventProps {
@@ -165,31 +165,31 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-2 pt-1 pb-0.5 rounded-md text-[11px] hover-elevate active-elevate-2 mb-1",
+        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
-        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move",
+        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-sm",
         showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer",
         isGoogleCalendarEvent && "cursor-pointer",
-        isCompleted && "opacity-60",
-        isDragging && "opacity-50"
+        isCompleted && "opacity-50",
+        isDragging && "opacity-40 scale-[0.98]"
       )}
       style={{
         backgroundColor,
-        borderLeft: `3px solid ${eventColor}`,
+        borderLeft: `2px solid ${eventColor}`,
       }}
     >
-      {/* Top resize handle */}
+      {/* Top resize handle - Notion style */}
       {showResizeHandles && !isGoogleCalendarEvent && (
         <div
           ref={setTopRef}
           {...topAttrs}
           {...topListeners}
-          className="absolute -top-1 left-0 right-0 h-3 cursor-ns-resize z-10 flex items-center justify-center"
+          className="absolute -top-0.5 left-0 right-0 h-2 cursor-ns-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-top-${event.id}`}
         >
-          <div className="h-1 bg-primary/40 group-hover:bg-primary w-12 rounded-full transition-colors" />
+          <div className="h-0.5 bg-gray-400 w-8 rounded-full" />
         </div>
       )}
 
@@ -199,45 +199,50 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           onClick={(e) => onToggleComplete?.(e, event)}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            "flex-shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors hover-elevate",
+            "flex-shrink-0 w-3 h-3 rounded-sm border flex items-center justify-center transition-all",
             isCompleted 
-              ? "bg-primary border-primary text-primary-foreground" 
-              : "border-muted-foreground/40 hover:border-primary"
+              ? "bg-gray-900 border-gray-900 text-white" 
+              : "border-gray-400 hover:border-gray-600 hover:bg-gray-50"
           )}
         >
-          {isCompleted && <Check className="w-2.5 h-2.5" />}
+          {isCompleted && <Check className="w-2 h-2" />}
         </button>
       )}
-      <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col gap-0.5">
+      <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
         <div className={cn(
-          "font-medium truncate w-full text-white",
-          isCompleted && "line-through"
+          "font-medium truncate w-full text-white text-[10.5px]",
+          isCompleted && "line-through opacity-60"
         )}>
           {event.title}
         </div>
+        {showTime && (
+          <div className="text-[9px] text-white/70 font-normal">
+            {event.startTime}{event.endTime && ` - ${event.endTime}`}
+          </div>
+        )}
         {isGoogleCalendarEvent && (
           <Badge 
             variant="outline" 
-            className="flex-shrink-0 text-[9px] px-1 py-0 h-3.5 bg-white"
-            style={{ borderColor: '#4285f4', color: '#4285f4' }}
+            className="flex-shrink-0 text-[8px] px-1 py-0 h-3 bg-white/95 border-none font-medium mt-0.5"
+            style={{ color: '#4285f4' }}
             data-testid={`google-badge-${event.id}`}
           >
-            G
+            Google
           </Badge>
         )}
       </div>
 
-      {/* Bottom resize handle */}
+      {/* Bottom resize handle - Notion style */}
       {showResizeHandles && !isGoogleCalendarEvent && (
         <div
           ref={setBottomRef}
           {...bottomAttrs}
           {...bottomListeners}
-          className="absolute -bottom-1 left-0 right-0 h-3 cursor-ns-resize z-10 flex items-center justify-center"
+          className="absolute -bottom-0.5 left-0 right-0 h-2 cursor-ns-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-bottom-${event.id}`}
         >
-          <div className="h-1 bg-primary/40 group-hover:bg-primary w-12 rounded-full transition-colors" />
+          <div className="h-0.5 bg-gray-400 w-8 rounded-full" />
         </div>
       )}
     </div>
@@ -312,7 +317,7 @@ export function EnhancedCalendar({
   initialView = "month"
 }: EnhancedCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<"month" | "week" | "day">(initialView);
+  const [view, setView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
@@ -646,11 +651,11 @@ export function EnhancedCalendar({
 
     return (
       <div className="flex-1 overflow-auto hide-scrollbar" onScroll={handleMonthScroll}>
-        <div className="grid grid-cols-7 border-b sticky top-0 bg-background z-10">
+        <div className="grid grid-cols-7 border-b border-gray-200 sticky top-0 bg-white z-10">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
             <div
               key={day}
-              className="p-2 text-center text-sm font-medium text-muted-foreground border-r last:border-r-0"
+              className="py-2 px-1 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide border-r border-gray-100 last:border-r-0"
             >
               {day}
             </div>
@@ -658,9 +663,9 @@ export function EnhancedCalendar({
         </div>
         {monthGroups.map((group, groupIdx) => (
           <div key={groupIdx}>
-            {/* Month header */}
-            <div className="bg-muted/30 border-b-2 border-primary/20 px-4 py-2">
-              <h3 className="text-lg font-semibold">{format(group.month, "MMMM yyyy")}</h3>
+            {/* Month header - Notion style */}
+            <div className="bg-gray-50 border-b border-gray-200 px-3 py-1.5">
+              <h3 className="text-xs font-semibold text-gray-700">{format(group.month, "MMMM yyyy")}</h3>
             </div>
             {/* Month grid - organized by weeks */}
             <div className="grid grid-cols-7">
@@ -675,9 +680,9 @@ export function EnhancedCalendar({
                       date={date}
                       onClick={() => onDateClick?.(date)}
                       className={cn(
-                        "min-h-[120px] p-2 border-r border-b last:border-r-0 hover-elevate cursor-pointer",
-                        !isCurrentMonth && "bg-muted/20 text-muted-foreground",
-                        isToday(date) && "bg-primary/5"
+                        "min-h-[110px] p-1.5 border-r border-b border-gray-100 last:border-r-0 hover:bg-gray-50 cursor-pointer transition-colors",
+                        !isCurrentMonth && "bg-gray-50/50 text-gray-400",
+                        isToday(date) && "bg-blue-50/50"
                       )}
                     >
                       <div
@@ -685,12 +690,13 @@ export function EnhancedCalendar({
                         className="h-full"
                       >
                         <div className={cn(
-                          "text-sm font-medium mb-1",
-                          isToday(date) && "text-primary"
+                          "text-[11px] font-medium mb-0.5 px-0.5",
+                          isToday(date) && "inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px]",
+                          !isToday(date) && "text-gray-700"
                         )}>
                           {format(date, "d")}
                         </div>
-                        <div className="space-y-1 overflow-y-auto max-h-[80px]">
+                        <div className="space-y-0.5 overflow-y-auto max-h-[75px]">
                           {dayEvents.slice(0, 3).map((event, i) => (
                             <DraggableEvent
                               key={`${event.id}-${i}`}
@@ -702,7 +708,7 @@ export function EnhancedCalendar({
                             />
                           ))}
                           {dayEvents.length > 3 && (
-                            <div className="text-xs text-muted-foreground px-2">
+                            <div className="text-[9px] text-gray-500 px-1 py-0.5">
                               +{dayEvents.length - 3} more
                             </div>
                           )}
@@ -726,10 +732,10 @@ export function EnhancedCalendar({
     const DAY_WIDTH = view === "day" ? undefined : 140; // Full width for day view, fixed width for week view
     
     return (
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Date header row - separate time column from scrollable days */}
-        <div className="flex border-b">
-          <div className="p-2 border-r w-16 flex-shrink-0 bg-background"></div>
+      <div className="flex-1 flex flex-col overflow-hidden bg-white">
+        {/* Date header row - Notion style */}
+        <div className="flex border-b border-gray-200">
+          <div className="py-2 px-2 border-r border-gray-100 w-16 flex-shrink-0 bg-white"></div>
           <div 
             className={cn("flex overflow-x-auto hide-scrollbar", view === "day" && "flex-1")} 
             ref={scrollContainerRef}
@@ -743,18 +749,18 @@ export function EnhancedCalendar({
                 <div
                   key={idx}
                   className={cn(
-                    "p-2 text-center border-r flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
+                    "py-2 px-1 text-center border-r border-gray-100 flex-shrink-0",
+                    isToday(date) ? "bg-blue-50" : !isWeekday && "bg-gray-50",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-[10px] text-gray-500 uppercase font-semibold">
                     {format(date, "EEE")}
                   </div>
                   <div className={cn(
-                    "text-lg font-semibold",
-                    isToday(date) && "text-primary"
+                    "text-sm font-semibold mt-0.5",
+                    isToday(date) && "inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs"
                   )}>
                     {format(date, "d")}
                   </div>
@@ -764,9 +770,9 @@ export function EnhancedCalendar({
           </div>
         </div>
 
-        {/* All-Day Events Section - separate time column from scrollable days */}
-        <div className="flex border-b">
-          <div className="p-2 border-r w-16 flex-shrink-0 text-[10px] text-muted-foreground flex items-center justify-center bg-background">
+        {/* All-Day Events Section - Notion style */}
+        <div className="flex border-b border-gray-200">
+          <div className="py-1.5 px-2 border-r border-gray-100 w-16 flex-shrink-0 text-[9px] text-gray-500 flex items-center justify-center bg-white uppercase font-semibold">
             All Day
           </div>
           <div 
@@ -787,8 +793,8 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
-                    isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50",
+                    "border-r border-gray-100 p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
+                    isToday(date) ? "bg-blue-50/30" : !isWeekday && "bg-gray-50",
                     view === "day" && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
@@ -805,7 +811,7 @@ export function EnhancedCalendar({
                     />
                   ))}
                   {hiddenCount > 0 && (
-                    <div className="text-[10px] text-muted-foreground px-2 py-0.5">
+                    <div className="text-[9px] text-gray-500 px-1 py-0.5">
                       +{hiddenCount} more
                     </div>
                   )}
@@ -815,15 +821,15 @@ export function EnhancedCalendar({
           </div>
         </div>
         
-        {/* Time grid - separate time column from scrollable days */}
+        {/* Time grid - Notion style */}
         <div className="flex flex-1 overflow-hidden">
           <div 
-            className="border-r w-16 flex-shrink-0 bg-background overflow-y-auto hide-scrollbar" 
+            className="border-r border-gray-100 w-16 flex-shrink-0 bg-white overflow-y-auto hide-scrollbar" 
             ref={hourLabelsRef}
             onScroll={handleHourLabelsScroll}
           >
             {hours.map((hour) => (
-              <div key={hour} className="h-10 p-1 text-[10px] text-muted-foreground border-b border-border text-center">
+              <div key={hour} className="h-10 p-1 text-[9px] text-gray-400 border-b border-gray-100 text-center uppercase">
                 {format(new Date().setHours(hour, 0), "ha")}
               </div>
             ))}
@@ -852,19 +858,19 @@ export function EnhancedCalendar({
                   <div 
                     data-testid={`day-column-${format(date, "yyyy-MM-dd")}`}
                     className={cn(
-                      "border-r",
-                      isToday(date) ? "bg-primary/5" : !isWeekday && "bg-muted/50"
+                      "border-r border-gray-100",
+                      isToday(date) ? "bg-blue-50/20" : !isWeekday && "bg-gray-50"
                     )}
                   >
                     {hours.map((hour) => (
-                      <div key={hour} className="relative h-10 border-b border-border">
+                      <div key={hour} className="relative h-10 border-b border-gray-100">
                         {[0, 15, 30, 45].map((quarter) => (
                           <DroppableTimeSlot
                             key={`${hour}-${quarter}`}
                             date={date}
                             hour={hour}
                             quarter={quarter}
-                            className="h-2.5 hover:bg-muted/20 cursor-pointer"
+                            className="h-2.5 hover:bg-blue-50/30 cursor-pointer transition-colors"
                             onClick={() => onDateClick?.(date)}
                           />
                         ))}
@@ -978,66 +984,104 @@ export function EnhancedCalendar({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-4 p-4 border-b">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col h-full bg-white">
+        {/* Header - Notion minimal style */}
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-gray-200">
+          <div className="flex items-center gap-3">
             <Button
               data-testid="button-calendar-today"
               variant="outline"
               size="sm"
+              className="h-7 px-3 text-xs font-medium border-gray-300 hover:bg-gray-50"
               onClick={goToToday}
             >
               Today
             </Button>
-            <Button
-              data-testid="button-calendar-prev"
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("prev")}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button
-              data-testid="button-calendar-next"
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("next")}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-            <h2 className="text-lg font-semibold min-w-[200px]">
+            <div className="flex items-center gap-1">
+              <Button
+                data-testid="button-calendar-prev"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 hover:bg-gray-100"
+                onClick={() => navigate("prev")}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button
+                data-testid="button-calendar-next"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 hover:bg-gray-100"
+                onClick={() => navigate("next")}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+            <h2 className="text-sm font-semibold text-gray-900 min-w-[180px]">
               {view === "month" && format(currentDate, "MMMM yyyy")}
-              {view === "week" && `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d, yyyy")}`}
-              {view === "day" && format(currentDate, "EEEE, MMMM d, yyyy")}
+              {view === "week" && `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`}
+              {view === "day" && format(currentDate, "MMMM d, yyyy")}
+              {view === "roster" && `Roster - Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`}
             </h2>
           </div>
           
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 border rounded-md p-1">
+            <div className="flex items-center gap-0.5 bg-gray-100 rounded-md p-0.5">
               <Button
                 data-testid="button-view-month"
-                variant={view === "month" ? "secondary" : "ghost"}
+                variant="ghost"
                 size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium",
+                  view === "month" 
+                    ? "bg-white shadow-sm text-gray-900" 
+                    : "text-gray-600 hover:text-gray-900 hover:bg-transparent"
+                )}
                 onClick={() => setView("month")}
               >
                 Month
               </Button>
               <Button
                 data-testid="button-view-week"
-                variant={view === "week" ? "secondary" : "ghost"}
+                variant="ghost"
                 size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium",
+                  view === "week" 
+                    ? "bg-white shadow-sm text-gray-900" 
+                    : "text-gray-600 hover:text-gray-900 hover:bg-transparent"
+                )}
                 onClick={() => setView("week")}
               >
                 Week
               </Button>
               <Button
                 data-testid="button-view-day"
-                variant={view === "day" ? "secondary" : "ghost"}
+                variant="ghost"
                 size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium",
+                  view === "day" 
+                    ? "bg-white shadow-sm text-gray-900" 
+                    : "text-gray-600 hover:text-gray-900 hover:bg-transparent"
+                )}
                 onClick={() => setView("day")}
               >
                 Day
+              </Button>
+              <Button
+                data-testid="button-view-roster"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium",
+                  view === "roster" 
+                    ? "bg-white shadow-sm text-gray-900" 
+                    : "text-gray-600 hover:text-gray-900 hover:bg-transparent"
+                )}
+                onClick={() => setView("roster")}
+              >
+                Roster
               </Button>
             </div>
           </div>
@@ -1047,19 +1091,21 @@ export function EnhancedCalendar({
         {view === "month" && renderMonthView()}
         {view === "week" && renderWeekView()}
         {view === "day" && renderWeekView()}
+        {view === "roster" && renderWeekView()}
       </div>
 
-      {/* Drag overlay */}
+      {/* Drag overlay - Notion style with ghost effect */}
       <DragOverlay>
         {activeEvent ? (
           <div
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] cursor-move opacity-90 shadow-lg"
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10.5px] cursor-move shadow-xl ring-1 ring-black/10"
             style={{
-              backgroundColor: `${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}25`,
-              borderLeft: `3px solid ${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}`,
+              backgroundColor: `${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}`,
+              borderLeft: `2px solid ${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}`,
+              opacity: 0.9,
             }}
           >
-            <div className="font-medium">
+            <div className="font-medium text-white">
               {activeEvent.title}
             </div>
           </div>
