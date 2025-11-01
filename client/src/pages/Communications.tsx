@@ -9,6 +9,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Hash, Plus, Send, Loader2, Sparkles, Menu, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
@@ -66,6 +74,10 @@ export default function Communications() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // Create channel dialog state
+  const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
   
   // Mention picker state
   const [showMentionPicker, setShowMentionPicker] = useState(false);
@@ -399,10 +411,7 @@ export default function Communications() {
             <Button
               size="icon"
               variant="ghost"
-              onClick={() => {
-                const name = prompt("Enter channel name:");
-                if (name) createChannelMutation.mutate(name);
-              }}
+              onClick={() => setIsCreateChannelOpen(true)}
               data-testid="button-new-channel"
             >
               <Plus className="h-4 w-4" />
@@ -612,6 +621,65 @@ export default function Communications() {
           </div>
         )}
       </div>
+
+      {/* Create Channel Dialog */}
+      <Dialog open={isCreateChannelOpen} onOpenChange={setIsCreateChannelOpen}>
+        <DialogContent data-testid="dialog-create-channel">
+          <DialogHeader>
+            <DialogTitle>Create Channel</DialogTitle>
+            <DialogDescription>
+              Create a new channel for team communication
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newChannelName.trim()) {
+                createChannelMutation.mutate(newChannelName.trim());
+                setNewChannelName("");
+                setIsCreateChannelOpen(false);
+              }
+            }}
+          >
+            <div className="space-y-4 py-4">
+              <Input
+                placeholder="Channel name (e.g., general, project-updates)"
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                autoFocus
+                data-testid="input-channel-name"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsCreateChannelOpen(false);
+                  setNewChannelName("");
+                }}
+                data-testid="button-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!newChannelName.trim() || createChannelMutation.isPending}
+                data-testid="button-create"
+              >
+                {createChannelMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Channel"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
