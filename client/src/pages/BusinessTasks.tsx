@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import TaskBoard from "@/components/TaskBoard";
-import TaskList from "@/components/TaskList";
+import TaskListCompact from "@/components/TaskListCompact";
 import TaskForm from "@/components/TaskForm";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function BusinessTasks() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("kanban");
+  const [activeTab, setActiveTab] = useState("list");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -157,8 +157,8 @@ export default function BusinessTasks() {
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <TabsList>
-              <TabsTrigger value="kanban" data-testid="tab-kanban">Kanban</TabsTrigger>
               <TabsTrigger value="list" data-testid="tab-list">List</TabsTrigger>
+              <TabsTrigger value="kanban" data-testid="tab-kanban">Kanban</TabsTrigger>
               <TabsTrigger value="calendar" data-testid="tab-calendar">Calendar</TabsTrigger>
             </TabsList>
 
@@ -175,11 +175,9 @@ export default function BusinessTasks() {
             </TabsContent>
 
             <TabsContent value="list" className="flex-1 min-h-0 mt-4" data-testid="content-list">
-              <TaskList
+              <TaskListCompact
                 groupedTasks={groupedTasks}
-                groupBy={groupBy}
                 isLoading={tasksLoading}
-                filters={filters}
                 onTaskClick={(task) => {
                   setEditingTask(task);
                   setShowCreateTaskDialog(true);

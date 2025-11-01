@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
+import TaskListCompact from "@/components/TaskListCompact";
 import TaskForm from "@/components/TaskForm";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
@@ -62,7 +63,7 @@ export default function Tasks() {
   
   // Use projectId from URL params if available, otherwise fall back to currentProject
   const effectiveProjectId = params.projectId || currentProject?.id;
-  const [activeTab, setActiveTab] = useState("kanban");
+  const [activeTab, setActiveTab] = useState("list");
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
@@ -862,14 +863,15 @@ export default function Tasks() {
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <TaskList 
-              tasks={effectivelyFilteredTasks} 
-              groupedTasks={groupBy !== 'none' ? groupedTasks : undefined}
-              groupBy={groupBy}
-              projectId={effectiveProjectId}
-              isLoading={tasksLoading} 
-              onTaskClick={(task: Task) => setEditingTask(task)} 
-            />
+            <div className="flex-1 overflow-auto p-4">
+              <TaskListCompact
+                tasks={effectivelyFilteredTasks} 
+                groupedTasks={groupBy !== 'none' ? groupedTasks : undefined}
+                isLoading={tasksLoading} 
+                onTaskClick={(task: Task) => setEditingTask(task)}
+                projectId={effectiveProjectId}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">
@@ -898,7 +900,9 @@ export default function Tasks() {
                     onTaskClick={(task: Task) => setEditingTask(task)} 
                   />
                 ) : (
-                  <TaskList tasks={viewFilteredTasks} isLoading={tasksLoading} columnConfig={view.columnConfig as Record<string, any>} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
+                  <div className="flex-1 overflow-auto p-4">
+                    <TaskListCompact tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
+                  </div>
                 )}
               </TabsContent>
             );
