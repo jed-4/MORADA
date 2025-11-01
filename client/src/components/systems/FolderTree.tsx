@@ -44,6 +44,7 @@ import {
   DragStartEvent,
   DragOverEvent,
   DragOverlay,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -159,6 +160,28 @@ function SortableFolder({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+  );
+}
+
+function RootDropZone({ isOver, isDragging }: { isOver: boolean; isDragging: boolean }) {
+  const { setNodeRef } = useDroppable({
+    id: 'root-drop-zone',
+  });
+
+  if (!isDragging) return null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border-2 border-dashed rounded-md p-4 mb-2 text-center text-sm transition-colors ${
+        isOver 
+          ? 'border-primary bg-primary/10 text-primary' 
+          : 'border-muted-foreground/30 text-muted-foreground'
+      }`}
+      data-testid="root-drop-zone"
+    >
+      {isOver ? 'Drop here to move to root level' : 'Drag here to move folder to root level'}
     </div>
   );
 }
@@ -359,6 +382,7 @@ export function FolderTree() {
 
     const isDraggingFolder = String(active.id).startsWith('folder-');
     const isOverFolder = String(over.id).startsWith('folder-');
+    const isOverRootZone = over.id === 'root-drop-zone';
 
     if (!isDraggingFolder) return;
 
@@ -367,7 +391,16 @@ export function FolderTree() {
 
     if (!draggedFolder) return;
 
-    if (isOverFolder) {
+    if (isOverRootZone) {
+      // Dropping onto root zone - move to root level
+      const rootFolders = folders.filter(f => f.parentId === null);
+      const newOrder = rootFolders.length;
+
+      updateFolderMutation.mutate({
+        id: draggedFolderId,
+        data: { parentId: null, displayOrder: newOrder }
+      });
+    } else if (isOverFolder) {
       // Dropping onto another folder - nest it
       const overFolderId = String(over.id).replace('folder-', '');
       const overFolder = folders.find(f => f.id === overFolderId);
@@ -397,7 +430,7 @@ export function FolderTree() {
       // Reordering within same level
       const sameLevelFolders = folders
         .filter(f => f.parentId === draggedFolder.parentId)
-        .sort((a, b) => a.displayOrder - b.displayOrder);
+        .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 
       const oldIndex = sameLevelFolders.findIndex(f => f.id === draggedFolderId);
       const newIndex = sameLevelFolders.findIndex(f => `folder-${f.id}` === over.id);
@@ -418,7 +451,7 @@ export function FolderTree() {
   const buildFolderTree = (parentId: string | null = null): SystemFolder[] => {
     return folders
       .filter((f) => f.parentId === parentId)
-      .sort((a, b) => a.displayOrder - b.displayOrder);
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   };
 
   const getFolderDocuments = (folderId: string | null) => {
@@ -515,6 +548,10 @@ export function FolderTree() {
           >
             <SortableContext items={allFolderIds} strategy={verticalListSortingStrategy}>
               <div>
+                <RootDropZone 
+                  isOver={overId === 'root-drop-zone'} 
+                  isDragging={activeId !== null}
+                />
                 {rootFolders.map((folder) => renderFolder(folder, 0))}
                 {rootDocuments.map((doc) => (
                   <div
