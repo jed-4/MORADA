@@ -7386,6 +7386,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/systems/documents/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { updates } = req.body;
+      await storage.updateSystemDocumentsOrder(updates, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder documents" });
+    }
+  });
+
   // Task Templates
   app.get("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {

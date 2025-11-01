@@ -569,6 +569,7 @@ export interface IStorage {
   createSystemDocument(document: InsertSystemDocument & { companyId: string }): Promise<SystemDocument>;
   updateSystemDocument(id: string, document: Partial<InsertSystemDocument>, companyId: string): Promise<SystemDocument | undefined>;
   deleteSystemDocument(id: string, companyId: string): Promise<boolean>;
+  updateSystemDocumentsOrder(updates: Array<{id: string, displayOrder: number, folderId?: string | null}>, companyId: string): Promise<void>;
 
   // Systems Library - Task Templates
   getTaskTemplates(companyId: string, isActive?: boolean): Promise<TaskTemplate[]>;
@@ -9716,6 +9717,26 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteSystemDocument:", error);
+      throw error;
+    }
+  }
+
+  async updateSystemDocumentsOrder(updates: Array<{id: string, displayOrder: number, folderId?: string | null}>, companyId: string): Promise<void> {
+    try {
+      for (const update of updates) {
+        const updateData: any = { displayOrder: update.displayOrder };
+        if (update.folderId !== undefined) {
+          updateData.folderId = update.folderId;
+        }
+        await db.update(schema.systemDocuments)
+          .set(updateData)
+          .where(and(
+            eq(schema.systemDocuments.id, update.id),
+            eq(schema.systemDocuments.companyId, companyId)
+          ));
+      }
+    } catch (error) {
+      console.error("Database error in updateSystemDocumentsOrder:", error);
       throw error;
     }
   }

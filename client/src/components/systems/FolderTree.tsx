@@ -164,6 +164,95 @@ function SortableFolder({
   );
 }
 
+interface SortableDocumentProps {
+  document: SystemDocument;
+  depth: number;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function SortableDocument({
+  document,
+  depth,
+  onView,
+  onEdit,
+  onDelete,
+}: SortableDocumentProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `document-${document.id}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        paddingLeft: `${depth * 20 + 24}px`
+      }}
+      className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        data-testid={`drag-handle-document-${document.id}`}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <FileText className="h-4 w-4 text-muted-foreground" />
+      <span 
+        className="text-sm flex-1 cursor-pointer"
+        onClick={onView}
+        data-testid={`view-document-${document.id}`}
+      >
+        {document.title}
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 opacity-0 group-hover:opacity-100" 
+            data-testid={`document-menu-${document.id}`}
+          >
+            <MoreVertical className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onView} data-testid="menu-view-document">
+            <FileText className="h-4 w-4 mr-2" />
+            View
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onEdit} data-testid="menu-edit-document">
+            <Edit className="h-4 w-4 mr-2" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onDelete}
+            className="text-destructive"
+            data-testid="menu-delete-document"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 function RootDropZone({ isOver, isDragging }: { isOver: boolean; isDragging: boolean }) {
   const { setNodeRef } = useDroppable({
     id: 'root-drop-zone',
@@ -352,6 +441,18 @@ export function FolderTree() {
     },
   });
 
+  // Reorder documents mutation
+  const reorderDocumentsMutation = useMutation({
+    mutationFn: ({ documents }: { documents: { id: string; displayOrder: number; folderId?: string | null }[] }) =>
+      apiRequest("/api/systems/documents/reorder", "POST", { updates: documents }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/documents"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to reorder documents", variant: "destructive" });
+    },
+  });
+
   const resetFolderForm = () => {
     setFolderForm({ name: "", description: "", icon: "folder", parentId: null });
   };
@@ -445,10 +546,88 @@ export function FolderTree() {
     if (!over || active.id === over.id) return;
 
     const isDraggingFolder = String(active.id).startsWith('folder-');
+    const isDraggingDocument = String(active.id).startsWith('document-');
     const isOverFolder = String(over.id).startsWith('folder-');
     const isOverRootZone = over.id === 'root-drop-zone';
     const isOverBefore = String(over.id).startsWith('before-');
     const isOverAfter = String(over.id).startsWith('after-');
+
+    // Handle document dragging
+    if (isDraggingDocument) {
+      const draggedDocumentId = String(active.id).replace('document-', '');
+      const draggedDocument = documents.find(d => d.id === draggedDocumentId);
+
+      if (!draggedDocument) return;
+
+      // Handle drop on folder (move document into folder)
+      if (isOverFolder) {
+        const targetFolderId = String(over.id).replace('folder-', '');
+        const targetFolder = folders.find(f => f.id === targetFolderId);
+
+        if (!targetFolder) return;
+
+        // If dropping on current parent, no-op
+        if (draggedDocument.folderId === targetFolderId) return;
+
+        // Get documents in target folder
+        const targetFolderDocs = documents.filter(d => d.folderId === targetFolderId);
+        const newOrder = targetFolderDocs.length;
+
+        // Get documents in origin folder
+        const originDocs = documents
+          .filter(d => d.folderId === draggedDocument.folderId && d.id !== draggedDocumentId)
+          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+        // Update moved document
+        const updates: Array<{id: string, displayOrder: number, folderId?: string | null}> = [
+          { id: draggedDocumentId, folderId: targetFolderId, displayOrder: newOrder }
+        ];
+
+        // Reindex origin folder documents
+        if (originDocs.length > 0) {
+          updates.push(...originDocs.map((d, index) => ({
+            id: d.id,
+            displayOrder: index
+          })));
+        }
+
+        reorderDocumentsMutation.mutate({ documents: updates });
+        return;
+      }
+
+      // Handle drop on root zone
+      if (isOverRootZone) {
+        // If already at root, no-op
+        if (draggedDocument.folderId === null) return;
+
+        // Get root documents
+        const rootDocs = documents.filter(d => d.folderId === null);
+        const newOrder = rootDocs.length;
+
+        // Get documents in origin folder
+        const originDocs = documents
+          .filter(d => d.folderId === draggedDocument.folderId && d.id !== draggedDocumentId)
+          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+        // Update moved document
+        const updates: Array<{id: string, displayOrder: number, folderId?: string | null}> = [
+          { id: draggedDocumentId, folderId: null, displayOrder: newOrder }
+        ];
+
+        // Reindex origin folder documents
+        if (originDocs.length > 0) {
+          updates.push(...originDocs.map((d, index) => ({
+            id: d.id,
+            displayOrder: index
+          })));
+        }
+
+        reorderDocumentsMutation.mutate({ documents: updates });
+        return;
+      }
+
+      return; // No valid drop target for document
+    }
 
     if (!isDraggingFolder) return;
 
@@ -709,50 +888,14 @@ export function FolderTree() {
               renderFolder(child, depth + 1, index === childFolders.length - 1)
             )}
             {folderDocs.map((doc) => (
-              <div
+              <SortableDocument
                 key={doc.id}
-                className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
-                style={{ paddingLeft: `${(depth + 1) * 20 + 24}px` }}
-              >
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span 
-                  className="text-sm flex-1 cursor-pointer"
-                  onClick={() => openViewDocumentDialog(doc)}
-                  data-testid={`view-document-${doc.id}`}
-                >
-                  {doc.title}
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100" 
-                      data-testid={`document-menu-${doc.id}`}
-                    >
-                      <MoreVertical className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openViewDocumentDialog(doc)} data-testid="menu-view-document">
-                      <FileText className="h-4 w-4 mr-2" />
-                      View
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openEditDocumentDialog(doc)} data-testid="menu-edit-document">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => deleteDocumentMutation.mutate(doc.id)}
-                      className="text-destructive"
-                      data-testid="menu-delete-document"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                document={doc}
+                depth={depth + 1}
+                onView={() => openViewDocumentDialog(doc)}
+                onEdit={() => openEditDocumentDialog(doc)}
+                onDelete={() => deleteDocumentMutation.mutate(doc.id)}
+              />
             ))}
           </div>
         )}
@@ -779,6 +922,8 @@ export function FolderTree() {
   const rootFolders = buildFolderTree(null);
   const rootDocuments = getFolderDocuments(null);
   const allFolderIds = folders.map(f => `folder-${f.id}`);
+  const allDocumentIds = documents.map(d => `document-${d.id}`);
+  const allDraggableIds = [...allFolderIds, ...allDocumentIds];
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -806,7 +951,7 @@ export function FolderTree() {
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
           >
-            <SortableContext items={allFolderIds} strategy={verticalListSortingStrategy}>
+            <SortableContext items={allDraggableIds} strategy={verticalListSortingStrategy}>
               <div>
                 <RootDropZone 
                   isOver={overId === 'root-drop-zone'} 
@@ -816,63 +961,41 @@ export function FolderTree() {
                   renderFolder(folder, 0, index === rootFolders.length - 1)
                 )}
                 {rootDocuments.map((doc) => (
-                  <div
+                  <SortableDocument
                     key={doc.id}
-                    className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
-                  >
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <span 
-                      className="text-sm flex-1 cursor-pointer"
-                      onClick={() => openViewDocumentDialog(doc)}
-                      data-testid={`view-document-${doc.id}`}
-                    >
-                      {doc.title}
-                    </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100" 
-                          data-testid={`document-menu-${doc.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openViewDocumentDialog(doc)} data-testid="menu-view-document">
-                          <FileText className="h-4 w-4 mr-2" />
-                          View
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openEditDocumentDialog(doc)} data-testid="menu-edit-document">
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => deleteDocumentMutation.mutate(doc.id)}
-                          className="text-destructive"
-                          data-testid="menu-delete-document"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                    document={doc}
+                    depth={0}
+                    onView={() => openViewDocumentDialog(doc)}
+                    onEdit={() => openEditDocumentDialog(doc)}
+                    onDelete={() => deleteDocumentMutation.mutate(doc.id)}
+                  />
                 ))}
               </div>
             </SortableContext>
             <DragOverlay>
               {activeId && (() => {
-                const folderId = activeId.replace('folder-', '');
-                const draggedFolder = folders.find(f => f.id === folderId);
-                return draggedFolder ? (
-                  <div className="flex items-center gap-2 py-1.5 px-2 bg-card border rounded-md shadow-lg">
-                    <GripVertical className="h-4 w-4 text-muted-foreground" />
-                    <Folder className="h-4 w-4 text-primary" />
-                    <span className="text-sm">{draggedFolder.name}</span>
-                  </div>
-                ) : null;
+                if (activeId.startsWith('folder-')) {
+                  const folderId = activeId.replace('folder-', '');
+                  const draggedFolder = folders.find(f => f.id === folderId);
+                  return draggedFolder ? (
+                    <div className="flex items-center gap-2 py-1.5 px-2 bg-card border rounded-md shadow-lg">
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                      <Folder className="h-4 w-4 text-primary" />
+                      <span className="text-sm">{draggedFolder.name}</span>
+                    </div>
+                  ) : null;
+                } else if (activeId.startsWith('document-')) {
+                  const documentId = activeId.replace('document-', '');
+                  const draggedDocument = documents.find(d => d.id === documentId);
+                  return draggedDocument ? (
+                    <div className="flex items-center gap-2 py-1.5 px-2 bg-card border rounded-md shadow-lg">
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">{draggedDocument.title}</span>
+                    </div>
+                  ) : null;
+                }
+                return null;
               })()}
             </DragOverlay>
           </DndContext>

@@ -2462,6 +2462,9 @@ export const systemDocuments = pgTable("system_documents", {
   // Metadata
   tags: json("tags").default([]), // Array of tags for searching
   
+  // Display ordering
+  displayOrder: integer("display_order").default(0),
+  
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   updatedBy: varchar("updated_by").references(() => users.id),
