@@ -66,6 +66,8 @@ import Signup from "@/pages/Signup";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
+import { SocketProvider } from "@/lib/socket";
+import Communications from "@/pages/Communications";
 
 function Router() {
   return (
@@ -73,6 +75,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
+      <Route path="/communications" component={Communications} />
       <Route path="/notes" component={Notes} />
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
@@ -104,6 +107,7 @@ function Router() {
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
       <Route path="/projects/:projectId/notes" component={Notes} />
+      <Route path="/projects/:projectId/communications" component={Communications} />
       <Route path="/projects/:projectId/minutes" component={Minutes} />
       <Route path="/projects/:projectId/minutes/:id" component={MinuteDetail} />
       <Route path="/projects/:projectId/tasks" component={Tasks} />
@@ -254,7 +258,8 @@ function AuthWrapper() {
     <TooltipProvider>
       <ThemeProvider>
         <ProjectProvider>
-          <SidebarProvider style={style as React.CSSProperties}>
+          <SocketProvider>
+            <SidebarProvider style={style as React.CSSProperties}>
             <div className="flex flex-col h-screen w-full">
               {/* Header spans full width at the top */}
               <Header />
@@ -271,6 +276,7 @@ function AuthWrapper() {
               </div>
             </div>
           </SidebarProvider>
+          </SocketProvider>
         </ProjectProvider>
       </ThemeProvider>
     </TooltipProvider>

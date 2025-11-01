@@ -77,36 +77,40 @@ import {
   insertSystemDocumentSchema,
   insertTaskTemplateSchema,
   insertWorkflowTemplateSchema,
-  insertProjectWorkflowSchema
+  insertProjectWorkflowSchema,
+  insertChannelSchema,
+  insertChannelMemberSchema,
+  insertMessageSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
+import { setupMessagingSocket } from "./messaging/socket";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session middleware with PostgreSQL session store
   const PgSession = pgSession(session);
-  app.use(
-    session({
-      store: new PgSession({
-        pool: pool,
-        createTableIfMissing: true,
-        // Prune expired sessions every hour
-        pruneSessionInterval: 60 * 60,
-      }),
-      secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-      },
-    })
-  );
+  const sessionMiddleware = session({
+    store: new PgSession({
+      pool: pool,
+      createTableIfMissing: true,
+      // Prune expired sessions every hour
+      pruneSessionInterval: 60 * 60,
+    }),
+    secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    },
+  });
+  
+  app.use(sessionMiddleware);
   
   // put application routes here
   // prefix all routes with /api
@@ -7659,7 +7663,266 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================================================
+  // MESSAGING API ROUTES
+  // ============================================================================
+
+  // Channels
+  app.get("/api/channels", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const userId = req.user!.id;
+      const channels = await storage.getChannels(companyId, userId);
+      res.json(channels);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch channels" });
+    }
+  });
+
+  app.get("/api/channels/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const channel = await storage.getChannel(req.params.id, companyId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+      res.json(channel);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch channel" });
+    }
+  });
+
+  app.post("/api/channels", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const userId = req.user!.id;
+      
+      const validationResult = insertChannelSchema.omit({ companyId: true, createdById: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const channel = await storage.createChannel({
+        ...validationResult.data,
+        companyId,
+        createdById: userId
+      });
+      
+      // Add creator as channel member
+      await storage.addChannelMember({
+        channelId: channel.id,
+        userId,
+        role: 'owner'
+      });
+      
+      res.status(201).json(channel);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create channel" });
+    }
+  });
+
+  app.patch("/api/channels/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      
+      const validationResult = insertChannelSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const channel = await storage.updateChannel(req.params.id, validationResult.data, companyId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+      res.json(channel);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update channel" });
+    }
+  });
+
+  app.delete("/api/channels/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      await storage.deleteChannel(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete channel" });
+    }
+  });
+
+  // DM Channel creation/retrieval
+  app.post("/api/channels/dm", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const userId = req.user!.id;
+      const { otherUserId } = req.body;
+      
+      if (!otherUserId) {
+        return res.status(400).json({ error: "otherUserId is required" });
+      }
+      
+      const channel = await storage.getOrCreateDMChannel(userId, otherUserId, companyId);
+      res.json(channel);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get or create DM channel" });
+    }
+  });
+
+  // Channel Members
+  app.get("/api/channels/:channelId/members", requireAuth, async (req, res) => {
+    try {
+      const members = await storage.getChannelMembers(req.params.channelId);
+      res.json(members);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch channel members" });
+    }
+  });
+
+  app.post("/api/channels/:channelId/members", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertChannelMemberSchema.omit({ channelId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const member = await storage.addChannelMember({
+        ...validationResult.data,
+        channelId: req.params.channelId
+      });
+      res.status(201).json(member);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add channel member" });
+    }
+  });
+
+  app.delete("/api/channels/:channelId/members/:userId", requireAuth, async (req, res) => {
+    try {
+      await storage.removeChannelMember(req.params.channelId, req.params.userId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove channel member" });
+    }
+  });
+
+  app.post("/api/channels/:channelId/read", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      await storage.updateChannelMemberLastRead(req.params.channelId, userId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update last read" });
+    }
+  });
+
+  // Messages
+  app.get("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
+    try {
+      const { limit, before } = req.query;
+      const messages = await storage.getMessages(
+        req.params.channelId,
+        limit ? parseInt(limit as string) : undefined,
+        before as string | undefined
+      );
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.get("/api/messages/:id", requireAuth, async (req, res) => {
+    try {
+      const message = await storage.getMessage(req.params.id);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+      res.json(message);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch message" });
+    }
+  });
+
+  app.post("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      const validationResult = insertMessageSchema.omit({ channelId: true, userId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Check for @mentions
+      const content = validationResult.data.content;
+      const mentionRegex = /@(\w+)/g;
+      const mentions: string[] = [];
+      let match;
+      while ((match = mentionRegex.exec(content)) !== null) {
+        mentions.push(match[1]);
+      }
+
+      // Check for /commands
+      const hasCommand = content.startsWith('/');
+      const commandType = hasCommand ? content.split(' ')[0].substring(1) : undefined;
+
+      const message = await storage.createMessage({
+        ...validationResult.data,
+        channelId: req.params.channelId,
+        userId,
+        mentions,
+        hasCommand,
+        commandType
+      });
+      
+      res.status(201).json(message);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create message" });
+    }
+  });
+
+  app.patch("/api/messages/:id", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertMessageSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const message = await storage.updateMessage(req.params.id, validationResult.data);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+      res.json(message);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update message" });
+    }
+  });
+
+  app.delete("/api/messages/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteMessage(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete message" });
+    }
+  });
+
   const httpServer = createServer(app);
+
+  // Setup Socket.io for real-time messaging with session authentication
+  setupMessagingSocket(httpServer, sessionMiddleware);
 
   return httpServer;
 }

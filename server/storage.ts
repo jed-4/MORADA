@@ -63,7 +63,10 @@ import {
   type SystemDocument, type InsertSystemDocument,
   type TaskTemplate, type InsertTaskTemplate,
   type WorkflowTemplate, type InsertWorkflowTemplate,
-  type ProjectWorkflow, type InsertProjectWorkflow
+  type ProjectWorkflow, type InsertProjectWorkflow,
+  type Channel, type InsertChannel,
+  type ChannelMember, type InsertChannelMember,
+  type Message, type InsertMessage
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -591,6 +594,27 @@ export interface IStorage {
   createProjectWorkflow(workflow: InsertProjectWorkflow): Promise<ProjectWorkflow>;
   updateProjectWorkflow(id: string, workflow: Partial<InsertProjectWorkflow>): Promise<ProjectWorkflow | undefined>;
   deleteProjectWorkflow(id: string): Promise<boolean>;
+
+  // Messaging - Channels
+  getChannels(companyId: string, userId?: string): Promise<Channel[]>;
+  getChannel(id: string, companyId: string): Promise<Channel | undefined>;
+  createChannel(channel: InsertChannel & { companyId: string }): Promise<Channel>;
+  updateChannel(id: string, channel: Partial<InsertChannel>, companyId: string): Promise<Channel | undefined>;
+  deleteChannel(id: string, companyId: string): Promise<boolean>;
+  getOrCreateDMChannel(userId1: string, userId2: string, companyId: string): Promise<Channel>;
+
+  // Messaging - Channel Members
+  getChannelMembers(channelId: string): Promise<ChannelMember[]>;
+  addChannelMember(member: InsertChannelMember): Promise<ChannelMember>;
+  removeChannelMember(channelId: string, userId: string): Promise<boolean>;
+  updateChannelMemberLastRead(channelId: string, userId: string): Promise<void>;
+
+  // Messaging - Messages
+  getMessages(channelId: string, limit?: number, before?: string): Promise<Message[]>;
+  getMessage(id: string): Promise<Message | undefined>;
+  createMessage(message: InsertMessage): Promise<Message>;
+  updateMessage(id: string, message: Partial<InsertMessage>): Promise<Message | undefined>;
+  deleteMessage(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -9966,6 +9990,304 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteProjectWorkflow:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================================
+  // MESSAGING METHODS
+  // ============================================================================
+
+  // Channels
+  async getChannels(companyId: string, userId?: string): Promise<Channel[]> {
+    try {
+      const query = db.select().from(schema.channels)
+        .where(
+          and(
+            eq(schema.channels.companyId, companyId),
+            eq(schema.channels.isArchived, false)
+          )
+        )
+        .orderBy(asc(schema.channels.name));
+      
+      const channels = await query;
+      
+      // If userId provided, filter to only channels where user is a member
+      if (userId) {
+        const memberChannelIds = await db.select({ channelId: schema.channelMembers.channelId })
+          .from(schema.channelMembers)
+          .where(eq(schema.channelMembers.userId, userId));
+        
+        const channelIdsSet = new Set(memberChannelIds.map(m => m.channelId));
+        return channels.filter(c => channelIdsSet.has(c.id)) as Channel[];
+      }
+      
+      return channels as Channel[];
+    } catch (error) {
+      console.error("Database error in getChannels:", error);
+      throw error;
+    }
+  }
+
+  async getChannel(id: string, companyId: string): Promise<Channel | undefined> {
+    try {
+      const result = await db.select().from(schema.channels)
+        .where(
+          and(
+            eq(schema.channels.id, id),
+            eq(schema.channels.companyId, companyId)
+          )
+        )
+        .limit(1);
+      return result[0] as Channel | undefined;
+    } catch (error) {
+      console.error("Database error in getChannel:", error);
+      throw error;
+    }
+  }
+
+  async createChannel(channel: InsertChannel & { companyId: string }): Promise<Channel> {
+    try {
+      const result = await db.insert(schema.channels)
+        .values(channel)
+        .returning();
+      return result[0] as Channel;
+    } catch (error) {
+      console.error("Database error in createChannel:", error);
+      throw error;
+    }
+  }
+
+  async updateChannel(id: string, channel: Partial<InsertChannel>, companyId: string): Promise<Channel | undefined> {
+    try {
+      const result = await db.update(schema.channels)
+        .set({ ...channel, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.channels.id, id),
+            eq(schema.channels.companyId, companyId)
+          )
+        )
+        .returning();
+      return result[0] as Channel | undefined;
+    } catch (error) {
+      console.error("Database error in updateChannel:", error);
+      throw error;
+    }
+  }
+
+  async deleteChannel(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.channels)
+        .where(
+          and(
+            eq(schema.channels.id, id),
+            eq(schema.channels.companyId, companyId)
+          )
+        );
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteChannel:", error);
+      throw error;
+    }
+  }
+
+  async getOrCreateDMChannel(userId1: string, userId2: string, companyId: string): Promise<Channel> {
+    try {
+      // Sort user IDs to ensure consistent DM channel name
+      const [user1, user2] = [userId1, userId2].sort();
+      const dmParticipants = [user1, user2];
+      
+      // Check if DM channel already exists
+      const existing = await db.select().from(schema.channels)
+        .where(
+          and(
+            eq(schema.channels.companyId, companyId),
+            eq(schema.channels.type, 'dm'),
+            sql`${schema.channels.dmParticipants}::jsonb @> ${JSON.stringify(dmParticipants)}::jsonb`
+          )
+        )
+        .limit(1);
+      
+      if (existing.length > 0) {
+        return existing[0] as Channel;
+      }
+      
+      // Create new DM channel
+      const users = await Promise.all([
+        this.getUser(user1),
+        this.getUser(user2)
+      ]);
+      
+      const dmName = `dm-${users[0]?.firstName || users[0]?.email}-${users[1]?.firstName || users[1]?.email}`;
+      
+      const newChannel = await this.createChannel({
+        name: dmName,
+        type: 'dm',
+        dmParticipants,
+        companyId,
+        createdById: userId1
+      });
+      
+      // Add both users as members
+      await Promise.all([
+        this.addChannelMember({ channelId: newChannel.id, userId: user1, role: 'member' }),
+        this.addChannelMember({ channelId: newChannel.id, userId: user2, role: 'member' })
+      ]);
+      
+      return newChannel;
+    } catch (error) {
+      console.error("Database error in getOrCreateDMChannel:", error);
+      throw error;
+    }
+  }
+
+  // Channel Members
+  async getChannelMembers(channelId: string): Promise<ChannelMember[]> {
+    try {
+      const members = await db.select().from(schema.channelMembers)
+        .where(eq(schema.channelMembers.channelId, channelId))
+        .orderBy(asc(schema.channelMembers.joinedAt));
+      return members as ChannelMember[];
+    } catch (error) {
+      console.error("Database error in getChannelMembers:", error);
+      throw error;
+    }
+  }
+
+  async addChannelMember(member: InsertChannelMember): Promise<ChannelMember> {
+    try {
+      const result = await db.insert(schema.channelMembers)
+        .values(member)
+        .returning();
+      return result[0] as ChannelMember;
+    } catch (error) {
+      console.error("Database error in addChannelMember:", error);
+      throw error;
+    }
+  }
+
+  async removeChannelMember(channelId: string, userId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.channelMembers)
+        .where(
+          and(
+            eq(schema.channelMembers.channelId, channelId),
+            eq(schema.channelMembers.userId, userId)
+          )
+        );
+      return true;
+    } catch (error) {
+      console.error("Database error in removeChannelMember:", error);
+      throw error;
+    }
+  }
+
+  async updateChannelMemberLastRead(channelId: string, userId: string): Promise<void> {
+    try {
+      await db.update(schema.channelMembers)
+        .set({ lastReadAt: new Date() })
+        .where(
+          and(
+            eq(schema.channelMembers.channelId, channelId),
+            eq(schema.channelMembers.userId, userId)
+          )
+        );
+    } catch (error) {
+      console.error("Database error in updateChannelMemberLastRead:", error);
+      throw error;
+    }
+  }
+
+  // Messages
+  async getMessages(channelId: string, limit: number = 100, before?: string): Promise<Message[]> {
+    try {
+      let query = db.select().from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.channelId, channelId),
+            eq(schema.messages.isDeleted, false)
+          )
+        );
+      
+      if (before) {
+        query = query.where(
+          and(
+            eq(schema.messages.channelId, channelId),
+            eq(schema.messages.isDeleted, false),
+            sql`${schema.messages.createdAt} < (SELECT created_at FROM ${schema.messages} WHERE id = ${before})`
+          )
+        );
+      }
+      
+      const messages = await query
+        .orderBy(desc(schema.messages.createdAt))
+        .limit(limit);
+      
+      // Reverse to get chronological order (oldest first)
+      return messages.reverse() as Message[];
+    } catch (error) {
+      console.error("Database error in getMessages:", error);
+      throw error;
+    }
+  }
+
+  async getMessage(id: string): Promise<Message | undefined> {
+    try {
+      const result = await db.select().from(schema.messages)
+        .where(eq(schema.messages.id, id))
+        .limit(1);
+      return result[0] as Message | undefined;
+    } catch (error) {
+      console.error("Database error in getMessage:", error);
+      throw error;
+    }
+  }
+
+  async createMessage(message: InsertMessage): Promise<Message> {
+    try {
+      // Get user info to cache
+      const user = await this.getUser(message.userId);
+      
+      const messageWithUserInfo = {
+        ...message,
+        userFirstName: user?.firstName || null,
+        userLastName: user?.lastName || null,
+        userEmail: user?.email || null
+      };
+      
+      const result = await db.insert(schema.messages)
+        .values(messageWithUserInfo)
+        .returning();
+      return result[0] as Message;
+    } catch (error) {
+      console.error("Database error in createMessage:", error);
+      throw error;
+    }
+  }
+
+  async updateMessage(id: string, message: Partial<InsertMessage>): Promise<Message | undefined> {
+    try {
+      const result = await db.update(schema.messages)
+        .set({ ...message, updatedAt: new Date(), isEdited: true })
+        .where(eq(schema.messages.id, id))
+        .returning();
+      return result[0] as Message | undefined;
+    } catch (error) {
+      console.error("Database error in updateMessage:", error);
+      throw error;
+    }
+  }
+
+  async deleteMessage(id: string): Promise<boolean> {
+    try {
+      // Soft delete
+      await db.update(schema.messages)
+        .set({ isDeleted: true, updatedAt: new Date() })
+        .where(eq(schema.messages.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteMessage:", error);
       throw error;
     }
   }
