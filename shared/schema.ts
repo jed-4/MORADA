@@ -2669,3 +2669,119 @@ export const insertProjectWorkflowSchema = createInsertSchema(projectWorkflows).
 
 export type InsertProjectWorkflow = z.infer<typeof insertProjectWorkflowSchema>;
 export type ProjectWorkflow = typeof projectWorkflows.$inferSelect;
+
+// ============================================================================
+// MESSAGING SYSTEM TABLES
+// ============================================================================
+
+// Channels for team communication (both project channels and direct messages)
+export const channels = pgTable("channels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // e.g., "general", "26-ocean", "dm-jed-smith"
+  type: text("type").notNull().default("channel"), // "channel" | "dm"
+  
+  // Project association (null for general/company-wide channels)
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  
+  // DM participants (for DMs only, stores user IDs as JSON array)
+  dmParticipants: json("dm_participants"), // ["user_id_1", "user_id_2"]
+  
+  // Channel settings
+  description: text("description"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  
+  // Multi-tenant isolation
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChannelSchema = createInsertSchema(channels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["channel", "dm"]).default("channel"),
+  dmParticipants: z.array(z.string()).optional(),
+});
+
+export type InsertChannel = z.infer<typeof insertChannelSchema>;
+export type Channel = typeof channels.$inferSelect;
+
+// Channel members (who has access to which channels)
+export const channelMembers = pgTable("channel_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Member settings
+  role: text("role").notNull().default("member"), // "owner" | "admin" | "member"
+  isNotificationsMuted: boolean("is_notifications_muted").notNull().default(false),
+  lastReadAt: timestamp("last_read_at"), // For unread badges
+  
+  joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Ensure user can't join same channel twice
+  uniqueChannelUser: uniqueIndex("channel_members_channel_user_unique").on(table.channelId, table.userId),
+}));
+
+export const insertChannelMemberSchema = createInsertSchema(channelMembers).omit({
+  id: true,
+  joinedAt: true,
+  updatedAt: true,
+}).extend({
+  role: z.enum(["owner", "admin", "member"]).default("member"),
+});
+
+export type InsertChannelMember = z.infer<typeof insertChannelMemberSchema>;
+export type ChannelMember = typeof channelMembers.$inferSelect;
+
+// Messages in channels
+export const messages = pgTable("messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  
+  // Message content
+  content: text("content").notNull(),
+  
+  // Threading support (for future feature)
+  threadParentId: varchar("thread_parent_id").references(() => messages.id, { onDelete: "cascade" }),
+  threadCount: integer("thread_count").notNull().default(0),
+  
+  // Mentions and bot commands
+  mentions: json("mentions").default([]), // Array of user IDs mentioned
+  hasCommand: boolean("has_command").notNull().default(false), // True if message starts with /
+  commandType: text("command_type"), // "task", "remind", etc.
+  
+  // Message metadata
+  isEdited: boolean("is_edited").notNull().default(false),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  
+  // Cached user info for performance
+  userFirstName: text("user_first_name"),
+  userLastName: text("user_last_name"),
+  userEmail: text("user_email"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Index for fast channel message queries
+  channelIdIndex: index("messages_channel_id_idx").on(table.channelId),
+  // Index for threading queries
+  threadParentIdIndex: index("messages_thread_parent_id_idx").on(table.threadParentId),
+}));
+
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  mentions: z.array(z.string()).optional(),
+});
+
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
