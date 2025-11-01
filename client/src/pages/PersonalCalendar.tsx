@@ -18,6 +18,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import ThemeToggle from "@/components/ThemeToggle";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -394,6 +395,7 @@ export default function PersonalCalendar() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <ThemeToggle />
           <SavedViews
             calendarType="personal"
             currentFilters={filters}

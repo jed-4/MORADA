@@ -189,7 +189,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-top-${event.id}`}
         >
-          <div className="h-0.5 bg-gray-400 w-8 rounded-full" />
+          <div className="h-0.5 bg-muted-foreground w-8 rounded-full" />
         </div>
       )}
 
@@ -201,8 +201,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           className={cn(
             "flex-shrink-0 w-3 h-3 rounded-sm border flex items-center justify-center transition-all",
             isCompleted 
-              ? "bg-gray-900 border-gray-900 text-white" 
-              : "border-gray-400 hover:border-gray-600 hover:bg-gray-50"
+              ? "bg-foreground border-foreground text-background" 
+              : "border-border hover:border-foreground/70 hover:bg-accent"
           )}
         >
           {isCompleted && <Check className="w-2 h-2" />}
@@ -242,7 +242,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-bottom-${event.id}`}
         >
-          <div className="h-0.5 bg-gray-400 w-8 rounded-full" />
+          <div className="h-0.5 bg-muted-foreground w-8 rounded-full" />
         </div>
       )}
     </div>

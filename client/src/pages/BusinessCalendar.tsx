@@ -10,6 +10,7 @@ import SavedViews, { CalendarView } from "@/components/SavedViews";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import ThemeToggle from "@/components/ThemeToggle";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -408,6 +409,7 @@ export default function BusinessCalendar() {
           <h2 className="text-lg font-semibold">Business Calendar</h2>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <ThemeToggle />
           <SavedViews
             calendarType="business"
             currentFilters={filters}
