@@ -319,6 +319,12 @@ export function EnhancedCalendar({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
+  
+  // Filter toggle states
+  const [showTasks, setShowTasks] = useState(true);
+  const [showSchedule, setShowSchedule] = useState(true);
+  const [showMeetings, setShowMeetings] = useState(true);
+  const [showGoogleCalendar, setShowGoogleCalendar] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
@@ -489,20 +495,30 @@ export function EnhancedCalendar({
     }
   }, [view, dateRange, currentDate]);
 
-  // Get events for a specific date
+  // Get events for a specific date with filter toggles applied
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
     // Normalize date to start of day for comparison
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
     
     return events.filter(event => {
+      // Date range filter
       const eventStart = new Date(event.startDate);
       eventStart.setHours(0, 0, 0, 0);
       
       const eventEnd = new Date(event.endDate);
       eventEnd.setHours(0, 0, 0, 0);
       
-      return targetDate >= eventStart && targetDate <= eventEnd;
+      const isInDateRange = targetDate >= eventStart && targetDate <= eventEnd;
+      if (!isInDateRange) return false;
+      
+      // Event type filter toggles
+      if (event.type === "task" && !showTasks) return false;
+      if (event.type === "schedule" && !showSchedule) return false;
+      if (event.type === "meeting" && !showMeetings) return false;
+      if (event.type === "google-calendar" && !showGoogleCalendar) return false;
+      
+      return true;
     }).sort((a, b) => {
       // Sort by time if available, otherwise by title
       if (a.startTime && b.startTime) {
@@ -510,7 +526,7 @@ export function EnhancedCalendar({
       }
       return a.title.localeCompare(b.title);
     });
-  }, [events]);
+  }, [events, showTasks, showSchedule, showMeetings, showGoogleCalendar]);
 
   // Handle event completion toggle
   const handleToggleComplete = useCallback((e: React.MouseEvent, event: CalendarEvent) => {
@@ -1082,6 +1098,70 @@ export function EnhancedCalendar({
                 onClick={() => setView("roster")}
               >
                 Roster
+              </Button>
+            </div>
+            
+            {/* Quick filter toggles */}
+            <div className="flex items-center gap-1.5 ml-4">
+              <Button
+                data-testid="button-filter-tasks"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
+                  showTasks 
+                    ? "bg-amber-100 text-amber-700 hover:bg-amber-200" 
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                )}
+                onClick={() => setShowTasks(!showTasks)}
+              >
+                <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", showTasks ? "bg-amber-500" : "bg-gray-300")} />
+                Tasks
+              </Button>
+              <Button
+                data-testid="button-filter-schedule"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
+                  showSchedule 
+                    ? "bg-blue-100 text-blue-700 hover:bg-blue-200" 
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                )}
+                onClick={() => setShowSchedule(!showSchedule)}
+              >
+                <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", showSchedule ? "bg-blue-500" : "bg-gray-300")} />
+                Schedule
+              </Button>
+              <Button
+                data-testid="button-filter-meetings"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
+                  showMeetings 
+                    ? "bg-purple-100 text-purple-700 hover:bg-purple-200" 
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                )}
+                onClick={() => setShowMeetings(!showMeetings)}
+              >
+                <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", showMeetings ? "bg-purple-500" : "bg-gray-300")} />
+                Meetings
+              </Button>
+              <Button
+                data-testid="button-filter-google"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 px-2.5 text-xs font-medium rounded-full transition-all",
+                  showGoogleCalendar 
+                    ? "bg-green-100 text-green-700 hover:bg-green-200" 
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                )}
+                onClick={() => setShowGoogleCalendar(!showGoogleCalendar)}
+              >
+                <div className={cn("w-1.5 h-1.5 rounded-full mr-1.5", showGoogleCalendar ? "bg-green-500" : "bg-gray-300")} />
+                Google
               </Button>
             </div>
           </div>
