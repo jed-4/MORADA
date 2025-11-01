@@ -256,7 +256,7 @@ export default function Communications() {
   };
 
   // Send message
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim() || !selectedChannelId) return;
 
@@ -265,6 +265,60 @@ export default function Communications() {
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
+    }
+
+    // Check for /task bot command
+    const taskCommandRegex = /^\/task\s+(.+)$/i;
+    const taskMatch = messageInput.match(taskCommandRegex);
+    
+    if (taskMatch) {
+      try {
+        const taskTitle = taskMatch[1].trim();
+        
+        if (!taskTitle) {
+          sendMessage(selectedChannelId, `❌ Task title cannot be empty. Usage: /task Your task description`);
+          setMessageInput("");
+          return;
+        }
+        
+        // Send bot message to channel
+        sendMessage(selectedChannelId, `🤖 Creating task: "${taskTitle}"...`);
+        
+        // Get channel's projectId (null for general/company-wide channels)
+        const currentChannel = channels.find(c => c.id === selectedChannelId);
+        const projectId = currentChannel?.projectId || null;
+        
+        // Create task via API
+        const response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            title: taskTitle,
+            type: "task",
+            status: "todo",
+            projectId: projectId,
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to create task");
+        }
+        
+        const newTask = await response.json();
+        
+        // Send success message
+        const taskType = projectId ? "project" : "business";
+        sendMessage(selectedChannelId, `✅ Task created: "${newTask.title}" (${taskType} task, ID: ${newTask.id.slice(0, 8)})`);
+      } catch (error: any) {
+        console.error("Failed to create task:", error);
+        sendMessage(selectedChannelId, `❌ Failed to create task: ${error.message}`);
+      }
+      
+      setMessageInput("");
+      setShowMentionPicker(false);
+      return;
     }
 
     // Extract mentioned user IDs
