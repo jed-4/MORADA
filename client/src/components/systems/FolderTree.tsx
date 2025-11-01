@@ -186,6 +186,29 @@ function RootDropZone({ isOver, isDragging }: { isOver: boolean; isDragging: boo
   );
 }
 
+function DropIndicator({ 
+  id, 
+  isOver, 
+  depth 
+}: { 
+  id: string; 
+  isOver: boolean; 
+  depth: number;
+}) {
+  const { setNodeRef } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ paddingLeft: `${depth * 20 + 8}px` }}
+      className={`h-1 transition-all ${
+        isOver ? 'bg-primary h-2 my-1' : 'bg-transparent'
+      }`}
+      data-testid={`drop-indicator-${id}`}
+    />
+  );
+}
+
 export function FolderTree() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showFolderDialog, setShowFolderDialog] = useState(false);
@@ -383,6 +406,8 @@ export function FolderTree() {
     const isDraggingFolder = String(active.id).startsWith('folder-');
     const isOverFolder = String(over.id).startsWith('folder-');
     const isOverRootZone = over.id === 'root-drop-zone';
+    const isOverBefore = String(over.id).startsWith('before-');
+    const isOverAfter = String(over.id).startsWith('after-');
 
     if (!isDraggingFolder) return;
 
@@ -391,21 +416,175 @@ export function FolderTree() {
 
     if (!draggedFolder) return;
 
+    // Handle drop on root zone
     if (isOverRootZone) {
-      // Dropping onto root zone - move to root level
-      const rootFolders = folders.filter(f => f.parentId === null);
-      const newOrder = rootFolders.length;
+      // If already at root level, just reorder root folders
+      if (draggedFolder.parentId === null) {
+        const rootFolders = folders
+          .filter(f => f.parentId === null)
+          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+        
+        const currentIndex = rootFolders.findIndex(f => f.id === draggedFolderId);
+        const newIndex = rootFolders.length - 1; // Move to end
+        
+        if (currentIndex !== -1 && currentIndex !== newIndex) {
+          const reorderedFolders = arrayMove(rootFolders, currentIndex, newIndex);
+          const updates = reorderedFolders.map((f, index) => ({
+            id: f.id,
+            displayOrder: index
+          }));
 
-      updateFolderMutation.mutate({
-        id: draggedFolderId,
-        data: { parentId: null, displayOrder: newOrder }
-      });
-    } else if (isOverFolder) {
-      // Dropping onto another folder - nest it
+          reorderFoldersMutation.mutate({ folders: updates });
+        }
+      } else {
+        // Moving from subfolder to root
+        const rootFolders = folders.filter(f => f.parentId === null);
+        const newOrder = rootFolders.length;
+
+        // Update dragged folder to root
+        updateFolderMutation.mutate({
+          id: draggedFolderId,
+          data: { parentId: null, displayOrder: newOrder }
+        });
+
+        // Reindex origin level
+        const originFolders = folders
+          .filter(f => f.parentId === draggedFolder.parentId && f.id !== draggedFolderId)
+          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+        if (originFolders.length > 0) {
+          const reorderUpdates = originFolders.map((f, index) => ({
+            id: f.id,
+            displayOrder: index
+          }));
+
+          reorderFoldersMutation.mutate({ folders: reorderUpdates });
+        }
+      }
+      return;
+    }
+
+    // Handle drop on before/after indicators (reordering)
+    if (isOverBefore || isOverAfter) {
+      const targetFolderId = String(over.id).replace('before-', '').replace('after-', '');
+      const targetFolder = folders.find(f => f.id === targetFolderId);
+
+      if (!targetFolder) return;
+
+      // Prevent circular nesting: check if target or its parent is a descendant of dragged folder
+      const isDescendant = (potentialDescendantId: string | null): boolean => {
+        if (!potentialDescendantId) return false;
+        if (potentialDescendantId === draggedFolderId) return true;
+        const folder = folders.find(f => f.id === potentialDescendantId);
+        if (!folder) return false;
+        return isDescendant(folder.parentId);
+      };
+
+      if (isDescendant(targetFolderId) || isDescendant(targetFolder.parentId)) {
+        toast({ title: "Cannot move folder into its own descendant", variant: "destructive" });
+        return;
+      }
+
+      // Get all folders at the target's level
+      const sameLevelFolders = folders
+        .filter(f => f.parentId === targetFolder.parentId)
+        .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+      const draggedIndex = sameLevelFolders.findIndex(f => f.id === draggedFolderId);
+      const targetIndex = sameLevelFolders.findIndex(f => f.id === targetFolderId);
+
+      // If dragging to a different level
+      if (draggedFolder.parentId !== targetFolder.parentId) {
+        // Calculate insert position
+        const insertIndex = isOverAfter ? targetIndex + 1 : targetIndex;
+        
+        // Reindex destination level folders
+        const destinationFolders = [...sameLevelFolders];
+        destinationFolders.splice(insertIndex, 0, draggedFolder);
+        
+        // Reindex origin level folders (remove dragged folder)
+        const originFolders = folders
+          .filter(f => f.parentId === draggedFolder.parentId && f.id !== draggedFolderId)
+          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+        const updates = [
+          // Update dragged folder's parent and order
+          { id: draggedFolderId, parentId: targetFolder.parentId, displayOrder: insertIndex },
+          // Reindex destination level
+          ...destinationFolders.map((f, index) => ({
+            id: f.id,
+            displayOrder: index
+          })).filter(u => u.id !== draggedFolderId),
+          // Reindex origin level
+          ...originFolders.map((f, index) => ({
+            id: f.id,
+            displayOrder: index
+          }))
+        ];
+
+        // Remove duplicates and update only changed folders
+        const uniqueUpdates = updates.reduce((acc, curr) => {
+          const existing = acc.find(u => u.id === curr.id);
+          if (!existing) {
+            acc.push(curr);
+          } else {
+            Object.assign(existing, curr);
+          }
+          return acc;
+        }, [] as any[]);
+
+        // Update dragged folder
+        updateFolderMutation.mutate({
+          id: draggedFolderId,
+          data: { 
+            parentId: targetFolder.parentId, 
+            displayOrder: insertIndex 
+          }
+        });
+
+        // Reorder all affected folders
+        const reorderUpdates = uniqueUpdates
+          .filter(u => u.id !== draggedFolderId)
+          .map(u => ({ id: u.id, displayOrder: u.displayOrder }));
+        
+        if (reorderUpdates.length > 0) {
+          reorderFoldersMutation.mutate({ folders: reorderUpdates });
+        }
+      } else {
+        // Reordering within same level
+        if (draggedIndex === -1 || targetIndex === -1) return;
+
+        let newIndex = targetIndex;
+        if (isOverAfter) {
+          newIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+        } else {
+          newIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+        }
+
+        if (draggedIndex !== newIndex) {
+          const reorderedFolders = arrayMove(sameLevelFolders, draggedIndex, newIndex);
+          const updates = reorderedFolders.map((f, index) => ({
+            id: f.id,
+            displayOrder: index
+          }));
+
+          reorderFoldersMutation.mutate({ folders: updates });
+        }
+      }
+      return;
+    }
+
+    // Handle drop on folder (nesting)
+    if (isOverFolder) {
       const overFolderId = String(over.id).replace('folder-', '');
       const overFolder = folders.find(f => f.id === overFolderId);
 
       if (!overFolder || draggedFolderId === overFolderId) return;
+
+      // If dropping onto current parent, treat as no-op
+      if (draggedFolder.parentId === overFolderId) {
+        return;
+      }
 
       // Prevent circular nesting
       let checkFolder = overFolder;
@@ -419,30 +598,27 @@ export function FolderTree() {
       }
 
       // Update parent and move to new location
-      const siblingsInNewParent = folders.filter(f => f.parentId === overFolderId);
+      // Filter out dragged folder when calculating new order
+      const siblingsInNewParent = folders.filter(f => f.parentId === overFolderId && f.id !== draggedFolderId);
       const newOrder = siblingsInNewParent.length;
 
       updateFolderMutation.mutate({
         id: draggedFolderId,
         data: { parentId: overFolderId, displayOrder: newOrder }
       });
-    } else {
-      // Reordering within same level
-      const sameLevelFolders = folders
-        .filter(f => f.parentId === draggedFolder.parentId)
+
+      // Reindex origin level
+      const originFolders = folders
+        .filter(f => f.parentId === draggedFolder.parentId && f.id !== draggedFolderId)
         .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 
-      const oldIndex = sameLevelFolders.findIndex(f => f.id === draggedFolderId);
-      const newIndex = sameLevelFolders.findIndex(f => `folder-${f.id}` === over.id);
-
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        const reorderedFolders = arrayMove(sameLevelFolders, oldIndex, newIndex);
-        const updates = reorderedFolders.map((f, index) => ({
+      if (originFolders.length > 0) {
+        const reorderUpdates = originFolders.map((f, index) => ({
           id: f.id,
           displayOrder: index
         }));
 
-        reorderFoldersMutation.mutate({ folders: updates });
+        reorderFoldersMutation.mutate({ folders: reorderUpdates });
       }
     }
   };
@@ -458,7 +634,7 @@ export function FolderTree() {
     return documents.filter((d) => d.folderId === folderId);
   };
 
-  const renderFolder = (folder: SystemFolder, depth: number = 0): React.ReactNode => {
+  const renderFolder = (folder: SystemFolder, depth: number = 0, isLast: boolean = false): React.ReactNode => {
     const isExpanded = expandedFolders.has(folder.id);
     const childFolders = buildFolderTree(folder.id);
     const folderDocs = getFolderDocuments(folder.id);
@@ -467,6 +643,12 @@ export function FolderTree() {
 
     return (
       <div key={folder.id}>
+        <DropIndicator 
+          id={`before-${folder.id}`}
+          isOver={overId === `before-${folder.id}`}
+          depth={depth}
+        />
+        
         <SortableFolder
           folder={folder}
           depth={depth}
@@ -482,7 +664,9 @@ export function FolderTree() {
 
         {isExpanded && (
           <div>
-            {childFolders.map((child) => renderFolder(child, depth + 1))}
+            {childFolders.map((child, index) => 
+              renderFolder(child, depth + 1, index === childFolders.length - 1)
+            )}
             {folderDocs.map((doc) => (
               <div
                 key={doc.id}
@@ -503,6 +687,14 @@ export function FolderTree() {
               </div>
             ))}
           </div>
+        )}
+        
+        {isLast && (
+          <DropIndicator 
+            id={`after-${folder.id}`}
+            isOver={overId === `after-${folder.id}`}
+            depth={depth}
+          />
         )}
       </div>
     );
@@ -552,7 +744,9 @@ export function FolderTree() {
                   isOver={overId === 'root-drop-zone'} 
                   isDragging={activeId !== null}
                 />
-                {rootFolders.map((folder) => renderFolder(folder, 0))}
+                {rootFolders.map((folder, index) => 
+                  renderFolder(folder, 0, index === rootFolders.length - 1)
+                )}
                 {rootDocuments.map((doc) => (
                   <div
                     key={doc.id}
