@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -10,10 +10,10 @@ import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
   DialogContent,
@@ -122,6 +122,30 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     },
   });
 
+  // Reset form when task or open state changes
+  useEffect(() => {
+    if (open) {
+      const newDefaults = {
+        title: task?.title || "New Task",
+        content: task?.content || "",
+        status: task?.status || initialStatus || "todo",
+        priority: (task?.priority as any) || "medium",
+        assigneeId: task?.assigneeId || undefined,
+        dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
+        startTime: task?.startTime || undefined,
+        endTime: task?.endTime || undefined,
+        isRecurring: task?.isRecurring || false,
+        recurringType: (task?.recurringType as any) || undefined,
+        recurringDays: (task?.recurringDays as number[]) || [],
+        estimatedCost: task?.estimatedCost || undefined,
+        estimatedUnits: task?.estimatedUnits || undefined,
+        projectId: task?.projectId || projectId,
+      };
+      form.reset(newDefaults);
+      setTitleValue(newDefaults.title);
+    }
+  }, [task, open, initialStatus, projectId, form]);
+
   // Update title when editing starts
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -188,7 +212,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
 
   const handleTitleSave = () => {
     if (titleValue.trim()) {
-      form.setValue("title", titleValue);
+      form.setValue("title", titleValue, { shouldDirty: true, shouldTouch: true });
       setIsEditingTitle(false);
     }
   };
@@ -221,9 +245,9 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   const toggleDay = (day: number) => {
     const current = selectedDays || [];
     if (current.includes(day)) {
-      form.setValue("recurringDays", current.filter(d => d !== day));
+      form.setValue("recurringDays", current.filter(d => d !== day), { shouldDirty: true, shouldTouch: true });
     } else {
-      form.setValue("recurringDays", [...current, day]);
+      form.setValue("recurringDays", [...current, day], { shouldDirty: true, shouldTouch: true });
     }
   };
 
@@ -405,7 +429,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       {users.map((user) => (
                         <DropdownMenuItem
                           key={user.id}
-                          onClick={() => form.setValue("assigneeId", user.id)}
+                          onClick={() => form.setValue("assigneeId", user.id, { shouldDirty: true, shouldTouch: true })}
                           className="text-slate-200"
                         >
                           <Avatar className="h-5 w-5 mr-2">
@@ -436,7 +460,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                         {format(new Date(form.watch("dueDate")!), "MMM d")}
                         <X
                           className="h-2.5 w-2.5 ml-1 cursor-pointer"
-                          onClick={() => form.setValue("dueDate", undefined)}
+                          onClick={() => form.setValue("dueDate", undefined, { shouldDirty: true, shouldTouch: true })}
                         />
                       </Badge>
                     )}
@@ -470,7 +494,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   <span className="text-sm text-slate-400 w-24">Priority</span>
                   <Select
                     value={form.watch("priority")}
-                    onValueChange={(value) => form.setValue("priority", value as any)}
+                    onValueChange={(value) => form.setValue("priority", value as any, { shouldDirty: true, shouldTouch: true })}
                   >
                     <SelectTrigger className="h-7 w-32 bg-slate-800 border-slate-600 text-slate-100">
                       <SelectValue />
@@ -531,7 +555,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   <span className="text-sm text-slate-400 w-24">Status</span>
                   <Select
                     value={form.watch("status")}
-                    onValueChange={(value) => form.setValue("status", value)}
+                    onValueChange={(value) => form.setValue("status", value, { shouldDirty: true, shouldTouch: true })}
                   >
                     <SelectTrigger className="h-7 w-40 bg-slate-800 border-slate-600 text-slate-100">
                       <SelectValue />
@@ -550,12 +574,23 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
               {/* Description */}
               <div className="space-y-2">
                 <label className="text-sm text-slate-400">Description</label>
-                <Textarea
-                  {...form.register("content")}
-                  placeholder="What is this task about?"
-                  className="min-h-[100px] bg-slate-800 border-slate-600 text-slate-100 resize-none"
-                  data-testid="textarea-description"
-                />
+                <div className="[&_.border]:border-slate-600 [&_.bg-border]:bg-slate-700 [&_button:hover]:bg-slate-700 [&_.prose]:text-slate-200 [&_.text-muted-foreground]:text-slate-500">
+                  <Controller
+                    name="content"
+                    control={form.control}
+                    render={({ field }) => (
+                      <RichTextEditor
+                        content={field.value}
+                        onChange={(html, text) => {
+                          field.onChange(html);
+                        }}
+                        placeholder="What is this task about?"
+                        className="bg-slate-800 border-slate-600"
+                        data-testid="editor-description"
+                      />
+                    )}
+                  />
+                </div>
               </div>
 
               {/* Repeats Panel */}
@@ -565,7 +600,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     <Checkbox
                       checked={form.watch("isRecurring")}
                       onCheckedChange={(checked) => {
-                        form.setValue("isRecurring", !!checked);
+                        form.setValue("isRecurring", !!checked, { shouldDirty: true, shouldTouch: true });
                         setIsRepeatsOpen(!!checked);
                       }}
                       data-testid="checkbox-repeats"
@@ -575,7 +610,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   {form.watch("isRecurring") && (
                     <Select
                       value={form.watch("recurringType")}
-                      onValueChange={(value) => form.setValue("recurringType", value as any)}
+                      onValueChange={(value) => form.setValue("recurringType", value as any, { shouldDirty: true, shouldTouch: true })}
                     >
                       <SelectTrigger className="h-6 w-24 text-xs bg-slate-800 border-slate-600 text-slate-100">
                         <SelectValue placeholder="Weekly" />
@@ -613,7 +648,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       variant="ghost"
                       size="sm"
                       className="h-6 text-xs text-slate-400 hover:text-slate-200"
-                      onClick={() => form.setValue("recurringDays", [])}
+                      onClick={() => form.setValue("recurringDays", [], { shouldDirty: true, shouldTouch: true })}
                     >
                       Clear
                     </Button>
