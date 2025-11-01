@@ -1135,16 +1135,15 @@ export function FolderTree() {
               />
             </div>
             <div>
-              <Label>Role</Label>
+              <Label>Role (Optional)</Label>
               <Select
-                value={documentForm.role}
+                value={documentForm.role || undefined}
                 onValueChange={(value) => setDocumentForm({ ...documentForm, role: value })}
               >
                 <SelectTrigger data-testid="select-document-role">
-                  <SelectValue placeholder="Select role" />
+                  <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
                   {roles.map((role) => (
                     <SelectItem key={role.id} value={role.name}>
                       {role.name}
@@ -1154,16 +1153,15 @@ export function FolderTree() {
               </Select>
             </div>
             <div>
-              <Label>Status</Label>
+              <Label>Status (Optional)</Label>
               <Select
-                value={documentForm.status}
+                value={documentForm.status || undefined}
                 onValueChange={(value) => setDocumentForm({ ...documentForm, status: value })}
               >
                 <SelectTrigger data-testid="select-document-status">
-                  <SelectValue placeholder="Select status" />
+                  <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
                   {statusCategory?.options?.map((option: any) => (
                     <SelectItem key={option.id} value={option.name}>
                       {option.name}
