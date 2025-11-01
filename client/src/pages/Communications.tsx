@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useSocket, useChannelMessages, useTypingIndicator } from "@/lib/socket";
+import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages } from "@/lib/socket";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import type { Channel, Message, ChannelMember } from "@shared/schema";
 
 export default function Communications() {
   const { user } = useAuth();
-  const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping } = useSocket();
+  const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead } = useSocket();
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
@@ -25,6 +25,11 @@ export default function Communications() {
   // Fetch channels
   const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
     queryKey: ["/api/channels"],
+  });
+
+  // Fetch unread counts
+  const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
+    queryKey: ["/api/channels/unread/counts"],
   });
 
   // Fetch messages for selected channel
@@ -40,10 +45,24 @@ export default function Communications() {
     }
   }, [messages]);
 
-  // Listen for new messages
+  // Listen for new messages in current channel
   useChannelMessages(selectedChannelId, (message) => {
     setLocalMessages(prev => [...prev, message]);
     scrollToBottom();
+    
+    // Mark as read when new message arrives in currently viewed channel
+    if (selectedChannelId) {
+      markAsRead(selectedChannelId);
+      // Invalidate unread counts to clear the badge immediately
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+      }, 100);
+    }
+  });
+
+  // Listen for ALL new messages to update unread badges
+  useAllNewMessages(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
   });
 
   // Get typing indicators for the selected channel
@@ -58,11 +77,20 @@ export default function Communications() {
   useEffect(() => {
     if (selectedChannelId && isConnected) {
       joinChannel(selectedChannelId);
+      
+      // Mark as read when joining channel and invalidate unread counts
+      markAsRead(selectedChannelId);
+      
+      // Wait a bit then invalidate to ensure backend has updated
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+      }, 100);
+      
       return () => {
         leaveChannel(selectedChannelId);
       };
     }
-  }, [selectedChannelId, isConnected, joinChannel, leaveChannel]);
+  }, [selectedChannelId, isConnected, joinChannel, leaveChannel, markAsRead]);
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -76,10 +104,14 @@ export default function Communications() {
   // Create channel mutation
   const createChannelMutation = useMutation({
     mutationFn: async (name: string) => {
-      return apiRequest("/api/channels", {
+      const response = await fetch("/api/channels", {
         method: "POST",
-        body: JSON.stringify({ name, type: "channel" })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, type: "channel" }),
+        credentials: "include"
       });
+      if (!response.ok) throw new Error("Failed to create channel");
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
@@ -89,12 +121,16 @@ export default function Communications() {
   // Create sample data mutation
   const seedSampleDataMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("/api/channels/seed-sample", {
-        method: "POST"
+      const response = await fetch("/api/channels/seed-sample", {
+        method: "POST",
+        credentials: "include"
       });
+      if (!response.ok) throw new Error("Failed to seed sample data");
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
     }
   });
 
@@ -206,18 +242,28 @@ export default function Communications() {
                 No channels yet
               </div>
             ) : (
-              channels.map((channel) => (
-                <Button
-                  key={channel.id}
-                  variant={selectedChannelId === channel.id ? "secondary" : "ghost"}
-                  className="w-full justify-start gap-2"
-                  onClick={() => setSelectedChannelId(channel.id)}
-                  data-testid={`channel-${channel.id}`}
-                >
-                  <Hash className="h-4 w-4" />
-                  <span className="truncate">{channel.name}</span>
-                </Button>
-              ))
+              channels.map((channel) => {
+                const unreadCount = unreadCounts[channel.id] || 0;
+                return (
+                  <Button
+                    key={channel.id}
+                    variant={selectedChannelId === channel.id ? "secondary" : "ghost"}
+                    className="w-full justify-between gap-2"
+                    onClick={() => setSelectedChannelId(channel.id)}
+                    data-testid={`channel-${channel.id}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Hash className="h-4 w-4 flex-shrink-0" />
+                      <span className="truncate">{channel.name}</span>
+                    </div>
+                    {unreadCount > 0 && selectedChannelId !== channel.id && (
+                      <Badge variant="default" className="ml-auto flex-shrink-0" data-testid={`unread-${channel.id}`}>
+                        {unreadCount}
+                      </Badge>
+                    )}
+                  </Button>
+                );
+              })
             )}
           </div>
         </ScrollArea>

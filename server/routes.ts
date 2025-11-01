@@ -7915,6 +7915,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get unread counts for all user's channels
+  app.get("/api/channels/unread/counts", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      
+      const unreadCounts = await storage.getUnreadCounts(userId, companyId);
+      res.json(unreadCounts);
+    } catch (error) {
+      console.error("Failed to get unread counts:", error);
+      res.status(500).json({ error: "Failed to get unread counts" });
+    }
+  });
+
   // Messages
   app.get("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
     try {

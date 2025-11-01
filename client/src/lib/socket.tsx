@@ -127,6 +127,21 @@ export function useChannelMessages(channelId: string | null, onMessage: (message
   }, [socket, channelId, onMessage]);
 }
 
+// Hook for listening to ALL new messages (for unread badge updates)
+export function useAllNewMessages(onMessage: (message: Message) => void) {
+  const { socket } = useSocket();
+
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on("new_message", onMessage);
+
+    return () => {
+      socket.off("new_message", onMessage);
+    };
+  }, [socket, onMessage]);
+}
+
 // Hook for typing indicators
 export function useTypingIndicator(channelId: string | null) {
   const { socket } = useSocket();

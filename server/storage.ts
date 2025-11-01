@@ -608,6 +608,7 @@ export interface IStorage {
   addChannelMember(member: InsertChannelMember): Promise<ChannelMember>;
   removeChannelMember(channelId: string, userId: string): Promise<boolean>;
   updateChannelMemberLastRead(channelId: string, userId: string): Promise<void>;
+  getUnreadCounts(userId: string, companyId: string): Promise<Record<string, number>>;
 
   // Messaging - Messages
   getMessages(channelId: string, limit?: number, before?: string): Promise<Message[]>;
@@ -10195,6 +10196,59 @@ export class DbStorage implements IStorage {
         );
     } catch (error) {
       console.error("Database error in updateChannelMemberLastRead:", error);
+      throw error;
+    }
+  }
+
+  async getUnreadCounts(userId: string, companyId: string): Promise<Record<string, number>> {
+    try {
+      // Get all channels for the company where user is a member
+      const channelsWithMembers = await db
+        .select({
+          channelId: schema.channelMembers.channelId,
+          lastReadAt: schema.channelMembers.lastReadAt
+        })
+        .from(schema.channelMembers)
+        .innerJoin(schema.channels, eq(schema.channelMembers.channelId, schema.channels.id))
+        .where(
+          and(
+            eq(schema.channelMembers.userId, userId),
+            eq(schema.channels.companyId, companyId)
+          )
+        );
+
+      // For each channel, count messages newer than lastReadAt
+      const unreadCounts: Record<string, number> = {};
+      
+      for (const { channelId, lastReadAt } of channelsWithMembers) {
+        let countQuery = db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.messages)
+          .where(
+            and(
+              eq(schema.messages.channelId, channelId),
+              isNull(schema.messages.deletedAt)
+            )
+          );
+
+        // If there's a lastReadAt, only count messages after that time
+        if (lastReadAt) {
+          countQuery = countQuery.where(
+            and(
+              eq(schema.messages.channelId, channelId),
+              isNull(schema.messages.deletedAt),
+              sql`${schema.messages.createdAt} > ${lastReadAt}`
+            )
+          );
+        }
+
+        const result = await countQuery;
+        unreadCounts[channelId] = Number(result[0]?.count || 0);
+      }
+
+      return unreadCounts;
+    } catch (error) {
+      console.error("Database error in getUnreadCounts:", error);
       throw error;
     }
   }
