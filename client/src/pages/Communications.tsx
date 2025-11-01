@@ -9,6 +9,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -17,9 +20,18 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Hash, Plus, Send, Loader2, Sparkles, Menu, X } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, Menu, X, Bell, BellOff, Lock, Eye } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
+import {
+  initFavicon,
+  updateFaviconBadge,
+  showMessageNotification,
+  isNotificationSupported,
+  requestNotificationPermission,
+  areNotificationsGranted,
+} from "@/lib/notifications";
+import { NotificationSettingsButton } from "@/components/NotificationSettings";
 
 // Helper to parse and render mentions in messages
 function renderMessageWithMentions(content: string, currentUserId?: string) {
@@ -78,6 +90,12 @@ export default function Communications() {
   // Create channel dialog state
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
+  const [isClientFacing, setIsClientFacing] = useState(false);
+  
+  // Notification state
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
+  const [showNotificationBanner, setShowNotificationBanner] = useState(false);
+  const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set());
   
   // Mention picker state
   const [showMentionPicker, setShowMentionPicker] = useState(false);
@@ -164,13 +182,79 @@ export default function Communications() {
     scrollToBottom();
   }, [localMessages]);
 
+  // Initialize notifications on mount
+  useEffect(() => {
+    // Initialize favicon
+    initFavicon();
+    
+    // Check notification permission
+    if (isNotificationSupported()) {
+      setNotificationPermission(Notification.permission);
+      // Show banner if permission not granted
+      if (Notification.permission === "default") {
+        setShowNotificationBanner(true);
+      }
+    }
+  }, []);
+
+  // Update favicon badge when unread counts change
+  useEffect(() => {
+    const totalUnread = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
+    updateFaviconBadge(totalUnread);
+  }, [unreadCounts]);
+
+  // Listen for new messages and show notifications
+  useAllNewMessages((message: Message) => {
+    // Don't notify for own messages
+    if (message.userId === user?.id) return;
+    
+    // Don't notify for messages in currently viewed channel
+    if (selectedChannelId === message.channelId) return;
+    
+    // Find the channel for this message
+    const channel = channels.find(c => c.id === message.channelId);
+    if (!channel) return;
+    
+    // Track as new message for highlighting
+    setNewMessageIds(prev => new Set(prev).add(message.id));
+    
+    // Check if user is mentioned
+    const mentions = Array.isArray(message.mentions) ? message.mentions : [];
+    const isMention = mentions.includes(user?.id || "");
+    
+    // Show notification
+    const senderName = message.userFirstName && message.userLastName
+      ? `${message.userFirstName} ${message.userLastName}`
+      : message.userEmail || "Someone";
+    
+    showMessageNotification({
+      channelName: channel.name,
+      senderName,
+      messageContent: message.content,
+      isMention,
+      onClickChannel: () => {
+        setSelectedChannelId(channel.id);
+        window.focus();
+      },
+    });
+  });
+
+  // Request notification permission
+  const handleRequestNotificationPermission = async () => {
+    const permission = await requestNotificationPermission();
+    setNotificationPermission(permission);
+    if (permission === "granted") {
+      setShowNotificationBanner(false);
+    }
+  };
+
   // Create channel mutation
   const createChannelMutation = useMutation({
-    mutationFn: async (name: string) => {
+    mutationFn: async ({ name, isClientFacing }: { name: string; isClientFacing: boolean }) => {
       const response = await fetch("/api/channels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type: "channel" }),
+        body: JSON.stringify({ name, type: "channel", isClientFacing }),
         credentials: "include"
       });
       if (!response.ok) throw new Error("Failed to create channel");
@@ -369,15 +453,54 @@ export default function Communications() {
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex relative">
-      {/* Mobile Overlay */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-          data-testid="sidebar-overlay"
-        />
+    <div className="h-[calc(100vh-3.5rem)] flex flex-col relative">
+      {/* Notification Permission Banner */}
+      {showNotificationBanner && isNotificationSupported() && notificationPermission === "default" && (
+        <Alert className="rounded-none border-x-0 border-t-0 bg-blue-50 dark:bg-blue-950" data-testid="notification-banner">
+          <Bell className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between gap-4">
+            <span className="text-sm">Enable notifications to get alerts for new messages and @mentions</span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="default"
+                onClick={handleRequestNotificationPermission}
+                data-testid="button-enable-notifications"
+              >
+                Enable Notifications
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowNotificationBanner(false)}
+                data-testid="button-dismiss-banner"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       )}
+
+      {/* Unsupported Browser Banner */}
+      {!isNotificationSupported() && (
+        <Alert className="rounded-none border-x-0 border-t-0 bg-yellow-50 dark:bg-yellow-950" data-testid="browser-unsupported-banner">
+          <BellOff className="h-4 w-4" />
+          <AlertDescription className="text-sm">
+            Your browser doesn't support notifications. In-app highlights will still work.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="flex-1 flex relative min-h-0">
+        {/* Mobile Overlay */}
+        {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            data-testid="sidebar-overlay"
+          />
+        )}
       
       {/* Left Sidebar - Channels List */}
       <Card className={`
@@ -398,6 +521,7 @@ export default function Communications() {
             >
               <X className="h-4 w-4" />
             </Button>
+            <NotificationSettingsButton />
             <Button
               size="icon"
               variant="ghost"
@@ -432,11 +556,19 @@ export default function Communications() {
             ) : (
               channels.map((channel) => {
                 const unreadCount = unreadCounts[channel.id] || 0;
+                const isClientFacing = channel.isClientFacing || false;
+                const channelIcon = isClientFacing ? Eye : Lock;
+                const ChannelIcon = channelIcon;
+                
                 return (
                   <Button
                     key={channel.id}
                     variant={selectedChannelId === channel.id ? "secondary" : "ghost"}
-                    className="w-full justify-between gap-2"
+                    className={`w-full justify-between gap-2 ${
+                      isClientFacing 
+                        ? 'border-l-2 border-l-green-500 dark:border-l-green-400' 
+                        : 'border-l-2 border-l-blue-500 dark:border-l-blue-400'
+                    }`}
                     onClick={() => {
                       setSelectedChannelId(channel.id);
                       setIsSidebarOpen(false); // Close sidebar on mobile
@@ -444,7 +576,9 @@ export default function Communications() {
                     data-testid={`channel-${channel.id}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <Hash className="h-4 w-4 flex-shrink-0" />
+                      <ChannelIcon className={`h-4 w-4 flex-shrink-0 ${
+                        isClientFacing ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'
+                      }`} />
                       <span className="truncate">{channel.name}</span>
                     </div>
                     {unreadCount > 0 && selectedChannelId !== channel.id && (
@@ -472,8 +606,12 @@ export default function Communications() {
         {selectedChannel ? (
           <>
             {/* Channel Header */}
-            <div className="p-4 border-b flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className={`p-4 border-b flex items-center justify-between ${
+              selectedChannel.isClientFacing 
+                ? 'bg-green-50 dark:bg-green-950/20 border-b-green-200 dark:border-b-green-800' 
+                : 'bg-blue-50 dark:bg-blue-950/20 border-b-blue-200 dark:border-b-blue-800'
+            }`}>
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   size="icon"
                   variant="ghost"
@@ -483,11 +621,20 @@ export default function Communications() {
                 >
                   <Menu className="h-5 w-5" />
                 </Button>
-                <Hash className="h-5 w-5 text-muted-foreground" />
+                {selectedChannel.isClientFacing ? (
+                  <Eye className="h-5 w-5 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Lock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                )}
                 <h3 className="font-semibold text-lg" data-testid="text-channel-name">{selectedChannel.name}</h3>
+                {selectedChannel.isClientFacing && (
+                  <Badge className="bg-green-600 dark:bg-green-700 text-white font-bold" data-testid="badge-client-channel">
+                    CLIENT CHANNEL
+                  </Badge>
+                )}
               </div>
               <Badge variant="outline" data-testid="badge-channel-type">
-                {selectedChannel.type === 'dm' ? 'Direct Message' : 'Channel'}
+                {selectedChannel.type === 'dm' ? 'Direct Message' : selectedChannel.isClientFacing ? 'Client Facing' : 'Internal'}
               </Badge>
             </div>
 
@@ -503,8 +650,33 @@ export default function Communications() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {localMessages.map((message) => (
-                    <div key={message.id} className="flex gap-3" data-testid={`message-${message.id}`}>
+                  {localMessages.map((message) => {
+                    const isNewMessage = newMessageIds.has(message.id);
+                    const mentions = Array.isArray(message.mentions) ? message.mentions : [];
+                    const isMentioned = mentions.includes(user?.id || "");
+                    
+                    return (
+                    <div 
+                      key={message.id} 
+                      className={`flex gap-3 p-2 -mx-2 rounded transition-colors ${
+                        isNewMessage 
+                          ? isMentioned 
+                            ? 'bg-amber-100 dark:bg-amber-950/30 font-semibold'
+                            : 'bg-blue-50 dark:bg-blue-950/20'
+                          : ''
+                      }`}
+                      data-testid={`message-${message.id}`}
+                      onClick={() => {
+                        // Remove highlight when clicked
+                        if (isNewMessage) {
+                          setNewMessageIds(prev => {
+                            const next = new Set(prev);
+                            next.delete(message.id);
+                            return next;
+                          });
+                        }
+                      }}
+                    >
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="text-xs">
                           {getInitials(message.userFirstName, message.userLastName, message.userEmail)}
@@ -526,7 +698,8 @@ export default function Communications() {
                         </p>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div ref={messagesEndRef} />
                 </div>
               )}
@@ -635,20 +808,48 @@ export default function Communications() {
             onSubmit={(e) => {
               e.preventDefault();
               if (newChannelName.trim()) {
-                createChannelMutation.mutate(newChannelName.trim());
+                createChannelMutation.mutate({ 
+                  name: newChannelName.trim(),
+                  isClientFacing 
+                });
                 setNewChannelName("");
+                setIsClientFacing(false);
                 setIsCreateChannelOpen(false);
               }
             }}
           >
             <div className="space-y-4 py-4">
-              <Input
-                placeholder="Channel name (e.g., general, project-updates)"
-                value={newChannelName}
-                onChange={(e) => setNewChannelName(e.target.value)}
-                autoFocus
-                data-testid="input-channel-name"
-              />
+              <div className="space-y-2">
+                <Label htmlFor="channel-name">Channel Name</Label>
+                <Input
+                  id="channel-name"
+                  placeholder={isClientFacing ? "e.g., 26-ocean-client" : "e.g., 26-ocean-internal"}
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                  autoFocus
+                  data-testid="input-channel-name"
+                />
+              </div>
+              
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="client-facing" className="text-base font-semibold">
+                    {isClientFacing ? "Client-Facing Channel" : "Internal Channel"}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {isClientFacing 
+                      ? "Client can see messages - BE CAREFUL with costs & subcontractors"
+                      : "Internal team only - safe for sensitive information"
+                    }
+                  </p>
+                </div>
+                <Switch
+                  id="client-facing"
+                  checked={isClientFacing}
+                  onCheckedChange={setIsClientFacing}
+                  data-testid="switch-client-facing"
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button
@@ -657,6 +858,7 @@ export default function Communications() {
                 onClick={() => {
                   setIsCreateChannelOpen(false);
                   setNewChannelName("");
+                  setIsClientFacing(false);
                 }}
                 data-testid="button-cancel"
               >
@@ -680,6 +882,7 @@ export default function Communications() {
           </form>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

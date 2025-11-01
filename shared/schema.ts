@@ -2689,6 +2689,7 @@ export const channels = pgTable("channels", {
   // Channel settings
   description: text("description"),
   isArchived: boolean("is_archived").notNull().default(false),
+  isClientFacing: boolean("is_client_facing").notNull().default(false),
   
   // Multi-tenant isolation
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
