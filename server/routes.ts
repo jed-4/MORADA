@@ -1265,6 +1265,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const project = await storage.createProject(projectData);
+      
+      // Auto-create channel for the project
+      try {
+        // Generate channel name from project name (e.g., "26 Ocean Drive" -> "26-ocean-drive")
+        const channelName = project.name
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
+          .replace(/\s+/g, '-') // Replace spaces with dashes
+          .substring(0, 50); // Limit length
+        
+        const channel = await storage.createChannel({
+          name: channelName,
+          type: "channel",
+          projectId: project.id,
+          description: `Project channel for ${project.name}`,
+          companyId: user.companyId
+        });
+        
+        // Add project owner to the channel
+        await storage.addChannelMember({
+          channelId: channel.id,
+          userId: userId
+        });
+        
+        console.log(`Auto-created channel ${channel.name} for project ${project.name}`);
+      } catch (channelError) {
+        // Log error but don't fail project creation
+        console.error("Error creating project channel:", channelError);
+      }
+      
       res.status(201).json(project);
     } catch (error) {
       console.error("Error creating project:", error);
@@ -3347,6 +3377,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...validationResult.data,
         userId: req.params.userId
       });
+      
+      // Auto-add user to project channel if it exists
+      try {
+        const user = await storage.getUser(access.grantedBy || '');
+        if (user?.companyId && access.projectId) {
+          const channels = await storage.getChannels(user.companyId);
+          const projectChannel = channels.find(c => c.projectId === access.projectId);
+          
+          if (projectChannel) {
+            // Check if user is already a member
+            const members = await storage.getChannelMembers(projectChannel.id);
+            const isMember = members.some(m => m.userId === req.params.userId);
+            
+            if (!isMember) {
+              await storage.addChannelMember({
+                channelId: projectChannel.id,
+                userId: req.params.userId
+              });
+              console.log(`Auto-added user ${req.params.userId} to project channel ${projectChannel.name}`);
+            }
+          }
+        }
+      } catch (channelError) {
+        // Log error but don't fail the access grant
+        console.error("Error adding user to project channel:", channelError);
+      }
+      
       res.status(201).json(access);
     } catch (error) {
       res.status(500).json({ error: "Failed to grant project access" });
@@ -3363,6 +3420,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
+      
+      // Auto-add user to project channel if it exists
+      try {
+        const user = await storage.getUser(grantedBy);
+        if (user?.companyId) {
+          const channels = await storage.getChannels(user.companyId);
+          const projectChannel = channels.find(c => c.projectId === projectId);
+          
+          if (projectChannel) {
+            // Check if user is already a member
+            const members = await storage.getChannelMembers(projectChannel.id);
+            const isMember = members.some(m => m.userId === userId);
+            
+            if (!isMember) {
+              await storage.addChannelMember({
+                channelId: projectChannel.id,
+                userId: userId
+              });
+              console.log(`Auto-added user ${userId} to project channel ${projectChannel.name}`);
+            }
+          }
+        }
+      } catch (channelError) {
+        // Log error but don't fail the access grant
+        console.error("Error adding user to project channel:", channelError);
+      }
+      
       res.status(201).json(access);
     } catch (error) {
       res.status(500).json({ error: "Failed to grant project access" });
