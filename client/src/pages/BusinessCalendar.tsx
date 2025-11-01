@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import ThemeToggle from "@/components/ThemeToggle";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -36,17 +37,17 @@ export default function BusinessCalendar() {
   const defaultViewCreationAttempted = useRef(false);
 
   // Fetch all projects
-  const { data: projects = [] } = useQuery<Project[]>({
+  const { data: projects = [], isLoading: isLoadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
   // Fetch all tasks across all projects
-  const { data: allTasks = [] } = useQuery<Task[]>({
+  const { data: allTasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
   });
 
   // Fetch all schedule items
-  const { data: allScheduleItems = [] } = useQuery<ScheduleItem[]>({
+  const { data: allScheduleItems = [], isLoading: isLoadingSchedule } = useQuery<ScheduleItem[]>({
     queryKey: ["/api/schedule-items/all"],
   });
 
@@ -399,6 +400,47 @@ export default function BusinessCalendar() {
     setFilters(normalizeFilterDates(view.filters || {}));
     setCalendarMode(view.calendarMode || "week");
   };
+
+  const isLoading = isLoadingProjects || isLoadingTasks || isLoadingSchedule;
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full" data-testid="business-calendar">
+        {/* Skeleton Header */}
+        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-5 w-5 rounded" />
+            <Skeleton className="h-6 w-40" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Skeleton className="h-9 w-9 rounded-md" />
+            <Skeleton className="h-9 w-32 rounded-md" />
+            <Skeleton className="h-9 w-24 rounded-md" />
+          </div>
+        </div>
+
+        {/* Skeleton Calendar */}
+        <div className="flex-1 min-h-0 p-6">
+          <Card className="h-full flex flex-col p-4 gap-4">
+            {/* Calendar header skeleton */}
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-8 w-48" />
+              <div className="flex gap-2">
+                <Skeleton className="h-8 w-20 rounded-md" />
+                <Skeleton className="h-8 w-20 rounded-md" />
+              </div>
+            </div>
+            {/* Calendar grid skeleton */}
+            <div className="flex-1 grid grid-cols-7 gap-2">
+              {Array.from({ length: 21 }).map((_, i) => (
+                <Skeleton key={i} className="h-full rounded-md" />
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full" data-testid="business-calendar">

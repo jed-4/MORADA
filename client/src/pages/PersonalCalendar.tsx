@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import ThemeToggle from "@/components/ThemeToggle";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -352,10 +353,39 @@ export default function PersonalCalendar() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full p-6" data-testid="personal-calendar">
-        <Card className="h-full flex items-center justify-center">
-          <div className="text-muted-foreground">Loading calendar...</div>
-        </Card>
+      <div className="flex flex-col h-full" data-testid="personal-calendar">
+        {/* Skeleton Header */}
+        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-5 w-5 rounded" />
+            <Skeleton className="h-6 w-32" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Skeleton className="h-9 w-9 rounded-md" />
+            <Skeleton className="h-9 w-32 rounded-md" />
+            <Skeleton className="h-9 w-24 rounded-md" />
+          </div>
+        </div>
+
+        {/* Skeleton Calendar */}
+        <div className="flex-1 min-h-0 p-6">
+          <Card className="h-full flex flex-col p-4 gap-4">
+            {/* Calendar header skeleton */}
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-8 w-48" />
+              <div className="flex gap-2">
+                <Skeleton className="h-8 w-20 rounded-md" />
+                <Skeleton className="h-8 w-20 rounded-md" />
+              </div>
+            </div>
+            {/* Calendar grid skeleton */}
+            <div className="flex-1 grid grid-cols-7 gap-2">
+              {Array.from({ length: 21 }).map((_, i) => (
+                <Skeleton key={i} className="h-full rounded-md" />
+              ))}
+            </div>
+          </Card>
+        </div>
       </div>
     );
   }
