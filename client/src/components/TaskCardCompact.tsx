@@ -72,9 +72,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false }: T
     }
   });
 
-  const handleToggleComplete = (e: React.MouseEvent, checked: boolean | string) => {
-    e.stopPropagation();
-    
+  const handleToggleComplete = (checked: boolean | string) => {
     if (!completedOption) {
       toast({
         title: "No completed status configured",
@@ -108,7 +106,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false }: T
           <div onClick={(e) => e.stopPropagation()}>
             <Checkbox
               checked={isCompleted}
-              onCheckedChange={(checked) => handleToggleComplete(e as any, checked)}
+              onCheckedChange={handleToggleComplete}
               className="h-3.5 w-3.5 mt-0.5"
               data-testid={`checkbox-${task.id}`}
             />
