@@ -15,7 +15,8 @@ import {
   Edit, 
   ChevronRight,
   ChevronDown,
-  GripVertical
+  GripVertical,
+  ExternalLink
 } from "lucide-react";
 import {
   Dialog,
@@ -247,6 +248,19 @@ function SortableDocument({
                     <Badge variant="secondary" className="text-xs">
                       {document.status}
                     </Badge>
+                  )}
+                  {document.fileUrl && (
+                    <a
+                      href={document.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      data-testid={`link-file-${document.id}`}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open File
+                    </a>
                   )}
                 </div>
               </div>
