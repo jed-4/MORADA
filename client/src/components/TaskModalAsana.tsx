@@ -1,0 +1,666 @@
+import { useState, useEffect, useRef } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
+import { z } from "zod";
+import { format } from "date-fns";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Calendar,
+  X,
+  Heart,
+  Paperclip,
+  MoreHorizontal,
+  ChevronDown,
+  Plus,
+  GripVertical,
+  Pencil,
+  DollarSign,
+  Clock,
+} from "lucide-react";
+
+const taskFormSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  content: z.string().default(""),
+  status: z.string().default("todo"),
+  priority: z.enum(["low", "medium", "high"]).default("medium"),
+  assigneeId: z.string().optional(),
+  dueDate: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  isRecurring: z.boolean().default(false),
+  recurringType: z.enum(["daily", "weekly", "monthly"]).optional(),
+  recurringDays: z.array(z.number()).default([]),
+  estimatedCost: z.number().optional(),
+  estimatedUnits: z.number().optional(),
+  projectId: z.string().optional(),
+});
+
+type TaskFormData = z.infer<typeof taskFormSchema>;
+
+interface TaskModalAsanaProps {
+  task?: Task;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  initialStatus?: string;
+}
+
+export default function TaskModalAsana({ task, open, onOpenChange, projectId, initialStatus }: TaskModalAsanaProps) {
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(task?.title || "");
+  const [isRepeatsOpen, setIsRepeatsOpen] = useState(false);
+  const [subtaskInput, setSubtaskInput] = useState("");
+  const [showSubtaskInput, setShowSubtaskInput] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  // Fetch field categories for status options
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+
+  // Fetch users for assignee dropdown
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+  });
+
+  // Fetch subtasks
+  const { data: subtasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/tasks", task?.id, "subtasks"],
+    enabled: !!task?.id,
+  });
+
+  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const statusOptions = statusCategory?.options || [];
+  const completedOption = statusOptions.find(opt => opt.isCompleted);
+  const isCompleted = task?.status === completedOption?.key;
+
+  const form = useForm<TaskFormData>({
+    resolver: zodResolver(taskFormSchema),
+    defaultValues: {
+      title: task?.title || "New Task",
+      content: task?.content || "",
+      status: task?.status || initialStatus || "todo",
+      priority: (task?.priority as any) || "medium",
+      assigneeId: task?.assigneeId || undefined,
+      dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
+      startTime: task?.startTime || undefined,
+      endTime: task?.endTime || undefined,
+      isRecurring: task?.isRecurring || false,
+      recurringType: (task?.recurringType as any) || undefined,
+      recurringDays: (task?.recurringDays as number[]) || [],
+      estimatedCost: task?.estimatedCost || undefined,
+      estimatedUnits: task?.estimatedUnits || undefined,
+      projectId: task?.projectId || projectId,
+    },
+  });
+
+  // Update title when editing starts
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  // Create or update task mutation
+  const saveTaskMutation = useMutation({
+    mutationFn: async (data: TaskFormData) => {
+      if (task) {
+        return await apiRequest(`/api/tasks/${task.id}`, "PATCH", data);
+      } else {
+        return await apiRequest("/api/tasks", "POST", { ...data, type: "task" });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: task ? "Task updated" : "Task created" });
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to save task",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Add subtask mutation
+  const addSubtaskMutation = useMutation({
+    mutationFn: async (title: string) => {
+      return await apiRequest("/api/tasks", "POST", {
+        title,
+        type: "task",
+        parentTaskId: task?.id,
+        projectId,
+        status: "todo",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSubtaskInput("");
+      setShowSubtaskInput(false);
+    },
+  });
+
+  // Toggle completion mutation
+  const toggleCompleteMutation = useMutation({
+    mutationFn: async (checked: boolean) => {
+      const newStatus = checked ? (completedOption?.key || "done") : "todo";
+      return await apiRequest(`/api/tasks/${task?.id}`, "PATCH", { status: newStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+  });
+
+  const onSubmit = (data: TaskFormData) => {
+    saveTaskMutation.mutate(data);
+  };
+
+  const handleTitleSave = () => {
+    if (titleValue.trim()) {
+      form.setValue("title", titleValue);
+      setIsEditingTitle(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      form.handleSubmit(onSubmit)();
+    } else if (e.key === "Escape") {
+      onOpenChange(false);
+    }
+  };
+
+  const handleAddSubtask = () => {
+    if (subtaskInput.trim() && task) {
+      addSubtaskMutation.mutate(subtaskInput);
+    }
+  };
+
+  const weekDays = [
+    { label: "M", value: 1 },
+    { label: "T", value: 2 },
+    { label: "W", value: 3 },
+    { label: "T", value: 4 },
+    { label: "F", value: 5 },
+    { label: "S", value: 6 },
+    { label: "S", value: 0 },
+  ];
+
+  const selectedDays = form.watch("recurringDays");
+  const toggleDay = (day: number) => {
+    const current = selectedDays || [];
+    if (current.includes(day)) {
+      form.setValue("recurringDays", current.filter(d => d !== day));
+    } else {
+      form.setValue("recurringDays", [...current, day]);
+    }
+  };
+
+  const assignee = users.find(u => u.id === form.watch("assigneeId"));
+  const getInitials = (name: string) => name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+
+  const priorityColors = {
+    high: "bg-red-500/15 text-red-400 border-red-500/20",
+    medium: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
+    low: "bg-gray-500/15 text-gray-400 border-gray-500/20",
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-6xl p-0 rounded-xl overflow-hidden bg-slate-900 border-slate-700"
+        onKeyDown={handleKeyDown}
+        data-testid="task-modal-asana"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-4 border-b border-slate-700">
+          <div className="flex items-start gap-2 flex-1">
+            <Checkbox
+              checked={isCompleted}
+              onCheckedChange={(checked) => task && toggleCompleteMutation.mutate(!!checked)}
+              className="mt-1"
+              data-testid="checkbox-complete-task"
+            />
+            {isEditingTitle ? (
+              <Input
+                ref={titleInputRef}
+                value={titleValue}
+                onChange={(e) => setTitleValue(e.target.value)}
+                onBlur={handleTitleSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleTitleSave();
+                  if (e.key === "Escape") {
+                    setTitleValue(form.watch("title"));
+                    setIsEditingTitle(false);
+                  }
+                }}
+                className="text-xl font-bold bg-slate-800 border-slate-600 text-slate-100"
+                data-testid="input-task-title"
+              />
+            ) : (
+              <h2
+                className="text-xl font-bold text-slate-100 cursor-pointer hover:bg-slate-800/50 px-2 py-1 rounded"
+                onClick={() => {
+                  setTitleValue(form.watch("title"));
+                  setIsEditingTitle(true);
+                }}
+                data-testid="text-task-title"
+              >
+                {form.watch("title")}
+              </h2>
+            )}
+          </div>
+
+          {/* Top-right action icons */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+              data-testid="button-like-task"
+            >
+              <Heart className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+              data-testid="button-attach-file"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+                  data-testid="button-more-actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
+                <DropdownMenuItem className="text-slate-200">Duplicate</DropdownMenuItem>
+                <DropdownMenuItem className="text-slate-200">Delete</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Split Layout */}
+        <div className="flex h-[600px]">
+          {/* Left Panel - Subtasks (40%) */}
+          <div className="w-[40%] border-r border-slate-700 overflow-y-auto bg-slate-900/50">
+            <div className="p-4 space-y-2">
+              <h3 className="text-sm font-semibold text-slate-300 mb-3">Subtasks</h3>
+              
+              {subtasks.map((subtask) => (
+                <div
+                  key={subtask.id}
+                  className="flex items-center gap-2 p-2 rounded hover:bg-slate-800/50 group"
+                  data-testid={`subtask-${subtask.id}`}
+                >
+                  <GripVertical className="h-3 w-3 text-slate-600" />
+                  <Checkbox className="h-3.5 w-3.5" />
+                  <span className="text-sm text-slate-200 flex-1">{subtask.title}</span>
+                  <Pencil className="h-3 w-3 text-slate-500 opacity-0 group-hover:opacity-100" />
+                </div>
+              ))}
+
+              {showSubtaskInput ? (
+                <div className="flex items-center gap-2 p-2">
+                  <Input
+                    value={subtaskInput}
+                    onChange={(e) => setSubtaskInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddSubtask();
+                      if (e.key === "Escape") {
+                        setShowSubtaskInput(false);
+                        setSubtaskInput("");
+                      }
+                    }}
+                    placeholder="Subtask name"
+                    className="bg-slate-800 border-slate-600 text-slate-100 text-sm"
+                    autoFocus
+                    data-testid="input-add-subtask"
+                  />
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  onClick={() => setShowSubtaskInput(true)}
+                  data-testid="button-add-subtask"
+                >
+                  <Plus className="h-3 w-3 mr-2" />
+                  Add subtask
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel - Details (60%) */}
+          <div className="w-[60%] overflow-y-auto">
+            <div className="p-4 space-y-4">
+              {/* Quick Fields */}
+              <div className="space-y-3">
+                {/* Assignee */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Assignee</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        className="h-7 px-2 hover:bg-slate-800 text-slate-300 justify-start"
+                        data-testid="button-select-assignee"
+                      >
+                        {assignee ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-5 w-5">
+                              <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                                {getInitials(assignee.name || assignee.email)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">{assignee.name || assignee.email}</span>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-slate-500">No assignee</span>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="bg-slate-800 border-slate-700">
+                      {users.map((user) => (
+                        <DropdownMenuItem
+                          key={user.id}
+                          onClick={() => form.setValue("assigneeId", user.id)}
+                          className="text-slate-200"
+                        >
+                          <Avatar className="h-5 w-5 mr-2">
+                            <AvatarFallback className="text-xs">
+                              {getInitials(user.name || user.email)}
+                            </AvatarFallback>
+                          </Avatar>
+                          {user.name || user.email}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Due Date */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Due date</span>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      {...form.register("dueDate")}
+                      className="h-7 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                      data-testid="input-due-date"
+                    />
+                    {form.watch("dueDate") && (
+                      <Badge className="h-5 px-2 bg-red-500/15 text-red-400 border-red-500/20 no-default-hover-elevate">
+                        <Calendar className="h-2.5 w-2.5 mr-1" />
+                        {format(new Date(form.watch("dueDate")!), "MMM d")}
+                        <X
+                          className="h-2.5 w-2.5 ml-1 cursor-pointer"
+                          onClick={() => form.setValue("dueDate", undefined)}
+                        />
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Start Time */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Start time</span>
+                  <Input
+                    type="time"
+                    {...form.register("startTime")}
+                    className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                    data-testid="input-start-time"
+                  />
+                </div>
+
+                {/* End Time */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">End time</span>
+                  <Input
+                    type="time"
+                    {...form.register("endTime")}
+                    className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                    data-testid="input-end-time"
+                  />
+                </div>
+
+                {/* Priority */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Priority</span>
+                  <Select
+                    value={form.watch("priority")}
+                    onValueChange={(value) => form.setValue("priority", value as any)}
+                  >
+                    <SelectTrigger className="h-7 w-32 bg-slate-800 border-slate-600 text-slate-100">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                      <SelectItem value="high" className="text-slate-200">High</SelectItem>
+                      <SelectItem value="medium" className="text-slate-200">Medium</SelectItem>
+                      <SelectItem value="low" className="text-slate-200">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Badge className={`h-5 px-2 border ${priorityColors[form.watch("priority")]} no-default-hover-elevate`}>
+                    {form.watch("priority")}
+                  </Badge>
+                </div>
+
+                {/* Construction Fields */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Cost</span>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...form.register("estimatedCost", { valueAsNumber: true })}
+                      placeholder="0.00"
+                      className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                      data-testid="input-cost"
+                    />
+                    {form.watch("estimatedCost") && (
+                      <Badge className="h-5 px-2 bg-amber-500/15 text-amber-400 border-amber-500/20 font-bold no-default-hover-elevate">
+                        <DollarSign className="h-2.5 w-2.5 mr-0.5" />
+                        {form.watch("estimatedCost")?.toLocaleString()}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Units</span>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      {...form.register("estimatedUnits", { valueAsNumber: true })}
+                      placeholder="0"
+                      className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                      data-testid="input-units"
+                    />
+                    {form.watch("estimatedUnits") && (
+                      <Badge className="h-5 px-2 bg-gray-500/15 text-gray-400 border-gray-500/20 no-default-hover-elevate">
+                        {form.watch("estimatedUnits")} days
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-24">Status</span>
+                  <Select
+                    value={form.watch("status")}
+                    onValueChange={(value) => form.setValue("status", value)}
+                  >
+                    <SelectTrigger className="h-7 w-40 bg-slate-800 border-slate-600 text-slate-100">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                      {statusOptions.map((option) => (
+                        <SelectItem key={option.key} value={option.key} className="text-slate-200">
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <label className="text-sm text-slate-400">Description</label>
+                <Textarea
+                  {...form.register("content")}
+                  placeholder="What is this task about?"
+                  className="min-h-[100px] bg-slate-800 border-slate-600 text-slate-100 resize-none"
+                  data-testid="textarea-description"
+                />
+              </div>
+
+              {/* Repeats Panel */}
+              <div className="border border-slate-700 rounded-lg p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={form.watch("isRecurring")}
+                      onCheckedChange={(checked) => {
+                        form.setValue("isRecurring", !!checked);
+                        setIsRepeatsOpen(!!checked);
+                      }}
+                      data-testid="checkbox-repeats"
+                    />
+                    <span className="text-sm text-slate-300">Repeats</span>
+                  </div>
+                  {form.watch("isRecurring") && (
+                    <Select
+                      value={form.watch("recurringType")}
+                      onValueChange={(value) => form.setValue("recurringType", value as any)}
+                    >
+                      <SelectTrigger className="h-6 w-24 text-xs bg-slate-800 border-slate-600 text-slate-100">
+                        <SelectValue placeholder="Weekly" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700">
+                        <SelectItem value="daily" className="text-slate-200">Daily</SelectItem>
+                        <SelectItem value="weekly" className="text-slate-200">Weekly</SelectItem>
+                        <SelectItem value="monthly" className="text-slate-200">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                {form.watch("isRecurring") && form.watch("recurringType") === "weekly" && (
+                  <div className="space-y-2">
+                    <label className="text-xs text-slate-400">On these days</label>
+                    <div className="flex gap-1">
+                      {weekDays.map((day) => (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => toggleDay(day.value)}
+                          className={`h-7 w-7 rounded-full text-xs font-medium transition-colors ${
+                            selectedDays?.includes(day.value)
+                              ? "bg-blue-500 text-white"
+                              : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                          }`}
+                          data-testid={`button-day-${day.value}`}
+                        >
+                          {day.label}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-slate-400 hover:text-slate-200"
+                      onClick={() => form.setValue("recurringDays", [])}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Comments */}
+              <div className="space-y-3 pt-4 border-t border-slate-700">
+                <h3 className="text-sm font-semibold text-slate-300">Comments</h3>
+                <div className="flex items-start gap-2">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                      JS
+                    </AvatarFallback>
+                  </Avatar>
+                  <Input
+                    placeholder="Add a comment"
+                    className="flex-1 h-8 bg-slate-800 border-slate-600 text-slate-100"
+                    data-testid="input-add-comment"
+                  />
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="ghost"
+                  onClick={() => onOpenChange(false)}
+                  className="text-slate-400 hover:text-slate-200"
+                  data-testid="button-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={form.handleSubmit(onSubmit)}
+                  disabled={saveTaskMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  data-testid="button-save-task"
+                >
+                  {saveTaskMutation.isPending ? "Saving..." : task ? "Save changes" : "Create task"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
