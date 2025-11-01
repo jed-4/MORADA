@@ -241,6 +241,11 @@ function SortableDocument({
                 {document.status}
               </Badge>
             )}
+            {document.taskTemplateName && (
+              <Badge variant="outline" className="text-xs bg-primary/5 border-primary/20">
+                📋 {document.taskTemplateName}
+              </Badge>
+            )}
             {document.fileUrl && (
               <a
                 href={document.fileUrl}
@@ -1242,6 +1247,10 @@ export function FolderTree() {
               <div>
                 <Label className="text-muted-foreground">Status</Label>
                 <p className="text-sm mt-1">{viewingDocument.status || '—'}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Task Template</Label>
+                <p className="text-sm mt-1">{viewingDocument.taskTemplateName || '—'}</p>
               </div>
               {viewingDocument.fileUrl && (
                 <div>
