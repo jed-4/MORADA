@@ -2461,6 +2461,8 @@ export const systemDocuments = pgTable("system_documents", {
   
   // Metadata
   tags: json("tags").default([]), // Array of tags for searching
+  role: text("role"), // Role responsible for this document
+  status: text("status"), // Status from field settings
   
   // Display ordering
   displayOrder: integer("display_order").default(0),
@@ -2482,6 +2484,8 @@ export const insertSystemDocumentSchema = createInsertSchema(systemDocuments).om
   type: z.enum(["document", "policy", "procedure", "template", "reference"]).default("document"),
   tags: z.array(z.string()).optional(),
   fileSize: z.number().optional(),
+  role: z.string().optional(),
+  status: z.string().optional(),
 });
 
 export type InsertSystemDocument = z.infer<typeof insertSystemDocumentSchema>;

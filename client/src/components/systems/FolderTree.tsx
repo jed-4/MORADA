@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { 
   FolderPlus, 
   FilePlus, 
@@ -29,6 +30,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -199,56 +207,83 @@ function SortableDocument({
       ref={setNodeRef}
       style={{
         ...style,
-        paddingLeft: `${depth * 20 + 24}px`
+        marginLeft: `${depth * 20 + 24}px`
       }}
-      className="flex items-center gap-2 py-1.5 px-2 hover-elevate rounded-md group"
+      className="hover-elevate rounded-md group mb-2"
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
-        data-testid={`drag-handle-document-${document.id}`}
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <FileText className="h-4 w-4 text-muted-foreground" />
-      <span 
-        className="text-sm flex-1 cursor-pointer"
-        onClick={onView}
-        data-testid={`view-document-${document.id}`}
-      >
-        {document.title}
-      </span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-6 w-6 opacity-0 group-hover:opacity-100" 
-            data-testid={`document-menu-${document.id}`}
+      <Card className="p-3">
+        <div className="flex items-start gap-2">
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity mt-0.5"
+            data-testid={`drag-handle-document-${document.id}`}
           >
-            <MoreVertical className="h-3 w-3" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={onView} data-testid="menu-view-document">
-            <FileText className="h-4 w-4 mr-2" />
-            View
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onEdit} data-testid="menu-edit-document">
-            <Edit className="h-4 w-4 mr-2" />
-            Edit
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onDelete}
-            className="text-destructive"
-            data-testid="menu-delete-document"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <FileText className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div 
+                  className="font-medium text-sm cursor-pointer hover:text-primary transition-colors"
+                  onClick={onView}
+                  data-testid={`view-document-${document.id}`}
+                >
+                  {document.title}
+                </div>
+                {document.description && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                    {document.description}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  {document.role && (
+                    <Badge variant="outline" className="text-xs">
+                      {document.role}
+                    </Badge>
+                  )}
+                  {document.status && (
+                    <Badge variant="secondary" className="text-xs">
+                      {document.status}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 flex-shrink-0" 
+                    data-testid={`document-menu-${document.id}`}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={onView} data-testid="menu-view-document">
+                    <FileText className="h-4 w-4 mr-2" />
+                    View
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onEdit} data-testid="menu-edit-document">
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={onDelete}
+                    className="text-destructive"
+                    data-testid="menu-delete-document"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -325,6 +360,8 @@ export function FolderTree() {
     type: "document",
     fileUrl: "",
     folderId: null as string | null,
+    role: "",
+    status: "",
   });
 
   // Setup sensors for drag and drop
@@ -343,6 +380,16 @@ export function FolderTree() {
   // Fetch documents
   const { data: documents = [], isLoading: documentsLoading } = useQuery<SystemDocument[]>({
     queryKey: ["/api/systems/documents"],
+  });
+
+  // Fetch user roles for role dropdown
+  const { data: roles = [] } = useQuery<any[]>({
+    queryKey: ["/api/user-roles"],
+  });
+
+  // Fetch status options from field categories
+  const { data: statusCategory } = useQuery<any>({
+    queryKey: ["/api/field-categories/by-key/systemDocument.status"],
   });
 
   // Create folder mutation
@@ -458,7 +505,7 @@ export function FolderTree() {
   };
 
   const resetDocumentForm = () => {
-    setDocumentForm({ title: "", description: "", type: "document", fileUrl: "", folderId: null });
+    setDocumentForm({ title: "", description: "", type: "document", fileUrl: "", folderId: null, role: "", status: "" });
   };
 
   const toggleFolder = (folderId: string) => {
@@ -504,6 +551,8 @@ export function FolderTree() {
       type: doc.type || "document",
       fileUrl: doc.fileUrl || "",
       folderId: doc.folderId || null,
+      role: doc.role || "",
+      status: doc.status || "",
     });
     setShowDocumentDialog(true);
   };
@@ -1084,6 +1133,44 @@ export function FolderTree() {
                 placeholder="https://example.com/document.pdf"
                 data-testid="input-document-url"
               />
+            </div>
+            <div>
+              <Label>Role</Label>
+              <Select
+                value={documentForm.role}
+                onValueChange={(value) => setDocumentForm({ ...documentForm, role: value })}
+              >
+                <SelectTrigger data-testid="select-document-role">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={role.name}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={documentForm.status}
+                onValueChange={(value) => setDocumentForm({ ...documentForm, status: value })}
+              >
+                <SelectTrigger data-testid="select-document-status">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {statusCategory?.options?.map((option: any) => (
+                    <SelectItem key={option.id} value={option.name}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
