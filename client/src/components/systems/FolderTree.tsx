@@ -16,7 +16,8 @@ import {
   ChevronRight,
   ChevronDown,
   GripVertical,
-  ExternalLink
+  ExternalLink,
+  Plus
 } from "lucide-react";
 import {
   Dialog,
@@ -179,6 +180,7 @@ interface SortableDocumentProps {
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onCreateTask?: (templateId: string) => void;
 }
 
 function SortableDocument({
@@ -187,6 +189,7 @@ function SortableDocument({
   onView,
   onEdit,
   onDelete,
+  onCreateTask,
 }: SortableDocumentProps) {
   const {
     attributes,
@@ -242,9 +245,25 @@ function SortableDocument({
               </Badge>
             )}
             {document.taskTemplateName && (
-              <Badge variant="outline" className="text-xs bg-primary/5 border-primary/20">
-                📋 {document.taskTemplateName}
-              </Badge>
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className="text-xs bg-primary/5 border-primary/20">
+                  📋 {document.taskTemplateName}
+                </Badge>
+                {onCreateTask && document.taskTemplateId && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 opacity-0 group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCreateTask(document.taskTemplateId);
+                    }}
+                    data-testid={`create-task-from-template-${document.id}`}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
             )}
             {document.fileUrl && (
               <a
@@ -346,9 +365,11 @@ export function FolderTree() {
   const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
   const [showDocumentViewDialog, setShowDocumentViewDialog] = useState(false);
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingFolder, setEditingFolder] = useState<SystemFolder | null>(null);
   const [editingDocument, setEditingDocument] = useState<SystemDocument | null>(null);
   const [viewingDocument, setViewingDocument] = useState<SystemDocument | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const { toast} = useToast();
@@ -404,6 +425,23 @@ export function FolderTree() {
   // Fetch task templates
   const { data: taskTemplates = [] } = useQuery<any[]>({
     queryKey: ["/api/systems/task-templates"],
+  });
+
+  // Fetch projects for task creation
+  const { data: projects = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // Fetch users for assignee selection
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+  });
+
+  // Task form state for creating from template
+  const [taskForm, setTaskForm] = useState({
+    projectId: "",
+    dueDate: "",
+    assigneeId: "",
   });
 
   // Create folder mutation
@@ -514,6 +552,35 @@ export function FolderTree() {
     },
   });
 
+  // Create task from template mutation
+  const createTaskFromTemplateMutation = useMutation({
+    mutationFn: async (data: { template: any; projectId: string; dueDate?: string; assigneeId?: string }) => {
+      const taskData = {
+        type: "task",
+        title: data.template.title,
+        content: data.template.description || "",
+        projectId: data.projectId,
+        status: "todo",
+        priority: "medium",
+        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
+        assigneeId: data.assigneeId || undefined,
+        tags: data.template.tags || [],
+        customFields: {},
+      };
+      return apiRequest("/api/tasks", "POST", taskData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setShowCreateTaskDialog(false);
+      setSelectedTemplate(null);
+      setTaskForm({ projectId: "", dueDate: "", assigneeId: "" });
+      toast({ title: "Task created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    },
+  });
+
   const resetFolderForm = () => {
     setFolderForm({ name: "", description: "", icon: "folder", parentId: null });
   };
@@ -575,6 +642,27 @@ export function FolderTree() {
   const openViewDocumentDialog = (doc: SystemDocument) => {
     setViewingDocument(doc);
     setShowDocumentViewDialog(true);
+  };
+
+  const openCreateTaskDialog = async (templateId: string) => {
+    const template = taskTemplates.find((t: any) => t.id === templateId);
+    if (template) {
+      setSelectedTemplate(template);
+      setShowCreateTaskDialog(true);
+    }
+  };
+
+  const handleCreateTask = () => {
+    if (!selectedTemplate || !taskForm.projectId) {
+      toast({ title: "Please select a project", variant: "destructive" });
+      return;
+    }
+    createTaskFromTemplateMutation.mutate({
+      template: selectedTemplate,
+      projectId: taskForm.projectId,
+      dueDate: taskForm.dueDate,
+      assigneeId: taskForm.assigneeId,
+    });
   };
 
   const handleSaveFolder = () => {
@@ -959,6 +1047,7 @@ export function FolderTree() {
                 onView={() => openViewDocumentDialog(doc)}
                 onEdit={() => openEditDocumentDialog(doc)}
                 onDelete={() => deleteDocumentMutation.mutate(doc.id)}
+                onCreateTask={openCreateTaskDialog}
               />
             ))}
           </div>
@@ -1032,6 +1121,7 @@ export function FolderTree() {
                     onView={() => openViewDocumentDialog(doc)}
                     onEdit={() => openEditDocumentDialog(doc)}
                     onDelete={() => deleteDocumentMutation.mutate(doc.id)}
+                    onCreateTask={openCreateTaskDialog}
                   />
                 ))}
               </div>
@@ -1285,6 +1375,85 @@ export function FolderTree() {
               }
             }} data-testid="button-edit-from-view">
               Edit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Task from Template Dialog */}
+      <Dialog open={showCreateTaskDialog} onOpenChange={(open) => {
+        setShowCreateTaskDialog(open);
+        if (!open) {
+          setSelectedTemplate(null);
+          setTaskForm({ projectId: "", dueDate: "", assigneeId: "" });
+        }
+      }}>
+        <DialogContent data-testid="dialog-create-task-from-template">
+          <DialogHeader>
+            <DialogTitle>Create Task from Template</DialogTitle>
+          </DialogHeader>
+          {selectedTemplate && (
+            <div className="flex flex-col gap-4">
+              <div>
+                <Label className="text-muted-foreground">Template</Label>
+                <p className="text-sm mt-1 font-medium">{selectedTemplate.title}</p>
+                {selectedTemplate.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{selectedTemplate.description}</p>
+                )}
+              </div>
+              <div>
+                <Label>Project *</Label>
+                <Select
+                  value={taskForm.projectId}
+                  onValueChange={(value) => setTaskForm({ ...taskForm, projectId: value })}
+                >
+                  <SelectTrigger data-testid="select-task-project">
+                    <SelectValue placeholder="Select project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project: any) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Due Date (Optional)</Label>
+                <Input
+                  type="date"
+                  value={taskForm.dueDate}
+                  onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                  data-testid="input-task-due-date"
+                />
+              </div>
+              <div>
+                <Label>Assign To (Optional)</Label>
+                <Select
+                  value={taskForm.assigneeId}
+                  onValueChange={(value) => setTaskForm({ ...taskForm, assigneeId: value })}
+                >
+                  <SelectTrigger data-testid="select-task-assignee">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((user: any) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateTaskDialog(false)} data-testid="button-cancel-create-task">
+              Cancel
+            </Button>
+            <Button onClick={handleCreateTask} disabled={createTaskFromTemplateMutation.isPending} data-testid="button-create-task">
+              {createTaskFromTemplateMutation.isPending ? "Creating..." : "Create Task"}
             </Button>
           </DialogFooter>
         </DialogContent>
