@@ -8,7 +8,7 @@ interface SocketContextType {
   isConnected: boolean;
   joinChannel: (channelId: string) => void;
   leaveChannel: (channelId: string) => void;
-  sendMessage: (channelId: string, content: string) => void;
+  sendMessage: (channelId: string, content: string, mentions?: string[]) => void;
   startTyping: (channelId: string) => void;
   stopTyping: (channelId: string) => void;
   markAsRead: (channelId: string) => void;
@@ -64,8 +64,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     socket?.emit("leave_channel", channelId);
   };
 
-  const sendMessage = (channelId: string, content: string) => {
-    socket?.emit("send_message", { channelId, content });
+  const sendMessage = (channelId: string, content: string, mentions?: string[]) => {
+    socket?.emit("send_message", { channelId, content, mentions: mentions || [] });
   };
 
   const startTyping = (channelId: string) => {

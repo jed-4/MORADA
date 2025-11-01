@@ -13,6 +13,50 @@ import { Hash, Plus, Send, Loader2, Sparkles } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
 
+// Helper to parse and render mentions in messages
+function renderMessageWithMentions(content: string, currentUserId?: string) {
+  // Parse mentions in format @[Name](userId:123)
+  const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+  const parts: (string | JSX.Element)[] = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = mentionRegex.exec(content)) !== null) {
+    // Add text before mention
+    if (match.index > lastIndex) {
+      parts.push(content.substring(lastIndex, match.index));
+    }
+    
+    // Add highlighted mention
+    const name = match[1];
+    const userId = match[2];
+    const isCurrentUser = userId === currentUserId;
+    
+    parts.push(
+      <span 
+        key={match.index}
+        className={`inline-flex items-center px-1.5 py-0.5 rounded ${
+          isCurrentUser 
+            ? 'bg-primary/20 text-primary font-semibold' 
+            : 'bg-accent/50 text-accent-foreground'
+        }`}
+        data-testid={`mention-${userId}`}
+      >
+        @{name}
+      </span>
+    );
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text
+  if (lastIndex < content.length) {
+    parts.push(content.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : content;
+}
+
 export default function Communications() {
   const { user } = useAuth();
   const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead } = useSocket();
@@ -21,6 +65,12 @@ export default function Communications() {
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Mention picker state
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState("");
+  const [mentionStartPos, setMentionStartPos] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Fetch channels
   const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
@@ -137,7 +187,29 @@ export default function Communications() {
   // Handle typing input change
   const handleMessageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
+    const cursorPos = e.target.selectionStart || 0;
     setMessageInput(value);
+
+    // Detect @ mention trigger
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const lastAtPos = textBeforeCursor.lastIndexOf('@');
+    
+    if (lastAtPos !== -1) {
+      const textAfterAt = textBeforeCursor.substring(lastAtPos + 1);
+      // Show picker if @ is at start or preceded by space, and followed by alphanumeric only
+      const isValidPosition = lastAtPos === 0 || value[lastAtPos - 1] === ' ';
+      const isValidSearch = /^[a-zA-Z0-9]*$/.test(textAfterAt);
+      
+      if (isValidPosition && isValidSearch) {
+        setShowMentionPicker(true);
+        setMentionSearch(textAfterAt.toLowerCase());
+        setMentionStartPos(lastAtPos);
+      } else {
+        setShowMentionPicker(false);
+      }
+    } else {
+      setShowMentionPicker(false);
+    }
 
     if (!selectedChannelId) return;
 
@@ -162,6 +234,26 @@ export default function Communications() {
       typingTimeoutRef.current = null;
     }
   };
+  
+  // Insert mention into message
+  const insertMention = (userId: string, firstName: string | null, lastName: string | null, email: string | null) => {
+    const name = firstName && lastName 
+      ? `${firstName} ${lastName}` 
+      : email || 'Unknown';
+    
+    // Replace @search with @[Name](userId:xxx)
+    const beforeMention = messageInput.substring(0, mentionStartPos);
+    const afterMention = messageInput.substring(inputRef.current?.selectionStart || messageInput.length);
+    const mention = `@[${name}](userId:${userId})`;
+    
+    setMessageInput(beforeMention + mention + ' ' + afterMention);
+    setShowMentionPicker(false);
+    
+    // Focus back on input
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
 
   // Send message
   const handleSendMessage = (e: React.FormEvent) => {
@@ -175,9 +267,18 @@ export default function Communications() {
       typingTimeoutRef.current = null;
     }
 
-    // Send via socket
-    sendMessage(selectedChannelId, messageInput);
+    // Extract mentioned user IDs
+    const mentionRegex = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
+    const mentions: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(messageInput)) !== null) {
+      mentions.push(match[2]); // user ID
+    }
+
+    // Send via socket (socket handler will add mentions array to message)
+    sendMessage(selectedChannelId, messageInput, mentions);
     setMessageInput("");
+    setShowMentionPicker(false);
   };
 
   // Get initials for avatar
@@ -321,7 +422,9 @@ export default function Communications() {
                             {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
                           </span>
                         </div>
-                        <p className="text-sm mt-1 whitespace-pre-wrap break-words">{message.content}</p>
+                        <p className="text-sm mt-1 whitespace-pre-wrap break-words">
+                          {renderMessageWithMentions(message.content, user?.id)}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -345,21 +448,71 @@ export default function Communications() {
 
             {/* Message Input */}
             <form onSubmit={handleSendMessage} className="p-4 border-t">
-              <div className="flex gap-2">
-                <Input
-                  value={messageInput}
-                  onChange={handleMessageInputChange}
-                  placeholder={`Message #${selectedChannel.name}`}
-                  className="flex-1"
-                  data-testid="input-message"
-                />
-                <Button 
-                  type="submit" 
-                  disabled={!messageInput.trim() || !isConnected}
-                  data-testid="button-send"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
+              <div className="relative">
+                {/* Mention Picker */}
+                {showMentionPicker && (
+                  <Card className="absolute bottom-full mb-2 left-0 max-w-sm w-full max-h-60 overflow-auto z-50 border shadow-lg">
+                    <div className="p-2 border-b text-xs font-semibold text-muted-foreground">
+                      Mention someone
+                    </div>
+                    <ScrollArea className="max-h-48">
+                      {allUsers
+                        .filter(u => {
+                          if (!mentionSearch) return true;
+                          const searchLower = mentionSearch.toLowerCase();
+                          const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+                          const email = (u.email || '').toLowerCase();
+                          return fullName.includes(searchLower) || email.includes(searchLower);
+                        })
+                        .slice(0, 10)
+                        .map((mentionUser) => (
+                          <button
+                            key={mentionUser.id}
+                            type="button"
+                            onClick={() => insertMention(mentionUser.id, mentionUser.firstName, mentionUser.lastName, mentionUser.email)}
+                            className="w-full flex items-center gap-2 p-2 hover-elevate active-elevate-2 rounded text-left"
+                            data-testid={`mention-option-${mentionUser.id}`}
+                          >
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="text-xs">
+                                {getInitials(mentionUser.firstName, mentionUser.lastName, mentionUser.email)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium truncate">
+                                {mentionUser.firstName && mentionUser.lastName 
+                                  ? `${mentionUser.firstName} ${mentionUser.lastName}`
+                                  : mentionUser.email}
+                              </div>
+                              {mentionUser.firstName && mentionUser.lastName && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {mentionUser.email}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                    </ScrollArea>
+                  </Card>
+                )}
+                
+                <div className="flex gap-2">
+                  <Input
+                    ref={inputRef}
+                    value={messageInput}
+                    onChange={handleMessageInputChange}
+                    placeholder={`Message #${selectedChannel.name}`}
+                    className="flex-1"
+                    data-testid="input-message"
+                  />
+                  <Button 
+                    type="submit" 
+                    disabled={!messageInput.trim() || !isConnected}
+                    data-testid="button-send"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </form>
           </>

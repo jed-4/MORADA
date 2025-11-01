@@ -100,9 +100,9 @@ export function setupMessagingSocket(httpServer: HttpServer, sessionMiddleware: 
     });
 
     // Send message
-    socket.on("send_message", async (data: { channelId: string; content: string }) => {
+    socket.on("send_message", async (data: { channelId: string; content: string; mentions?: string[] }) => {
       try {
-        const { channelId, content } = data;
+        const { channelId, content, mentions } = data;
         const userId = socket.data.userId;
         const companyId = socket.data.companyId;
 
@@ -122,11 +122,12 @@ export function setupMessagingSocket(httpServer: HttpServer, sessionMiddleware: 
           return;
         }
 
-        // Create message in database
+        // Create message in database with mentions
         const message = await storage.createMessage({
           channelId,
           userId,
-          content
+          content,
+          mentions: mentions || []
         });
 
         // Broadcast to all users in the channel (including sender)
