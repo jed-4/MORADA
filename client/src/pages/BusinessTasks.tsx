@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
-import TaskForm from "@/components/TaskForm";
+import TaskModalAsana from "@/components/TaskModalAsana";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -201,27 +201,30 @@ export default function BusinessTasks() {
         </div>
       </div>
 
-      {/* Create/Edit Task Dialog */}
-      <Dialog open={showCreateTaskDialog} onOpenChange={(open) => {
-        setShowCreateTaskDialog(open);
-        if (!open) {
-          setEditingTask(null);
-        }
-      }}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-task-form">
-          <DialogHeader>
-            <DialogTitle>{editingTask ? "Edit Task" : "Create Business Task"}</DialogTitle>
-          </DialogHeader>
-          <TaskForm
-            task={editingTask || undefined}
-            onClose={() => {
-              setShowCreateTaskDialog(false);
-              setEditingTask(null);
-            }}
-            hideProjectField={false}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* Task Creation Dialog */}
+      {!editingTask && (
+        <TaskModalAsana 
+          open={showCreateTaskDialog}
+          onOpenChange={(open) => {
+            setShowCreateTaskDialog(open);
+            if (!open) setEditingTask(null);
+          }}
+          projectId=""
+        />
+      )}
+
+      {/* Task Editing Dialog */}
+      {editingTask && (
+        <TaskModalAsana
+          task={editingTask}
+          open={showCreateTaskDialog}
+          onOpenChange={(open) => {
+            setShowCreateTaskDialog(open);
+            if (!open) setEditingTask(null);
+          }}
+          projectId={editingTask.projectId || ""}
+        />
+      )}
     </div>
   );
 }

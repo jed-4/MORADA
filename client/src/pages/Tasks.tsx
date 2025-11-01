@@ -41,7 +41,7 @@ import {
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
 import TaskListCompact from "@/components/TaskListCompact";
-import TaskForm from "@/components/TaskForm";
+import TaskModalAsana from "@/components/TaskModalAsana";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -988,7 +988,7 @@ export default function Tasks() {
 
       {/* Task Creation Dialog */}
       {effectiveProjectId && (
-        <TaskForm 
+        <TaskModalAsana 
           open={showCreateTaskDialog}
           onOpenChange={setShowCreateTaskDialog}
           projectId={effectiveProjectId}
@@ -996,9 +996,9 @@ export default function Tasks() {
       )}
 
       {/* Task Editing Dialog */}
-      {effectiveProjectId && (
-        <TaskForm
-          task={editingTask || undefined}
+      {effectiveProjectId && editingTask && (
+        <TaskModalAsana
+          task={editingTask}
           open={!!editingTask}
           onOpenChange={(open) => !open && setEditingTask(null)}
           projectId={effectiveProjectId}

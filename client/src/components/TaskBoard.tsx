@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import TaskCardCompact from "./TaskCardCompact";
-import TaskForm from "./TaskForm";
+import TaskModalAsana from "./TaskModalAsana";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 
 // DnD Kit imports
@@ -188,6 +188,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const { toast } = useToast();
   
   // Column width state with localStorage persistence
@@ -505,7 +507,10 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                     column={column}
                     tasks={columnTasks}
                     onAddTask={() => handleAddTaskToColumn(column.status)}
-                    onTaskClick={onTaskClick}
+                    onTaskClick={(task) => {
+                      setSelectedTask(task);
+                      setIsTaskModalOpen(true);
+                    }}
                   />
                 </div>
               );
@@ -514,12 +519,25 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         </div>
         
         {projectId && (
-          <TaskForm 
-            open={isCreateTaskOpen}
-            onOpenChange={setIsCreateTaskOpen}
-            initialStatus={selectedColumnStatus as any}
-            projectId={projectId}
-          />
+          <>
+            <TaskModalAsana 
+              open={isCreateTaskOpen}
+              onOpenChange={setIsCreateTaskOpen}
+              initialStatus={selectedColumnStatus}
+              projectId={projectId}
+            />
+            {selectedTask && (
+              <TaskModalAsana
+                task={selectedTask}
+                open={isTaskModalOpen}
+                onOpenChange={(open) => {
+                  setIsTaskModalOpen(open);
+                  if (!open) setSelectedTask(null);
+                }}
+                projectId={projectId}
+              />
+            )}
+          </>
         )}
 
         {/* Drag Overlay */}
