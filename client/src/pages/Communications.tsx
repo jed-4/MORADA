@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Hash, Plus, Send, Loader2 } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
 
@@ -77,6 +77,18 @@ export default function Communications() {
     }
   });
 
+  // Create sample data mutation
+  const seedSampleDataMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("/api/channels/seed-sample", {
+        method: "POST"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+    }
+  });
+
   // Send message
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,17 +125,29 @@ export default function Communications() {
       <Card className="w-64 flex flex-col border-r rounded-none border-l-0 border-t-0 border-b-0">
         <div className="p-4 border-b flex items-center justify-between">
           <h2 className="font-semibold text-lg" data-testid="text-communications">Communications</h2>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => {
-              const name = prompt("Enter channel name:");
-              if (name) createChannelMutation.mutate(name);
-            }}
-            data-testid="button-new-channel"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className="flex gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => seedSampleDataMutation.mutate()}
+              disabled={seedSampleDataMutation.isPending || channels.length > 0}
+              title="Load sample channels and messages"
+              data-testid="button-seed-sample"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => {
+                const name = prompt("Enter channel name:");
+                if (name) createChannelMutation.mutate(name);
+              }}
+              data-testid="button-new-channel"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         <ScrollArea className="flex-1">

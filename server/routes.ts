@@ -7774,6 +7774,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create sample channels and messages for demonstration
+  app.post("/api/channels/seed-sample", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const userId = req.user!.id;
+      
+      // Check if sample channels already exist
+      const existingChannels = await storage.getChannels(companyId);
+      const hasGeneral = existingChannels.some(c => c.name === "general");
+      const hasRandom = existingChannels.some(c => c.name === "random");
+      const hasProjectUpdates = existingChannels.some(c => c.name === "project-updates");
+      
+      if (hasGeneral && hasRandom && hasProjectUpdates) {
+        return res.status(409).json({ error: "Sample channels already exist" });
+      }
+      
+      const createdChannels = [];
+      
+      // Create sample channels if they don't exist
+      let generalChannel;
+      if (!hasGeneral) {
+        generalChannel = await storage.createChannel({
+          name: "general",
+          type: "channel",
+          companyId,
+          createdById: userId
+        });
+        await storage.addChannelMember({ channelId: generalChannel.id, userId });
+        createdChannels.push(generalChannel);
+        
+        // Create sample messages in general channel
+        await storage.createMessage({
+          channelId: generalChannel.id,
+          userId,
+          content: "Welcome to BuildPro Communications!"
+        });
+        
+        await storage.createMessage({
+          channelId: generalChannel.id,
+          userId,
+          content: "This is a Slack-style messaging system for your construction projects."
+        });
+      }
+      
+      let randomChannel;
+      if (!hasRandom) {
+        randomChannel = await storage.createChannel({
+          name: "random",
+          type: "channel",
+          companyId,
+          createdById: userId
+        });
+        await storage.addChannelMember({ channelId: randomChannel.id, userId });
+        createdChannels.push(randomChannel);
+        
+        // Create sample messages in random channel
+        await storage.createMessage({
+          channelId: randomChannel.id,
+          userId,
+          content: "Coffee break anyone?"
+        });
+      }
+      
+      let projectUpdatesChannel;
+      if (!hasProjectUpdates) {
+        projectUpdatesChannel = await storage.createChannel({
+          name: "project-updates",
+          type: "channel",
+          companyId,
+          createdById: userId
+        });
+        await storage.addChannelMember({ channelId: projectUpdatesChannel.id, userId });
+        createdChannels.push(projectUpdatesChannel);
+        
+        // Create sample messages in project-updates channel
+        await storage.createMessage({
+          channelId: projectUpdatesChannel.id,
+          userId,
+          content: "Ocean View project has been updated with new timeline."
+        });
+      }
+      
+      res.json({ 
+        message: "Sample data created successfully",
+        channels: createdChannels
+      });
+    } catch (error) {
+      console.error("Failed to seed sample data:", error);
+      res.status(500).json({ error: "Failed to create sample data" });
+    }
+  });
+
   // Channel Members
   app.get("/api/channels/:channelId/members", requireAuth, async (req, res) => {
     try {
