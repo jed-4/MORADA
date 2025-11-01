@@ -17,6 +17,8 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -41,8 +43,6 @@ import {
   Plus,
   GripVertical,
   Pencil,
-  DollarSign,
-  Clock,
 } from "lucide-react";
 
 const taskFormSchema = z.object({
@@ -255,20 +255,26 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   const getInitials = (name: string) => name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
   const priorityColors = {
-    high: "bg-red-500/15 text-red-400 border-red-500/20",
-    medium: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
-    low: "bg-gray-500/15 text-gray-400 border-gray-500/20",
+    high: "bg-red-100 text-red-700 border-red-200",
+    medium: "bg-amber-100 text-amber-700 border-amber-200",
+    low: "bg-gray-100 text-gray-700 border-gray-200",
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-6xl p-0 rounded-xl overflow-hidden bg-slate-900 border-slate-700"
+        className="max-w-6xl p-0 rounded-xl overflow-hidden bg-white border-gray-200 shadow-sm"
         onKeyDown={handleKeyDown}
         data-testid="task-modal-asana"
       >
+        <DialogTitle className="sr-only">
+          {task ? "Edit Task" : "Create Task"}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          Edit task details, assignee, due date, and other properties
+        </DialogDescription>
         {/* Header */}
-        <div className="flex items-start justify-between p-4 border-b border-slate-700">
+        <div className="flex items-start justify-between p-4 border-b border-gray-200">
           <div className="flex items-start gap-2 flex-1">
             <Checkbox
               checked={isCompleted}
@@ -289,12 +295,12 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     setIsEditingTitle(false);
                   }
                 }}
-                className="text-xl font-bold bg-slate-800 border-slate-600 text-slate-100"
+                className="text-xl font-bold bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                 data-testid="input-task-title"
               />
             ) : (
               <h2
-                className="text-xl font-bold text-slate-100 cursor-pointer hover:bg-slate-800/50 px-2 py-1 rounded"
+                className="text-xl font-bold text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
                 onClick={() => {
                   setTitleValue(form.watch("title"));
                   setIsEditingTitle(true);
@@ -311,7 +317,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+              className="h-8 w-8 hover:bg-gray-100 text-gray-600"
               data-testid="button-like-task"
             >
               <Heart className="h-4 w-4" />
@@ -319,7 +325,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+              className="h-8 w-8 hover:bg-gray-100 text-gray-600"
               data-testid="button-attach-file"
             >
               <Paperclip className="h-4 w-4" />
@@ -329,15 +335,15 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+                  className="h-8 w-8 hover:bg-gray-100 text-gray-600"
                   data-testid="button-more-actions"
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
-                <DropdownMenuItem className="text-slate-200">Duplicate</DropdownMenuItem>
-                <DropdownMenuItem className="text-slate-200">Delete</DropdownMenuItem>
+              <DropdownMenuContent align="end" className="bg-white border-gray-200">
+                <DropdownMenuItem className="text-gray-900 hover:bg-gray-50">Duplicate</DropdownMenuItem>
+                <DropdownMenuItem className="text-gray-900 hover:bg-gray-50">Delete</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -346,20 +352,20 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         {/* Split Layout */}
         <div className="flex h-[600px]">
           {/* Left Panel - Subtasks (40%) */}
-          <div className="w-[40%] border-r border-slate-700 overflow-y-auto bg-slate-900/50">
+          <div className="w-[40%] border-r border-gray-200 overflow-y-auto bg-gray-50">
             <div className="p-4 space-y-2">
-              <h3 className="text-sm font-semibold text-slate-300 mb-3">Subtasks</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Subtasks</h3>
               
               {subtasks.map((subtask) => (
                 <div
                   key={subtask.id}
-                  className="flex items-center gap-2 p-2 rounded hover:bg-slate-800/50 group"
+                  className="flex items-center gap-2 p-2 rounded hover:bg-white group"
                   data-testid={`subtask-${subtask.id}`}
                 >
-                  <GripVertical className="h-3 w-3 text-slate-600" />
+                  <GripVertical className="h-3 w-3 text-gray-400" />
                   <Checkbox className="h-3.5 w-3.5" />
-                  <span className="text-sm text-slate-200 flex-1">{subtask.title}</span>
-                  <Pencil className="h-3 w-3 text-slate-500 opacity-0 group-hover:opacity-100" />
+                  <span className="text-sm text-gray-900 flex-1">{subtask.title}</span>
+                  <Pencil className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
                 </div>
               ))}
 
@@ -376,7 +382,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       }
                     }}
                     placeholder="Subtask name"
-                    className="bg-slate-800 border-slate-600 text-slate-100 text-sm"
+                    className="bg-white border-gray-300 text-gray-900 text-sm focus:ring-2 focus:ring-blue-500"
                     autoFocus
                     data-testid="input-add-subtask"
                   />
@@ -385,7 +391,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  className="w-full justify-start text-gray-600 hover:text-gray-900 hover:bg-white"
                   onClick={() => setShowSubtaskInput(true)}
                   data-testid="button-add-subtask"
                 >
@@ -400,40 +406,40 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
           <div className="w-[60%] overflow-y-auto">
             <div className="p-4 space-y-4">
               {/* Quick Fields */}
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {/* Assignee */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Assignee</span>
+                  <span className="text-sm text-gray-600 w-24">Assignee</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
-                        className="h-7 px-2 hover:bg-slate-800 text-slate-300 justify-start"
+                        className="h-7 px-2 hover:bg-gray-50 text-gray-900 justify-start"
                         data-testid="button-select-assignee"
                       >
                         {assignee ? (
                           <div className="flex items-center gap-2">
                             <Avatar className="h-5 w-5">
-                              <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                              <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
                                 {getInitials(assignee.name || assignee.email)}
                               </AvatarFallback>
                             </Avatar>
                             <span className="text-sm">{assignee.name || assignee.email}</span>
                           </div>
                         ) : (
-                          <span className="text-sm text-slate-500">No assignee</span>
+                          <span className="text-sm text-gray-400">No assignee</span>
                         )}
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-slate-800 border-slate-700">
+                    <DropdownMenuContent className="bg-white border-gray-200">
                       {users.map((user) => (
                         <DropdownMenuItem
                           key={user.id}
                           onClick={() => form.setValue("assigneeId", user.id, { shouldDirty: true, shouldTouch: true })}
-                          className="text-slate-200"
+                          className="text-gray-900 hover:bg-gray-50"
                         >
                           <Avatar className="h-5 w-5 mr-2">
-                            <AvatarFallback className="text-xs">
+                            <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
                               {getInitials(user.name || user.email)}
                             </AvatarFallback>
                           </Avatar>
@@ -446,20 +452,20 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
 
                 {/* Due Date */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Due date</span>
+                  <span className="text-sm text-gray-600 w-24">Due date</span>
                   <div className="flex items-center gap-2">
                     <Input
                       type="date"
                       {...form.register("dueDate")}
-                      className="h-7 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                      className="h-7 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                       data-testid="input-due-date"
                     />
                     {form.watch("dueDate") && (
-                      <Badge className="h-5 px-2 bg-red-500/15 text-red-400 border-red-500/20 no-default-hover-elevate">
+                      <Badge className="h-5 px-2 bg-red-100 text-red-700 border-red-200 no-default-hover-elevate">
                         <Calendar className="h-2.5 w-2.5 mr-1" />
                         {format(new Date(form.watch("dueDate")!), "MMM d")}
                         <X
-                          className="h-2.5 w-2.5 ml-1 cursor-pointer"
+                          className="h-2.5 w-2.5 ml-1 cursor-pointer hover:text-red-900"
                           onClick={() => form.setValue("dueDate", undefined, { shouldDirty: true, shouldTouch: true })}
                         />
                       </Badge>
@@ -469,40 +475,40 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
 
                 {/* Start Time */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Start time</span>
+                  <span className="text-sm text-gray-600 w-24">Start time</span>
                   <Input
                     type="time"
                     {...form.register("startTime")}
-                    className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                    className="h-7 w-32 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                     data-testid="input-start-time"
                   />
                 </div>
 
                 {/* End Time */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">End time</span>
+                  <span className="text-sm text-gray-600 w-24">End time</span>
                   <Input
                     type="time"
                     {...form.register("endTime")}
-                    className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
+                    className="h-7 w-32 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                     data-testid="input-end-time"
                   />
                 </div>
 
                 {/* Priority */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Priority</span>
+                  <span className="text-sm text-gray-600 w-24">Priority</span>
                   <Select
                     value={form.watch("priority")}
                     onValueChange={(value) => form.setValue("priority", value as any, { shouldDirty: true, shouldTouch: true })}
                   >
-                    <SelectTrigger className="h-7 w-32 bg-slate-800 border-slate-600 text-slate-100">
+                    <SelectTrigger className="h-7 w-32 bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
-                      <SelectItem value="high" className="text-slate-200">High</SelectItem>
-                      <SelectItem value="medium" className="text-slate-200">Medium</SelectItem>
-                      <SelectItem value="low" className="text-slate-200">Low</SelectItem>
+                    <SelectContent className="bg-white border-gray-200">
+                      <SelectItem value="high" className="text-gray-900 hover:bg-gray-50">High</SelectItem>
+                      <SelectItem value="medium" className="text-gray-900 hover:bg-gray-50">Medium</SelectItem>
+                      <SelectItem value="low" className="text-gray-900 hover:bg-gray-50">Low</SelectItem>
                     </SelectContent>
                   </Select>
                   <Badge className={`h-5 px-2 border ${priorityColors[form.watch("priority")]} no-default-hover-elevate`}>
@@ -510,59 +516,19 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   </Badge>
                 </div>
 
-                {/* Construction Fields */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Cost</span>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...form.register("estimatedCost", { valueAsNumber: true })}
-                      placeholder="0.00"
-                      className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
-                      data-testid="input-cost"
-                    />
-                    {form.watch("estimatedCost") && (
-                      <Badge className="h-5 px-2 bg-amber-500/15 text-amber-400 border-amber-500/20 font-bold no-default-hover-elevate">
-                        <DollarSign className="h-2.5 w-2.5 mr-0.5" />
-                        {form.watch("estimatedCost")?.toLocaleString()}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Units</span>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      step="0.1"
-                      {...form.register("estimatedUnits", { valueAsNumber: true })}
-                      placeholder="0"
-                      className="h-7 w-32 text-xs bg-slate-800 border-slate-600 text-slate-100"
-                      data-testid="input-units"
-                    />
-                    {form.watch("estimatedUnits") && (
-                      <Badge className="h-5 px-2 bg-gray-500/15 text-gray-400 border-gray-500/20 no-default-hover-elevate">
-                        {form.watch("estimatedUnits")} days
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
                 {/* Status */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-24">Status</span>
+                  <span className="text-sm text-gray-600 w-24">Status</span>
                   <Select
                     value={form.watch("status")}
                     onValueChange={(value) => form.setValue("status", value, { shouldDirty: true, shouldTouch: true })}
                   >
-                    <SelectTrigger className="h-7 w-40 bg-slate-800 border-slate-600 text-slate-100">
+                    <SelectTrigger className="h-7 w-40 bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
+                    <SelectContent className="bg-white border-gray-200">
                       {statusOptions.map((option) => (
-                        <SelectItem key={option.key} value={option.key} className="text-slate-200">
+                        <SelectItem key={option.key} value={option.key} className="text-gray-900 hover:bg-gray-50">
                           {option.name}
                         </SelectItem>
                       ))}
@@ -573,8 +539,8 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
 
               {/* Description */}
               <div className="space-y-2">
-                <label className="text-sm text-slate-400">Description</label>
-                <div className="[&_.border]:border-slate-600 [&_.bg-border]:bg-slate-700 [&_button:hover]:bg-slate-700 [&_.prose]:text-slate-200 [&_.text-muted-foreground]:text-slate-500">
+                <label className="text-sm text-gray-600">Description</label>
+                <div className="[&_.border]:border-gray-300 [&_.bg-border]:bg-gray-200 [&_button:hover]:bg-gray-100 [&_.prose]:text-gray-900 [&_.text-muted-foreground]:text-gray-500">
                   <Controller
                     name="content"
                     control={form.control}
@@ -585,7 +551,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                           field.onChange(html);
                         }}
                         placeholder="What is this task about?"
-                        className="bg-slate-800 border-slate-600"
+                        className="bg-white border-gray-300"
                         data-testid="editor-description"
                       />
                     )}
@@ -594,7 +560,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
               </div>
 
               {/* Repeats Panel */}
-              <div className="border border-slate-700 rounded-lg p-3 space-y-3">
+              <div className="border border-gray-300 rounded-lg p-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Checkbox
@@ -605,20 +571,20 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       }}
                       data-testid="checkbox-repeats"
                     />
-                    <span className="text-sm text-slate-300">Repeats</span>
+                    <span className="text-sm text-gray-700">Repeats</span>
                   </div>
                   {form.watch("isRecurring") && (
                     <Select
                       value={form.watch("recurringType")}
                       onValueChange={(value) => form.setValue("recurringType", value as any, { shouldDirty: true, shouldTouch: true })}
                     >
-                      <SelectTrigger className="h-6 w-24 text-xs bg-slate-800 border-slate-600 text-slate-100">
+                      <SelectTrigger className="h-6 w-24 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
                         <SelectValue placeholder="Weekly" />
                       </SelectTrigger>
-                      <SelectContent className="bg-slate-800 border-slate-700">
-                        <SelectItem value="daily" className="text-slate-200">Daily</SelectItem>
-                        <SelectItem value="weekly" className="text-slate-200">Weekly</SelectItem>
-                        <SelectItem value="monthly" className="text-slate-200">Monthly</SelectItem>
+                      <SelectContent className="bg-white border-gray-200">
+                        <SelectItem value="daily" className="text-gray-900 hover:bg-gray-50">Daily</SelectItem>
+                        <SelectItem value="weekly" className="text-gray-900 hover:bg-gray-50">Weekly</SelectItem>
+                        <SelectItem value="monthly" className="text-gray-900 hover:bg-gray-50">Monthly</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -626,7 +592,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
 
                 {form.watch("isRecurring") && form.watch("recurringType") === "weekly" && (
                   <div className="space-y-2">
-                    <label className="text-xs text-slate-400">On these days</label>
+                    <label className="text-xs text-gray-600">On these days</label>
                     <div className="flex gap-1">
                       {weekDays.map((day) => (
                         <button
@@ -635,8 +601,8 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                           onClick={() => toggleDay(day.value)}
                           className={`h-7 w-7 rounded-full text-xs font-medium transition-colors ${
                             selectedDays?.includes(day.value)
-                              ? "bg-blue-500 text-white"
-                              : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                              ? "bg-amber-500 text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                           }`}
                           data-testid={`button-day-${day.value}`}
                         >
@@ -647,7 +613,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-xs text-slate-400 hover:text-slate-200"
+                      className="h-6 text-xs text-gray-600 hover:text-gray-900"
                       onClick={() => form.setValue("recurringDays", [], { shouldDirty: true, shouldTouch: true })}
                     >
                       Clear
@@ -657,17 +623,17 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
               </div>
 
               {/* Comments */}
-              <div className="space-y-3 pt-4 border-t border-slate-700">
-                <h3 className="text-sm font-semibold text-slate-300">Comments</h3>
+              <div className="space-y-3 pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700">Comments</h3>
                 <div className="flex items-start gap-2">
                   <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                    <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
                       JS
                     </AvatarFallback>
                   </Avatar>
                   <Input
                     placeholder="Add a comment"
-                    className="flex-1 h-8 bg-slate-800 border-slate-600 text-slate-100"
+                    className="flex-1 h-8 bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                     data-testid="input-add-comment"
                   />
                 </div>
@@ -678,7 +644,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 <Button
                   variant="ghost"
                   onClick={() => onOpenChange(false)}
-                  className="text-slate-400 hover:text-slate-200"
+                  className="text-gray-600 hover:text-gray-900"
                   data-testid="button-cancel"
                 >
                   Cancel
@@ -686,7 +652,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 <Button
                   onClick={form.handleSubmit(onSubmit)}
                   disabled={saveTaskMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  className="bg-amber-500 hover:bg-amber-600 text-white"
                   data-testid="button-save-task"
                 >
                   {saveTaskMutation.isPending ? "Saving..." : task ? "Save changes" : "Create task"}
