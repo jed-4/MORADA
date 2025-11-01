@@ -68,7 +68,7 @@ import {
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
@@ -140,7 +140,7 @@ export interface IStorage {
   deleteNote(id: string): Promise<boolean>;
 
   // Tasks CRUD operations (specific to type="task")
-  getTasks(projectId?: string, status?: string): Promise<Task[]>;
+  getTasks(projectId?: string, status?: string, businessTasks?: boolean): Promise<Task[]>;
   getTasksByUser(userId: string, companyId: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
@@ -2217,13 +2217,15 @@ export class MemStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean): Promise<Task[]> {
     const allTasks = Array.from(this.notes.values())
       .filter(note => note.type === "task") as Task[];
     
     let filteredTasks = allTasks;
     
-    if (projectId) {
+    if (businessTasks) {
+      filteredTasks = filteredTasks.filter(task => !task.projectId);
+    } else if (projectId) {
       filteredTasks = filteredTasks.filter(task => task.projectId === projectId);
     }
     
@@ -4939,10 +4941,12 @@ export class DbStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean): Promise<Task[]> {
     const conditions = [eq(schema.notes.type, "task")];
     
-    if (projectId) {
+    if (businessTasks) {
+      conditions.push(isNull(schema.notes.projectId));
+    } else if (projectId) {
       conditions.push(eq(schema.notes.projectId, projectId));
     }
     if (status) {
