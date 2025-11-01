@@ -1000,15 +1000,15 @@ export function EnhancedCalendar({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-col h-full bg-white">
+      <div className="flex flex-col h-full bg-white dark:bg-background">
         {/* Header - Notion minimal style */}
-        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-gray-200">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-3 border-b">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <Button
               data-testid="button-calendar-today"
               variant="outline"
               size="sm"
-              className="h-7 px-3 text-xs font-medium border-gray-300 hover:bg-gray-50"
+              className="h-7 px-3 text-xs font-medium"
               onClick={goToToday}
             >
               Today
@@ -1018,7 +1018,7 @@ export function EnhancedCalendar({
                 data-testid="button-calendar-prev"
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 hover:bg-gray-100"
+                className="h-7 w-7"
                 onClick={() => navigate("prev")}
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -1027,13 +1027,13 @@ export function EnhancedCalendar({
                 data-testid="button-calendar-next"
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 hover:bg-gray-100"
+                className="h-7 w-7"
                 onClick={() => navigate("next")}
               >
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
-            <h2 className="text-sm font-semibold text-gray-900 min-w-[180px]">
+            <h2 className="text-sm font-semibold min-w-[140px] sm:min-w-[180px]">
               {view === "month" && format(currentDate, "MMMM yyyy")}
               {view === "week" && `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`}
               {view === "day" && format(currentDate, "MMMM d, yyyy")}
@@ -1041,7 +1041,7 @@ export function EnhancedCalendar({
             </h2>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <div className="flex items-center gap-0.5 bg-gray-100 rounded-md p-0.5">
               <Button
                 data-testid="button-view-month"

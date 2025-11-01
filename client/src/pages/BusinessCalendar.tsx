@@ -407,27 +407,27 @@ export default function BusinessCalendar() {
     return (
       <div className="flex flex-col h-full" data-testid="business-calendar">
         {/* Skeleton Header */}
-        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-b">
           <div className="flex items-center gap-2">
             <Skeleton className="h-5 w-5 rounded" />
-            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-5 sm:h-6 w-32 sm:w-40" />
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
             <Skeleton className="h-9 w-9 rounded-md" />
-            <Skeleton className="h-9 w-32 rounded-md" />
-            <Skeleton className="h-9 w-24 rounded-md" />
+            <Skeleton className="h-9 w-28 sm:w-32 rounded-md" />
+            <Skeleton className="h-9 w-20 sm:w-24 rounded-md" />
           </div>
         </div>
 
         {/* Skeleton Calendar */}
-        <div className="flex-1 min-h-0 p-6">
-          <Card className="h-full flex flex-col p-4 gap-4">
+        <div className="flex-1 min-h-0 p-3 sm:p-6">
+          <Card className="h-full flex flex-col p-3 sm:p-4 gap-3 sm:gap-4">
             {/* Calendar header skeleton */}
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-8 w-48" />
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+              <Skeleton className="h-7 sm:h-8 w-36 sm:w-48" />
               <div className="flex gap-2">
-                <Skeleton className="h-8 w-20 rounded-md" />
-                <Skeleton className="h-8 w-20 rounded-md" />
+                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20 rounded-md" />
+                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20 rounded-md" />
               </div>
             </div>
             {/* Calendar grid skeleton */}
@@ -445,12 +445,12 @@ export default function BusinessCalendar() {
   return (
     <div className="flex flex-col h-full" data-testid="business-calendar">
       {/* Top Bar with Title, Views, and Filters */}
-      <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-b">
         <div className="flex items-center gap-2">
           <CalendarIcon className="h-5 w-5" />
-          <h2 className="text-lg font-semibold">Business Calendar</h2>
+          <h2 className="text-base sm:text-lg font-semibold">Business Calendar</h2>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
           <ThemeToggle />
           <SavedViews
             calendarType="business"
@@ -482,7 +482,7 @@ export default function BusinessCalendar() {
       </div>
 
       {/* Calendar Card */}
-      <div className="flex-1 min-h-0 p-6">
+      <div className="flex-1 min-h-0 p-3 sm:p-6">
         <Card className="h-full flex flex-col">
           <div className="flex-1 min-h-0">
             <EnhancedCalendar

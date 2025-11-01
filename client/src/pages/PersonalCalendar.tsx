@@ -355,27 +355,29 @@ export default function PersonalCalendar() {
     return (
       <div className="flex flex-col h-full" data-testid="personal-calendar">
         {/* Skeleton Header */}
-        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-5 w-5 rounded" />
-            <Skeleton className="h-6 w-32" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-b">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 sm:h-6 w-28 sm:w-32" />
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
             <Skeleton className="h-9 w-9 rounded-md" />
-            <Skeleton className="h-9 w-32 rounded-md" />
-            <Skeleton className="h-9 w-24 rounded-md" />
+            <Skeleton className="h-9 w-28 sm:w-32 rounded-md" />
+            <Skeleton className="h-9 w-20 sm:w-24 rounded-md" />
           </div>
         </div>
 
         {/* Skeleton Calendar */}
-        <div className="flex-1 min-h-0 p-6">
-          <Card className="h-full flex flex-col p-4 gap-4">
+        <div className="flex-1 min-h-0 p-3 sm:p-6">
+          <Card className="h-full flex flex-col p-3 sm:p-4 gap-3 sm:gap-4">
             {/* Calendar header skeleton */}
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-8 w-48" />
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+              <Skeleton className="h-7 sm:h-8 w-36 sm:w-48" />
               <div className="flex gap-2">
-                <Skeleton className="h-8 w-20 rounded-md" />
-                <Skeleton className="h-8 w-20 rounded-md" />
+                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20 rounded-md" />
+                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20 rounded-md" />
               </div>
             </div>
             {/* Calendar grid skeleton */}
@@ -393,22 +395,22 @@ export default function PersonalCalendar() {
   return (
     <div className="flex flex-col h-full" data-testid="personal-calendar">
       {/* Top Bar with Title, Team Selector, Views, and Filters */}
-      <div className="flex items-center justify-between gap-4 px-6 py-4 border-b flex-wrap">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-b">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
           <div className="flex items-center gap-2">
             <CalendarIcon className="h-5 w-5" />
-            <h2 className="text-lg font-semibold">{userName} Calendar</h2>
+            <h2 className="text-base sm:text-lg font-semibold">{userName} Calendar</h2>
           </div>
 
           {/* Team Calendar Selector */}
           {hasTeamCalendarPermission && teamMembers.length > 0 && (
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <Select 
                 value={selectedUserId || user?.id} 
                 onValueChange={(value) => setSelectedUserId(value === user?.id ? undefined : value)}
               >
-                <SelectTrigger className="w-48" data-testid="select-team-member">
+                <SelectTrigger className="w-full sm:w-48" data-testid="select-team-member">
                   <SelectValue placeholder="Select team member" />
                 </SelectTrigger>
                 <SelectContent>
@@ -424,7 +426,7 @@ export default function PersonalCalendar() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
           <ThemeToggle />
           <SavedViews
             calendarType="personal"
@@ -457,7 +459,7 @@ export default function PersonalCalendar() {
       )}
 
       {/* Calendar Card */}
-      <div className="flex-1 min-h-0 p-6">
+      <div className="flex-1 min-h-0 p-3 sm:p-6">
         <Card className="h-full flex flex-col">
           <div className="flex-1 min-h-0">
             <EnhancedCalendar
