@@ -365,6 +365,7 @@ export function FolderTree() {
     folderId: null as string | null,
     role: "",
     status: "",
+    taskTemplateId: "",
   });
 
   // Setup sensors for drag and drop
@@ -393,6 +394,11 @@ export function FolderTree() {
   // Fetch status options from field categories
   const { data: statusCategory } = useQuery<any>({
     queryKey: ["/api/field-categories/by-key/systemDocument.status"],
+  });
+
+  // Fetch task templates
+  const { data: taskTemplates = [] } = useQuery<any[]>({
+    queryKey: ["/api/systems/task-templates"],
   });
 
   // Create folder mutation
@@ -508,7 +514,7 @@ export function FolderTree() {
   };
 
   const resetDocumentForm = () => {
-    setDocumentForm({ title: "", description: "", type: "document", fileUrl: "", folderId: null, role: "", status: "" });
+    setDocumentForm({ title: "", description: "", type: "document", fileUrl: "", folderId: null, role: "", status: "", taskTemplateId: "" });
   };
 
   const toggleFolder = (folderId: string) => {
@@ -556,6 +562,7 @@ export function FolderTree() {
       folderId: doc.folderId || null,
       role: doc.role || "",
       status: doc.status || "",
+      taskTemplateId: doc.taskTemplateId || "",
     });
     setShowDocumentDialog(true);
   };
@@ -1168,6 +1175,24 @@ export function FolderTree() {
                   {statusCategory?.options?.map((option: any) => (
                     <SelectItem key={option.id} value={option.name}>
                       {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Task Template (Optional)</Label>
+              <Select
+                value={documentForm.taskTemplateId || undefined}
+                onValueChange={(value) => setDocumentForm({ ...documentForm, taskTemplateId: value })}
+              >
+                <SelectTrigger data-testid="select-document-task-template">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  {taskTemplates.map((template: any) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.title}
                     </SelectItem>
                   ))}
                 </SelectContent>
