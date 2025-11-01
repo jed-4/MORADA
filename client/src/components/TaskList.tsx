@@ -9,14 +9,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,15 +72,27 @@ type ColumnConfig = {
   visible: boolean;
 };
 
-// Draggable table row component
-function DraggableTableRow({ 
+// Draggable grid row component
+function DraggableGridRow({ 
   task, 
-  children, 
-  canDrag 
+  canDrag,
+  isSelected,
+  onSelect,
+  onComplete,
+  onClick,
+  getStatusBadge,
+  getPriorityIcon,
+  completedOption,
 }: { 
   task: Task; 
-  children: React.ReactNode; 
   canDrag: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
+  onComplete: (checked: boolean) => void;
+  onClick: () => void;
+  getStatusBadge: (status: string) => React.ReactNode;
+  getPriorityIcon: (priority: string) => React.ReactNode;
+  completedOption: any;
 }) {
   const {
     attributes,
@@ -112,29 +117,114 @@ function DraggableTableRow({
   };
 
   return (
-    <TableRow
+    <div
       ref={setNodeRef}
-      style={style}
-      className={`${isDragging ? "relative z-50" : ""} hover:bg-muted/50`}
+      className={cn(
+        "grid items-center gap-4 px-4 h-10 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer",
+        isDragging && "relative z-50 shadow-lg"
+      )}
+      style={{
+        gridTemplateColumns: "32px 120px 1fr 140px 120px 100px 32px",
+        ...style,
+      }}
+      onClick={onClick}
       data-testid={`task-row-${task.id}`}
     >
-      <TableCell className="w-8">
-        <div
-          {...(canDrag ? attributes : {})}
-          {...(canDrag ? listeners : {})}
-          className={`p-1 rounded ${
-            canDrag 
-              ? "cursor-grab hover:cursor-grabbing hover:bg-muted" 
-              : "cursor-not-allowed opacity-50"
-          }`}
-          data-testid={`drag-handle-${task.id}`}
-          title={canDrag ? "Drag to reorder" : "Clear sort to enable reordering"}
+      {/* Drag Handle */}
+      <div
+        {...(canDrag ? attributes : {})}
+        {...(canDrag ? listeners : {})}
+        className={cn(
+          "flex items-center justify-center",
+          canDrag 
+            ? "cursor-grab hover:cursor-grabbing text-gray-400 hover:text-gray-600" 
+            : "cursor-not-allowed opacity-30"
+        )}
+        onClick={(e) => e.stopPropagation()}
+        data-testid={`drag-handle-${task.id}`}
+        title={canDrag ? "Drag to reorder" : "Clear sort to enable reordering"}
+      >
+        <GripVertical className="h-4 w-4" />
+      </div>
+
+      {/* Checkbox + Status */}
+      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={task.status === completedOption?.key}
+          onCheckedChange={onComplete}
+          className="flex-shrink-0"
+          data-testid={`complete-task-${task.id}`}
+        />
+        {getStatusBadge(task.status || "todo")}
+      </div>
+
+      {/* Title */}
+      <div className="flex items-center gap-2 min-w-0">
+        <span 
+          className="truncate text-sm font-medium text-gray-900" 
+          title={task.title}
         >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </TableCell>
-      {children}
-    </TableRow>
+          {task.title}
+        </span>
+        {task.labels && Array.isArray(task.labels) && task.labels.length > 0 && (
+          <Badge 
+            variant="outline" 
+            className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0"
+          >
+            +{task.labels.length}
+          </Badge>
+        )}
+      </div>
+
+      {/* Assignee */}
+      <div className="flex items-center gap-2 min-w-0">
+        {task.assigneeName ? (
+          <>
+            <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-semibold text-gray-700 flex-shrink-0">
+              {task.assigneeName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
+            </div>
+            <span className="text-sm text-gray-700 truncate" title={task.assigneeName}>
+              {task.assigneeName}
+            </span>
+          </>
+        ) : (
+          <span className="text-sm text-gray-400">Unassigned</span>
+        )}
+      </div>
+
+      {/* Due Date */}
+      <div className="flex items-center gap-1.5 text-sm text-gray-600">
+        <Calendar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        <span className="truncate">{task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "-"}</span>
+      </div>
+
+      {/* Priority */}
+      <div className="flex items-center gap-1.5">
+        {getPriorityIcon(task.priority || "medium")}
+        <span className="capitalize text-sm text-gray-700">
+          {task.priority || "medium"}
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`task-menu-${task.id}`}>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem>Edit Task</DropdownMenuItem>
+            <DropdownMenuItem>Add Subtask</DropdownMenuItem>
+            <DropdownMenuItem>Duplicate</DropdownMenuItem>
+            <DropdownMenuItem className="text-red-600">
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
   );
 }
 
@@ -776,7 +866,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
           )}
         </div>
 
-        {/* Table */}
+        {/* Grid List */}
         <Card className="flex-1 overflow-hidden">
           <CardContent className="p-0 h-full">
             <div className="overflow-auto h-full">
@@ -786,168 +876,46 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
               >
-                <Table>
-                  <TableHeader className="sticky top-0 bg-background">
-                    <TableRow>
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead className="w-8">
-                        <Checkbox
-                          checked={selectedTasks.length === sortedTasks.length && sortedTasks.length > 0}
-                          onCheckedChange={toggleAllTasks}
-                          data-testid="select-all-tasks"
-                        />
-                      </TableHead>
-                      <TableHead className="w-8" title="Mark as complete"></TableHead>
-                      <SortableContext 
-                        items={columns.map(col => col.id)} 
-                        strategy={horizontalListSortingStrategy}
-                      >
-                        {columns.map(column => (
-                          <SortableHeader 
-                            key={column.id}
-                            column={column}
-                            className={column.width}
-                          />
-                        ))}
-                      </SortableContext>
-                      <TableHead className="w-8"></TableHead>
-                    </TableRow>
-                  </TableHeader>
+                {/* Grid Header */}
+                <div 
+                  className="sticky top-0 z-10 bg-white border-b border-gray-200 grid items-center gap-4 px-4 h-9"
+                  style={{ gridTemplateColumns: "32px 120px 1fr 140px 120px 100px 32px" }}
+                >
+                  <div></div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase">Status</div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase">Task</div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase">Assignee</div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase">Due Date</div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase">Priority</div>
+                  <div></div>
+                </div>
                   
-                  <TableBody>
-                    {/* Render grouped tasks if grouping is enabled */}
-                    {groupedTasks && groupBy !== 'none' ? (
-                      Object.entries(groupedTasks).map(([groupName, groupTasks]) => [
-                        // Group header row
-                        <TableRow key={`group-${groupName}`} className="bg-muted/30">
-                          <TableCell colSpan={9} className="font-semibold py-3">
-                            <div className="flex items-center gap-2">
-                              <span>{groupName}</span>
-                              <Badge variant="secondary" className="text-xs">
-                                {groupTasks.length} {groupTasks.length === 1 ? 'task' : 'tasks'}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                        </TableRow>,
-                        // Group tasks
-                        ...groupTasks.flatMap((task) => [
-                          <DraggableTableRow key={task.id} task={task} canDrag={false}>
-                              <TableCell>
-                                <Checkbox
-                                  checked={selectedTasks.includes(task.id)}
-                                  onCheckedChange={() => toggleTaskSelection(task.id)}
-                                  data-testid={`select-task-${task.id}`}
-                                />
-                              </TableCell>
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={task.status === completedOption?.key}
-                                  onCheckedChange={(checked) => handleToggleComplete(task, checked)}
-                                  data-testid={`complete-task-${task.id}`}
-                                />
-                              </TableCell>
-                              {columns.map(column => (
-                                <React.Fragment key={`${task.id}-${column.id}`}>
-                                  {renderCell(task, column.id)}
-                                </React.Fragment>
-                              ))}
-                              <TableCell>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" data-testid={`task-menu-${task.id}`}>
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem>Edit Task</DropdownMenuItem>
-                                    <DropdownMenuItem>Add Subtask</DropdownMenuItem>
-                                    <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                                    <DropdownMenuItem className="text-red-600">
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                          </DraggableTableRow>,
-                          
-                          // Expandable Subtasks Row
-                          ...(!task.parentTaskId && expandedTasks.has(task.id) ? [
-                            <TableRow key={`${task.id}-subtasks`}>
-                              <TableCell colSpan={8} className="p-0 border-b-0">
-                                <div className="px-4 py-2 bg-muted/30">
-                                  <SubtaskList parentTask={task} compact={false} />
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ] : [])
-                        ])
-                      ]).flat()
+                {/* Grid Body */}
+                <div className="bg-white">
+                  {/* Regular ungrouped tasks */}
+                  <SortableContext items={sortedTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
+                    {sortedTasks.length === 0 ? (
+                      <div className="text-center py-8 text-gray-400">
+                        No tasks found
+                      </div>
                     ) : (
-                      // Regular ungrouped tasks
-                      <SortableContext items={sortedTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
-                        {sortedTasks.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                              No tasks found
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          sortedTasks.flatMap((task) => [
-                          <DraggableTableRow key={task.id} task={task} canDrag={sortConfig.key === null}>
-                              <TableCell>
-                                <Checkbox
-                                  checked={selectedTasks.includes(task.id)}
-                                  onCheckedChange={() => toggleTaskSelection(task.id)}
-                                  data-testid={`select-task-${task.id}`}
-                                />
-                              </TableCell>
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={task.status === completedOption?.key}
-                                  onCheckedChange={(checked) => handleToggleComplete(task, checked)}
-                                  data-testid={`complete-task-${task.id}`}
-                                />
-                              </TableCell>
-                              {columns.map(column => (
-                                <React.Fragment key={`${task.id}-${column.id}`}>
-                                  {renderCell(task, column.id)}
-                                </React.Fragment>
-                              ))}
-                              <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" data-testid={`task-menu-${task.id}`}>
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem>Edit Task</DropdownMenuItem>
-                                  <DropdownMenuItem>Add Subtask</DropdownMenuItem>
-                                  <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                                  <DropdownMenuItem className="text-red-600">
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </DraggableTableRow>,
-                          
-                          // Expandable Subtasks Row
-                          ...(!task.parentTaskId && expandedTasks.has(task.id) ? [
-                            <TableRow key={`${task.id}-subtasks`}>
-                              <TableCell colSpan={8} className="p-0 border-b-0">
-                                <div className="px-4 py-2 bg-muted/30">
-                                  <SubtaskList parentTask={task} compact={false} />
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ] : [])
-                          ])
-                        )}
-                      </SortableContext>
+                      sortedTasks.map((task) => (
+                        <DraggableGridRow
+                          key={task.id}
+                          task={task}
+                          canDrag={sortConfig.key === null}
+                          isSelected={selectedTasks.includes(task.id)}
+                          onSelect={() => toggleTaskSelection(task.id)}
+                          onComplete={(checked) => handleToggleComplete(task, checked)}
+                          onClick={() => onTaskClick?.(task)}
+                          getStatusBadge={getStatusBadge}
+                          getPriorityIcon={getPriorityIcon}
+                          completedOption={completedOption}
+                        />
+                      ))
                     )}
-                  </TableBody>
-                </Table>
+                  </SortableContext>
+                </div>
 
                 <DragOverlay>
                   {activeTask ? (
