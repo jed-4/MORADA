@@ -1209,6 +1209,18 @@ export function FolderTree() {
                   <p className="text-sm mt-1 capitalize">{viewingDocument.type}</p>
                 </div>
               )}
+              {viewingDocument.role && (
+                <div>
+                  <Label className="text-muted-foreground">Role</Label>
+                  <p className="text-sm mt-1">{viewingDocument.role}</p>
+                </div>
+              )}
+              {viewingDocument.status && (
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <p className="text-sm mt-1">{viewingDocument.status}</p>
+                </div>
+              )}
               {viewingDocument.fileUrl && (
                 <div>
                   <Label className="text-muted-foreground">File</Label>
