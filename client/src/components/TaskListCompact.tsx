@@ -359,7 +359,7 @@ export default function TaskListCompact({
 }: TaskListCompactProps) {
   const { toast } = useToast();
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
-  const [orderedTasks, setOrderedTasks] = useState<Task[]>([]);
+  const [taskOrder, setTaskOrder] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
 
   // Fetch tasks if not provided
@@ -386,12 +386,19 @@ export default function TaskListCompact({
   const completedOption = statusCategory?.options.find((opt) => opt.isCompleted);
   const defaultOption = statusCategory?.options.find((opt) => opt.isDefault);
 
-  // Initialize ordered tasks
-  useEffect(() => {
-    if (tasks) {
-      setOrderedTasks([...tasks]);
+  // Create ordered tasks using useMemo to avoid infinite re-renders
+  const orderedTasks = useMemo(() => {
+    if (!tasks || tasks.length === 0) return [];
+    
+    // If we have a custom order from drag-drop, apply it
+    if (taskOrder.length > 0 && taskOrder.length === tasks.length) {
+      const taskMap = new Map(tasks.map(t => [t.id, t]));
+      return taskOrder.map(id => taskMap.get(id)).filter(Boolean) as Task[];
     }
-  }, [tasks]);
+    
+    // Otherwise, return tasks as-is
+    return tasks;
+  }, [tasks, taskOrder]);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -405,11 +412,10 @@ export default function TaskListCompact({
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      setOrderedTasks((items) => {
-        const oldIndex = items.findIndex((item) => item.id === active.id);
-        const newIndex = items.findIndex((item) => item.id === over.id);
-        return arrayMove(items, oldIndex, newIndex);
-      });
+      const oldIndex = orderedTasks.findIndex((item) => item.id === active.id);
+      const newIndex = orderedTasks.findIndex((item) => item.id === over.id);
+      const newOrder = arrayMove(orderedTasks.map(t => t.id), oldIndex, newIndex);
+      setTaskOrder(newOrder);
     }
   };
 
