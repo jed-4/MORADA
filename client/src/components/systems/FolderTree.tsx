@@ -224,45 +224,13 @@ function SortableDocument({
           </div>
           <FileText className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <div 
-                  className="font-medium text-sm cursor-pointer hover:text-primary transition-colors"
-                  onClick={onView}
-                  data-testid={`view-document-${document.id}`}
-                >
-                  {document.title}
-                </div>
-                {document.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                    {document.description}
-                  </p>
-                )}
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  {document.role && (
-                    <Badge variant="outline" className="text-xs">
-                      {document.role}
-                    </Badge>
-                  )}
-                  {document.status && (
-                    <Badge variant="secondary" className="text-xs">
-                      {document.status}
-                    </Badge>
-                  )}
-                  {document.fileUrl && (
-                    <a
-                      href={document.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                      data-testid={`link-file-${document.id}`}
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Open File
-                    </a>
-                  )}
-                </div>
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <div 
+                className="font-medium text-sm cursor-pointer hover:text-primary transition-colors"
+                onClick={onView}
+                data-testid={`view-document-${document.id}`}
+              >
+                {document.title}
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -294,6 +262,36 @@ function SortableDocument({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
+            {document.description && (
+              <p className="text-xs text-muted-foreground mb-1 line-clamp-1">
+                {document.description}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              {document.role && (
+                <Badge variant="outline" className="text-xs">
+                  {document.role}
+                </Badge>
+              )}
+              {document.status && (
+                <Badge variant="secondary" className="text-xs">
+                  {document.status}
+                </Badge>
+              )}
+              {document.fileUrl && (
+                <a
+                  href={document.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  data-testid={`link-file-${document.id}`}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Open File
+                </a>
+              )}
             </div>
           </div>
         </div>
