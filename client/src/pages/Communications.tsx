@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useSocket, useChannelMessages } from "@/lib/socket";
+import { useSocket, useChannelMessages, useTypingIndicator } from "@/lib/socket";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,11 +15,12 @@ import type { Channel, Message, ChannelMember } from "@shared/schema";
 
 export default function Communications() {
   const { user } = useAuth();
-  const { socket, isConnected, joinChannel, leaveChannel, sendMessage } = useSocket();
+  const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping } = useSocket();
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch channels
   const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
@@ -43,6 +44,14 @@ export default function Communications() {
   useChannelMessages(selectedChannelId, (message) => {
     setLocalMessages(prev => [...prev, message]);
     scrollToBottom();
+  });
+
+  // Get typing indicators for the selected channel
+  const typingUserIds = useTypingIndicator(selectedChannelId);
+
+  // Fetch user info for typing users
+  const { data: allUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
   });
 
   // Join/leave channels when selection changes
@@ -89,10 +98,46 @@ export default function Communications() {
     }
   });
 
+  // Handle typing input change
+  const handleMessageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setMessageInput(value);
+
+    if (!selectedChannelId) return;
+
+    // Emit typing start
+    if (value.trim() && !typingTimeoutRef.current) {
+      startTyping(selectedChannelId);
+    }
+
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout to stop typing after 2 seconds of inactivity
+    if (value.trim()) {
+      typingTimeoutRef.current = setTimeout(() => {
+        stopTyping(selectedChannelId);
+        typingTimeoutRef.current = null;
+      }, 2000);
+    } else {
+      stopTyping(selectedChannelId);
+      typingTimeoutRef.current = null;
+    }
+  };
+
   // Send message
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim() || !selectedChannelId) return;
+
+    // Stop typing indicator
+    stopTyping(selectedChannelId);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
 
     // Send via socket
     sendMessage(selectedChannelId, messageInput);
@@ -239,12 +284,25 @@ export default function Communications() {
               )}
             </ScrollArea>
 
+            {/* Typing Indicator */}
+            {typingUserIds.size > 0 && (
+              <div className="px-4 py-2 text-sm text-muted-foreground">
+                {Array.from(typingUserIds).map(userId => {
+                  const typingUser = allUsers.find(u => u.id === userId);
+                  const displayName = typingUser?.firstName 
+                    ? `${typingUser.firstName} ${typingUser.lastName || ''}`.trim()
+                    : typingUser?.email || 'Someone';
+                  return displayName;
+                }).filter(name => name !== 'Someone').join(', ') || 'Someone'} {typingUserIds.size === 1 ? 'is' : 'are'} typing...
+              </div>
+            )}
+
             {/* Message Input */}
             <form onSubmit={handleSendMessage} className="p-4 border-t">
               <div className="flex gap-2">
                 <Input
                   value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
+                  onChange={handleMessageInputChange}
                   placeholder={`Message #${selectedChannel.name}`}
                   className="flex-1"
                   data-testid="input-message"

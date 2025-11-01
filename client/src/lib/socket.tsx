@@ -132,26 +132,49 @@ export function useTypingIndicator(channelId: string | null) {
   const { socket } = useSocket();
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
 
+  // Clear typing users when channel changes
+  useEffect(() => {
+    setTypingUsers(new Set());
+  }, [channelId]);
+
   useEffect(() => {
     if (!socket || !channelId) return;
+
+    const timeoutHandles = new Map<string, NodeJS.Timeout>();
 
     const handleUserTyping = (data: { channelId: string; userId: string }) => {
       if (data.channelId === channelId) {
         setTypingUsers(prev => new Set(prev).add(data.userId));
         
+        // Clear any existing timeout for this user
+        const existingTimeout = timeoutHandles.get(data.userId);
+        if (existingTimeout) {
+          clearTimeout(existingTimeout);
+        }
+        
         // Auto-clear after 3 seconds
-        setTimeout(() => {
+        const timeout = setTimeout(() => {
           setTypingUsers(prev => {
             const next = new Set(prev);
             next.delete(data.userId);
             return next;
           });
+          timeoutHandles.delete(data.userId);
         }, 3000);
+        
+        timeoutHandles.set(data.userId, timeout);
       }
     };
 
     const handleUserStoppedTyping = (data: { channelId: string; userId: string }) => {
       if (data.channelId === channelId) {
+        // Clear the timeout if it exists
+        const existingTimeout = timeoutHandles.get(data.userId);
+        if (existingTimeout) {
+          clearTimeout(existingTimeout);
+          timeoutHandles.delete(data.userId);
+        }
+        
         setTypingUsers(prev => {
           const next = new Set(prev);
           next.delete(data.userId);
@@ -164,6 +187,10 @@ export function useTypingIndicator(channelId: string | null) {
     socket.on("user_stopped_typing", handleUserStoppedTyping);
 
     return () => {
+      // Clean up all timeouts on unmount or channel change
+      timeoutHandles.forEach(timeout => clearTimeout(timeout));
+      timeoutHandles.clear();
+      
       socket.off("user_typing", handleUserTyping);
       socket.off("user_stopped_typing", handleUserStoppedTyping);
     };
