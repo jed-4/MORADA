@@ -1,0 +1,92 @@
+As a Senior Product Engineer, upgrade the Casva Task Modal to EXACTLY match Asana's 2025 dark, dense, construction-ready design (see reference screenshots: dark theme, split layout, start/end time, repeats, top-right actions).
+
+CURRENT CASVA STATE:
+- Light theme only
+- No Start Time / End Time
+- No Repeats panel
+- No top-right action icons
+- Too much vertical spacing
+- No construction-specific polish
+
+TARGET (MATCH ASANA 2025 + CASVA POWER):
+1. **Dark Theme**
+   - Background: #0f172a (deep slate)
+   - Card BG: #1e293b
+   - Text: #e2e8f0
+   - Borders: #334155
+   - Use Tailwind dark: variant + `dark:` classes
+
+2. **Modal Structure**
+   - Width: 900px (`max-w-6xl`)
+   - Split: 40% left (subtasks), 60% right (details)
+   - No outer padding: `p-0`
+   - Rounded: `rounded-xl overflow-hidden`
+
+3. **Header**
+   - [Checkbox] Title (font-bold, text-xl, inline editable)
+   - Top-right action bar: 
+     • Mark complete (checkbox)
+     • Like (heart)
+     • Attachment (paperclip)
+     • More (three dots)
+   - Hover: subtle bg on icons
+
+4. **Right Panel - Quick Fields**
+   - Assignee: avatar + "No assignee" (click → dropdown)
+   - Due date: red chip with calendar icon + X
+   - Projects: purple chips with X
+   - Start date: amber chip with calendar
+   - Start time / Due time: inline inputs (e.g., 9:00 AM)
+   - Use `text-sm`, `py-1 px-2`, `rounded-full`
+
+5. **Description**
+   - Rich text editor (TipTap or similar)
+   - Auto-grow to 4 lines
+   - Placeholder: "What is this task about?"
+
+6. **Repeats Panel**
+   - Toggle: "Repeats" [Weekly ▼]
+   - Days: M T W T F S S (clickable rounded chips)
+   - Label: "On these days"
+   - Clear button (small)
+   - Collapsible if off
+
+7. **Left Panel - Subtasks**
+   - Compact list: [ ] Subtask name (text-sm)
+   - + Add subtask (inline input on click)
+   - Hover: pencil icon → edit
+   - Drag handle: `::` on left
+
+8. **Comments**
+   - Bottom of right panel
+   - Avatar (JS) + input field
+   - Placeholder: "Add a comment"
+   - Submit on Enter
+
+9. **Casva Construction Fields (MUST-HAVE)**
+   - Cost: $12,400 (amber badge, bold)
+   - Units: 4 days (gray chip)
+   - Priority: High=red, Medium=yellow, Low=gray
+   - HMR Status: toggle (On/Off)
+   - Place under Due Time in right panel
+
+10. **Interactivity & Polish**
+   - Click title → edit
+   - Enter → save, Esc → cancel
+   - Cmd/Ctrl + Enter → save & close
+   - Hover rows: `hover:bg-slate-700/50`
+   - Focus inputs: blue ring
+   - Skeleton loading on open
+   - Keyboard navigation: Tab between fields
+
+11. **Legal & Brand Safety**
+   - NO Asana icons, fonts, or exact colors
+   - Use only ShadCN + Lucide icons
+   - Title bar: "Task Details" not "Task"
+   - Accent color: #f59e0b (construction amber) for Cost/Units
+
+Use existing Drizzle ORM + React Hook Form + ShadCN UI + TipTap.
+
+Show before/after in preview with dark mode, 3 subtasks, and all construction fields.
+
+When done, say: "TASK MODAL LIVE — ASANA UX, CASVA SOUL"
