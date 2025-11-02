@@ -69,6 +69,7 @@ import { useLocation } from "wouter";
 import { SocketProvider } from "@/lib/socket";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
+import RFQDetail from "@/pages/RFQDetail";
 
 function Router() {
   return (
@@ -122,6 +123,7 @@ function Router() {
       <Route path="/projects/:projectId/schedule" component={Schedule} />
       <Route path="/projects/:projectId/takeoff" component={Takeoff} />
       <Route path="/projects/:projectId/rfqs" component={RFQs} />
+      <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
       <Route path="/projects/:projectId/rfi" component={() => <ComingSoonPage section="rfi" />} />
       <Route path="/projects/:projectId/proposals" component={Proposals} />
       <Route path="/projects/:projectId/proposals/new" component={ProposalDetail} />
