@@ -55,6 +55,7 @@ interface TaskTemplateFormData {
   recurringDuration?: number;
   recurringAssigneeId?: string;
   estimatedDuration?: number;
+  checklist: Array<{ text: string; completed: boolean }>;
 }
 
 const DAYS_OF_WEEK = [
@@ -83,7 +84,9 @@ export default function SystemTaskTemplates() {
     recurringDuration: undefined,
     recurringAssigneeId: undefined,
     estimatedDuration: undefined,
+    checklist: [],
   });
+  const [checklistInput, setChecklistInput] = useState("");
 
   // Queries
   const { data: templates = [], isLoading } = useQuery<TaskTemplate[]>({
@@ -168,6 +171,7 @@ export default function SystemTaskTemplates() {
         recurringDuration: template.recurringDuration || undefined,
         recurringAssigneeId: template.recurringAssigneeId || undefined,
         estimatedDuration: template.estimatedDuration || undefined,
+        checklist: (template.checklist as Array<{ text: string; completed: boolean }>) || [],
       });
     } else {
       setEditingTemplate(null);
@@ -183,8 +187,10 @@ export default function SystemTaskTemplates() {
         recurringDuration: undefined,
         recurringAssigneeId: undefined,
         estimatedDuration: undefined,
+        checklist: [],
       });
     }
+    setChecklistInput("");
     setIsDialogOpen(true);
   };
 
@@ -215,6 +221,7 @@ export default function SystemTaskTemplates() {
       recurringDuration: formData.isRecurringTemplate ? formData.recurringDuration || undefined : undefined,
       recurringAssigneeId: formData.isRecurringTemplate ? formData.recurringAssigneeId || undefined : undefined,
       estimatedDuration: formData.estimatedDuration || undefined,
+      checklist: formData.checklist,
     };
 
     if (editingTemplate) {
@@ -245,6 +252,23 @@ export default function SystemTaskTemplates() {
       recurringDays: prev.recurringDays.includes(day)
         ? prev.recurringDays.filter(d => d !== day)
         : [...prev.recurringDays, day].sort((a, b) => a - b),
+    }));
+  };
+
+  const addChecklistItem = () => {
+    if (checklistInput.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        checklist: [...prev.checklist, { text: checklistInput.trim(), completed: false }],
+      }));
+      setChecklistInput("");
+    }
+  };
+
+  const removeChecklistItem = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      checklist: prev.checklist.filter((_, i) => i !== index),
     }));
   };
 
@@ -505,6 +529,57 @@ export default function SystemTaskTemplates() {
                 placeholder="60"
                 data-testid="input-estimated-duration"
               />
+            </div>
+
+            {/* Checklist */}
+            <div className="flex flex-col gap-2">
+              <Label>Checklist Items</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Add checklist item..."
+                  value={checklistInput}
+                  onChange={(e) => setChecklistInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addChecklistItem();
+                    }
+                  }}
+                  data-testid="input-checklist"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addChecklistItem}
+                  disabled={!checklistInput.trim()}
+                  data-testid="button-add-checklist"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {formData.checklist.length > 0 && (
+                <div className="flex flex-col gap-1 mt-2">
+                  {formData.checklist.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
+                      data-testid={`checklist-item-${index}`}
+                    >
+                      <span className="flex-1 text-sm">{item.text}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeChecklistItem(index)}
+                        data-testid={`button-remove-checklist-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Recurring Template */}
