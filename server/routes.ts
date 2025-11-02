@@ -76,6 +76,8 @@ import {
   insertSystemFolderSchema,
   insertSystemDocumentSchema,
   insertTaskTemplateSchema,
+  insertTaskTagSchema,
+  insertTaskTemplateStatusSchema,
   insertWorkflowTemplateSchema,
   insertProjectWorkflowSchema,
   insertChannelSchema,
@@ -6200,6 +6202,248 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to import cost codes",
+        details: error.message 
+      });
+    }
+  });
+
+  // Task Tags routes (company-specific)
+  app.get("/api/task-tags", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const tags = await storage.getTaskTags(req.user!.companyId);
+      res.json(tags);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch task tags",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/task-tags/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const tag = await storage.getTaskTag(req.params.id, req.user!.companyId);
+      if (!tag) {
+        return res.status(404).json({ error: "Task tag not found" });
+      }
+      res.json(tag);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch task tag",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/task-tags", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertTaskTagSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId;
+
+      // Get max display order and increment
+      const existingTags = await storage.getTaskTags(companyId);
+      const maxOrder = existingTags.reduce((max, tag) => 
+        Math.max(max, tag.displayOrder), 0);
+
+      const tag = await storage.createTaskTag({
+        ...validationResult.data,
+        companyId,
+        displayOrder: maxOrder + 1
+      });
+      res.status(201).json(tag);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create task tag",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/task-tags/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertTaskTagSchema.omit({ companyId: true }).partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const tag = await storage.updateTaskTag(
+        req.params.id, 
+        validationResult.data, 
+        req.user!.companyId
+      );
+      if (!tag) {
+        return res.status(404).json({ error: "Task tag not found" });
+      }
+      res.json(tag);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update task tag",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/task-tags/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deleteTaskTag(req.params.id, req.user!.companyId);
+      if (!success) {
+        return res.status(404).json({ error: "Task tag not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete task tag",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/task-tags/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { updates } = req.body;
+      
+      if (!updates || !Array.isArray(updates)) {
+        return res.status(400).json({ 
+          error: "Updates array is required" 
+        });
+      }
+
+      await storage.updateTaskTagsOrder(updates, req.user!.companyId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to reorder task tags",
+        details: error.message 
+      });
+    }
+  });
+
+  // Task Template Statuses routes (company-specific)
+  app.get("/api/task-template-statuses", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const statuses = await storage.getTaskTemplateStatuses(req.user!.companyId);
+      res.json(statuses);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch task template statuses",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const status = await storage.getTaskTemplateStatus(req.params.id, req.user!.companyId);
+      if (!status) {
+        return res.status(404).json({ error: "Task template status not found" });
+      }
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch task template status",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/task-template-statuses", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertTaskTemplateStatusSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId;
+
+      // Get max display order and increment
+      const existingStatuses = await storage.getTaskTemplateStatuses(companyId);
+      const maxOrder = existingStatuses.reduce((max, status) => 
+        Math.max(max, status.displayOrder), 0);
+
+      const status = await storage.createTaskTemplateStatus({
+        ...validationResult.data,
+        companyId,
+        displayOrder: maxOrder + 1
+      });
+      res.status(201).json(status);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create task template status",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertTaskTemplateStatusSchema.omit({ companyId: true }).partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const status = await storage.updateTaskTemplateStatus(
+        req.params.id, 
+        validationResult.data, 
+        req.user!.companyId
+      );
+      if (!status) {
+        return res.status(404).json({ error: "Task template status not found" });
+      }
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update task template status",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/task-template-statuses/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deleteTaskTemplateStatus(req.params.id, req.user!.companyId);
+      if (!success) {
+        return res.status(404).json({ error: "Task template status not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete task template status",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/task-template-statuses/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { updates } = req.body;
+      
+      if (!updates || !Array.isArray(updates)) {
+        return res.status(400).json({ 
+          error: "Updates array is required" 
+        });
+      }
+
+      await storage.updateTaskTemplateStatusesOrder(updates, req.user!.companyId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to reorder task template statuses",
         details: error.message 
       });
     }
