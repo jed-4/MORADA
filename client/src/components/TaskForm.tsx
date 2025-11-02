@@ -57,6 +57,7 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
     startTime: z.string().optional(), // HH:MM format
     endTime: z.string().optional(), // HH:MM format
     tags: z.array(z.string()).default([]),
+    tagIds: z.array(z.string()).default([]),
     labels: z.array(z.string()).default([]),
     projectId: z.string().optional(),
     // Advanced Tab
@@ -144,6 +145,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       startTime: task?.startTime || "",
       endTime: task?.endTime || "",
       tags: (task?.tags as string[]) || [],
+      tagIds: (task?.tagIds as string[]) || [],
       labels: (task?.labels as string[]) || [],
       projectId: task?.projectId || projectId,
       // Advanced
@@ -174,6 +176,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         startTime: task?.startTime || "",
         endTime: task?.endTime || "",
         tags: (task?.tags as string[]) || [],
+        tagIds: (task?.tagIds as string[]) || [],
         labels: (task?.labels as string[]) || [],
         projectId: task?.projectId || projectId,
         // Advanced
@@ -194,6 +197,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
 
   // Watch fields for reactive behavior
   const watchedTags = form.watch("tags");
+  const watchedTagIds = form.watch("tagIds");
   const watchedLabels = form.watch("labels");
   const watchedIsRecurring = form.watch("isRecurring");
   const watchedRecurringType = form.watch("recurringType");
@@ -220,6 +224,12 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
     enabled: open,
   });
 
+  // Fetch task tags for multi-select tag picker
+  const { data: taskTags = [] } = useQuery<any[]>({
+    queryKey: ["/api/task-tags"],
+    enabled: open,
+  });
+
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
@@ -239,6 +249,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         startTime: data.startTime || undefined,
         endTime: data.endTime || undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
+        tagIds: Array.isArray(data.tagIds) ? data.tagIds : [],
         labels: Array.isArray(data.labels) ? data.labels : [],
         // Advanced fields
         category: data.category,
@@ -301,6 +312,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         startTime: data.startTime || undefined,
         endTime: data.endTime || undefined,
         tags: Array.isArray(data.tags) ? data.tags : [],
+        tagIds: Array.isArray(data.tagIds) ? data.tagIds : [],
         labels: Array.isArray(data.labels) ? data.labels : [],
         // Advanced fields
         category: data.category,
@@ -659,46 +671,42 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                   />
                 </div>
                 
-                {/* Tags Management */}
+                {/* Tags Management - Multi-select with colored chips */}
                 <div className="space-y-2">
                   <FormLabel>Tags</FormLabel>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Add a tag..."
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      className="flex-1"
-                      data-testid="task-tag-input"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={addTag}
-                      disabled={!tagInput.trim() || watchedTags?.includes(tagInput.trim())}
-                      data-testid="task-add-tag-button"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {watchedTags && watchedTags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {watchedTags.map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs">
-                          {tag}
-                          <button
-                            type="button"
-                            onClick={() => removeTag(tag)}
-                            className="ml-1 hover:text-destructive"
-                            data-testid={`task-remove-tag-${index}`}
+                  <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[44px]" data-testid="task-tags-container">
+                    {taskTags.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No tags available. Create tags in Task Settings.
+                      </p>
+                    ) : (
+                      taskTags.map((tag: any) => {
+                        const isSelected = watchedTagIds?.includes(tag.id);
+                        return (
+                          <Badge
+                            key={tag.id}
+                            style={{
+                              backgroundColor: isSelected ? tag.color : "transparent",
+                              borderColor: tag.color,
+                              color: isSelected ? "white" : tag.color,
+                            }}
+                            className="cursor-pointer border-2"
+                            onClick={() => {
+                              const currentTagIds = watchedTagIds || [];
+                              const newTagIds = isSelected
+                                ? currentTagIds.filter((id: string) => id !== tag.id)
+                                : [...currentTagIds, tag.id];
+                              form.setValue("tagIds", newTagIds);
+                            }}
+                            data-testid={`task-tag-${tag.id}`}
                           >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+                            {tag.name}
+                            {isSelected && <X className="w-3 h-3 ml-1" />}
+                          </Badge>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
 
                 {/* Labels Field */}
