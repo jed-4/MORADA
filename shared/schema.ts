@@ -2786,3 +2786,146 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
 
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
+
+// RFQ (Request for Quote) System
+export const rfqStatusEnum = pgEnum("rfq_status", ["draft", "sent", "confirmed", "quoted", "accepted", "declined", "expired"]);
+export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "reminder_3d", "reminder_7d", "reminder_14d"]);
+
+// RFQs table
+export const rfqs = pgTable("rfqs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqNumber: text("rfq_number").notNull(), // e.g., "4504-RFQ-001"
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  name: text("name").notNull(), // e.g., "Concrete Pour - Slab"
+  scope: text("scope"), // Wunderbuild-style rich-text scope of work
+  dueDate: timestamp("due_date"),
+  
+  supplierId: varchar("supplier_id").references(() => suppliers.id),
+  supplierName: text("supplier_name"),
+  supplierEmail: text("supplier_email"),
+  
+  status: rfqStatusEnum("status").notNull().default("draft"),
+  sentAt: timestamp("sent_at"),
+  confirmedAt: timestamp("confirmed_at"), // When supplier confirmed receipt
+  respondedAt: timestamp("responded_at"), // When supplier uploaded quote
+  
+  // File attachments (plans, specs)
+  attachments: json("attachments").default([]), // Array of {name, url, size}
+  
+  // Send options
+  sendMethod: text("send_method"), // "in_app" | "email" | "both"
+  emailSent: boolean("email_sent").notNull().default(false),
+  pdfUrl: text("pdf_url"), // Generated PDF URL
+  
+  // Follow-ups
+  followUpCount: integer("follow_up_count").notNull().default(0),
+  lastFollowUpAt: timestamp("last_follow_up_at"),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqSchema = createInsertSchema(rfqs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+}).extend({
+  attachments: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+    size: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertRfq = z.infer<typeof insertRfqSchema>;
+export type Rfq = typeof rfqs.$inferSelect;
+
+// RFQ Items (line items from estimate)
+export const rfqItems = pgTable("rfq_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }),
+  
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull(),
+  unit: text("unit").notNull(),
+  costCode: text("cost_code"),
+  estimatedCost: integer("estimated_cost"), // In cents, optional
+  
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertRfqItemSchema = createInsertSchema(rfqItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRfqItem = z.infer<typeof insertRfqItemSchema>;
+export type RfqItem = typeof rfqItems.$inferSelect;
+
+// RFQ Quotes (supplier responses)
+export const rfqQuotes = pgTable("rfq_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  
+  supplierId: varchar("supplier_id").references(() => suppliers.id),
+  supplierName: text("supplier_name"),
+  
+  totalAmount: integer("total_amount").notNull(), // In cents
+  notes: text("notes"),
+  attachments: json("attachments").default([]), // Array of {name, url, size}
+  
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "declined"
+  acceptedAt: timestamp("accepted_at"),
+  declinedAt: timestamp("declined_at"),
+  
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqQuoteSchema = createInsertSchema(rfqQuotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  attachments: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+    size: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertRfqQuote = z.infer<typeof insertRfqQuoteSchema>;
+export type RfqQuote = typeof rfqQuotes.$inferSelect;
+
+// RFQ Follow-ups (scheduled emails)
+export const rfqFollowUps = pgTable("rfq_follow_ups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  
+  followUpType: rfqFollowUpTypeEnum("follow_up_type").notNull(), // "initial" | "reminder_3d" | "reminder_7d" | "reminder_14d"
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+  
+  emailSubject: text("email_subject"),
+  emailBody: text("email_body"),
+  
+  status: text("status").notNull().default("scheduled"), // "scheduled" | "sent" | "failed" | "cancelled"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
+export type RfqFollowUp = typeof rfqFollowUps.$inferSelect;
