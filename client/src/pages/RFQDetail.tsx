@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
-import type { Rfq, RfqItem } from "@shared/schema";
+import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
+import type { Rfq, RfqItem, RfqQuote } from "@shared/schema";
 import { format } from "date-fns";
 
 export default function RFQDetail() {
@@ -29,6 +30,7 @@ export default function RFQDetail() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showSendDialog, setShowSendDialog] = useState(false);
+  const [showUploadQuoteDialog, setShowUploadQuoteDialog] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
   // Fetch RFQ
@@ -40,6 +42,12 @@ export default function RFQDetail() {
   // Fetch RFQ items
   const { data: items = [], isLoading: itemsLoading } = useQuery<RfqItem[]>({
     queryKey: ["/api/rfq-items", id],
+    enabled: !!id,
+  });
+
+  // Fetch RFQ quotes
+  const { data: quotes = [], isLoading: quotesLoading } = useQuery<RfqQuote[]>({
+    queryKey: ["/api/rfqs", id, "quotes"],
     enabled: !!id,
   });
 
@@ -357,13 +365,82 @@ export default function RFQDetail() {
 
           <TabsContent value="quotes" className="flex-1 overflow-auto">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
                 <CardTitle>Supplier Quotes</CardTitle>
+                <Button
+                  onClick={() => setShowUploadQuoteDialog(true)}
+                  size="sm"
+                  data-testid="button-upload-quote"
+                >
+                  Upload Quote
+                </Button>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-12 text-muted-foreground">
-                  No quotes received yet
-                </div>
+                {quotesLoading ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    Loading quotes...
+                  </div>
+                ) : quotes.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    No quotes received yet
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {quotes.map((quote) => (
+                      <div
+                        key={quote.id}
+                        className="p-4 rounded-lg border hover-elevate"
+                        data-testid={`quote-${quote.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                          <div className="flex-1">
+                            <div className="font-medium text-lg mb-1">
+                              {quote.supplierName}
+                            </div>
+                            {quote.uploadedBy && (
+                              <div className="text-sm text-muted-foreground">
+                                Uploaded {formatDate(quote.createdAt)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-bold">
+                              ${(quote.totalAmount / 100).toFixed(2)}
+                            </div>
+                            <Badge
+                              variant={
+                                quote.status === "accepted"
+                                  ? "default"
+                                  : quote.status === "declined"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {quote.status}
+                            </Badge>
+                          </div>
+                        </div>
+                        
+                        {quote.notes && (
+                          <div className="text-sm text-muted-foreground mb-3">
+                            {quote.notes}
+                          </div>
+                        )}
+                        
+                        {quote.attachments && Array.isArray(quote.attachments) && quote.attachments.length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {(quote.attachments as any[]).map((attachment: any, index: number) => (
+                              <Badge key={index} variant="outline" className="gap-1">
+                                <FileText className="h-3 w-3" />
+                                {attachment.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -413,6 +490,15 @@ export default function RFQDetail() {
           onOpenChange={setShowSendDialog}
           rfq={rfq}
           pdfBlob={pdfBlob}
+        />
+      )}
+
+      {/* Upload Quote Dialog */}
+      {rfq && (
+        <UploadQuoteDialog
+          open={showUploadQuoteDialog}
+          onOpenChange={setShowUploadQuoteDialog}
+          rfq={rfq}
         />
       )}
     </div>
