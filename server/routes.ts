@@ -80,7 +80,11 @@ import {
   insertProjectWorkflowSchema,
   insertChannelSchema,
   insertChannelMemberSchema,
-  insertMessageSchema
+  insertMessageSchema,
+  insertRfqSchema,
+  insertRfqItemSchema,
+  insertRfqQuoteSchema,
+  insertRfqFollowUpSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -3877,6 +3881,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(contact);
     } catch (error) {
       res.status(500).json({ error: "Failed to restore contact" });
+    }
+  });
+
+  // RFQ (Request for Quote) API Routes
+  app.get("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const companyId = req.user!.companyId;
+      
+      const rfqs = await storage.getRFQs(companyId!, projectId as string | undefined);
+      res.json(rfqs);
+    } catch (error) {
+      console.error("Error fetching RFQs:", error);
+      res.status(500).json({ error: "Failed to fetch RFQs" });
+    }
+  });
+
+  app.get("/api/rfqs/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfq = await storage.getRFQ(req.params.id);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      
+      // Company isolation check
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      res.json(rfq);
+    } catch (error) {
+      console.error("Error fetching RFQ:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ" });
+    }
+  });
+
+  app.post("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      
+      // Generate RFQ number (format: PROJ-RFQ-001)
+      const project = await storage.getProject(validationResult.data.projectId);
+      const existingRFQs = await storage.getRFQs(companyId, validationResult.data.projectId);
+      const rfqCount = existingRFQs.length + 1;
+      const rfqNumber = `${project?.name.substring(0, 4).toUpperCase() || 'PROJ'}-RFQ-${String(rfqCount).padStart(3, '0')}`;
+
+      const rfqData = {
+        ...validationResult.data,
+        companyId,
+        rfqNumber,
+        createdBy: req.user!.id,
+        createdByName: `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim(),
+        status: 'draft' as const,
+      };
+
+      const rfq = await storage.createRFQ(rfqData);
+      res.status(201).json(rfq);
+    } catch (error: any) {
+      console.error("Error creating RFQ:", error);
+      res.status(500).json({ error: "Failed to create RFQ", details: error.message });
+    }
+  });
+
+  app.patch("/api/rfqs/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Company isolation check
+      const existingRFQ = await storage.getRFQ(req.params.id);
+      if (!existingRFQ) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (existingRFQ.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updateSchema = insertRfqSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const rfq = await storage.updateRFQ(req.params.id, validationResult.data);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      res.json(rfq);
+    } catch (error: any) {
+      console.error("Error updating RFQ:", error);
+      res.status(500).json({ error: "Failed to update RFQ" });
+    }
+  });
+
+  app.delete("/api/rfqs/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Company isolation check
+      const existingRFQ = await storage.getRFQ(req.params.id);
+      if (!existingRFQ) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (existingRFQ.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const deleted = await storage.deleteRFQ(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFQ:", error);
+      res.status(500).json({ error: "Failed to delete RFQ" });
+    }
+  });
+
+  // RFQ Items API Routes
+  app.get("/api/rfqs/:rfqId/items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const items = await storage.getRFQItems(req.params.rfqId);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching RFQ items:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ items" });
+    }
+  });
+
+  app.post("/api/rfq-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqItemSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createRFQItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error: any) {
+      console.error("Error creating RFQ item:", error);
+      res.status(500).json({ error: "Failed to create RFQ item", details: error.message });
+    }
+  });
+
+  app.delete("/api/rfq-items/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const deleted = await storage.deleteRFQItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "RFQ item not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFQ item:", error);
+      res.status(500).json({ error: "Failed to delete RFQ item" });
     }
   });
 
