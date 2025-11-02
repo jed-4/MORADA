@@ -10394,6 +10394,7 @@ export class DbStorage implements IStorage {
             tagIds: instance.tagIds || [],
             tags: [],
             labels: [],
+            checklist: instance.checklist || [],
             category: instance.category,
             templateId: instance.templateId, // Store which template generated this task
             companyId: companyId,

@@ -8,6 +8,7 @@ export interface RecurringTaskTemplate {
   defaultAssigneeId?: string;
   tagIds?: string[];
   category?: string;
+  checklist?: Array<{ text: string; completed: boolean }>;
   recurringDays?: number[]; // 1=Monday, 2=Tuesday, ..., 7=Sunday
   recurringStartTime?: string; // "HH:MM" format
   recurringDuration?: number; // minutes
@@ -21,6 +22,7 @@ export interface GeneratedTaskInstance {
   assigneeId?: string;
   tagIds?: string[];
   category?: string;
+  checklist?: Array<{ text: string; completed: boolean }>;
   dueDate: Date;
   startTime?: string;
   endTime?: string;
@@ -82,6 +84,14 @@ export function generateRecurringTaskInstances(
           category: template.category,
           dueDate: new Date(currentDate),
         };
+
+        // Copy checklist from template (reset all to uncompleted)
+        if (template.checklist && template.checklist.length > 0) {
+          instance.checklist = template.checklist.map(item => ({
+            text: item.text,
+            completed: false
+          }));
+        }
 
         // Add start and end times if specified
         if (template.recurringStartTime) {

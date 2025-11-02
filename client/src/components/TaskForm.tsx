@@ -60,6 +60,10 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
     tagIds: z.array(z.string()).default([]),
     labels: z.array(z.string()).default([]),
     projectId: z.string().optional(),
+    checklist: z.array(z.object({
+      text: z.string(),
+      completed: z.boolean()
+    })).default([]),
     // Advanced Tab
     category: z.string().default("General"),
     customFields: z.record(z.any()).default({}),
@@ -148,6 +152,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       tagIds: (task?.tagIds as string[]) || [],
       labels: (task?.labels as string[]) || [],
       projectId: task?.projectId || projectId,
+      checklist: (task?.checklist as Array<{ text: string; completed: boolean }>) || [],
       // Advanced
       category: task?.category || "General",
       customFields: (task?.customFields as Record<string, any>) || {},
@@ -179,6 +184,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         tagIds: (task?.tagIds as string[]) || [],
         labels: (task?.labels as string[]) || [],
         projectId: task?.projectId || projectId,
+        checklist: (task?.checklist as Array<{ text: string; completed: boolean }>) || [],
         // Advanced
         category: task?.category || "General",
         customFields: (task?.customFields as Record<string, any>) || {},
@@ -771,6 +777,50 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                     </div>
                   )}
                 </div>
+
+                {/* Checklist Section */}
+                <FormField
+                  control={form.control}
+                  name="checklist"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Checklist</FormLabel>
+                      <div className="space-y-2">
+                        {field.value && field.value.length > 0 && (
+                          <div className="space-y-1">
+                            {field.value.map((item, index) => (
+                              <div key={index} className="flex items-center gap-2 p-2 border rounded-md hover-elevate">
+                                <Checkbox
+                                  id={`checklist-${index}`}
+                                  checked={item.completed}
+                                  onCheckedChange={(checked) => {
+                                    const newChecklist = [...field.value];
+                                    newChecklist[index] = { ...item, completed: checked as boolean };
+                                    field.onChange(newChecklist);
+                                  }}
+                                  data-testid={`checkbox-checklist-${index}`}
+                                />
+                                <label
+                                  htmlFor={`checklist-${index}`}
+                                  className={`flex-1 text-sm cursor-pointer ${item.completed ? 'line-through text-muted-foreground' : ''}`}
+                                >
+                                  {item.text}
+                                </label>
+                                <span className="text-xs text-muted-foreground">
+                                  {field.value.filter(i => i.completed).length}/{field.value.length}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {(!field.value || field.value.length === 0) && (
+                          <p className="text-sm text-muted-foreground italic">No checklist items</p>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </TabsContent>
               
               {/* Advanced Tab */}
