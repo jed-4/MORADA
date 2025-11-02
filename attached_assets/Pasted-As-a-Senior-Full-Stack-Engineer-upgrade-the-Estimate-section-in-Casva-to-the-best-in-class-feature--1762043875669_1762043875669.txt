@@ -1,0 +1,54 @@
+As a Senior Full-Stack Engineer, upgrade the Estimate section in Casva to the best-in-class feature: Buildern's fluid drag-drop hierarchy + Procore's auto-flow to RFQs/POs/proposals + Quoteaze's speedy takeoffs/templates — but simpler, mobile-first, and construction-SMB focused.
+
+CURRENT STATE (From EstimateList.jsx, EstimateItem.jsx, etc.):
+- Table/grid layout with basic accordion groups
+- @dnd-kit for sibling reordering only
+- Inline editing for quantity/cost
+- Summary totals, visibility toggles
+- No nesting, no free-flow drag, no auto-flow to RFQs/POs, no takeoff
+
+TARGET: "Notion Canvas for Estimates" — Best UX/Functionality
+1. **Drag-Drop Canvas (Buildern-level Free-Flow)**
+   - Replace table with card-based infinite canvas (no rigid columns; flex layout)
+   - Use @dnd-kit for:
+     • Drag line item → ANY group/subgroup or between (free-flow, 2s moves)
+     • Drag group → becomes subgroup in another (visual glow drop zones)
+     • Drag from Systems Library/templates → auto-add line
+   - Ghost preview during drag; undo stack (Ctrl+Z); magnetic snap
+   - Mobile: touch drag with larger handles
+
+2. **Hierarchy Visualization (Buildern + Procore)**
+   - DB: add `parent_id` to estimate_items for subgroups
+   - UI: Indented trees with expandable cards (blue groups, green subgroups); depth up to 3 levels
+   - Drag group into group → auto-subgroup; visual preview
+
+3. **Auto-Flow & Integrations (Procore-level, 1-Click)**
+   - Button: "Flow to RFQ/PO/Proposal" — drag selected lines → generate linked doc (pre-filled fields, approval workflow)
+   - Live sync: Estimate change → RFQ/PO updates in 1s (Socket.io)
+   - From estimate → auto-populate RFQs with quantities/costs
+
+4. **Templates & AI Takeoff (Quoteaze Speed + Buildern AI)**
+   - Sidebar "Catalog": Pre-built assemblies/templates from Systems Library (drag to canvas)
+   - Upload plan (PDF/image) → AI takeoff: Scan for quantities ("58 doors = $12k line"); mock AI with simple OCR
+   - Templates: Pre-loaded for trades (e.g., "Slab Pour"); customize without lock-in
+
+5. **Usability & Mobile (Fix All Cons)**
+   - Search/filter by cost code/type; keyboard shortcuts (G = group, D = duplicate)
+   - Offline mode for onsite edits; export PDF/Excel in 1s
+   - Mobile: Touch drag, roster link (assign lines to shifts)
+   - Zero learning curve: Tooltips, "Try drag here" onboarding
+
+6. **Polish**
+   - Compact cards (title, cost, quantity inline); live totals/markups on drop
+   - Role-based: Onsite sees quantities; admin sees full costs
+   - Dark/light mode; WCAG AA contrast
+
+Use existing Drizzle ORM + Socket.io + @dnd-kit. Keep visibility toggles, summaries.
+
+Show live preview:
+- Drag line from "Preliminaries" to "Site Services" subgroup
+- Drag group into group → nesting
+- Upload plan → AI suggest line
+- Drag to "Flow to RFQ" → new RFQ modal
+
+When done, say: "ESTIMATE UPGRADED — BEST-IN-CLASS BUILDERN FLOW + PROCORE POWER"
