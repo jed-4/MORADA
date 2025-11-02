@@ -48,11 +48,15 @@ export function UploadQuoteDialog({ rfq, open, onOpenChange }: UploadQuoteDialog
       // Convert dollar amount to cents
       const totalCents = Math.round(parseFloat(values.totalAmount) * 100);
 
-      // TODO: Upload files to storage and get URLs
-      // For now, we'll create placeholder attachment objects
+      // TODO: Implement actual file upload to object storage
+      // This requires:
+      // 1. Backend multipart/form-data handling
+      // 2. File storage service (S3, Cloudflare R2, etc.)
+      // 3. Signed URL generation for secure access
+      // For MVP: users can upload quotes without attachments or reference external files in notes
       const attachments = selectedFiles.map(file => ({
         name: file.name,
-        url: `/uploads/quotes/${file.name}`, // Placeholder
+        url: `/uploads/quotes/${file.name}`, // Placeholder - not accessible
         size: file.size,
       }));
 
