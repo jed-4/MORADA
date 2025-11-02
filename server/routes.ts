@@ -8028,6 +8028,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get recent messages across all channels
+  app.get("/api/messages/recent", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      
+      // Get all user's channels
+      const channels = await storage.getUserChannels(userId, companyId);
+      
+      // Get recent messages from each channel
+      const allMessages: any[] = [];
+      for (const channel of channels) {
+        const messages = await storage.getMessages(channel.id, 5); // Get 5 most recent per channel
+        
+        // Add channel name and sender name to each message
+        for (const msg of messages) {
+          const sender = await storage.getUserById(msg.userId);
+          allMessages.push({
+            ...msg,
+            channelName: channel.name,
+            senderName: sender ? `${sender.firstName || ''} ${sender.lastName || ''}`.trim() || sender.email : 'Unknown'
+          });
+        }
+      }
+      
+      // Sort by most recent first and limit to 20
+      const recentMessages = allMessages
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 20);
+      
+      res.json(recentMessages);
+    } catch (error) {
+      console.error("Failed to get recent messages:", error);
+      res.status(500).json({ error: "Failed to get recent messages" });
+    }
+  });
+
   app.get("/api/messages/:id", requireAuth, async (req, res) => {
     try {
       const message = await storage.getMessage(req.params.id);

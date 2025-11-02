@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
 import { UserCalendarDialog } from "./UserCalendarDialog";
+import { MessagesDropdown } from "./MessagesDropdown";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -205,6 +206,9 @@ export default function Header() {
         >
           <Calendar className="h-4 w-4" />
         </Button>
+
+        {/* Messages Dropdown */}
+        <MessagesDropdown />
 
         {/* Time Clock Widget */}
         <TimeClockWidget />
