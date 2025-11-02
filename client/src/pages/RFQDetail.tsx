@@ -20,6 +20,7 @@ import {
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
+import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
 import type { Rfq, RfqItem, RfqQuote } from "@shared/schema";
 import { format } from "date-fns";
 
@@ -385,61 +386,7 @@ export default function RFQDetail() {
                     No quotes received yet
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {quotes.map((quote) => (
-                      <div
-                        key={quote.id}
-                        className="p-4 rounded-lg border hover-elevate"
-                        data-testid={`quote-${quote.id}`}
-                      >
-                        <div className="flex items-start justify-between gap-4 mb-3">
-                          <div className="flex-1">
-                            <div className="font-medium text-lg mb-1">
-                              {quote.supplierName}
-                            </div>
-                            {quote.uploadedBy && (
-                              <div className="text-sm text-muted-foreground">
-                                Uploaded {formatDate(quote.createdAt)}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-bold">
-                              ${(quote.totalAmount / 100).toFixed(2)}
-                            </div>
-                            <Badge
-                              variant={
-                                quote.status === "accepted"
-                                  ? "default"
-                                  : quote.status === "declined"
-                                  ? "destructive"
-                                  : "secondary"
-                              }
-                            >
-                              {quote.status}
-                            </Badge>
-                          </div>
-                        </div>
-                        
-                        {quote.notes && (
-                          <div className="text-sm text-muted-foreground mb-3">
-                            {quote.notes}
-                          </div>
-                        )}
-                        
-                        {quote.attachments && Array.isArray(quote.attachments) && quote.attachments.length > 0 && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {(quote.attachments as any[]).map((attachment: any, index: number) => (
-                              <Badge key={index} variant="outline" className="gap-1">
-                                <FileText className="h-3 w-3" />
-                                {attachment.name}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <QuoteComparisonView rfqId={rfq.id} quotes={quotes} />
                 )}
               </CardContent>
             </Card>
