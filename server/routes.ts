@@ -8239,6 +8239,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generate recurring tasks from active templates (4-week rolling window)
+  app.post("/api/systems/task-templates/generate-recurring", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const result = await storage.generateRecurringTasks(companyId);
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to generate recurring tasks:", error);
+      res.status(500).json({ error: "Failed to generate recurring tasks" });
+    }
+  });
+
   // Workflow Templates
   app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {

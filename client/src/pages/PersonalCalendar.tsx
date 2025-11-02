@@ -145,6 +145,24 @@ export default function PersonalCalendar() {
     },
   });
 
+  // Generate recurring tasks on load (4-week rolling window)
+  useEffect(() => {
+    if (!user) return;
+
+    const generateTasks = async () => {
+      try {
+        await apiRequest("/api/systems/task-templates/generate-recurring", "POST");
+        // Refresh tasks after generation
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      } catch (error) {
+        // Silently fail - recurring task generation is a background operation
+        console.log("Recurring task generation skipped:", error);
+      }
+    };
+
+    generateTasks();
+  }, [user]);
+
   // Cleanup duplicates on first load, then create default view if none exists
   useEffect(() => {
     if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
