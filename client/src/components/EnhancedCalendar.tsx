@@ -32,6 +32,7 @@ export interface CalendarEvent {
   isCompleted?: boolean;
   description?: string | null;
   location?: string | null;
+  tagIds?: string[] | null;
 }
 
 interface EnhancedCalendarProps {
