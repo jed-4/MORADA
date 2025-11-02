@@ -51,6 +51,7 @@ import ProposalDetail from "@/pages/ProposalDetail";
 import BusinessProjects from "@/pages/BusinessProjects";
 import Takeoff from "@/pages/Takeoff";
 import FieldSettings from "@/pages/FieldSettings";
+import TaskSettings from "@/pages/TaskSettings";
 import BusinessCalendar from "@/pages/BusinessCalendar";
 import PersonalCalendar from "@/pages/PersonalCalendar";
 import UserProfile from "@/pages/UserProfile";
@@ -189,6 +190,7 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/system-configuration" component={SystemConfiguration} />
       <Route path="/field-settings" component={FieldSettings} />
+      <Route path="/task-settings" component={TaskSettings} />
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/cost-codes" component={CostCodes} />

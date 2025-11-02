@@ -137,6 +137,12 @@ const SETTINGS_CATEGORIES = [
     description: "Manage project statuses and custom field options"
   },
   {
+    id: "task-settings",
+    label: "Task Management",
+    icon: CheckSquare,
+    description: "Manage task tags and template statuses"
+  },
+  {
     id: "notifications",
     label: "Notifications",
     icon: Bell,
@@ -926,6 +932,8 @@ export default function Settings() {
                       navigate("/roles-permissions");
                     } else if (category.id === "field-settings") {
                       navigate("/field-settings");
+                    } else if (category.id === "task-settings") {
+                      navigate("/task-settings");
                     } else {
                       setActiveSection(category.id);
                     }

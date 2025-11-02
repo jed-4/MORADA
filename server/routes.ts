@@ -8791,6 +8791,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Seed default task tags and template statuses (admin only)
+  app.post("/api/seed/task-management", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId;
+      
+      // Check if tags already exist
+      const existingTags = await storage.getTaskTags(companyId);
+      const existingStatuses = await storage.getTaskTemplateStatuses(companyId);
+      
+      let tagsCreated = 0;
+      let statusesCreated = 0;
+      
+      // Create default tags if none exist
+      if (existingTags.length === 0) {
+        const defaultTags = [
+          { name: "System", color: "#3b82f6", displayOrder: 0 },
+          { name: "Project Management", color: "#22c55e", displayOrder: 1 },
+          { name: "Schedule", color: "#f97316", displayOrder: 2 },
+        ];
+        
+        for (const tag of defaultTags) {
+          await storage.createTaskTag({ ...tag, companyId, isActive: true });
+          tagsCreated++;
+        }
+      }
+      
+      // Create default statuses if none exist
+      if (existingStatuses.length === 0) {
+        const defaultStatuses = [
+          { name: "Active", color: "#22c55e", displayOrder: 0 },
+          { name: "Draft", color: "#6b7280", displayOrder: 1 },
+          { name: "Archived", color: "#ef4444", displayOrder: 2 },
+        ];
+        
+        for (const status of defaultStatuses) {
+          await storage.createTaskTemplateStatus({ ...status, companyId, isActive: true });
+          statusesCreated++;
+        }
+      }
+      
+      res.json({
+        message: "Seed completed successfully",
+        tagsCreated,
+        statusesCreated,
+        tagsAlreadyExisted: existingTags.length,
+        statusesAlreadyExisted: existingStatuses.length,
+      });
+    } catch (error: any) {
+      console.error("Failed to seed task management data:", error);
+      res.status(500).json({ 
+        error: "Failed to seed task management data",
+        details: error.message 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging with session authentication
