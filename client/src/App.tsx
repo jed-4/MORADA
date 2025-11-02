@@ -68,6 +68,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { SocketProvider } from "@/lib/socket";
 import Messages from "@/pages/Messages";
+import RFQs from "@/pages/RFQs";
 
 function Router() {
   return (
@@ -120,7 +121,7 @@ function Router() {
       <Route path="/projects/:projectId/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/projects/:projectId/schedule" component={Schedule} />
       <Route path="/projects/:projectId/takeoff" component={Takeoff} />
-      <Route path="/projects/:projectId/rfq" component={() => <ComingSoonPage section="rfq" />} />
+      <Route path="/projects/:projectId/rfqs" component={RFQs} />
       <Route path="/projects/:projectId/rfi" component={() => <ComingSoonPage section="rfi" />} />
       <Route path="/projects/:projectId/proposals" component={Proposals} />
       <Route path="/projects/:projectId/proposals/new" component={ProposalDetail} />
@@ -151,7 +152,8 @@ function Router() {
       <Route path="/estimates/project/:projectId" component={ProjectEstimates} />
       <Route path="/estimates/new" component={EstimateDetail} />
       <Route path="/estimates/:id" component={EstimateDetail} />
-      <Route path="/rfq" component={() => <ComingSoonPage section="rfq" />} />
+      <Route path="/rfqs" component={RFQs} />
+      <Route path="/rfqs/:id" component={() => <ComingSoonPage section="rfq-detail" />} />
       <Route path="/rfi" component={() => <ComingSoonPage section="rfi" />} />
       <Route path="/proposals" component={Proposals} />
       <Route path="/proposals/new" component={ProposalDetail} />

@@ -2795,37 +2795,29 @@ export const rfqFollowUpTypeEnum = pgEnum("rfq_follow_up_type", ["initial", "rem
 export const rfqs = pgTable("rfqs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   rfqNumber: text("rfq_number").notNull(), // e.g., "4504-RFQ-001"
-  estimateId: varchar("estimate_id").notNull().references(() => estimates.id),
   projectId: varchar("project_id").notNull().references(() => projects.id),
   companyId: varchar("company_id").notNull().references(() => companies.id),
   
-  name: text("name").notNull(), // e.g., "Concrete Pour - Slab"
-  scope: text("scope"), // Wunderbuild-style rich-text scope of work
+  title: text("title").notNull(), // e.g., "Concrete Pour - Slab"
+  description: text("description"), // Brief description
+  scope: text("scope"), // Wunderbuild-style rich-text scope of work (6-line auto-grow)
   dueDate: timestamp("due_date"),
   
-  supplierId: varchar("supplier_id").references(() => suppliers.id),
-  supplierName: text("supplier_name"),
-  supplierEmail: text("supplier_email"),
+  // Multi-supplier support (send to multiple suppliers at once)
+  supplierIds: text("supplier_ids").array().notNull().default(sql`'{}'`), // Array of supplier IDs
+  supplierNames: text("supplier_names").array().notNull().default(sql`'{}'`), // Array of supplier names
   
   status: rfqStatusEnum("status").notNull().default("draft"),
   sentAt: timestamp("sent_at"),
-  confirmedAt: timestamp("confirmed_at"), // When supplier confirmed receipt
-  respondedAt: timestamp("responded_at"), // When supplier uploaded quote
   
   // File attachments (plans, specs)
-  attachments: json("attachments").default([]), // Array of {name, url, size}
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`), // Array of file URLs
   
-  // Send options
-  sendMethod: text("send_method"), // "in_app" | "email" | "both"
-  emailSent: boolean("email_sent").notNull().default(false),
+  // PDF generation
   pdfUrl: text("pdf_url"), // Generated PDF URL
   
-  // Follow-ups
-  followUpCount: integer("follow_up_count").notNull().default(0),
-  lastFollowUpAt: timestamp("last_follow_up_at"),
-  
-  createdBy: varchar("created_by").references(() => users.id),
-  createdByName: text("created_by_name"),
+  createdBy: varchar("created_by").notNull(),
+  createdByName: text("created_by_name").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2835,12 +2827,17 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   createdAt: true,
   updatedAt: true,
   companyId: true,
+  createdBy: true,
+  createdByName: true,
+  rfqNumber: true,
+  status: true,
 }).extend({
-  attachments: z.array(z.object({
-    name: z.string(),
-    url: z.string(),
-    size: z.number().optional(),
-  })).optional(),
+  title: z.string().min(1, "Title is required"),
+  description: z.string().optional(),
+  scope: z.string().min(10, "Scope must be at least 10 characters"),
+  supplierIds: z.array(z.string()).min(1, "At least one supplier is required"),
+  supplierNames: z.array(z.string()).min(1),
+  attachmentUrls: z.array(z.string()).optional(),
 });
 
 export type InsertRfq = z.infer<typeof insertRfqSchema>;
@@ -2853,18 +2850,19 @@ export const rfqItems = pgTable("rfq_items", {
   estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }),
   
   description: text("description").notNull(),
-  quantity: integer("quantity").notNull(),
-  unit: text("unit").notNull(),
-  costCode: text("cost_code"),
-  estimatedCost: integer("estimated_cost"), // In cents, optional
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  notes: text("notes"),
   
-  order: integer("order").notNull().default(0),
+  displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertRfqItemSchema = createInsertSchema(rfqItems).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
 });
 
 export type InsertRfqItem = z.infer<typeof insertRfqItemSchema>;

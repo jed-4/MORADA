@@ -19,8 +19,9 @@ import { useQuery } from "@tanstack/react-query";
 
 // RFQ Form Schema
 const rfqFormSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  supplierId: z.string().min(1, "Supplier is required"),
+  title: z.string().min(1, "Title is required"),
+  description: z.string().optional(),
+  supplierIds: z.array(z.string()).min(1, "At least one supplier is required"),
   scope: z.string().min(10, "Scope must be at least 10 characters"),
   dueDate: z.date().optional(),
 });
@@ -62,8 +63,9 @@ export function CreateRFQDialog({
   const form = useForm<RFQFormValues>({
     resolver: zodResolver(rfqFormSchema),
     defaultValues: {
-      name: `RFQ - ${estimateName}`,
-      supplierId: "",
+      title: `RFQ - ${estimateName}`,
+      description: "",
+      supplierIds: [],
       scope: "",
     },
   });
@@ -71,12 +73,20 @@ export function CreateRFQDialog({
   const handleSubmit = async (values: RFQFormValues) => {
     setIsSubmitting(true);
     try {
+      // Get supplier names from IDs
+      const selectedSuppliers = suppliers.filter(s => values.supplierIds.includes(s.id));
+      const supplierNames = selectedSuppliers.map(s => s.name);
+
       // Create RFQ
       const rfq = await apiRequest("/api/rfqs", "POST", {
-        ...values,
-        estimateId,
         projectId,
-        status: "draft",
+        title: values.title,
+        description: values.description || "",
+        scope: values.scope,
+        dueDate: values.dueDate?.toISOString(),
+        supplierIds: values.supplierIds,
+        supplierNames: supplierNames,
+        attachmentUrls: [], // TODO: Upload attachments
       });
 
       // Create RFQ items from selected estimate items
@@ -84,24 +94,21 @@ export function CreateRFQDialog({
         apiRequest("/api/rfq-items", "POST", {
           rfqId: rfq.id,
           estimateItemId: item.id,
-          description: item.name,
-          quantity: item.quantity,
-          unit: item.unitType,
-          costCode: item.costCode,
-          estimatedCost: item.unitCostExTax,
-          order: index,
+          description: item.name || "",
+          quantity: item.quantity || 0,
+          unit: item.unitType || "",
+          notes: "",
+          displayOrder: index,
         })
       );
 
       await Promise.all(rfqItemPromises);
-
-      // TODO: Upload attachments if any
       
       queryClient.invalidateQueries({ queryKey: ["/api/rfqs"] });
       
       toast({
         title: "RFQ Created",
-        description: `Created RFQ with ${selectedItems.length} items`,
+        description: `Created RFQ "${rfq.title}" with ${selectedItems.length} items`,
       });
 
       onOpenChange(false);
@@ -136,40 +143,59 @@ export function CreateRFQDialog({
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-          {/* RFQ Name */}
+          {/* RFQ Title */}
           <div className="space-y-2">
-            <Label htmlFor="name">RFQ Name</Label>
+            <Label htmlFor="title">RFQ Title</Label>
             <Input
-              id="name"
-              {...form.register("name")}
+              id="title"
+              {...form.register("title")}
               placeholder="e.g., Concrete Pour - Slab"
-              data-testid="input-rfq-name"
+              data-testid="input-rfq-title"
             />
-            {form.formState.errors.name && (
-              <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+            {form.formState.errors.title && (
+              <p className="text-sm text-destructive">{form.formState.errors.title.message}</p>
             )}
           </div>
 
-          {/* Supplier Selection */}
+          {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="supplier">Supplier</Label>
-            <Select
-              onValueChange={(value) => form.setValue("supplierId", value)}
-              defaultValue={form.watch("supplierId")}
-            >
-              <SelectTrigger data-testid="select-supplier">
-                <SelectValue placeholder="Select supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                {suppliers.map((supplier) => (
-                  <SelectItem key={supplier.id} value={supplier.id}>
+            <Label htmlFor="description">Description (Optional)</Label>
+            <Input
+              id="description"
+              {...form.register("description")}
+              placeholder="Brief description of the RFQ"
+              data-testid="input-rfq-description"
+            />
+          </div>
+
+          {/* Multi-Supplier Selection */}
+          <div className="space-y-2">
+            <Label>Suppliers</Label>
+            <div className="space-y-2">
+              {suppliers.map((supplier) => (
+                <div key={supplier.id} className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id={`supplier-${supplier.id}`}
+                    checked={form.watch("supplierIds").includes(supplier.id)}
+                    onChange={(e) => {
+                      const currentIds = form.watch("supplierIds");
+                      if (e.target.checked) {
+                        form.setValue("supplierIds", [...currentIds, supplier.id]);
+                      } else {
+                        form.setValue("supplierIds", currentIds.filter(id => id !== supplier.id));
+                      }
+                    }}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor={`supplier-${supplier.id}`} className="text-sm cursor-pointer">
                     {supplier.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {form.formState.errors.supplierId && (
-              <p className="text-sm text-destructive">{form.formState.errors.supplierId.message}</p>
+                  </label>
+                </div>
+              ))}
+            </div>
+            {form.formState.errors.supplierIds && (
+              <p className="text-sm text-destructive">{form.formState.errors.supplierIds.message}</p>
             )}
           </div>
 
