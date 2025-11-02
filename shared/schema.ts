@@ -2518,19 +2518,28 @@ export const taskTemplates = pgTable("task_templates", {
   dueTime: text("due_time"), // HH:MM format
   dueOffsetDays: integer("due_offset_days").default(0), // Days relative to trigger
   
+  // Recurring schedule (for "perfect week" templates)
+  isRecurringTemplate: boolean("is_recurring_template").default(false), // Whether this template auto-generates recurring tasks
+  recurringDays: json("recurring_days").default([]), // Days of week: array of 0-6 (Sun-Sat) when tasks should be created
+  recurringStartTime: text("recurring_start_time"), // Start time in HH:MM format (e.g., "09:00")
+  recurringDuration: integer("recurring_duration"), // Duration in minutes
+  recurringAssigneeId: varchar("recurring_assignee_id").references(() => users.id), // User to assign recurring tasks to
+  recurringAssigneeName: text("recurring_assignee_name"), // Cached for performance
+  
   // Checklist
   checklist: json("checklist").default([]), // Array of checklist items [{text, completed}]
   
   // Attachments and links
   externalLinks: json("external_links").default([]), // Array of URLs
   
-  // Status
-  status: text("status").default("active"), // "active" | "draft" | "archived"
+  // Status - now references task_template_statuses table
+  statusId: varchar("status_id").references(() => taskTemplateStatuses.id), // Reference to task template status
+  statusName: text("status_name"), // Cached status name for performance (e.g., "Active", "Draft", "Archived")
   isActive: boolean("is_active").default(true),
   
   // Metadata
   category: text("category"), // Custom categorization
-  tags: json("tags").default([]), // Array of tags
+  tagIds: json("tag_ids").default([]), // Array of task tag IDs from task_tags table
   estimatedDuration: integer("estimated_duration"), // Estimated minutes to complete
   
   createdBy: varchar("created_by").references(() => users.id),
@@ -2544,6 +2553,9 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   companyId: true,
   createdAt: true,
   updatedAt: true,
+  statusName: true, // Server will populate this
+  defaultRoleName: true, // Server will populate this
+  recurringAssigneeName: true, // Server will populate this
 }).extend({
   goal: z.string().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),
@@ -2552,13 +2564,19 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   dueDayOfMonth: z.number().min(1).max(31).optional(),
   dueTime: z.string().optional(), // HH:MM format
   dueOffsetDays: z.number().optional(),
+  // Recurring schedule fields
+  isRecurringTemplate: z.boolean().optional(),
+  recurringDays: z.array(z.number().min(0).max(6)).optional(), // Array of 0-6 for Sun-Sat
+  recurringStartTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).optional(), // HH:MM format
+  recurringDuration: z.number().min(1).optional(), // Duration in minutes
+  recurringAssigneeId: z.string().optional(),
   checklist: z.array(z.object({
     text: z.string(),
     completed: z.boolean().default(false),
   })).optional(),
   externalLinks: z.array(z.string().url()).optional(), // Array of valid URLs
-  tags: z.array(z.string()).optional(),
-  status: z.enum(["active", "draft", "archived"]).optional(),
+  tagIds: z.array(z.string()).optional(),
+  statusId: z.string().optional(),
   estimatedDuration: z.number().optional(),
   isActive: z.boolean().optional(),
 });
@@ -2591,6 +2609,70 @@ export const insertTaskTemplateAttachmentSchema = createInsertSchema(taskTemplat
 
 export type InsertTaskTemplateAttachment = z.infer<typeof insertTaskTemplateAttachmentSchema>;
 export type TaskTemplateAttachment = typeof taskTemplateAttachments.$inferSelect;
+
+// Task Tags - Company-wide tag library for organizing tasks
+export const taskTags = pgTable("task_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(),
+  color: text("color").notNull(), // Hex color code (e.g., "#3b82f6")
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("task_tags_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertTaskTagSchema = createInsertSchema(taskTags).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code"),
+  displayOrder: z.number().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertTaskTag = z.infer<typeof insertTaskTagSchema>;
+export type TaskTag = typeof taskTags.$inferSelect;
+
+// Task Template Statuses - Customizable statuses for task templates
+export const taskTemplateStatuses = pgTable("task_template_statuses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(),
+  color: text("color").notNull(), // Hex color code (e.g., "#10b981")
+  displayOrder: integer("display_order").notNull().default(0),
+  isDefault: boolean("is_default").notNull().default(false), // One status should be marked as default
+  isActive: boolean("is_active").notNull().default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("task_template_statuses_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertTaskTemplateStatusSchema = createInsertSchema(taskTemplateStatuses).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code"),
+  displayOrder: z.number().optional(),
+  isDefault: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertTaskTemplateStatus = z.infer<typeof insertTaskTemplateStatusSchema>;
+export type TaskTemplateStatus = typeof taskTemplateStatuses.$inferSelect;
 
 // Workflow Templates - Automation rules that trigger task creation
 export const workflowTemplates = pgTable("workflow_templates", {
