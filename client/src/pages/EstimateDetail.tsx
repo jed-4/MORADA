@@ -60,6 +60,7 @@ import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimate
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { useUndoStack } from "@/hooks/useUndoStack";
+import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { Package, Undo2 } from "lucide-react";
 import {
   Table,
@@ -2486,6 +2487,9 @@ export default function EstimateDetail() {
   const [bulkActionStatus, setBulkActionStatus] = useState<string>('');
   const [bulkActionGroup, setBulkActionGroup] = useState<string>('');
   
+  // RFQ dialog
+  const [isCreateRFQOpen, setIsCreateRFQOpen] = useState(false);
+  
   // Single item delete dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -4413,6 +4417,16 @@ export default function EstimateDetail() {
                                 >
                                   Move to Group
                                 </Button>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => setIsCreateRFQOpen(true)}
+                                  data-testid="button-create-rfq"
+                                >
+                                  <FileText className="w-3 h-3 mr-1" />
+                                  Create RFQ
+                                </Button>
                               </>
                             )}
                             <Button
@@ -6105,6 +6119,17 @@ export default function EstimateDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Create RFQ Dialog */}
+      <CreateRFQDialog
+        open={isCreateRFQOpen}
+        onOpenChange={setIsCreateRFQOpen}
+        estimateId={effectiveEstimateId || ""}
+        projectId={estimate?.projectId || ""}
+        selectedItemIds={selectedItems}
+        estimateItems={items}
+        estimateName={estimate?.name || ""}
+      />
       
       {/* Catalog Sidebar */}
       <div className="fixed top-0 right-0 h-full z-50">
