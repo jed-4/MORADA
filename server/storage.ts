@@ -66,6 +66,8 @@ import {
   type SystemFolder, type InsertSystemFolder,
   type SystemDocument, type InsertSystemDocument,
   type TaskTemplate, type InsertTaskTemplate,
+  type TaskTag, type InsertTaskTag,
+  type TaskTemplateStatus, type InsertTaskTemplateStatus,
   type WorkflowTemplate, type InsertWorkflowTemplate,
   type ProjectWorkflow, type InsertProjectWorkflow,
   type Channel, type InsertChannel,
@@ -247,6 +249,22 @@ export interface IStorage {
   deleteCostCode(id: string, companyId: string): Promise<boolean>;
   archiveCostCode(id: string, companyId: string): Promise<CostCode | undefined>;
   mergeCostCodes(sourceId: string, targetId: string, companyId: string): Promise<boolean>;
+
+  // Task Tags CRUD (company-specific)
+  getTaskTags(companyId: string): Promise<TaskTag[]>;
+  getTaskTag(id: string, companyId: string): Promise<TaskTag | undefined>;
+  createTaskTag(tag: InsertTaskTag): Promise<TaskTag>;
+  updateTaskTag(id: string, tag: Partial<InsertTaskTag>, companyId: string): Promise<TaskTag | undefined>;
+  deleteTaskTag(id: string, companyId: string): Promise<boolean>;
+  updateTaskTagsOrder(updates: Array<{id: string, displayOrder: number}>, companyId: string): Promise<void>;
+
+  // Task Template Statuses CRUD (company-specific)
+  getTaskTemplateStatuses(companyId: string): Promise<TaskTemplateStatus[]>;
+  getTaskTemplateStatus(id: string, companyId: string): Promise<TaskTemplateStatus | undefined>;
+  createTaskTemplateStatus(status: InsertTaskTemplateStatus): Promise<TaskTemplateStatus>;
+  updateTaskTemplateStatus(id: string, status: Partial<InsertTaskTemplateStatus>, companyId: string): Promise<TaskTemplateStatus | undefined>;
+  deleteTaskTemplateStatus(id: string, companyId: string): Promise<boolean>;
+  updateTaskTemplateStatusesOrder(updates: Array<{id: string, displayOrder: number}>, companyId: string): Promise<void>;
 
   // Versioning and Locking
   createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate>;
@@ -6616,6 +6634,204 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in mergeCostCodes:", error);
       return false;
+    }
+  }
+
+  // Task Tags CRUD operations (company-specific)
+  async getTaskTags(companyId: string): Promise<TaskTag[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.taskTags)
+        .where(and(
+          eq(schema.taskTags.companyId, companyId),
+          eq(schema.taskTags.isActive, true)
+        ))
+        .orderBy(schema.taskTags.displayOrder);
+    } catch (error) {
+      console.error("Database error in getTaskTags:", error);
+      throw error;
+    }
+  }
+
+  async getTaskTag(id: string, companyId: string): Promise<TaskTag | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(schema.taskTags)
+        .where(and(
+          eq(schema.taskTags.id, id),
+          eq(schema.taskTags.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTaskTag:", error);
+      throw error;
+    }
+  }
+
+  async createTaskTag(insertTag: InsertTaskTag): Promise<TaskTag> {
+    try {
+      const result = await db
+        .insert(schema.taskTags)
+        .values(insertTag)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createTaskTag:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskTag(id: string, updateTag: Partial<InsertTaskTag>, companyId: string): Promise<TaskTag | undefined> {
+    try {
+      const result = await db
+        .update(schema.taskTags)
+        .set({
+          ...updateTag,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(schema.taskTags.id, id),
+          eq(schema.taskTags.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateTaskTag:", error);
+      throw error;
+    }
+  }
+
+  async deleteTaskTag(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db
+        .delete(schema.taskTags)
+        .where(and(
+          eq(schema.taskTags.id, id),
+          eq(schema.taskTags.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteTaskTag:", error);
+      return false;
+    }
+  }
+
+  async updateTaskTagsOrder(updates: Array<{id: string, displayOrder: number}>, companyId: string): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db
+          .update(schema.taskTags)
+          .set({ displayOrder: update.displayOrder })
+          .where(and(
+            eq(schema.taskTags.id, update.id),
+            eq(schema.taskTags.companyId, companyId)
+          ));
+      }
+    } catch (error) {
+      console.error("Database error in updateTaskTagsOrder:", error);
+      throw error;
+    }
+  }
+
+  // Task Template Statuses CRUD operations (company-specific)
+  async getTaskTemplateStatuses(companyId: string): Promise<TaskTemplateStatus[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.taskTemplateStatuses)
+        .where(and(
+          eq(schema.taskTemplateStatuses.companyId, companyId),
+          eq(schema.taskTemplateStatuses.isActive, true)
+        ))
+        .orderBy(schema.taskTemplateStatuses.displayOrder);
+    } catch (error) {
+      console.error("Database error in getTaskTemplateStatuses:", error);
+      throw error;
+    }
+  }
+
+  async getTaskTemplateStatus(id: string, companyId: string): Promise<TaskTemplateStatus | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(schema.taskTemplateStatuses)
+        .where(and(
+          eq(schema.taskTemplateStatuses.id, id),
+          eq(schema.taskTemplateStatuses.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTaskTemplateStatus:", error);
+      throw error;
+    }
+  }
+
+  async createTaskTemplateStatus(insertStatus: InsertTaskTemplateStatus): Promise<TaskTemplateStatus> {
+    try {
+      const result = await db
+        .insert(schema.taskTemplateStatuses)
+        .values(insertStatus)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createTaskTemplateStatus:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskTemplateStatus(id: string, updateStatus: Partial<InsertTaskTemplateStatus>, companyId: string): Promise<TaskTemplateStatus | undefined> {
+    try {
+      const result = await db
+        .update(schema.taskTemplateStatuses)
+        .set({
+          ...updateStatus,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(schema.taskTemplateStatuses.id, id),
+          eq(schema.taskTemplateStatuses.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateTaskTemplateStatus:", error);
+      throw error;
+    }
+  }
+
+  async deleteTaskTemplateStatus(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db
+        .delete(schema.taskTemplateStatuses)
+        .where(and(
+          eq(schema.taskTemplateStatuses.id, id),
+          eq(schema.taskTemplateStatuses.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteTaskTemplateStatus:", error);
+      return false;
+    }
+  }
+
+  async updateTaskTemplateStatusesOrder(updates: Array<{id: string, displayOrder: number}>, companyId: string): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db
+          .update(schema.taskTemplateStatuses)
+          .set({ displayOrder: update.displayOrder })
+          .where(and(
+            eq(schema.taskTemplateStatuses.id, update.id),
+            eq(schema.taskTemplateStatuses.companyId, companyId)
+          ));
+      }
+    } catch (error) {
+      console.error("Database error in updateTaskTemplateStatusesOrder:", error);
+      throw error;
     }
   }
 
