@@ -18,6 +18,7 @@ import {
   User,
   ExternalLink,
   CheckCircle2,
+  ListChecks,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { CalendarEvent } from "./EnhancedCalendar";
@@ -163,6 +164,39 @@ export function CalendarEventDetailDialog({ event, open, onOpenChange }: Calenda
                 <div className="flex-1">
                   <p className="font-medium text-sm">Assigned to</p>
                   <p className="text-sm text-muted-foreground mt-1">{taskDetails.assigneeName}</p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Checklist (for tasks) */}
+          {isTask && taskDetails?.checklist && (taskDetails.checklist as Array<{text: string; completed: boolean}>).length > 0 && (
+            <>
+              <Separator />
+              <div className="flex items-start gap-3">
+                <ListChecks className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-sm">Checklist</p>
+                    <Badge variant="secondary" className="text-xs">
+                      {(taskDetails.checklist as Array<{text: string; completed: boolean}>).filter(item => item.completed).length}/
+                      {(taskDetails.checklist as Array<{text: string; completed: boolean}>).length} complete
+                    </Badge>
+                  </div>
+                  <div className="space-y-1 mt-2">
+                    {(taskDetails.checklist as Array<{text: string; completed: boolean}>).map((item, index) => (
+                      <div key={index} className="flex items-center gap-2 text-sm">
+                        {item.completed ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
+                        )}
+                        <span className={item.completed ? 'line-through text-muted-foreground' : ''}>
+                          {item.text}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </>

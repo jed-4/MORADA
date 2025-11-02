@@ -10347,7 +10347,7 @@ export class DbStorage implements IStorage {
         .where(and(
           eq(schema.taskTemplates.companyId, companyId),
           eq(schema.taskTemplates.statusId, activeStatusId),
-          eq(schema.taskTemplates.recurringEnabled, true)
+          eq(schema.taskTemplates.isRecurringTemplate, true)
         ));
 
       if (templates.length === 0) {
