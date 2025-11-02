@@ -31,6 +31,10 @@ import {
   type SelectionWithOptions,
   type Supplier, type InsertSupplier,
   type Contact, type InsertContact,
+  type Rfq, type InsertRfq,
+  type RfqItem, type InsertRfqItem,
+  type RfqQuote, type InsertRfqQuote,
+  type RfqFollowUp, type InsertRfqFollowUp,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
   type BillApproval, type InsertBillApproval,
@@ -327,6 +331,18 @@ export interface IStorage {
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   archiveContact(id: string): Promise<Contact | undefined>;
   restoreContact(id: string): Promise<Contact | undefined>;
+
+  // RFQ (Request for Quote) CRUD
+  getRFQs(companyId: string, projectId?: string): Promise<Rfq[]>;
+  getRFQ(id: string): Promise<Rfq | undefined>;
+  createRFQ(rfq: InsertRfq): Promise<Rfq>;
+  updateRFQ(id: string, rfq: Partial<InsertRfq>): Promise<Rfq | undefined>;
+  deleteRFQ(id: string): Promise<boolean>;
+
+  // RFQ Items CRUD
+  getRFQItems(rfqId: string): Promise<RfqItem[]>;
+  createRFQItem(item: InsertRfqItem): Promise<RfqItem>;
+  deleteRFQItem(id: string): Promise<boolean>;
 
   // Bills CRUD
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
@@ -7019,6 +7035,120 @@ export class DbStorage implements IStorage {
       return restoredContacts[0];
     } catch (error) {
       console.error("Database error in restoreContact:", error);
+      throw error;
+    }
+  }
+
+  // RFQ Methods
+  async getRFQs(companyId: string, projectId?: string): Promise<Rfq[]> {
+    try {
+      const conditions = [eq(schema.rfqs.companyId, companyId)];
+      
+      if (projectId) {
+        conditions.push(eq(schema.rfqs.projectId, projectId));
+      }
+      
+      const rfqs = await db.select()
+        .from(schema.rfqs)
+        .where(and(...conditions))
+        .orderBy(desc(schema.rfqs.createdAt));
+      
+      return rfqs;
+    } catch (error) {
+      console.error("Database error in getRFQs:", error);
+      throw error;
+    }
+  }
+
+  async getRFQ(id: string): Promise<Rfq | undefined> {
+    try {
+      const rfqs = await db.select()
+        .from(schema.rfqs)
+        .where(eq(schema.rfqs.id, id));
+      return rfqs[0];
+    } catch (error) {
+      console.error("Database error in getRFQ:", error);
+      throw error;
+    }
+  }
+
+  async createRFQ(rfq: InsertRfq): Promise<Rfq> {
+    try {
+      const newRfqs = await db.insert(schema.rfqs)
+        .values(rfq)
+        .returning();
+      return newRfqs[0];
+    } catch (error) {
+      console.error("Database error in createRFQ:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQ(id: string, rfq: Partial<InsertRfq>): Promise<Rfq | undefined> {
+    try {
+      const updatedRfqs = await db.update(schema.rfqs)
+        .set({ ...rfq, updatedAt: new Date() })
+        .where(eq(schema.rfqs.id, id))
+        .returning();
+      return updatedRfqs[0];
+    } catch (error) {
+      console.error("Database error in updateRFQ:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQ(id: string): Promise<boolean> {
+    try {
+      // First delete all related RFQ items
+      await db.delete(schema.rfqItems)
+        .where(eq(schema.rfqItems.rfqId, id));
+      
+      // Then delete the RFQ
+      const deletedRfqs = await db.delete(schema.rfqs)
+        .where(eq(schema.rfqs.id, id))
+        .returning();
+      
+      return deletedRfqs.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFQ:", error);
+      throw error;
+    }
+  }
+
+  // RFQ Items Methods
+  async getRFQItems(rfqId: string): Promise<RfqItem[]> {
+    try {
+      const items = await db.select()
+        .from(schema.rfqItems)
+        .where(eq(schema.rfqItems.rfqId, rfqId))
+        .orderBy(asc(schema.rfqItems.displayOrder));
+      return items;
+    } catch (error) {
+      console.error("Database error in getRFQItems:", error);
+      throw error;
+    }
+  }
+
+  async createRFQItem(item: InsertRfqItem): Promise<RfqItem> {
+    try {
+      const newItems = await db.insert(schema.rfqItems)
+        .values(item)
+        .returning();
+      return newItems[0];
+    } catch (error) {
+      console.error("Database error in createRFQItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQItem(id: string): Promise<boolean> {
+    try {
+      const deletedItems = await db.delete(schema.rfqItems)
+        .where(eq(schema.rfqItems.id, id))
+        .returning();
+      return deletedItems.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFQItem:", error);
       throw error;
     }
   }
