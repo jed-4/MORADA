@@ -18,6 +18,7 @@ import {
   Clock,
 } from "lucide-react";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
+import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import type { Rfq, RfqItem } from "@shared/schema";
 import { format } from "date-fns";
 
@@ -27,6 +28,7 @@ export default function RFQDetail() {
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showSendDialog, setShowSendDialog] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
   // Fetch RFQ
@@ -119,8 +121,11 @@ export default function RFQDetail() {
   };
 
   const handleSendRfq = () => {
-    // TODO: Implement send functionality (task 7)
-    console.log("Send RFQ");
+    // Generate PDF first if not already generated
+    if (!pdfBlob && !showPreview) {
+      setShowPreview(true);
+    }
+    setShowSendDialog(true);
   };
 
   if (rfqLoading || itemsLoading) {
@@ -400,6 +405,16 @@ export default function RFQDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Send RFQ Dialog */}
+      {rfq && (
+        <SendRFQDialog
+          open={showSendDialog}
+          onOpenChange={setShowSendDialog}
+          rfq={rfq}
+          pdfBlob={pdfBlob}
+        />
+      )}
     </div>
   );
 }
