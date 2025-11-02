@@ -684,3 +684,156 @@ input[type="number"] {
 .hide-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+
+/* ========== ENHANCED DRAG-DROP STYLES (Buildern-level) ========== */
+
+/* Drop Zone Glow - Blue glow when hovering during drag */
+@keyframes dropZoneGlow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 12px rgba(59, 130, 246, 0.3); }
+}
+
+.drop-zone-active {
+  animation: dropZoneGlow 1.5s ease-in-out infinite;
+  border-color: rgb(59, 130, 246) !important;
+  background-color: rgba(59, 130, 246, 0.05);
+  transition: all 0.2s ease;
+}
+
+/* Ghost Card - Dragging preview */
+.drag-ghost-card {
+  background: white;
+  border: 2px solid rgb(59, 130, 246);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(59, 130, 246, 0.3);
+  transform: rotate(-2deg);
+  cursor: grabbing;
+}
+
+.dark .drag-ghost-card {
+  background: hsl(var(--card));
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(59, 130, 246, 0.5);
+}
+
+/* Hierarchy Visual Borders - Color-coded by level */
+.hierarchy-level-1 {
+  border-left: 3px solid #3b82f6; /* Blue-500 for top-level groups */
+  padding-left: 12px;
+}
+
+.hierarchy-level-2 {
+  border-left: 3px solid #10b981; /* Emerald-500 for subgroups */
+  padding-left: 20px;
+  margin-left: 16px;
+}
+
+.hierarchy-level-3 {
+  border-left: 3px solid #6b7280; /* Gray-500 for items */
+  padding-left: 28px;
+  margin-left: 32px;
+}
+
+/* Drag Handle Enhancement - Larger hit area for mobile */
+.drag-handle-enhanced {
+  padding: 8px;
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.drag-handle-enhanced:active {
+  cursor: grabbing;
+}
+
+/* Smooth Snap Animation */
+@keyframes snapIntoPlace {
+  0% { transform: scale(0.98); opacity: 0.8; }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.snap-animation {
+  animation: snapIntoPlace 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Breadcrumb Trail */
+.breadcrumb-trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding: 4px 0;
+}
+
+.breadcrumb-trail > span:not(:last-child)::after {
+  content: "›";
+  margin-left: 6px;
+  opacity: 0.5;
+}
+
+/* Catalog Sidebar Styles */
+.catalog-sidebar {
+  border-left: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  overflow-y: auto;
+}
+
+.catalog-item-draggable {
+  cursor: grab;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.catalog-item-draggable:hover {
+  background: hsl(var(--muted));
+  border-left-color: rgb(59, 130, 246);
+  transform: translateX(-2px);
+}
+
+.catalog-item-draggable:active {
+  cursor: grabbing;
+}
+
+/* Undo Toast - Positioned bottom-right */
+.undo-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: var(--shadow-lg);
+  animation: slideInUp 0.3s ease;
+  z-index: 100;
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Mobile Touch Enhancements */
+@media (max-width: 768px) {
+  .drag-handle-enhanced {
+    padding: 12px; /* Larger touch target */
+  }
+  
+  .hierarchy-level-1,
+  .hierarchy-level-2,
+  .hierarchy-level-3 {
+    border-left-width: 4px; /* Thicker borders for better visibility */
+  }
+}

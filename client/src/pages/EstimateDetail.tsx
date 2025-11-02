@@ -57,6 +57,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { logActivity } from "@/lib/activityLogger";
 import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimateItemsDialog";
+import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
+import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
+import { useUndoStack } from "@/hooks/useUndoStack";
+import { Package, Undo2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -602,6 +606,45 @@ export default function EstimateDetail() {
 
   // Track active drag item for DragOverlay
   const [activeId, setActiveId] = useState<string | null>(null);
+  
+  // Catalog Sidebar state
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  
+  // Undo stack
+  const undoStack = useUndoStack(20);
+  
+  // Register undo handler
+  useEffect(() => {
+    undoStack.setOnUndo((action) => {
+      // Handle undo based on action type
+      console.log('[UNDO] Reversing action:', action);
+      
+      switch (action.type) {
+        case 'Drag Item':
+        case 'Drag Group':
+          // Refetch to restore previous state
+          queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+          toast({
+            title: "Drag Undone",
+            description: "Items restored to previous position",
+          });
+          break;
+        case 'Duplicate Item':
+          // Delete the duplicated item (stored in action.data.newItemId)
+          if (action.data?.newItemId) {
+            deleteItemMutation.mutate(action.data.newItemId);
+          }
+          break;
+        default:
+          toast({
+            title: "Undo Not Supported",
+            description: `Cannot undo: ${action.type}`,
+            variant: "destructive",
+          });
+      }
+    });
+  }, [undoStack.setOnUndo, effectiveEstimateId]);
 
   // Drag and drop sensors with activation constraints
   const sensors = useSensors(
@@ -614,10 +657,67 @@ export default function EstimateDetail() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+  
+  // Keyboard shortcuts (G = group, U = ungroup, D = duplicate)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      
+      // G = Group selected items
+      if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        if (selectedItems.size > 0 && !estimate?.isLocked) {
+          setIsAddGroupOpen(true);
+          toast({
+            title: "Group Selected Items",
+            description: `Creating group with ${selectedItems.size} items`,
+          });
+        }
+      }
+      
+      // U = Ungroup selected items (remove from group)
+      if (e.key === 'u' || e.key === 'U') {
+        e.preventDefault();
+        if (selectedItems.size > 0 && !estimate?.isLocked) {
+          // Move selected items to "no group"
+          setBulkActionGroup('none');
+          setIsBulkGroupDialogOpen(true);
+          toast({
+            title: "Ungroup Items",
+            description: `Moving ${selectedItems.size} items out of their groups`,
+          });
+        }
+      }
+      
+      // D = Duplicate selected
+      if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        if (selectedItems.size === 1 && !estimate?.isLocked) {
+          const itemId = Array.from(selectedItems)[0];
+          handleDuplicateItem(itemId);
+        }
+      }
+      
+      // Enter = Edit first selected item
+      if (e.key === 'Enter' && selectedItems.size === 1 && !estimate?.isLocked) {
+        e.preventDefault();
+        const itemId = Array.from(selectedItems)[0];
+        setEditingItemId(itemId);
+        setIsEditDialogOpen(true);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedItems, estimate?.isLocked, handleDuplicateItem, setEditingItemId, setIsEditDialogOpen, setBulkActionGroup, setIsBulkGroupDialogOpen]);
 
   // Mutation for reordering items with optimistic updates
   const reorderItemsMutation = useMutation({
-    mutationFn: async ({ items }: { items: { id: string; order: number; groupId?: string | null }[] }) => {
+    mutationFn: async ({ items, previousState }: { items: { id: string; order: number; groupId?: string | null }[], previousState?: any[] }) => {
       // Filter out any items that might not be persisted yet (temporary IDs, optimistic updates, etc.)
       // Only send items that exist in our current items data
       const currentItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]) as EstimateItem[] || [];
@@ -642,8 +742,14 @@ export default function EstimateDetail() {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       
-      // Snapshot previous value
-      const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]);
+      // Snapshot previous value for rollback
+      const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]) as EstimateItem[];
+      
+      // Capture previous state for undo (only affected items)
+      const affectedItemIds = new Set(items.map(u => u.id));
+      const previousState = previousItems
+        ?.filter(item => affectedItemIds.has(item.id))
+        .map(item => ({ id: item.id, order: item.order, groupId: item.groupId }));
       
       // Optimistically update
       queryClient.setQueryData(
@@ -685,6 +791,7 @@ export default function EstimateDetail() {
     },
     onSuccess: () => {
       console.log('[REORDER MUTATION] Success');
+      undoStack.pushAction('Drag Item', { timestamp: Date.now() });
       toast({
         title: "Items reordered",
         description: "Successfully updated item order",
@@ -2579,10 +2686,17 @@ export default function EstimateDetail() {
     if (!effectiveEstimateId) return;
     
     try {
-      await apiRequest(`/api/estimate-items/${itemId}/duplicate`, 'POST', {});
+      const result = await apiRequest(`/api/estimate-items/${itemId}/duplicate`, 'POST', {});
       
       await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
       await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+      
+      // Track for undo
+      undoStack.pushAction('Duplicate Item', { 
+        originalItemId: itemId,
+        newItemId: result?.id,
+        timestamp: Date.now() 
+      });
       
       toast({
         title: "Item duplicated",
@@ -4173,6 +4287,15 @@ export default function EstimateDetail() {
                         <Upload className="w-4 h-4 mr-2" />
                         Import Items
                       </Button>
+                      <Button 
+                        data-testid="button-open-catalog" 
+                        onClick={() => setIsCatalogOpen(true)}
+                        disabled={estimate?.isLocked}
+                        variant={estimate?.isLocked ? "secondary" : "outline"}
+                      >
+                        <Package className="w-4 h-4 mr-2" />
+                        Catalog
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -4357,20 +4480,22 @@ export default function EstimateDetail() {
                   </div>
                   <DragOverlay>
                     {activeId ? (
-                      <div style={{ 
-                        opacity: 0.8,
-                        cursor: 'grabbing',
-                      }}>
+                      <div className="drag-ghost-card">
                         {(() => {
                           // Check if dragging a group
                           if (String(activeId).startsWith('group-')) {
                             const groupId = String(activeId).replace('group-', '');
                             const group = groups.find(g => g.id === groupId);
                             if (group) {
+                              const nestingLevel = group.parentGroupId 
+                                ? (allSubgroups.filter(sg => sg.parentGroupId === group.parentGroupId).indexOf(group) >= 0 ? 2 : 1)
+                                : 1;
+                              const borderColor = nestingLevel === 1 ? '#3b82f6' : '#10b981';
+                              
                               return (
-                                <div className="bg-card border-2 border-primary rounded-xl shadow-lg p-3 min-w-[300px]">
+                                <div style={{ borderLeft: `3px solid ${borderColor}`, paddingLeft: '12px' }}>
                                   <div className="flex items-center gap-2">
-                                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                    <GripVertical className="h-4 w-4" style={{ color: borderColor }} />
                                     <span className="font-semibold text-sm">{group.name}</span>
                                     {group.description && (
                                       <span className="text-xs text-muted-foreground">- {group.description}</span>
@@ -4384,10 +4509,15 @@ export default function EstimateDetail() {
                           const item = items.find(i => i.id === activeId);
                           if (item) {
                             return (
-                              <div className="bg-card border-2 border-primary rounded-lg shadow-lg p-3 min-w-[300px]">
+                              <div style={{ borderLeft: '3px solid #6b7280', paddingLeft: '12px' }}>
                                 <div className="flex items-center gap-2">
-                                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                  <GripVertical className="h-4 w-4 text-gray-500" />
                                   <span className="font-medium text-sm">{item.name}</span>
+                                  {item.quantity && item.unitCostExTax && (
+                                    <span className="text-xs text-muted-foreground">
+                                      - {item.quantity} × ${(item.unitCostExTax / 100).toFixed(2)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -5904,6 +6034,95 @@ export default function EstimateDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Catalog Sidebar */}
+      <div className="fixed top-0 right-0 h-full z-50">
+        <CatalogSidebar
+          isOpen={isCatalogOpen}
+          onClose={() => setIsCatalogOpen(false)}
+          onAddAssembly={async (assemblyId) => {
+            if (!effectiveEstimateId) return;
+            
+            try {
+              // Mock assembly data - in production, fetch from API
+              const assemblyItems = {
+                'slab-pour': [
+                  { description: 'Concrete - 20 MPa', quantity: 12.5, unit: 'm³', rate: 185 },
+                  { description: 'Steel mesh - SL82', quantity: 125, unit: 'm²', rate: 8.50 },
+                  { description: 'Vapor barrier', quantity: 125, unit: 'm²', rate: 2.75 },
+                  { description: 'Labour - concrete pour', quantity: 8, unit: 'hr', rate: 85 },
+                ],
+                'framing': [
+                  { description: 'Pine framing timber - 90x45', quantity: 450, unit: 'lm', rate: 4.20 },
+                  { description: 'Steel fixing plates', quantity: 85, unit: 'ea', rate: 3.50 },
+                  { description: 'Galv bolts M12x100', quantity: 120, unit: 'ea', rate: 1.80 },
+                  { description: 'Labour - framing', quantity: 24, unit: 'hr', rate: 75 },
+                ],
+              };
+              
+              const items = assemblyItems[assemblyId as keyof typeof assemblyItems] || [];
+              
+              // Add each item to the estimate
+              for (const item of items) {
+                await apiRequest('/api/estimate-items', 'POST', {
+                  estimateId: effectiveEstimateId,
+                  description: item.description,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  rate: item.rate,
+                  amount: item.quantity * item.rate,
+                });
+              }
+              
+              // Refresh data
+              await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+              await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+              
+              toast({
+                title: "Assembly Added",
+                description: `Added ${items.length} items from assembly to your estimate`,
+              });
+              
+              setIsCatalogOpen(false);
+            } catch (error: any) {
+              toast({
+                title: "Error",
+                description: error.message || "Failed to add assembly items",
+                variant: "destructive",
+              });
+            }
+          }}
+        />
+      </div>
+      
+      {/* Undo Toast */}
+      {undoStack.showUndoToast && undoStack.lastAction && (
+        <div className="undo-toast">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Undo2 className="h-4 w-4" />
+              <span className="text-sm">{undoStack.lastAction.type}</span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const action = undoStack.popAction();
+                if (action) {
+                  toast({
+                    title: "Action Undone",
+                    description: `Reversed: ${action.type}`,
+                  });
+                }
+              }}
+              data-testid="button-undo"
+            >
+              <Undo2 className="h-3 w-3 mr-1" />
+              Undo (Ctrl+Z)
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
