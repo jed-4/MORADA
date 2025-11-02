@@ -77,9 +77,14 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
   return parts.length > 0 ? parts : content;
 }
 
-export default function Communications() {
+export default function Messages() {
   const { user } = useAuth();
   const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead } = useSocket();
+  
+  // Set document title
+  useEffect(() => {
+    document.title = "Messages | BuildPro";
+  }, []);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);

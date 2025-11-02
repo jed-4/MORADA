@@ -67,7 +67,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { SocketProvider } from "@/lib/socket";
-import Communications from "@/pages/Communications";
+import Messages from "@/pages/Messages";
 
 function Router() {
   return (
@@ -75,7 +75,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
-      <Route path="/communications" component={Communications} />
+      <Route path="/messages" component={Messages} />
       <Route path="/notes" component={Notes} />
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
@@ -107,7 +107,7 @@ function Router() {
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
       <Route path="/projects/:projectId/notes" component={Notes} />
-      <Route path="/projects/:projectId/communications" component={Communications} />
+      <Route path="/projects/:projectId/messages" component={Messages} />
       <Route path="/projects/:projectId/minutes" component={Minutes} />
       <Route path="/projects/:projectId/minutes/:id" component={MinuteDetail} />
       <Route path="/projects/:projectId/tasks" component={Tasks} />
