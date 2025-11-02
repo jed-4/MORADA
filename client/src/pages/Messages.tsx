@@ -20,7 +20,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Hash, Plus, Send, Loader2, Sparkles, Menu, X, Bell, BellOff, Lock, Eye } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Hash, Plus, Send, Loader2, Sparkles, Menu, X, Bell, BellOff, Lock, Eye, Settings, UserPlus, Volume2, VolumeX } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
 import {
@@ -96,6 +104,10 @@ export default function Messages() {
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [isClientFacing, setIsClientFacing] = useState(false);
+  
+  // Channel settings dialog state
+  const [isAddPeopleOpen, setIsAddPeopleOpen] = useState(false);
+  const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
   
   // Notification state
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
@@ -638,9 +650,38 @@ export default function Messages() {
                   </Badge>
                 )}
               </div>
-              <Badge variant="outline" data-testid="badge-channel-type">
-                {selectedChannel.type === 'dm' ? 'Direct Message' : selectedChannel.isClientFacing ? 'Client Facing' : 'Internal'}
-              </Badge>
+              
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" data-testid="badge-channel-type">
+                  {selectedChannel.type === 'dm' ? 'Direct Message' : selectedChannel.isClientFacing ? 'Client Facing' : 'Internal'}
+                </Badge>
+                
+                {/* Channel Settings Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" data-testid="button-channel-settings">
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Channel Settings</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setIsAddPeopleOpen(true)} data-testid="menu-add-people">
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Add People
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsChannelSettingsOpen(true)} data-testid="menu-channel-settings">
+                      <Settings className="h-4 w-4 mr-2" />
+                      Channel Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem data-testid="menu-mute">
+                      <VolumeX className="h-4 w-4 mr-2" />
+                      Mute Channel
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
 
             {/* Messages */}
@@ -885,6 +926,83 @@ export default function Messages() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add People Dialog */}
+      <Dialog open={isAddPeopleOpen} onOpenChange={setIsAddPeopleOpen}>
+        <DialogContent data-testid="dialog-add-people" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add People to #{selectedChannel?.name}</DialogTitle>
+            <DialogDescription>
+              Search and select people to add to this channel
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              Coming soon: Search and add team members to this channel
+            </p>
+            <div className="space-y-2">
+              <Input
+                placeholder="Search team members..."
+                disabled
+                data-testid="input-search-users"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAddPeopleOpen(false)}
+              data-testid="button-close-add-people"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Channel Settings Dialog */}
+      <Dialog open={isChannelSettingsOpen} onOpenChange={setIsChannelSettingsOpen}>
+        <DialogContent data-testid="dialog-channel-settings" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Channel Settings</DialogTitle>
+            <DialogDescription>
+              Manage #{selectedChannel?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label>Channel Name</Label>
+              <Input
+                defaultValue={selectedChannel?.name}
+                disabled
+                data-testid="input-channel-name-settings"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                placeholder="Add a description..."
+                disabled
+                data-testid="input-channel-description"
+              />
+            </div>
+            <div className="pt-4 border-t">
+              <Button variant="destructive" size="sm" disabled data-testid="button-archive-channel">
+                Archive Channel
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsChannelSettingsOpen(false)}
+              data-testid="button-close-settings"
+            >
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       </div>
