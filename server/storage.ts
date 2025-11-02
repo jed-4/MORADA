@@ -344,6 +344,19 @@ export interface IStorage {
   createRFQItem(item: InsertRfqItem): Promise<RfqItem>;
   deleteRFQItem(id: string): Promise<boolean>;
 
+  // RFQ Quotes CRUD
+  getRFQQuotes(rfqId: string): Promise<RfqQuote[]>;
+  getRFQQuote(id: string): Promise<RfqQuote | undefined>;
+  createRFQQuote(quote: InsertRfqQuote): Promise<RfqQuote>;
+  updateRFQQuote(id: string, quote: Partial<InsertRfqQuote>): Promise<RfqQuote | undefined>;
+  deleteRFQQuote(id: string): Promise<boolean>;
+
+  // RFQ Follow-ups CRUD
+  getRFQFollowUps(rfqId: string): Promise<RfqFollowUp[]>;
+  createRFQFollowUp(followUp: InsertRfqFollowUp): Promise<RfqFollowUp>;
+  updateRFQFollowUp(id: string, followUp: Partial<InsertRfqFollowUp>): Promise<RfqFollowUp>;
+  deleteRFQFollowUp(id: string): Promise<boolean>;
+
   // Bills CRUD
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
   getBillById(id: string): Promise<Bill | null>;
@@ -7149,6 +7162,69 @@ export class DbStorage implements IStorage {
       return deletedItems.length > 0;
     } catch (error) {
       console.error("Database error in deleteRFQItem:", error);
+      throw error;
+    }
+  }
+
+  // RFQ Quotes Methods
+  async getRFQQuotes(rfqId: string): Promise<RfqQuote[]> {
+    try {
+      const quotes = await db.select()
+        .from(schema.rfqQuotes)
+        .where(eq(schema.rfqQuotes.rfqId, rfqId))
+        .orderBy(asc(schema.rfqQuotes.createdAt));
+      return quotes;
+    } catch (error) {
+      console.error("Database error in getRFQQuotes:", error);
+      throw error;
+    }
+  }
+
+  async getRFQQuote(id: string): Promise<RfqQuote | undefined> {
+    try {
+      const quotes = await db.select()
+        .from(schema.rfqQuotes)
+        .where(eq(schema.rfqQuotes.id, id));
+      return quotes[0];
+    } catch (error) {
+      console.error("Database error in getRFQQuote:", error);
+      throw error;
+    }
+  }
+
+  async createRFQQuote(quote: InsertRfqQuote): Promise<RfqQuote> {
+    try {
+      const newQuotes = await db.insert(schema.rfqQuotes)
+        .values(quote)
+        .returning();
+      return newQuotes[0];
+    } catch (error) {
+      console.error("Database error in createRFQQuote:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQQuote(id: string, quote: Partial<InsertRfqQuote>): Promise<RfqQuote | undefined> {
+    try {
+      const updatedQuotes = await db.update(schema.rfqQuotes)
+        .set({ ...quote, updatedAt: new Date() })
+        .where(eq(schema.rfqQuotes.id, id))
+        .returning();
+      return updatedQuotes[0];
+    } catch (error) {
+      console.error("Database error in updateRFQQuote:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQQuote(id: string): Promise<boolean> {
+    try {
+      const deletedQuotes = await db.delete(schema.rfqQuotes)
+        .where(eq(schema.rfqQuotes.id, id))
+        .returning();
+      return deletedQuotes.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFQQuote:", error);
       throw error;
     }
   }

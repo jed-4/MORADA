@@ -4047,6 +4047,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // RFQ Quotes API Routes
+  app.get("/api/rfqs/:rfqId/quotes", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Company isolation check - verify RFQ ownership
+      const rfq = await storage.getRFQ(req.params.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const quotes = await storage.getRFQQuotes(req.params.rfqId);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Error fetching RFQ quotes:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ quotes" });
+    }
+  });
+
+  app.post("/api/rfq-quotes", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqQuoteSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Company isolation check - verify RFQ ownership
+      const rfq = await storage.getRFQ(validationResult.data.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Add uploadedBy
+      const quoteData = {
+        ...validationResult.data,
+        uploadedBy: req.user!.id,
+      };
+
+      const quote = await storage.createRFQQuote(quoteData);
+      res.status(201).json(quote);
+    } catch (error: any) {
+      console.error("Error creating RFQ quote:", error);
+      res.status(500).json({ error: "Failed to create RFQ quote", details: error.message });
+    }
+  });
+
+  app.patch("/api/rfq-quotes/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqQuoteSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Security: Prevent rfqId reassignment
+      if (validationResult.data.rfqId) {
+        return res.status(400).json({ 
+          error: "Cannot change rfqId of an existing quote" 
+        });
+      }
+
+      // Company isolation check - fetch existing quote and verify RFQ ownership
+      const existingQuote = await storage.getRFQQuote(req.params.id);
+      if (!existingQuote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      const rfq = await storage.getRFQ(existingQuote.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const quote = await storage.updateRFQQuote(req.params.id, validationResult.data);
+      res.json(quote);
+    } catch (error: any) {
+      console.error("Error updating RFQ quote:", error);
+      res.status(500).json({ error: "Failed to update RFQ quote", details: error.message });
+    }
+  });
+
+  app.delete("/api/rfq-quotes/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Company isolation check - fetch existing quote and verify RFQ ownership
+      const existingQuote = await storage.getRFQQuote(req.params.id);
+      if (!existingQuote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      const rfq = await storage.getRFQ(existingQuote.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const deleted = await storage.deleteRFQQuote(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFQ quote:", error);
+      res.status(500).json({ error: "Failed to delete RFQ quote" });
+    }
+  });
+
   // RFQ Follow-ups API Routes
   app.get("/api/rfqs/:rfqId/follow-ups", requireAuth, requireTeamMember, async (req, res) => {
     try {
