@@ -4047,6 +4047,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // RFQ Follow-ups API Routes
+  app.get("/api/rfqs/:rfqId/follow-ups", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Company isolation check - verify RFQ ownership
+      const rfq = await storage.getRFQ(req.params.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const followUps = await storage.getRFQFollowUps(req.params.rfqId);
+      res.json(followUps);
+    } catch (error) {
+      console.error("Error fetching RFQ follow-ups:", error);
+      res.status(500).json({ error: "Failed to fetch RFQ follow-ups" });
+    }
+  });
+
+  app.post("/api/rfq-follow-ups", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqFollowUpSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Company isolation check - verify RFQ ownership
+      const rfq = await storage.getRFQ(validationResult.data.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const followUp = await storage.createRFQFollowUp(validationResult.data);
+      res.status(201).json(followUp);
+    } catch (error: any) {
+      console.error("Error creating RFQ follow-up:", error);
+      res.status(500).json({ error: "Failed to create RFQ follow-up", details: error.message });
+    }
+  });
+
+  app.patch("/api/rfq-follow-ups/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfqFollowUpSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      // Security: Prevent rfqId reassignment to avoid cross-company injection
+      if (validationResult.data.rfqId) {
+        return res.status(400).json({ 
+          error: "Cannot change rfqId of an existing follow-up" 
+        });
+      }
+
+      // Company isolation check - fetch existing follow-up and verify RFQ ownership
+      const existingFollowUp = await db.select().from(schema.rfqFollowUps)
+        .where(eq(schema.rfqFollowUps.id, req.params.id)).limit(1);
+      if (!existingFollowUp.length) {
+        return res.status(404).json({ error: "Follow-up not found" });
+      }
+
+      const rfq = await storage.getRFQ(existingFollowUp[0].rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const followUp = await storage.updateRFQFollowUp(req.params.id, validationResult.data);
+      res.json(followUp);
+    } catch (error: any) {
+      console.error("Error updating RFQ follow-up:", error);
+      res.status(500).json({ error: "Failed to update RFQ follow-up", details: error.message });
+    }
+  });
+
+  app.delete("/api/rfq-follow-ups/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Company isolation check - fetch existing follow-up and verify RFQ ownership
+      const existingFollowUp = await db.select().from(schema.rfqFollowUps)
+        .where(eq(schema.rfqFollowUps.id, req.params.id)).limit(1);
+      if (!existingFollowUp.length) {
+        return res.status(404).json({ error: "Follow-up not found" });
+      }
+
+      const rfq = await storage.getRFQ(existingFollowUp[0].rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const deleted = await storage.deleteRFQFollowUp(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "RFQ follow-up not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFQ follow-up:", error);
+      res.status(500).json({ error: "Failed to delete RFQ follow-up" });
+    }
+  });
+
   // Bills API Routes
   app.get("/api/bills", async (req, res) => {
     try {

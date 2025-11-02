@@ -51,31 +51,62 @@ export function SendRFQDialog({ open, onOpenChange, rfq, pdfBlob }: SendRFQDialo
     setIsSending(true);
 
     try {
-      // In a real implementation, we would:
-      // 1. Upload PDF to storage
-      // 2. Send emails to suppliers
-      // 3. Create in-app notifications
-      // 4. Schedule follow-ups
+      const now = new Date();
       
-      // For now, we'll just update the RFQ status
+      // Update RFQ status to sent
       await apiRequest(`/api/rfqs/${rfq.id}`, "PATCH", {
         status: "sent",
-        sentAt: new Date().toISOString(),
+        sentAt: now.toISOString(),
       });
+
+      // Fetch existing follow-ups to avoid duplicates
+      const existingFollowUps = await fetch(`/api/rfqs/${rfq.id}/follow-ups`).then(res => res.json());
+      
+      // Delete existing future/scheduled follow-ups to prevent duplicates
+      const deletePromises = existingFollowUps
+        .filter((fu: any) => fu.status === "scheduled" && new Date(fu.scheduledFor) > now)
+        .map((fu: any) => apiRequest(`/api/rfq-follow-ups/${fu.id}`, "DELETE"));
+      
+      await Promise.all(deletePromises);
+
+      // Schedule follow-up emails (Day 0, +3, +7, +14)
+      const followUpSchedule = [
+        { type: "initial" as const, days: 0, subject: "RFQ Sent", body: emailMessage },
+        { type: "reminder_3d" as const, days: 3, subject: "RFQ Reminder", body: "This is a friendly reminder about the RFQ we sent 3 days ago. Please submit your quote at your earliest convenience." },
+        { type: "reminder_7d" as const, days: 7, subject: "RFQ Follow-up", body: "Just checking in on the RFQ we sent last week. We're still awaiting your quote and would appreciate your response." },
+        { type: "reminder_14d" as const, days: 14, subject: "Final RFQ Reminder", body: "This is our final reminder regarding the RFQ sent 2 weeks ago. Please let us know if you're able to provide a quote." },
+      ];
+
+      // Create follow-up records for each schedule
+      const followUpPromises = followUpSchedule.map(async (schedule) => {
+        const scheduledDate = new Date(now);
+        scheduledDate.setDate(scheduledDate.getDate() + schedule.days);
+
+        return apiRequest("/api/rfq-follow-ups", "POST", {
+          rfqId: rfq.id,
+          followUpType: schedule.type,
+          scheduledFor: scheduledDate.toISOString(),
+          emailSubject: schedule.subject,
+          emailBody: schedule.body,
+          status: "scheduled",
+        });
+      });
+
+      await Promise.all(followUpPromises);
 
       // TODO: Implement actual email sending and notification creation
       // This would involve:
       // - Converting pdfBlob to file and uploading
       // - Calling email API with PDF attachment
       // - Creating notification records for in-app
-      // - Scheduling follow-up emails (task 8)
+      // - Processing scheduled follow-ups via background job
 
       queryClient.invalidateQueries({ queryKey: ["/api/rfqs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rfqs", rfq.id] });
 
       toast({
         title: "RFQ Sent",
-        description: `RFQ sent to ${rfq.supplierNames?.length || 0} suppliers`,
+        description: `RFQ sent to ${rfq.supplierNames?.length || 0} suppliers with ${followUpSchedule.length} follow-ups scheduled`,
       });
 
       onOpenChange(false);

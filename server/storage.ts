@@ -7153,6 +7153,57 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // RFQ Follow-ups Methods
+  async getRFQFollowUps(rfqId: string): Promise<RfqFollowUp[]> {
+    try {
+      const followUps = await db.select()
+        .from(schema.rfqFollowUps)
+        .where(eq(schema.rfqFollowUps.rfqId, rfqId))
+        .orderBy(asc(schema.rfqFollowUps.scheduledFor));
+      return followUps;
+    } catch (error) {
+      console.error("Database error in getRFQFollowUps:", error);
+      throw error;
+    }
+  }
+
+  async createRFQFollowUp(followUp: InsertRfqFollowUp): Promise<RfqFollowUp> {
+    try {
+      const newFollowUps = await db.insert(schema.rfqFollowUps)
+        .values(followUp)
+        .returning();
+      return newFollowUps[0];
+    } catch (error) {
+      console.error("Database error in createRFQFollowUp:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQFollowUp(id: string, followUp: Partial<InsertRfqFollowUp>): Promise<RfqFollowUp> {
+    try {
+      const updatedFollowUps = await db.update(schema.rfqFollowUps)
+        .set(followUp)
+        .where(eq(schema.rfqFollowUps.id, id))
+        .returning();
+      return updatedFollowUps[0];
+    } catch (error) {
+      console.error("Database error in updateRFQFollowUp:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQFollowUp(id: string): Promise<boolean> {
+    try {
+      const deletedFollowUps = await db.delete(schema.rfqFollowUps)
+        .where(eq(schema.rfqFollowUps.id, id))
+        .returning();
+      return deletedFollowUps.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFQFollowUp:", error);
+      throw error;
+    }
+  }
+
   async getBills(projectId?: string, status?: string): Promise<Bill[]> {
     try {
       let query = db.select().from(schema.bills);
