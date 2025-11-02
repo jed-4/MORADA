@@ -615,25 +615,72 @@ export default function EstimateDetail() {
   
   // Register undo handler
   useEffect(() => {
-    undoStack.setOnUndo((action) => {
+    undoStack.setOnUndo(async (action) => {
       // Handle undo based on action type
       console.log('[UNDO] Reversing action:', action);
       
       switch (action.type) {
         case 'Drag Item':
+          // Restore previous item ordering
+          if (action.data?.previousState) {
+            try {
+              await apiRequest("/api/estimate-items/reorder", "PATCH", { 
+                items: action.data.previousState 
+              });
+              queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+              toast({
+                title: "Drag Undone",
+                description: "Items restored to previous position",
+              });
+            } catch (error) {
+              toast({
+                title: "Undo Failed",
+                description: "Could not restore previous state",
+                variant: "destructive",
+              });
+            }
+          }
+          break;
         case 'Drag Group':
-          // Refetch to restore previous state
-          queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
-          toast({
-            title: "Drag Undone",
-            description: "Items restored to previous position",
-          });
+          // Restore previous group ordering
+          if (action.data?.previousState) {
+            try {
+              await apiRequest("/api/estimate-groups/reorder", "PATCH", { 
+                groups: action.data.previousState 
+              });
+              queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+              toast({
+                title: "Drag Undone",
+                description: "Groups restored to previous position",
+              });
+            } catch (error) {
+              toast({
+                title: "Undo Failed",
+                description: "Could not restore previous state",
+                variant: "destructive",
+              });
+            }
+          }
           break;
         case 'Duplicate Item':
           // Delete the duplicated item (stored in action.data.newItemId)
           if (action.data?.newItemId) {
-            deleteItemMutation.mutate(action.data.newItemId);
+            try {
+              await apiRequest(`/api/estimate-items/${action.data.newItemId}`, 'DELETE');
+              queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+              toast({
+                title: "Duplicate Undone",
+                description: "Removed duplicated item",
+              });
+            } catch (error) {
+              toast({
+                title: "Undo Failed",
+                description: "Could not remove duplicated item",
+                variant: "destructive",
+              });
+            }
           }
           break;
         default:
@@ -770,7 +817,7 @@ export default function EstimateDetail() {
         }
       );
       
-      return { previousItems };
+      return { previousItems, previousState };
     },
     onError: (error: any, variables, context) => {
       console.error('[REORDER MUTATION] Failed:', error);
@@ -789,9 +836,15 @@ export default function EstimateDetail() {
         variant: "destructive",
       });
     },
-    onSuccess: () => {
+    onSuccess: (data, variables, context) => {
       console.log('[REORDER MUTATION] Success');
-      undoStack.pushAction('Drag Item', { timestamp: Date.now() });
+      // Push action to undo stack with previous state for restoration
+      if (context?.previousState) {
+        undoStack.pushAction('Drag Item', { 
+          previousState: context.previousState,
+          timestamp: Date.now() 
+        });
+      }
       toast({
         title: "Items reordered",
         description: "Successfully updated item order",
@@ -809,7 +862,17 @@ export default function EstimateDetail() {
     mutationFn: async ({ groups }: { groups: { id: string; order: number }[] }) => {
       return apiRequest("/api/estimate-groups/reorder", "PATCH", { groups });
     },
-    onSuccess: (data, variables) => {
+    onMutate: async ({ groups }) => {
+      // Capture previous state for undo
+      const previousGroups = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "groups"]) as any[];
+      const affectedGroupIds = new Set(groups.map(u => u.id));
+      const previousState = previousGroups
+        ?.filter(group => affectedGroupIds.has(group.id))
+        .map(group => ({ id: group.id, order: group.order, parentGroupId: group.parentGroupId }));
+      
+      return { previousState };
+    },
+    onSuccess: (data, variables, context) => {
       // Update cache directly without refetching to avoid snap-back
       queryClient.setQueryData(
         ["/api/estimates", effectiveEstimateId, "groups"],
@@ -831,6 +894,14 @@ export default function EstimateDetail() {
           });
         }
       );
+      
+      // Push action to undo stack
+      if (context?.previousState) {
+        undoStack.pushAction('Drag Group', { 
+          previousState: context.previousState,
+          timestamp: Date.now() 
+        });
+      }
     },
     onError: (error: any) => {
       toast({
