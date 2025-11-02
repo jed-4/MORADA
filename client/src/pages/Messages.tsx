@@ -520,14 +520,17 @@ export default function Messages() {
         )}
       
       {/* Left Sidebar - Channels List */}
-      <Card className={`
-        w-64 flex flex-col border-r rounded-none border-l-0 border-t-0 border-b-0
-        absolute md:relative inset-y-0 left-0 z-50 md:z-0
-        transform transition-transform duration-200 ease-in-out
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
+      <Card 
+        className={`
+          flex flex-col border-r rounded-none border-l-0 border-t-0 border-b-0
+          absolute md:relative inset-y-0 left-0 z-50 md:z-0
+          transform transition-transform duration-200 ease-in-out
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}
+        style={{ width: '280px' }}
+      >
         <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="font-semibold text-lg" data-testid="text-communications">Communications</h2>
+          <h2 className="font-semibold text-lg" data-testid="text-messages">Messages</h2>
           <div className="flex gap-1">
             <Button
               size="icon"
