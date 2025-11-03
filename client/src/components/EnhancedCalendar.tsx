@@ -32,6 +32,7 @@ export interface CalendarEvent {
   isCompleted?: boolean;
   description?: string | null;
   location?: string | null;
+  templateId?: string | null;
   tagIds?: string[] | null;
 }
 
@@ -77,7 +78,10 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   });
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
-  const eventColor = event.projectColor || event.color || "hsl(215 35% 45%)";
+  const isRecurring = !!event.templateId;
+  const eventColor = isRecurring 
+    ? "hsl(270 50% 60%)" // Light purple for recurring tasks
+    : (event.projectColor || event.color || "hsl(215 35% 45%)");
   const showTime = event.startTime || event.endTime;
 
   // Convert color to proper format with 87% opacity
@@ -210,11 +214,23 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         </button>
       )}
       <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
-        <div className={cn(
-          "font-medium truncate w-full text-white text-[10.5px]",
-          isCompleted && "line-through opacity-60"
-        )}>
-          {event.title}
+        <div className="flex items-center gap-1 w-full">
+          <div className={cn(
+            "font-medium truncate flex-1 text-white text-[10.5px]",
+            isCompleted && "line-through opacity-60"
+          )}>
+            {event.title}
+          </div>
+          {isRecurring && (
+            <Badge 
+              variant="outline" 
+              className="flex-shrink-0 text-[8px] px-1 py-0 h-3 bg-green-500 border-none text-white font-bold"
+              title="Recurring template task"
+              data-testid={`recurring-badge-${event.id}`}
+            >
+              R
+            </Badge>
+          )}
         </div>
         {showTime && (
           <div className="text-[9px] text-white/70 font-normal">

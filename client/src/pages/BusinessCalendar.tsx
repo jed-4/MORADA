@@ -244,6 +244,7 @@ export default function BusinessCalendar() {
           status: task.status,
           isCompleted,
           assigneeId: task.assigneeId,
+          templateId: task.templateId,
         };
       });
 

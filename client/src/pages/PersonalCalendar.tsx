@@ -256,6 +256,7 @@ export default function PersonalCalendar() {
           isCompleted,
           assigneeId: task.assigneeId,
           tagIds: task.tagIds,
+          templateId: task.templateId,
         };
       });
 
