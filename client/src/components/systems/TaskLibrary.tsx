@@ -22,7 +22,8 @@ import {
   Link,
   CheckSquare,
   Target,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  RefreshCw
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -155,6 +156,27 @@ export function TaskLibrary() {
     },
     onError: () => {
       toast({ title: "Failed to update status", variant: "destructive" });
+    },
+  });
+
+  // Regenerate tasks mutation
+  const regenerateTasksMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/systems/task-templates/${id}/regenerate`, "POST"),
+    onSuccess: (data: { deleted: number; generated: number }) => {
+      // Invalidate all task and note queries to refresh all views
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return key === "/api/tasks" || key === "/api/notes" || key === "/api/tasks/user";
+        }
+      });
+      toast({ 
+        title: "Tasks regenerated successfully",
+        description: `Deleted ${data.deleted} old tasks, generated ${data.generated} new tasks`
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to regenerate tasks", variant: "destructive" });
     },
   });
 
@@ -558,6 +580,15 @@ export function TaskLibrary() {
                                 </>
                               )}
                             </DropdownMenuItem>
+                            {template.isRecurringTemplate && (
+                              <DropdownMenuItem
+                                onClick={() => regenerateTasksMutation.mutate(template.id)}
+                                data-testid="menu-regenerate-tasks"
+                              >
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                Regenerate Tasks
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => deleteTemplateMutation.mutate(template.id)}
                               className="text-destructive"

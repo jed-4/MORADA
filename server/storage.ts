@@ -629,6 +629,7 @@ export interface IStorage {
   updateTaskTemplate(id: string, template: Partial<InsertTaskTemplate>, companyId: string): Promise<TaskTemplate | undefined>;
   deleteTaskTemplate(id: string, companyId: string): Promise<boolean>;
   generateRecurringTasks(companyId: string): Promise<{ generated: number }>;
+  clearAndRegenerateTemplateTask(templateId: string, companyId: string): Promise<{ deleted: number; generated: number }>;
 
   // Systems Library - Workflow Templates
   getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]>;
@@ -10459,6 +10460,100 @@ export class DbStorage implements IStorage {
       return { generated: generatedCount };
     } catch (error) {
       console.error("Database error in generateRecurringTasks:", error);
+      throw error;
+    }
+  }
+
+  async clearAndRegenerateTemplateTask(templateId: string, companyId: string): Promise<{ deleted: number; generated: number }> {
+    try {
+      // First, delete all existing tasks for this template
+      const deletedTasks = await db.delete(schema.notes)
+        .where(and(
+          eq(schema.notes.templateId, templateId),
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.type, "task")
+        ))
+        .returning();
+
+      const deletedCount = deletedTasks.length;
+
+      // Now regenerate tasks for this specific template
+      const template = await this.getTaskTemplate(templateId, companyId);
+      if (!template || !template.isRecurringTemplate) {
+        return { deleted: deletedCount, generated: 0 };
+      }
+
+      // Get all users in the company for role-based assignment
+      const allUsers = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.companyId, companyId));
+
+      // Generate new task instances
+      const instances = generateRecurringTaskInstances(template as any, new Set());
+
+      // Determine assignees for this template
+      let assignees: typeof allUsers = [];
+      if (template.defaultRoleId) {
+        assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
+      }
+
+      // Create tasks from instances
+      let generatedCount = 0;
+      for (const instance of instances) {
+        if (assignees.length === 0) {
+          // No role-based assignees - preserve instance assigneeId (for legacy defaultAssigneeId support)
+          const taskData: InsertNote = {
+            title: instance.title,
+            content: instance.content || "",
+            author: "System",
+            type: "task",
+            priority: instance.priority as any,
+            status: "todo",
+            assigneeId: instance.assigneeId,
+            assigneeName: instance.assigneeId ? allUsers.find(u => u.id === instance.assigneeId)?.firstName + " " + allUsers.find(u => u.id === instance.assigneeId)?.lastName : undefined,
+            dueDate: instance.dueDate,
+            startTime: instance.startTime,
+            endTime: instance.endTime,
+            tags: [],
+            labels: [],
+            category: instance.category,
+            templateId: instance.templateId,
+            companyId: companyId,
+          };
+
+          await db.insert(schema.notes).values(taskData);
+          generatedCount++;
+        } else {
+          // Create one task per assignee
+          for (const assignee of assignees) {
+            const taskData: InsertNote = {
+              title: instance.title,
+              content: instance.content || "",
+              author: "System",
+              type: "task",
+              priority: instance.priority as any,
+              status: "todo",
+              assigneeId: assignee.id,
+              assigneeName: `${assignee.firstName} ${assignee.lastName}`,
+              dueDate: instance.dueDate,
+              startTime: instance.startTime,
+              endTime: instance.endTime,
+              tags: [],
+              labels: [],
+              category: instance.category,
+              templateId: instance.templateId,
+              companyId: companyId,
+            };
+
+            await db.insert(schema.notes).values(taskData);
+            generatedCount++;
+          }
+        }
+      }
+
+      return { deleted: deletedCount, generated: generatedCount };
+    } catch (error) {
+      console.error("Database error in clearAndRegenerateTemplateTask:", error);
       throw error;
     }
   }

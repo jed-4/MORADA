@@ -8258,6 +8258,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Clear and regenerate tasks for a specific template (when template is edited)
+  app.post("/api/systems/task-templates/:id/regenerate", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const result = await storage.clearAndRegenerateTemplateTask(req.params.id, companyId);
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to clear and regenerate template tasks:", error);
+      res.status(500).json({ error: "Failed to clear and regenerate template tasks" });
+    }
+  });
+
   // Workflow Templates
   app.get("/api/systems/workflow-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
