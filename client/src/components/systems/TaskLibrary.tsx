@@ -211,24 +211,34 @@ export function TaskLibrary() {
   };
 
   const handleSaveTemplate = () => {
+    // Build recurringSchedule from dueDayOfWeek and individual day schedules
+    let recurringScheduleData: Array<{ dayOfWeek: number; startTime: string; duration: number }> = [];
+    
+    if (templateForm.isRecurringTemplate && templateForm.frequency === "weekly") {
+      recurringScheduleData = templateForm.dueDayOfWeek
+        .map(dayValue => {
+          const schedule = getDaySchedule(dayValue);
+          if (schedule && schedule.startTime && schedule.startTime.trim() !== "") {
+            return {
+              dayOfWeek: dayValue,
+              startTime: schedule.startTime,
+              duration: schedule.duration || 60
+            };
+          }
+          return null;
+        })
+        .filter((s): s is { dayOfWeek: number; startTime: string; duration: number } => s !== null);
+    }
+
     // Clean up the data before sending
     const cleanedData = {
       ...templateForm,
       // Remove empty external links
       externalLinks: templateForm.externalLinks.filter(link => link.trim() !== ""),
-      // Only include recurring fields if enabled
-      ...(templateForm.isRecurringTemplate ? {
-        isRecurringTemplate: true,
-        // Filter out schedule items with empty startTime
-        recurringSchedule: templateForm.recurringSchedule.filter(
-          schedule => schedule.startTime && schedule.startTime.trim() !== ""
-        ),
-        defaultRoleId: templateForm.defaultRoleId || null,
-      } : {
-        isRecurringTemplate: false,
-        recurringSchedule: [],
-        recurringDays: [],
-      }),
+      // Include recurring fields if enabled
+      isRecurringTemplate: templateForm.isRecurringTemplate,
+      recurringSchedule: recurringScheduleData,
+      defaultRoleId: templateForm.isRecurringTemplate ? (templateForm.defaultRoleId || null) : null,
     };
 
     console.log("Saving template with data:", cleanedData);
@@ -596,87 +606,132 @@ export function TaskLibrary() {
               </Select>
             </div>
 
-            {/* Recurring Schedule Section */}
-            <div className="border-2 rounded-md p-4 bg-muted/5">
-              <div className="flex items-center gap-2 mb-3">
-                <Checkbox
-                  id="recurring-template"
-                  checked={templateForm.isRecurringTemplate}
-                  onCheckedChange={(checked) => 
-                    setTemplateForm({ ...templateForm, isRecurringTemplate: checked as boolean })
-                  }
-                  data-testid="checkbox-recurring-template"
-                />
-                <Label htmlFor="recurring-template" className="flex items-center gap-2 cursor-pointer font-semibold">
-                  <CalendarIcon className="h-4 w-4" />
-                  Enable Recurring Schedule (Perfect Week)
-                </Label>
-              </div>
+            {/* Recurring Template Checkbox */}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="recurring-template"
+                checked={templateForm.isRecurringTemplate}
+                onCheckedChange={(checked) => 
+                  setTemplateForm({ ...templateForm, isRecurringTemplate: checked as boolean })
+                }
+                data-testid="checkbox-recurring-template"
+              />
+              <Label htmlFor="recurring-template" className="cursor-pointer">
+                Recurring Template
+              </Label>
+            </div>
 
-              {templateForm.isRecurringTemplate && (
-                <div className="space-y-4">
-                  <div>
-                    <Label className="mb-2 block">Select Days</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {DAYS_OF_WEEK.map((day) => (
-                        <Badge
-                          key={day.value}
-                          variant={templateForm.recurringDays.includes(day.value) ? "default" : "outline"}
-                          className="cursor-pointer hover-elevate active-elevate-2"
-                          onClick={() => toggleDay(day.value)}
-                          data-testid={`badge-recurring-day-${day.label.toLowerCase()}`}
-                        >
-                          {day.label}
-                        </Badge>
+            {templateForm.isRecurringTemplate && (
+              <>
+                <div>
+                  <Label>Default Role Assignment</Label>
+                  <Select
+                    value={templateForm.defaultRoleId}
+                    onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
+                  >
+                    <SelectTrigger data-testid="select-recurring-role">
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
                       ))}
-                    </div>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Frequency</Label>
+                  <Select
+                    value={templateForm.frequency}
+                    onValueChange={(value) => setTemplateForm({ ...templateForm, frequency: value })}
+                  >
+                    <SelectTrigger data-testid="select-template-frequency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+            
+                {/* Conditional frequency fields */}
+                {templateForm.frequency === "daily" && (
+                  <div>
+                    <Label>Time</Label>
+                    <Input
+                      type="time"
+                      value={templateForm.dueTime}
+                      onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
+                      data-testid="input-template-time"
+                    />
                   </div>
-
-                  {templateForm.recurringDays.length > 0 && (
-                    <>
-                      <div>
-                        <Label>Default Role Assignment</Label>
-                        <Select
-                          value={templateForm.defaultRoleId}
-                          onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
-                        >
-                          <SelectTrigger data-testid="select-recurring-role">
-                            <SelectValue placeholder="Select a role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {roles.map((role) => (
-                              <SelectItem key={role.id} value={role.id}>
-                                {role.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                )}
+            
+                {templateForm.frequency === "weekly" && (
+                  <>
+                    <div>
+                      <Label>Days of Week</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {DAYS_OF_WEEK.map((day) => (
+                          <Badge
+                            key={day.value}
+                            variant={templateForm.dueDayOfWeek.includes(day.value) ? "default" : "outline"}
+                            className="cursor-pointer hover-elevate active-elevate-2"
+                            onClick={() => toggleDayOfWeek(day.value)}
+                            data-testid={`button-day-${day.label.toLowerCase()}`}
+                          >
+                            {day.label}
+                          </Badge>
+                        ))}
                       </div>
+                    </div>
 
+                    {/* Time and duration for each selected day */}
+                    {templateForm.dueDayOfWeek.length > 0 && (
                       <div className="space-y-3">
                         <Label>Day Schedules</Label>
-                        {templateForm.recurringDays.map((dayValue) => {
+                        {templateForm.dueDayOfWeek.map((dayValue) => {
                           const day = DAYS_OF_WEEK.find(d => d.value === dayValue);
                           const schedule = getDaySchedule(dayValue);
                           
                           return (
-                            <div key={dayValue} className="border-2 rounded-md p-3">
+                            <div key={dayValue} className="border rounded-md p-3">
                               <div className="font-medium mb-2">{day?.fullLabel}</div>
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
                                   <Label className="text-xs">Start Time</Label>
-                                  <Input
-                                    type="time"
+                                  <Select
                                     value={schedule?.startTime || ""}
-                                    onChange={(e) => updateDaySchedule(dayValue, e.target.value, schedule?.duration || 60)}
-                                    data-testid={`input-recurring-time-${day?.label.toLowerCase()}`}
-                                  />
+                                    onValueChange={(value) => updateDaySchedule(dayValue, value, schedule?.duration || 60)}
+                                  >
+                                    <SelectTrigger data-testid={`select-recurring-time-${day?.label.toLowerCase()}`}>
+                                      <SelectValue placeholder="Select time" />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-[200px]">
+                                      {Array.from({ length: 96 }, (_, i) => {
+                                        const hours = Math.floor(i / 4);
+                                        const minutes = (i % 4) * 15;
+                                        const time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                                        return (
+                                          <SelectItem key={time} value={time}>
+                                            {time}
+                                          </SelectItem>
+                                        );
+                                      })}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                                 <div>
                                   <Label className="text-xs">Duration (min)</Label>
                                   <Input
                                     type="number"
-                                    min="1"
+                                    min="15"
+                                    step="15"
                                     value={schedule?.duration || ""}
                                     onChange={(e) => updateDaySchedule(dayValue, schedule?.startTime || "", parseInt(e.target.value) || 60)}
                                     placeholder="60"
@@ -688,79 +743,27 @@ export function TaskLibrary() {
                           );
                         })}
                       </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+                    )}
+                  </>
+                )}
+            
+                {templateForm.frequency === "monthly" && (
+                  <div>
+                    <Label>Day of Month</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={templateForm.dueDayOfMonth}
+                      onChange={(e) => setTemplateForm({ ...templateForm, dueDayOfMonth: parseInt(e.target.value) || 1 })}
+                      placeholder="1-31"
+                      data-testid="input-template-day-of-month"
+                    />
+                  </div>
+                )}
+              </>
+            )}
 
-            <div>
-              <Label>Frequency</Label>
-              <Select
-                value={templateForm.frequency}
-                onValueChange={(value) => setTemplateForm({ ...templateForm, frequency: value })}
-              >
-                <SelectTrigger data-testid="select-template-frequency">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="once">Once</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                  <SelectItem value="yearly">Yearly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Conditional frequency fields */}
-            {templateForm.frequency === "daily" && (
-              <div>
-                <Label>Time</Label>
-                <Input
-                  type="time"
-                  value={templateForm.dueTime}
-                  onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
-                  data-testid="input-template-time"
-                />
-              </div>
-            )}
-            
-            {templateForm.frequency === "weekly" && (
-              <div>
-                <Label>Days of Week</Label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => (
-                    <Button
-                      key={day}
-                      type="button"
-                      variant={templateForm.dueDayOfWeek.includes(index) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => toggleDayOfWeek(index)}
-                      data-testid={`button-day-${day.toLowerCase()}`}
-                    >
-                      {day}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {templateForm.frequency === "monthly" && (
-              <div>
-                <Label>Day of Month</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={templateForm.dueDayOfMonth}
-                  onChange={(e) => setTemplateForm({ ...templateForm, dueDayOfMonth: parseInt(e.target.value) || 1 })}
-                  placeholder="1-31"
-                  data-testid="input-template-day-of-month"
-                />
-              </div>
-            )}
-            
             <div>
               <Label>Category</Label>
               <Select
