@@ -126,8 +126,10 @@ export function TaskLibrary() {
       resetForm();
       toast({ title: "Task template updated successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to update task template", variant: "destructive" });
+    onError: (error: any) => {
+      console.error("Update error:", error);
+      const errorMessage = error?.message || error?.details || "Failed to update task template";
+      toast({ title: errorMessage, variant: "destructive" });
     },
   });
 
@@ -209,10 +211,29 @@ export function TaskLibrary() {
   };
 
   const handleSaveTemplate = () => {
+    // Clean up the data before sending
+    const cleanedData = {
+      ...templateForm,
+      // Remove empty external links
+      externalLinks: templateForm.externalLinks.filter(link => link.trim() !== ""),
+      // Only include recurring fields if enabled
+      ...(templateForm.isRecurringTemplate ? {
+        isRecurringTemplate: true,
+        recurringSchedule: templateForm.recurringSchedule,
+        defaultRoleId: templateForm.defaultRoleId || null,
+      } : {
+        isRecurringTemplate: false,
+        recurringSchedule: [],
+        recurringDays: [],
+      }),
+    };
+
+    console.log("Saving template with data:", cleanedData);
+
     if (editingTemplate) {
-      updateTemplateMutation.mutate({ id: editingTemplate.id, data: templateForm });
+      updateTemplateMutation.mutate({ id: editingTemplate.id, data: cleanedData });
     } else {
-      createTemplateMutation.mutate(templateForm);
+      createTemplateMutation.mutate(cleanedData);
     }
   };
 
