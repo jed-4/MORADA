@@ -21,8 +21,11 @@ import {
   X,
   Link,
   CheckSquare,
-  Target
+  Target,
+  Calendar as CalendarIcon
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -47,10 +50,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useTaskTemplateCategoryOptions } from "@/hooks/useTaskTemplateCategoryOptions";
 import type { TaskTemplate, UserRole } from "@shared/schema";
+
+const DAYS_OF_WEEK = [
+  { value: 0, label: "Sun", fullLabel: "Sunday" },
+  { value: 1, label: "Mon", fullLabel: "Monday" },
+  { value: 2, label: "Tue", fullLabel: "Tuesday" },
+  { value: 3, label: "Wed", fullLabel: "Wednesday" },
+  { value: 4, label: "Thu", fullLabel: "Thursday" },
+  { value: 5, label: "Fri", fullLabel: "Friday" },
+  { value: 6, label: "Sat", fullLabel: "Saturday" },
+];
 
 export function TaskLibrary() {
   const [showDialog, setShowDialog] = useState(false);
@@ -74,6 +86,9 @@ export function TaskLibrary() {
     dueDayOfMonth: 1,
     checklist: [] as Array<{ text: string; completed: boolean }>,
     externalLinks: [] as string[],
+    isRecurringTemplate: false,
+    recurringDays: [] as number[],
+    recurringSchedule: [] as Array<{ dayOfWeek: number; startTime: string; duration: number }>,
   });
 
   // Fetch task templates
@@ -157,6 +172,9 @@ export function TaskLibrary() {
       dueDayOfMonth: 1,
       checklist: [],
       externalLinks: [],
+      isRecurringTemplate: false,
+      recurringDays: [],
+      recurringSchedule: [],
     });
   };
 
@@ -183,6 +201,9 @@ export function TaskLibrary() {
       dueDayOfMonth: template.dueDayOfMonth || 1,
       checklist: template.checklist ? (Array.isArray(template.checklist) ? template.checklist : JSON.parse(template.checklist as string)) : [],
       externalLinks: template.externalLinks ? (Array.isArray(template.externalLinks) ? template.externalLinks : JSON.parse(template.externalLinks as string)) : [],
+      isRecurringTemplate: template.isRecurringTemplate || false,
+      recurringDays: template.recurringDays ? (Array.isArray(template.recurringDays) ? template.recurringDays : JSON.parse(template.recurringDays as string)) : [],
+      recurringSchedule: template.recurringSchedule ? (Array.isArray(template.recurringSchedule) ? template.recurringSchedule : JSON.parse(template.recurringSchedule as string)) : [],
     });
     setShowDialog(true);
   };
@@ -227,6 +248,48 @@ export function TaskLibrary() {
         ? prev.dueDayOfWeek.filter((d) => d !== day)
         : [...prev.dueDayOfWeek, day].sort()
     }));
+  };
+
+  // Recurring schedule helper functions
+  const toggleDay = (day: number) => {
+    setTemplateForm(prev => {
+      const isSelected = prev.recurringDays.includes(day);
+      const newRecurringDays = isSelected
+        ? prev.recurringDays.filter(d => d !== day)
+        : [...prev.recurringDays, day].sort((a, b) => a - b);
+      
+      const newRecurringSchedule = isSelected
+        ? prev.recurringSchedule.filter(s => s.dayOfWeek !== day)
+        : prev.recurringSchedule;
+
+      return {
+        ...prev,
+        recurringDays: newRecurringDays,
+        recurringSchedule: newRecurringSchedule,
+      };
+    });
+  };
+
+  const updateDaySchedule = (dayOfWeek: number, startTime: string, duration: number) => {
+    setTemplateForm(prev => {
+      const existingIndex = prev.recurringSchedule.findIndex(s => s.dayOfWeek === dayOfWeek);
+      const newRecurringSchedule = [...prev.recurringSchedule];
+      
+      if (existingIndex >= 0) {
+        newRecurringSchedule[existingIndex] = { dayOfWeek, startTime, duration };
+      } else {
+        newRecurringSchedule.push({ dayOfWeek, startTime, duration });
+      }
+
+      return {
+        ...prev,
+        recurringSchedule: newRecurringSchedule,
+      };
+    });
+  };
+
+  const getDaySchedule = (dayOfWeek: number): { dayOfWeek: number; startTime: string; duration: number } | undefined => {
+    return templateForm.recurringSchedule.find(s => s.dayOfWeek === dayOfWeek);
   };
 
   // Checklist management
@@ -508,24 +571,105 @@ export function TaskLibrary() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Default Role</Label>
-              <Select
-                value={templateForm.defaultRoleId}
-                onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
-              >
-                <SelectTrigger data-testid="select-template-role">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role.id} value={role.id}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            {/* Recurring Schedule Section */}
+            <div className="border-2 rounded-md p-4 bg-muted/5">
+              <div className="flex items-center gap-2 mb-3">
+                <Checkbox
+                  id="recurring-template"
+                  checked={templateForm.isRecurringTemplate}
+                  onCheckedChange={(checked) => 
+                    setTemplateForm({ ...templateForm, isRecurringTemplate: checked as boolean })
+                  }
+                  data-testid="checkbox-recurring-template"
+                />
+                <Label htmlFor="recurring-template" className="flex items-center gap-2 cursor-pointer font-semibold">
+                  <CalendarIcon className="h-4 w-4" />
+                  Enable Recurring Schedule (Perfect Week)
+                </Label>
+              </div>
+
+              {templateForm.isRecurringTemplate && (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Select Days</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS_OF_WEEK.map((day) => (
+                        <Badge
+                          key={day.value}
+                          variant={templateForm.recurringDays.includes(day.value) ? "default" : "outline"}
+                          className="cursor-pointer hover-elevate active-elevate-2"
+                          onClick={() => toggleDay(day.value)}
+                          data-testid={`badge-recurring-day-${day.label.toLowerCase()}`}
+                        >
+                          {day.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  {templateForm.recurringDays.length > 0 && (
+                    <>
+                      <div>
+                        <Label>Default Role Assignment</Label>
+                        <Select
+                          value={templateForm.defaultRoleId}
+                          onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
+                        >
+                          <SelectTrigger data-testid="select-recurring-role">
+                            <SelectValue placeholder="Select a role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {roles.map((role) => (
+                              <SelectItem key={role.id} value={role.id}>
+                                {role.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-3">
+                        <Label>Day Schedules</Label>
+                        {templateForm.recurringDays.map((dayValue) => {
+                          const day = DAYS_OF_WEEK.find(d => d.value === dayValue);
+                          const schedule = getDaySchedule(dayValue);
+                          
+                          return (
+                            <div key={dayValue} className="border-2 rounded-md p-3">
+                              <div className="font-medium mb-2">{day?.fullLabel}</div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <Label className="text-xs">Start Time</Label>
+                                  <Input
+                                    type="time"
+                                    value={schedule?.startTime || ""}
+                                    onChange={(e) => updateDaySchedule(dayValue, e.target.value, schedule?.duration || 60)}
+                                    data-testid={`input-recurring-time-${day?.label.toLowerCase()}`}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Duration (min)</Label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={schedule?.duration || ""}
+                                    onChange={(e) => updateDaySchedule(dayValue, schedule?.startTime || "", parseInt(e.target.value) || 60)}
+                                    placeholder="60"
+                                    data-testid={`input-recurring-duration-${day?.label.toLowerCase()}`}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+
             <div>
               <Label>Frequency</Label>
               <Select
