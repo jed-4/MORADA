@@ -10375,10 +10375,15 @@ export class DbStorage implements IStorage {
         }
       }
 
-      // Get all users for role-based assignment
+      // Get all users for this company
       const allUsers = await db.select()
         .from(schema.users)
-        .where(eq(schema.users.companyId, companyId));
+        .where(
+          and(
+            eq(schema.users.companyId, companyId),
+            eq(schema.users.isActive, true)
+          )
+        );
 
       // Generate task instances for each template
       let generatedCount = 0;
