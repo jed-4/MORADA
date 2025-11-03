@@ -219,7 +219,10 @@ export function TaskLibrary() {
       // Only include recurring fields if enabled
       ...(templateForm.isRecurringTemplate ? {
         isRecurringTemplate: true,
-        recurringSchedule: templateForm.recurringSchedule,
+        // Filter out schedule items with empty startTime
+        recurringSchedule: templateForm.recurringSchedule.filter(
+          schedule => schedule.startTime && schedule.startTime.trim() !== ""
+        ),
         defaultRoleId: templateForm.defaultRoleId || null,
       } : {
         isRecurringTemplate: false,
