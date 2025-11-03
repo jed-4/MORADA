@@ -296,9 +296,6 @@ export const notes: any = pgTable("notes", {
   lastRecurringDate: timestamp("last_recurring_date"),
   templateId: varchar("template_id"), // Link to task template for recurring tasks
   
-  // Checklist support
-  checklist: json("checklist").default([]), // Array<{ text: string; completed: boolean }> for task checklist items
-  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -341,11 +338,6 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringEndDate: z.coerce.date().optional(),
   templateId: z.string().optional(),
   lastRecurringDate: z.coerce.date().optional(),
-  // Checklist fields
-  checklist: z.array(z.object({
-    text: z.string(),
-    completed: z.boolean()
-  })).optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;
