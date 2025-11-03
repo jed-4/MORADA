@@ -10327,26 +10327,13 @@ export class DbStorage implements IStorage {
 
   async generateRecurringTasks(companyId: string): Promise<{ generated: number }> {
     try {
-      // Get "Active" status from task template statuses
-      const statuses = await db.select()
-        .from(schema.taskTemplateStatuses)
-        .where(and(
-          eq(schema.taskTemplateStatuses.companyId, companyId),
-          eq(schema.taskTemplateStatuses.name, "Active")
-        ));
-
-      if (statuses.length === 0) {
-        return { generated: 0 };
-      }
-
-      const activeStatusId = statuses[0].id;
-
       // Get all active task templates with recurring enabled
+      // Use isActive flag instead of statusId to work without status system
       const templates = await db.select()
         .from(schema.taskTemplates)
         .where(and(
           eq(schema.taskTemplates.companyId, companyId),
-          eq(schema.taskTemplates.statusId, activeStatusId),
+          eq(schema.taskTemplates.isActive, true),
           eq(schema.taskTemplates.isRecurringTemplate, true)
         ));
 
