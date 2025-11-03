@@ -102,7 +102,8 @@ export function generateRecurringTaskInstances(
         }
 
         // Add start and end times - prefer recurringSchedule, fallback to recurringStartTime
-        const scheduleForDay = template.recurringSchedule?.find(s => s.dayOfWeek === dayOfWeek);
+        // Use loose equality (==) to handle potential type mismatches from JSON parsing
+        const scheduleForDay = template.recurringSchedule?.find(s => Number(s.dayOfWeek) === dayOfWeek);
         if (scheduleForDay) {
           instance.startTime = scheduleForDay.startTime;
           if (scheduleForDay.duration > 0) {
