@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye } from "lucide-react";
+import { useParams, useLocation } from "wouter";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +41,7 @@ import {
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
 import TaskListCompact from "@/components/TaskListCompact";
+import { CasvaTaskList } from "@/components/tasks/CasvaTaskList";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
@@ -50,6 +51,7 @@ import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/ut
 import { useProject } from "@/contexts/ProjectContext";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useKeyboardShortcuts, CASVA_SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 
 interface TasksParams {
   projectId?: string;
@@ -60,6 +62,8 @@ export default function Tasks() {
   const { currentProject } = useProject();
   const { toast } = useToast();
   const params = useParams<TasksParams>();
+  const [, setLocation] = useLocation();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Use projectId from URL params if available, otherwise fall back to currentProject
   const effectiveProjectId = params.projectId || currentProject?.id;
@@ -74,6 +78,31 @@ export default function Tasks() {
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
   const [filters, setFilters] = useState<FilterState>({});
+
+  // Casva Keyboard Shortcuts
+  useKeyboardShortcuts([
+    {
+      key: "n",
+      ctrl: true,
+      handler: () => setShowCreateTaskDialog(true),
+      description: "Create new task (Ctrl+N)"
+    },
+    {
+      key: "/",
+      handler: () => searchInputRef.current?.focus(),
+      description: "Focus search (/)"
+    },
+    {
+      key: "g",
+      handler: () => setActiveTab("kanban"),
+      description: "Go to Kanban (G)"
+    },
+    {
+      key: "d",
+      handler: () => setLocation("/"),
+      description: "Go to Dashboard (D)"
+    }
+  ]);
   const [cardDisplaySettings, setCardDisplaySettings] = useState({
     showPriority: true,
     showStatus: true,
@@ -575,7 +604,8 @@ export default function Tasks() {
             {/* Search */}
             <div className="relative min-w-64">
               <Input
-                placeholder="Search tasks..."
+                ref={searchInputRef}
+                placeholder="Search tasks... (press / to focus)"
                 value={filters.search || ""}
                 onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
                 className="h-8 text-sm"
@@ -593,6 +623,12 @@ export default function Tasks() {
                 </Button>
               )}
             </div>
+
+            {/* Keyboard Shortcuts Indicator */}
+            <Badge variant="outline" className="gap-1 shrink-0">
+              <Zap className="h-3 w-3 text-amber-500" />
+              <span className="text-xs">Ctrl+N / G / D</span>
+            </Badge>
 
             {/* Status Filter */}
             <DropdownMenu>
@@ -864,12 +900,10 @@ export default function Tasks() {
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
             <div className="flex-1 overflow-auto p-4">
-              <TaskListCompact
-                tasks={effectivelyFilteredTasks} 
-                groupedTasks={groupBy !== 'none' ? groupedTasks : undefined}
-                isLoading={tasksLoading} 
-                onTaskClick={(task: Task) => setEditingTask(task)}
-                projectId={effectiveProjectId}
+              <CasvaTaskList
+                tasks={effectivelyFilteredTasks}
+                onEditTask={(task: Task) => setEditingTask(task)}
+                showCheckboxes={true}
               />
             </div>
           </TabsContent>

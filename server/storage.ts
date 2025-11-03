@@ -78,7 +78,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
@@ -10929,28 +10929,22 @@ export class DbStorage implements IStorage {
       const unreadCounts: Record<string, number> = {};
       
       for (const { channelId, lastReadAt } of channelsWithMembers) {
-        let countQuery = db
-          .select({ count: sql<number>`count(*)` })
-          .from(schema.messages)
-          .where(
-            and(
-              eq(schema.messages.channelId, channelId),
-              isNull(schema.messages.deletedAt)
-            )
-          );
+        // Build the where conditions
+        const conditions = [
+          eq(schema.messages.channelId, channelId),
+          isNull(schema.messages.deletedAt)
+        ];
 
         // If there's a lastReadAt, only count messages after that time
         if (lastReadAt) {
-          countQuery = countQuery.where(
-            and(
-              eq(schema.messages.channelId, channelId),
-              isNull(schema.messages.deletedAt),
-              sql`${schema.messages.createdAt} > ${lastReadAt}`
-            )
-          );
+          conditions.push(gt(schema.messages.createdAt, lastReadAt));
         }
 
-        const result = await countQuery;
+        const result = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.messages)
+          .where(and(...conditions));
+
         unreadCounts[channelId] = Number(result[0]?.count || 0);
       }
 
