@@ -10332,7 +10332,7 @@ export class DbStorage implements IStorage {
         .from(schema.taskTemplateStatuses)
         .where(and(
           eq(schema.taskTemplateStatuses.companyId, companyId),
-          eq(schema.taskTemplateStatuses.key, "active")
+          eq(schema.taskTemplateStatuses.name, "Active")
         ));
 
       if (statuses.length === 0) {
