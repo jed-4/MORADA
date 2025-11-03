@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE - WHITE & MINIMALIST */
+/* CASVA DESIGN SYSTEM - LIGHT THEME */
 :root {
   --button-outline: rgba(0,0,0, .08);
   --badge-outline: rgba(0,0,0, .04);
@@ -14,54 +14,54 @@
   --elevate-1: rgba(0,0,0, .02);
   --elevate-2: rgba(0,0,0, .05);
 
-  --background: 220 6% 97%; /* Soft grey background */
+  --background: 0 0% 100%; /* Pure white #ffffff */
 
-  --foreground: 0 0% 0%;
+  --foreground: 215 25% 17%; /* Slate-800 #1e293b */
 
-  --border: 220 6% 88%;
+  --border: 214 32% 91%; /* Light slate border */
 
   --card: 0 0% 100%; /* Pure white cards */
 
-  --card-foreground: 0 0% 0%;
+  --card-foreground: 215 25% 17%;
 
-  --card-border: 220 6% 90%;
+  --card-border: 214 32% 91%;
 
   --sidebar: 0 0% 100%; /* Pure white sidebar */
 
-  --sidebar-foreground: 0 0% 0%;
+  --sidebar-foreground: 215 25% 17%;
 
-  --sidebar-border: 220 6% 90%;
+  --sidebar-border: 214 32% 91%;
 
-  --sidebar-primary: 240 50% 65%; /* Purple - matches primary */
+  --sidebar-primary: 38 92% 50%; /* Amber-500 accent */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 220 8% 94%;
+  --sidebar-accent: 214 32% 96%;
 
-  --sidebar-accent-foreground: 0 0% 0%;
+  --sidebar-accent-foreground: 215 25% 17%;
 
-  --sidebar-ring: 240 50% 65%; /* Matches primary color */
+  --sidebar-ring: 38 92% 50%; /* Amber accent */
 
   --popover: 0 0% 100%;
 
-  --popover-foreground: 0 0% 0%;
+  --popover-foreground: 215 25% 17%;
 
-  --popover-border: 220 6% 90%;
+  --popover-border: 214 32% 91%;
 
-  /* Minimalist Purple Palette */
-  --primary: 240 50% 65%; /* Original Periwinkle purple */
+  /* Casva Amber Palette */
+  --primary: 38 92% 50%; /* Amber-500 #f59e0b */
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 240 30% 85%; /* Light purple */
+  --secondary: 38 92% 95%; /* Light amber background */
 
-  --secondary-foreground: 0 0% 0%;
+  --secondary-foreground: 215 25% 17%;
 
-  --muted: 220 6% 94%;
+  --muted: 214 32% 96%;
 
-  --muted-foreground: 220 10% 45%;
+  --muted-foreground: 215 16% 47%; /* Slate-600 */
 
-  --accent: 245 35% 40%; /* Deep purple accent */
+  --accent: 38 92% 50%; /* Amber accent */
 
   --accent-foreground: 0 0% 100%;
 
@@ -331,6 +331,88 @@
  * need to be distinguished from eachother visually.
  */
 @layer utilities {
+
+  /* ========== CASVA PRINCIPLE 1: Compact 40px Rows ========== */
+  .casva-row {
+    @apply h-10 min-h-10;
+  }
+
+  .casva-table-row {
+    @apply h-10;
+  }
+
+  /* ========== CASVA PRINCIPLE 2: Hover Lift + Pencil Icons ========== */
+  .casva-hover-lift {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .casva-hover-lift:hover {
+    @apply -translate-y-0.5 shadow-md;
+  }
+
+  .casva-edit-icon {
+    @apply opacity-0 group-hover:opacity-100 transition-opacity duration-200;
+  }
+
+  /* ========== CASVA PRINCIPLE 3: Color Chips ========== */
+  .casva-chip {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .casva-chip-status-todo {
+    @apply bg-slate-100 text-slate-700;
+  }
+
+  .casva-chip-status-in-progress {
+    @apply bg-blue-100 text-blue-700;
+  }
+
+  .casva-chip-status-done {
+    @apply bg-green-100 text-green-700;
+  }
+
+  .casva-chip-status-blocked {
+    @apply bg-red-100 text-red-700;
+  }
+
+  .casva-chip-priority-low {
+    @apply bg-gray-100 text-gray-600;
+  }
+
+  .casva-chip-priority-medium {
+    @apply bg-amber-100 text-amber-700;
+  }
+
+  .casva-chip-priority-high {
+    @apply bg-orange-100 text-orange-700;
+  }
+
+  .casva-chip-priority-critical {
+    @apply bg-red-100 text-red-700;
+  }
+
+  /* ========== CASVA PRINCIPLE 4: Free-flow Drag-drop Glow ========== */
+  .casva-drag-glow {
+    @apply ring-2 ring-amber-500 ring-opacity-50 shadow-lg shadow-amber-500/20;
+  }
+
+  .casva-drag-ghost {
+    @apply opacity-60 rotate-2;
+  }
+
+  .casva-drop-zone-active {
+    @apply ring-2 ring-amber-500 bg-amber-50;
+    animation: casvaGlow 1.5s ease-in-out infinite;
+  }
+
+  @keyframes casvaGlow {
+    0%, 100% { 
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3); 
+    }
+    50% { 
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.5), 0 0 12px rgba(245, 158, 11, 0.3); 
+    }
+  }
 
   /* Hide ugly search cancel button in Chrome until we can style it properly */
   input[type="search"]::-webkit-search-cancel-button {
