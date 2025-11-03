@@ -279,8 +279,7 @@ export const notes: any = pgTable("notes", {
   startTime: text("start_time"), // Optional time in HH:MM format for timed events
   endTime: text("end_time"), // Optional time in HH:MM format for timed events
   completedAt: timestamp("completed_at"),
-  tags: json("tags").default([]), // string[] for task tags (legacy freeform tags)
-  tagIds: json("tag_ids").default([]), // string[] for task tag IDs from task_tags table (new system)
+  tags: json("tags").default([]), // string[] for task tags
   labels: json("labels").default([]), // string[] for task labels from field options
   
   // Subtask support
@@ -329,7 +328,6 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   endTime: z.string().optional(), // HH:MM format
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
-  tagIds: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),
   // Subtask fields
   parentTaskId: z.string().optional(),
