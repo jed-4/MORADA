@@ -196,10 +196,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Automatically set owner from authenticated user
+      // Automatically set owner and company from authenticated user
       const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
       const noteData = {
         ...validationResult.data,
+        companyId,
         ownerId: user?.id,
         ownerName: user?.firstName && user?.lastName 
           ? `${user.firstName} ${user.lastName}`.trim()

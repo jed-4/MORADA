@@ -158,6 +158,27 @@ export function TaskLibrary() {
     },
   });
 
+  // Generate recurring tasks mutation
+  const generateRecurringMutation = useMutation({
+    mutationFn: () => apiRequest("/api/systems/task-templates/generate-recurring", "POST"),
+    onSuccess: (data: any) => {
+      // Invalidate all task and note queries to refresh all views
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return key === "/api/tasks" || key === "/api/notes" || key === "/api/tasks/user";
+        }
+      });
+      toast({ 
+        title: "Tasks generated successfully", 
+        description: `Created ${data.generated} recurring task${data.generated === 1 ? '' : 's'}`
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to generate recurring tasks", variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setTemplateForm({
       title: "",
@@ -398,10 +419,21 @@ export function TaskLibrary() {
             {inactiveTemplates.length} Inactive
           </Badge>
         </div>
-        <Button onClick={openNewTemplateDialog} data-testid="button-new-template">
-          <Plus className="h-4 w-4 mr-2" />
-          New Template
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={() => generateRecurringMutation.mutate()}
+            disabled={generateRecurringMutation.isPending || activeTemplates.filter(t => t.isRecurringTemplate).length === 0}
+            variant="outline"
+            data-testid="button-generate-recurring"
+          >
+            <CalendarIcon className="h-4 w-4 mr-2" />
+            {generateRecurringMutation.isPending ? "Generating..." : "Generate Tasks"}
+          </Button>
+          <Button onClick={openNewTemplateDialog} data-testid="button-new-template">
+            <Plus className="h-4 w-4 mr-2" />
+            New Template
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto">

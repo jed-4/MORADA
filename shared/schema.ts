@@ -255,6 +255,7 @@ export type UserCategory = "team" | "supplier" | "client";
 
 export const notes: any = pgTable("notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(), // Legacy plain text content
   contentHtml: text("content_html"), // Rich text HTML content
@@ -305,6 +306,7 @@ export const notes: any = pgTable("notes", {
 
 export const insertNoteSchema = createInsertSchema(notes).omit({
   id: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
