@@ -1,17 +1,25 @@
 import { addDays, startOfWeek, format, addWeeks, isWithinInterval } from "date-fns";
 
+export interface RecurringScheduleItem {
+  dayOfWeek: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
+  startTime: string; // "HH:MM" format
+  duration: number; // minutes
+}
+
 export interface RecurringTaskTemplate {
   id: string;
   title: string;
   content?: string;
   priority?: string;
-  defaultAssigneeId?: string;
+  defaultRoleId?: string; // Role to assign (will be resolved to users)
+  defaultAssigneeId?: string; // DEPRECATED: use defaultRoleId instead
   tagIds?: string[];
   category?: string;
   checklist?: Array<{ text: string; completed: boolean }>;
-  recurringDays?: number[]; // 1=Monday, 2=Tuesday, ..., 7=Sunday
-  recurringStartTime?: string; // "HH:MM" format
-  recurringDuration?: number; // minutes
+  recurringDays?: number[]; // Days to generate tasks (0=Sunday, ..., 6=Saturday)
+  recurringSchedule?: RecurringScheduleItem[]; // Day-specific times (overrides recurringStartTime/Duration)
+  recurringStartTime?: string; // DEPRECATED: "HH:MM" format
+  recurringDuration?: number; // DEPRECATED: minutes
 }
 
 export interface GeneratedTaskInstance {
@@ -64,8 +72,8 @@ export function generateRecurringTaskInstances(
 
   // Iterate through each day in the 4-week window starting from today
   for (let currentDate = new Date(today); currentDate <= endDate; currentDate = addDays(currentDate, 1)) {
-    // Get day of week (1=Monday, 7=Sunday)
-    const dayOfWeek = currentDate.getDay() === 0 ? 7 : currentDate.getDay();
+    // Get day of week (0=Sunday, 6=Saturday - JavaScript standard)
+    const dayOfWeek = currentDate.getDay();
 
     // Check if template is scheduled for this day
     if (template.recurringDays.includes(dayOfWeek)) {
@@ -93,10 +101,16 @@ export function generateRecurringTaskInstances(
           }));
         }
 
-        // Add start and end times if specified
-        if (template.recurringStartTime) {
+        // Add start and end times - prefer recurringSchedule, fallback to recurringStartTime
+        const scheduleForDay = template.recurringSchedule?.find(s => s.dayOfWeek === dayOfWeek);
+        if (scheduleForDay) {
+          instance.startTime = scheduleForDay.startTime;
+          if (scheduleForDay.duration > 0) {
+            instance.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
+          }
+        } else if (template.recurringStartTime) {
+          // Fallback to legacy single time for all days
           instance.startTime = template.recurringStartTime;
-          
           if (template.recurringDuration && template.recurringDuration > 0) {
             instance.endTime = calculateEndTime(template.recurringStartTime, template.recurringDuration);
           }

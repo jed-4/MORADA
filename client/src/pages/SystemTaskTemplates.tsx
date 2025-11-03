@@ -43,17 +43,25 @@ import {
 } from "lucide-react";
 import type { TaskTemplate, TaskTag, TaskTemplateStatus } from "@shared/schema";
 
+interface RecurringScheduleItem {
+  dayOfWeek: number;
+  startTime: string;
+  duration: number;
+}
+
 interface TaskTemplateFormData {
   title: string;
   goal?: string;
   description?: string;
   statusId?: string;
+  defaultRoleId?: string;
   tagIds: string[];
   isRecurringTemplate: boolean;
   recurringDays: number[];
-  recurringStartTime?: string;
-  recurringDuration?: number;
-  recurringAssigneeId?: string;
+  recurringSchedule: RecurringScheduleItem[];
+  recurringStartTime?: string; // DEPRECATED
+  recurringDuration?: number; // DEPRECATED
+  recurringAssigneeId?: string; // DEPRECATED
   estimatedDuration?: number;
   checklist: Array<{ text: string; completed: boolean }>;
 }
@@ -77,9 +85,11 @@ export default function SystemTaskTemplates() {
     goal: "",
     description: "",
     statusId: undefined,
+    defaultRoleId: undefined,
     tagIds: [],
     isRecurringTemplate: false,
     recurringDays: [],
+    recurringSchedule: [],
     recurringStartTime: "",
     recurringDuration: undefined,
     recurringAssigneeId: undefined,
@@ -98,6 +108,7 @@ export default function SystemTaskTemplates() {
     queryKey: ["/api/task-template-statuses"],
   });
   const { data: users = [] } = useQuery<any[]>({ queryKey: ["/api/users"] });
+  const { data: userRoles = [] } = useQuery<any[]>({ queryKey: ["/api/user-roles"] });
 
   // Mutations
   const createMutation = useMutation({
@@ -164,9 +175,11 @@ export default function SystemTaskTemplates() {
         goal: template.goal || "",
         description: template.description || "",
         statusId: template.statusId || undefined,
+        defaultRoleId: template.defaultRoleId || undefined,
         tagIds: (template.tagIds as string[]) || [],
         isRecurringTemplate: template.isRecurringTemplate || false,
         recurringDays: (template.recurringDays as number[]) || [],
+        recurringSchedule: (template.recurringSchedule as RecurringScheduleItem[]) || [],
         recurringStartTime: template.recurringStartTime || "",
         recurringDuration: template.recurringDuration || undefined,
         recurringAssigneeId: template.recurringAssigneeId || undefined,
@@ -180,9 +193,11 @@ export default function SystemTaskTemplates() {
         goal: "",
         description: "",
         statusId: undefined,
+        defaultRoleId: undefined,
         tagIds: [],
         isRecurringTemplate: false,
         recurringDays: [],
+        recurringSchedule: [],
         recurringStartTime: "",
         recurringDuration: undefined,
         recurringAssigneeId: undefined,
@@ -214,12 +229,11 @@ export default function SystemTaskTemplates() {
       goal: formData.goal || undefined,
       description: formData.description || undefined,
       statusId: formData.statusId || undefined,
+      defaultRoleId: formData.defaultRoleId || undefined,
       tagIds: formData.tagIds,
       isRecurringTemplate: formData.isRecurringTemplate,
       recurringDays: formData.isRecurringTemplate ? formData.recurringDays : [],
-      recurringStartTime: formData.isRecurringTemplate ? formData.recurringStartTime || undefined : undefined,
-      recurringDuration: formData.isRecurringTemplate ? formData.recurringDuration || undefined : undefined,
-      recurringAssigneeId: formData.isRecurringTemplate ? formData.recurringAssigneeId || undefined : undefined,
+      recurringSchedule: formData.isRecurringTemplate ? formData.recurringSchedule : [],
       estimatedDuration: formData.estimatedDuration || undefined,
       checklist: formData.checklist,
     };
@@ -247,12 +261,45 @@ export default function SystemTaskTemplates() {
   };
 
   const toggleDay = (day: number) => {
-    setFormData(prev => ({
-      ...prev,
-      recurringDays: prev.recurringDays.includes(day)
+    setFormData(prev => {
+      const isSelected = prev.recurringDays.includes(day);
+      const newRecurringDays = isSelected
         ? prev.recurringDays.filter(d => d !== day)
-        : [...prev.recurringDays, day].sort((a, b) => a - b),
-    }));
+        : [...prev.recurringDays, day].sort((a, b) => a - b);
+      
+      // If deselecting a day, remove its schedule entry
+      const newRecurringSchedule = isSelected
+        ? prev.recurringSchedule.filter(s => s.dayOfWeek !== day)
+        : prev.recurringSchedule;
+
+      return {
+        ...prev,
+        recurringDays: newRecurringDays,
+        recurringSchedule: newRecurringSchedule,
+      };
+    });
+  };
+
+  const updateDaySchedule = (dayOfWeek: number, startTime: string, duration: number) => {
+    setFormData(prev => {
+      const existingIndex = prev.recurringSchedule.findIndex(s => s.dayOfWeek === dayOfWeek);
+      const newRecurringSchedule = [...prev.recurringSchedule];
+      
+      if (existingIndex >= 0) {
+        newRecurringSchedule[existingIndex] = { dayOfWeek, startTime, duration };
+      } else {
+        newRecurringSchedule.push({ dayOfWeek, startTime, duration });
+      }
+
+      return {
+        ...prev,
+        recurringSchedule: newRecurringSchedule,
+      };
+    });
+  };
+
+  const getDaySchedule = (dayOfWeek: number): RecurringScheduleItem | undefined => {
+    return formData.recurringSchedule.find(s => s.dayOfWeek === dayOfWeek);
   };
 
   const addChecklistItem = () => {
@@ -622,59 +669,80 @@ export default function SystemTaskTemplates() {
                     </div>
                   </div>
 
-                  {/* Start Time */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="recurringStartTime">Start Time</Label>
-                    <Input
-                      id="recurringStartTime"
-                      type="time"
-                      value={formData.recurringStartTime}
-                      onChange={e =>
-                        setFormData(prev => ({ ...prev, recurringStartTime: e.target.value }))
-                      }
-                      data-testid="input-start-time"
-                    />
-                  </div>
+                  {/* Day-specific times */}
+                  {formData.recurringDays.length > 0 && (
+                    <div className="flex flex-col gap-3">
+                      <Label>Schedule for Each Day</Label>
+                      <div className="flex flex-col gap-2">
+                        {formData.recurringDays.map(dayValue => {
+                          const day = DAYS_OF_WEEK.find(d => d.value === dayValue);
+                          const schedule = getDaySchedule(dayValue);
+                          return (
+                            <div
+                              key={dayValue}
+                              className="flex items-center gap-2 p-2 border rounded-md bg-muted/20"
+                              data-testid={`day-schedule-${dayValue}`}
+                            >
+                              <span className="w-16 text-sm font-medium">{day?.fullLabel}</span>
+                              <Input
+                                type="time"
+                                value={schedule?.startTime || "09:00"}
+                                onChange={e =>
+                                  updateDaySchedule(
+                                    dayValue,
+                                    e.target.value,
+                                    schedule?.duration || 60
+                                  )
+                                }
+                                className="w-32"
+                                data-testid={`time-${dayValue}`}
+                              />
+                              <Input
+                                type="number"
+                                min="1"
+                                value={schedule?.duration || 60}
+                                onChange={e =>
+                                  updateDaySchedule(
+                                    dayValue,
+                                    schedule?.startTime || "09:00",
+                                    parseInt(e.target.value) || 60
+                                  )
+                                }
+                                placeholder="60"
+                                className="w-24"
+                                data-testid={`duration-${dayValue}`}
+                              />
+                              <span className="text-xs text-muted-foreground">min</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Duration */}
+                  {/* Role Assignment */}
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="recurringDuration">Duration (minutes)</Label>
-                    <Input
-                      id="recurringDuration"
-                      type="number"
-                      min="0"
-                      value={formData.recurringDuration || ""}
-                      onChange={e =>
-                        setFormData(prev => ({
-                          ...prev,
-                          recurringDuration: e.target.value ? parseInt(e.target.value) : undefined,
-                        }))
-                      }
-                      placeholder="60"
-                      data-testid="input-duration"
-                    />
-                  </div>
-
-                  {/* Assignee */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="recurringAssignee">Default Assignee</Label>
+                    <Label htmlFor="defaultRole">Assign to Role</Label>
                     <Select
-                      value={formData.recurringAssigneeId}
+                      value={formData.defaultRoleId}
                       onValueChange={value =>
-                        setFormData(prev => ({ ...prev, recurringAssigneeId: value }))
+                        setFormData(prev => ({ ...prev, defaultRoleId: value }))
                       }
                     >
-                      <SelectTrigger id="recurringAssignee" data-testid="select-assignee">
-                        <SelectValue placeholder="Select assignee" />
+                      <SelectTrigger id="defaultRole" data-testid="select-role">
+                        <SelectValue placeholder="Select role (optional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {users.map(user => (
-                          <SelectItem key={user.id} value={user.id} data-testid={`assignee-option-${user.id}`}>
-                            {user.name || user.email}
+                        {userRoles.map((role: any) => (
+                          <SelectItem key={role.id} value={role.id} data-testid={`role-option-${role.id}`}>
+                            {role.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Tasks will be created for all users with this role
+                    </p>
                   </div>
                 </div>
               )}

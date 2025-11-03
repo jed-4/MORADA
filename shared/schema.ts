@@ -2531,10 +2531,11 @@ export const taskTemplates = pgTable("task_templates", {
   // Recurring schedule (for "perfect week" templates)
   isRecurringTemplate: boolean("is_recurring_template").default(false), // Whether this template auto-generates recurring tasks
   recurringDays: json("recurring_days").default([]), // Days of week: array of 0-6 (Sun-Sat) when tasks should be created
-  recurringStartTime: text("recurring_start_time"), // Start time in HH:MM format (e.g., "09:00")
-  recurringDuration: integer("recurring_duration"), // Duration in minutes
-  recurringAssigneeId: varchar("recurring_assignee_id").references(() => users.id), // User to assign recurring tasks to
-  recurringAssigneeName: text("recurring_assignee_name"), // Cached for performance
+  recurringSchedule: json("recurring_schedule").default([]), // Array of {dayOfWeek: number, startTime: string, duration: number} for day-specific times
+  recurringStartTime: text("recurring_start_time"), // DEPRECATED: Use recurringSchedule instead
+  recurringDuration: integer("recurring_duration"), // DEPRECATED: Use recurringSchedule instead
+  recurringAssigneeId: varchar("recurring_assignee_id").references(() => users.id), // DEPRECATED: Use defaultRoleId for role-based assignment
+  recurringAssigneeName: text("recurring_assignee_name"), // DEPRECATED: Cached for performance
   
   // Checklist
   checklist: json("checklist").default([]), // Array of checklist items [{text, completed}]
@@ -2577,9 +2578,14 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   // Recurring schedule fields
   isRecurringTemplate: z.boolean().optional(),
   recurringDays: z.array(z.number().min(0).max(6)).optional(), // Array of 0-6 for Sun-Sat
-  recurringStartTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).optional(), // HH:MM format
-  recurringDuration: z.number().min(1).optional(), // Duration in minutes
-  recurringAssigneeId: z.string().optional(),
+  recurringSchedule: z.array(z.object({
+    dayOfWeek: z.number().min(0).max(6), // 0=Sunday, 6=Saturday
+    startTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/), // HH:MM format
+    duration: z.number().min(1), // Duration in minutes
+  })).optional(),
+  recurringStartTime: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).optional(), // DEPRECATED
+  recurringDuration: z.number().min(1).optional(), // DEPRECATED
+  recurringAssigneeId: z.string().optional(), // DEPRECATED
   checklist: z.array(z.object({
     text: z.string(),
     completed: z.boolean().default(false),
