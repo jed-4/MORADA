@@ -524,113 +524,8 @@ export default function SystemTaskTemplates() {
               </Select>
             </div>
 
-            {/* Tags */}
-            <div className="flex flex-col gap-2">
-              <Label>
-                <TagIcon className="w-4 h-4 inline mr-1" />
-                Tags
-              </Label>
-              <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[44px]" data-testid="tags-container">
-                {tags.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No tags available. Create tags in Task Settings.
-                  </p>
-                ) : (
-                  tags.map(tag => {
-                    const isSelected = formData.tagIds.includes(tag.id);
-                    return (
-                      <Badge
-                        key={tag.id}
-                        style={{
-                          backgroundColor: isSelected ? tag.color : "transparent",
-                          borderColor: tag.color,
-                          color: isSelected ? "white" : tag.color,
-                        }}
-                        className="cursor-pointer border-2"
-                        onClick={() => toggleTag(tag.id)}
-                        data-testid={`tag-${tag.id}`}
-                      >
-                        {tag.name}
-                        {isSelected && <X className="w-3 h-3 ml-1" />}
-                      </Badge>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Estimated Duration */}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="estimatedDuration">Estimated Duration (minutes)</Label>
-              <Input
-                id="estimatedDuration"
-                type="number"
-                min="0"
-                value={formData.estimatedDuration || ""}
-                onChange={e =>
-                  setFormData(prev => ({
-                    ...prev,
-                    estimatedDuration: e.target.value ? parseInt(e.target.value) : undefined,
-                  }))
-                }
-                placeholder="60"
-                data-testid="input-estimated-duration"
-              />
-            </div>
-
-            {/* Checklist */}
-            <div className="flex flex-col gap-2">
-              <Label>Checklist Items</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Add checklist item..."
-                  value={checklistInput}
-                  onChange={(e) => setChecklistInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addChecklistItem();
-                    }
-                  }}
-                  data-testid="input-checklist"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addChecklistItem}
-                  disabled={!checklistInput.trim()}
-                  data-testid="button-add-checklist"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              {formData.checklist.length > 0 && (
-                <div className="flex flex-col gap-1 mt-2">
-                  {formData.checklist.map((item, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
-                      data-testid={`checklist-item-${index}`}
-                    >
-                      <span className="flex-1 text-sm">{item.text}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeChecklistItem(index)}
-                        data-testid={`button-remove-checklist-${index}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Recurring Template */}
-            <div className="flex flex-col gap-4 p-4 border rounded-md">
+            <div className="flex flex-col gap-4 p-4 border rounded-md bg-muted/5">
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="isRecurringTemplate"
@@ -744,6 +639,111 @@ export default function SystemTaskTemplates() {
                       Tasks will be created for all users with this role
                     </p>
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tags */}
+            <div className="flex flex-col gap-2">
+              <Label>
+                <TagIcon className="w-4 h-4 inline mr-1" />
+                Tags
+              </Label>
+              <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[44px]" data-testid="tags-container">
+                {tags.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No tags available. Create tags in Task Settings.
+                  </p>
+                ) : (
+                  tags.map(tag => {
+                    const isSelected = formData.tagIds.includes(tag.id);
+                    return (
+                      <Badge
+                        key={tag.id}
+                        style={{
+                          backgroundColor: isSelected ? tag.color : "transparent",
+                          borderColor: tag.color,
+                          color: isSelected ? "white" : tag.color,
+                        }}
+                        className="cursor-pointer border-2"
+                        onClick={() => toggleTag(tag.id)}
+                        data-testid={`tag-${tag.id}`}
+                      >
+                        {tag.name}
+                        {isSelected && <X className="w-3 h-3 ml-1" />}
+                      </Badge>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Estimated Duration */}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="estimatedDuration">Estimated Duration (minutes)</Label>
+              <Input
+                id="estimatedDuration"
+                type="number"
+                min="0"
+                value={formData.estimatedDuration || ""}
+                onChange={e =>
+                  setFormData(prev => ({
+                    ...prev,
+                    estimatedDuration: e.target.value ? parseInt(e.target.value) : undefined,
+                  }))
+                }
+                placeholder="60"
+                data-testid="input-estimated-duration"
+              />
+            </div>
+
+            {/* Checklist */}
+            <div className="flex flex-col gap-2">
+              <Label>Checklist Items</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Add checklist item..."
+                  value={checklistInput}
+                  onChange={(e) => setChecklistInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addChecklistItem();
+                    }
+                  }}
+                  data-testid="input-checklist"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addChecklistItem}
+                  disabled={!checklistInput.trim()}
+                  data-testid="button-add-checklist"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {formData.checklist.length > 0 && (
+                <div className="flex flex-col gap-1 mt-2">
+                  {formData.checklist.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
+                      data-testid={`checklist-item-${index}`}
+                    >
+                      <span className="flex-1 text-sm">{item.text}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeChecklistItem(index)}
+                        data-testid={`button-remove-checklist-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
