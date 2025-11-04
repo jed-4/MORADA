@@ -267,7 +267,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
 }
 
 export default function ProjectScope() {
-  const { id: projectId } = useParams<{ id: string }>();
+  const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedStage, setSelectedStage] = useState<string>("Preparation");
