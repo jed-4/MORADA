@@ -7605,10 +7605,41 @@ export class DbStorage implements IStorage {
       ))
       .orderBy(schema.fieldOptions.sortOrder);
   }
-  async getFieldOption(id: string): Promise<FieldOption | undefined> { return undefined; }
-  async createFieldOption(option: InsertFieldOption): Promise<FieldOption> { throw new Error("Not implemented"); }
-  async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> { return undefined; }
-  async deleteFieldOption(id: string): Promise<boolean> { return false; }
+  async getFieldOption(id: string): Promise<FieldOption | undefined> {
+    const [option] = await db.select().from(schema.fieldOptions)
+      .where(eq(schema.fieldOptions.id, id))
+      .limit(1);
+    return option;
+  }
+  
+  async createFieldOption(option: InsertFieldOption): Promise<FieldOption> {
+    const [created] = await db.insert(schema.fieldOptions)
+      .values({
+        ...option,
+        id: randomUUID(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return created;
+  }
+  
+  async updateFieldOption(id: string, option: Partial<InsertFieldOption>): Promise<FieldOption | undefined> {
+    const [updated] = await db.update(schema.fieldOptions)
+      .set({
+        ...option,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.fieldOptions.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteFieldOption(id: string): Promise<boolean> {
+    const result = await db.delete(schema.fieldOptions)
+      .where(eq(schema.fieldOptions.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
   async setCategoryOptions(categoryId: string, options: Array<Partial<FieldOption> & { key: string; name: string }>): Promise<FieldOption[]> {
     try {
       // First, delete existing options for this category
