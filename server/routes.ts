@@ -2553,7 +2553,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new scope item
   app.post("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertScopeItemSchema.omit({ projectId: true }).safeParse(req.body);
+      console.log('POST /api/projects/:projectId/scope - req.params:', req.params);
+      console.log('POST /api/projects/:projectId/scope - req.body:', req.body);
+      console.log('POST /api/projects/:projectId/scope - req.user:', req.user);
+      
+      const validationResult = insertScopeItemSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -2561,9 +2565,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const companyId = req.user!.companyId!;
       const newItem = await storage.createScopeItem({
         ...validationResult.data,
         projectId: req.params.projectId,
+        companyId,
       });
 
       res.status(201).json(newItem);
