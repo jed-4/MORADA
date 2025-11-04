@@ -2222,6 +2222,118 @@ export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
 export const updateScheduleSchema = insertScheduleSchema.partial();
 export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;
 
+// Scope Items (the DNA of every job - flows to Estimate, RFQ, PO, Schedule)
+export const scopeItems = pgTable("scope_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Hierarchy and organization
+  parentId: varchar("parent_id"), // For nesting items
+  stage: text("stage").notNull(), // "Prelim", "Frame", "Lockup", "Fixing", "Completion"
+  displayOrder: integer("display_order").notNull().default(0), // Order within stage/parent
+  
+  // Content (Tiptap rich text)
+  title: text("title").notNull(),
+  description: text("description"), // Rich text content from Tiptap
+  contentType: text("content_type").notNull().default("text"), // "text" | "bullet" | "table" | "image"
+  
+  // Integration flags
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  costCodeTitle: text("cost_code_title"), // Cached for performance
+  needsRfi: boolean("needs_rfi").notNull().default(false),
+  needsRfq: boolean("needs_rfq").notNull().default(false),
+  
+  // Links to other entities
+  estimateItemId: varchar("estimate_item_id"), // Link to pushed estimate item
+  rfqId: varchar("rfq_id"), // Link to created RFQ
+  poId: varchar("po_id"), // Link to created PO
+  scheduleItemId: varchar("schedule_item_id"), // Link to synced schedule item
+  
+  // Gear checklist
+  gearList: jsonb("gear_list").default([]), // Array of gear items: [{name: string, checked: boolean, photoUrl: string}]
+  
+  // Metadata
+  isTemplate: boolean("is_template").notNull().default(false), // Is this a template item
+  templateCategory: text("template_category"), // "Standard 4-Bed", "Slab Pour", etc.
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  contentType: z.enum(["text", "bullet", "table", "image"]).default("text"),
+  stage: z.string().min(1, "Stage is required"),
+  title: z.string().min(1, "Title is required"),
+  gearList: z.array(z.object({
+    name: z.string(),
+    checked: z.boolean().default(false),
+    photoUrl: z.string().optional(),
+  })).default([]),
+});
+
+export type InsertScopeItem = z.infer<typeof insertScopeItemSchema>;
+export type ScopeItem = typeof scopeItems.$inferSelect;
+
+// Scope Templates (reusable scope configurations)
+export const scopeTemplates = pgTable("scope_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // "Standard 4-Bed", "Slab Pour", "Frame Package"
+  description: text("description"),
+  category: text("category"), // "Residential" | "Commercial" | "Stage-Specific"
+  templateData: jsonb("template_data").notNull(), // Array of scope item objects
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  isPublic: boolean("is_public").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScopeTemplateSchema = createInsertSchema(scopeTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()), // Array of scope item objects
+});
+
+export type InsertScopeTemplate = z.infer<typeof insertScopeTemplateSchema>;
+export type ScopeTemplate = typeof scopeTemplates.$inferSelect;
+
+// Scope Gear Photos (photos for gear checklist items)
+export const scopeGearPhotos = pgTable("scope_gear_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
+  gearItemName: text("gear_item_name").notNull(), // Name of the gear from gearList
+  photoUrl: text("photo_url").notNull(), // Path to uploaded photo
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScopeGearPhotoSchema = createInsertSchema(scopeGearPhotos).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertScopeGearPhoto = z.infer<typeof insertScopeGearPhotoSchema>;
+export type ScopeGearPhoto = typeof scopeGearPhotos.$inferSelect;
+
+// Update schemas
+export const updateScopeItemSchema = insertScopeItemSchema.partial();
+export type UpdateScopeItem = z.infer<typeof updateScopeItemSchema>;
+
+export const updateScopeTemplateSchema = insertScopeTemplateSchema.partial();
+export type UpdateScopeTemplate = z.infer<typeof updateScopeTemplateSchema>;
+
 // Calendar Views (saved filter combinations and views for calendars)
 export const calendarViews = pgTable("calendar_views", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
