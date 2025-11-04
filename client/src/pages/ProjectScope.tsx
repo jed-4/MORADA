@@ -207,9 +207,9 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           overflow: isCollapsed ? 'hidden' : 'visible'
         }}
       >
-        <CardContent className="py-1 px-3 flex items-center gap-2" style={{ minHeight: '40px' }}>
+        <CardContent className="py-1 px-3 flex items-start gap-2" style={{ minHeight: '40px' }}>
           {/* Drag Handle - LEFT SIDE */}
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing self-center">
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
 
@@ -217,7 +217,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           <Button
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+            className="h-7 w-7 self-center"
             onClick={() => {
               // If has children, toggle child expansion
               if (hasChildren) {
@@ -237,6 +237,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           <Checkbox
             checked={isSelected}
             onCheckedChange={() => onToggleSelect(item.id)}
+            className="self-center"
             data-testid={`checkbox-select-${item.id}`}
           />
 
