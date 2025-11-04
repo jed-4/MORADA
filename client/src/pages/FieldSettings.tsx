@@ -245,6 +245,7 @@ export default function FieldSettings() {
         title: "Option updated",
         description: "The field option has been updated successfully.",
       });
+      setIsCreateDialogOpen(false);
       setEditingOption(null);
       resetForm();
     },
