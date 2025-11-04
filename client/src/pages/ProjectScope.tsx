@@ -295,10 +295,13 @@ export default function ProjectScope() {
   // Create scope item mutation
   const createItemMutation = useMutation({
     mutationFn: async (data: Partial<ScopeItem>) => {
+      console.log("Creating scope item with data:", data);
+      console.log("User companyId:", user?.companyId);
       const payload = {
         ...data,
         companyId: user?.companyId, // ADD companyId from session
       };
+      console.log("Full payload:", payload);
       return apiRequest(`/api/projects/${projectId}/scope`, {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -309,7 +312,8 @@ export default function ProjectScope() {
       setNewItemTitle("");
       toast({ title: "Scope item created" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Failed to create scope item:", error);
       toast({ title: "Failed to create scope item", variant: "destructive" });
     },
   });
