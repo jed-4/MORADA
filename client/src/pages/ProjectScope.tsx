@@ -295,17 +295,11 @@ export default function ProjectScope() {
   // Create scope item mutation
   const createItemMutation = useMutation({
     mutationFn: async (data: Partial<ScopeItem>) => {
-      console.log("Creating scope item with data:", data);
-      console.log("User companyId:", user?.companyId);
       const payload = {
         ...data,
-        companyId: user?.companyId, // ADD companyId from session
+        companyId: user?.companyId,
       };
-      console.log("Full payload:", payload);
-      return apiRequest(`/api/projects/${projectId}/scope`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      return apiRequest(`/api/projects/${projectId}/scope`, 'POST', payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
@@ -321,10 +315,7 @@ export default function ProjectScope() {
   // Update scope item mutation
   const updateItemMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ScopeItem> }) => {
-      return apiRequest(`/api/scope/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      });
+      return apiRequest(`/api/scope/${id}`, 'PATCH', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
@@ -334,9 +325,7 @@ export default function ProjectScope() {
   // Delete scope item mutation
   const deleteItemMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/scope/${id}`, {
-        method: 'DELETE',
-      });
+      return apiRequest(`/api/scope/${id}`, 'DELETE');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
@@ -347,10 +336,7 @@ export default function ProjectScope() {
   // Apply template mutation
   const applyTemplateMutation = useMutation({
     mutationFn: async (templateId: string) => {
-      return apiRequest(`/api/scope-templates/${templateId}/apply`, {
-        method: 'POST',
-        body: JSON.stringify({ projectId }),
-      });
+      return apiRequest(`/api/scope-templates/${templateId}/apply`, 'POST', { projectId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
@@ -362,10 +348,7 @@ export default function ProjectScope() {
   // Push to estimate mutation
   const pushToEstimateMutation = useMutation({
     mutationFn: async ({ scopeItemIds, estimateId }: { scopeItemIds: string[]; estimateId: string }) => {
-      return apiRequest('/api/scope/push-to-estimate', {
-        method: 'POST',
-        body: JSON.stringify({ scopeItemIds, estimateId }),
-      });
+      return apiRequest('/api/scope/push-to-estimate', 'POST', { scopeItemIds, estimateId });
     },
     onSuccess: () => {
       toast({ title: "Items pushed to estimate successfully" });
@@ -395,10 +378,7 @@ export default function ProjectScope() {
         displayOrder: index,
       }));
 
-      apiRequest('/api/scope/reorder', {
-        method: 'POST',
-        body: JSON.stringify({ updates }),
-      }).then(() => {
+      apiRequest('/api/scope/reorder', 'POST', { updates }).then(() => {
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
       });
     }
