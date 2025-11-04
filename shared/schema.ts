@@ -2225,6 +2225,7 @@ export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;
 // Scope Items (the DNA of every job - flows to Estimate, RFQ, PO, Schedule)
 export const scopeItems = pgTable("scope_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   
   // Hierarchy and organization
@@ -2264,6 +2265,7 @@ export const scopeItems = pgTable("scope_items", {
 
 export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   id: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
@@ -2311,6 +2313,7 @@ export type ScopeTemplate = typeof scopeTemplates.$inferSelect;
 // Scope Gear Photos (photos for gear checklist items)
 export const scopeGearPhotos = pgTable("scope_gear_photos", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
   gearItemName: text("gear_item_name").notNull(), // Name of the gear from gearList
   photoUrl: text("photo_url").notNull(), // Path to uploaded photo
@@ -2321,6 +2324,7 @@ export const scopeGearPhotos = pgTable("scope_gear_photos", {
 
 export const insertScopeGearPhotoSchema = createInsertSchema(scopeGearPhotos).omit({
   id: true,
+  companyId: true,
   createdAt: true,
 });
 
