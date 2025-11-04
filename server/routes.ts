@@ -2553,7 +2553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new scope item
   app.post("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const validationResult = insertScopeItemSchema.omit({ projectId: true }).safeParse(req.body);
+      const validationResult = insertScopeItemSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
