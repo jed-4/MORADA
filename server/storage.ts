@@ -72,7 +72,10 @@ import {
   type ProjectWorkflow, type InsertProjectWorkflow,
   type Channel, type InsertChannel,
   type ChannelMember, type InsertChannelMember,
-  type Message, type InsertMessage
+  type Message, type InsertMessage,
+  type ScopeItem, type InsertScopeItem,
+  type ScopeTemplate, type InsertScopeTemplate,
+  type ScopeGearPhoto, type InsertScopeGearPhoto
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -280,6 +283,33 @@ export interface IStorage {
     total: number;
     itemCount: number;
   }>;
+
+  // Scope Items CRUD (the DNA of every job)
+  getScopeItems(projectId: string): Promise<ScopeItem[]>;
+  getScopeItem(id: string): Promise<ScopeItem | undefined>;
+  createScopeItem(item: InsertScopeItem): Promise<ScopeItem>;
+  bulkCreateScopeItems(items: InsertScopeItem[]): Promise<ScopeItem[]>;
+  updateScopeItem(id: string, item: Partial<InsertScopeItem>): Promise<ScopeItem | undefined>;
+  deleteScopeItem(id: string): Promise<boolean>;
+  reorderScopeItems(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void>;
+  
+  // Scope Templates CRUD
+  getScopeTemplates(companyId: string): Promise<ScopeTemplate[]>;
+  getScopeTemplate(id: string, companyId: string): Promise<ScopeTemplate | undefined>;
+  createScopeTemplate(template: InsertScopeTemplate): Promise<ScopeTemplate>;
+  updateScopeTemplate(id: string, template: Partial<InsertScopeTemplate>, companyId: string): Promise<ScopeTemplate | undefined>;
+  deleteScopeTemplate(id: string, companyId: string): Promise<boolean>;
+  applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]>;
+  
+  // Scope Gear Photos CRUD
+  getScopeGearPhotos(scopeItemId: string): Promise<ScopeGearPhoto[]>;
+  createScopeGearPhoto(photo: InsertScopeGearPhoto): Promise<ScopeGearPhoto>;
+  deleteScopeGearPhoto(id: string): Promise<boolean>;
+  
+  // Scope Integration Helpers
+  pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]>;
+  createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq>;
+  linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined>;
 
   // Company CRUD
   getCompany(id: string): Promise<import("@shared/schema").Company | undefined>;
@@ -6928,6 +6958,303 @@ export class DbStorage implements IStorage {
       return { subtotal: 0, markupAmount: 0, subtotalWithMarkup: 0, taxAmount: 0, total: 0, itemCount: 0 };
     }
   }
+  
+  // Scope Items CRUD
+  async getScopeItems(projectId: string): Promise<ScopeItem[]> {
+    try {
+      const items = await db.select().from(schema.scopeItems)
+        .where(eq(schema.scopeItems.projectId, projectId))
+        .orderBy(asc(schema.scopeItems.displayOrder));
+      return items;
+    } catch (error) {
+      console.error("Database error in getScopeItems:", error);
+      return [];
+    }
+  }
+
+  async getScopeItem(id: string): Promise<ScopeItem | undefined> {
+    try {
+      const [item] = await db.select().from(schema.scopeItems)
+        .where(eq(schema.scopeItems.id, id))
+        .limit(1);
+      return item;
+    } catch (error) {
+      console.error("Database error in getScopeItem:", error);
+      return undefined;
+    }
+  }
+
+  async createScopeItem(item: InsertScopeItem): Promise<ScopeItem> {
+    const [newItem] = await db.insert(schema.scopeItems)
+      .values(item)
+      .returning();
+    return newItem;
+  }
+
+  async bulkCreateScopeItems(items: InsertScopeItem[]): Promise<ScopeItem[]> {
+    if (items.length === 0) return [];
+    const newItems = await db.insert(schema.scopeItems)
+      .values(items)
+      .returning();
+    return newItems;
+  }
+
+  async updateScopeItem(id: string, item: Partial<InsertScopeItem>): Promise<ScopeItem | undefined> {
+    try {
+      const [updated] = await db.update(schema.scopeItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.scopeItems.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateScopeItem:", error);
+      return undefined;
+    }
+  }
+
+  async deleteScopeItem(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.scopeItems)
+        .where(eq(schema.scopeItems.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteScopeItem:", error);
+      return false;
+    }
+  }
+
+  async reorderScopeItems(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db.update(schema.scopeItems)
+          .set({ displayOrder: update.displayOrder, parentId: update.parentId })
+          .where(eq(schema.scopeItems.id, update.id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderScopeItems:", error);
+    }
+  }
+
+  // Scope Templates CRUD
+  async getScopeTemplates(companyId: string): Promise<ScopeTemplate[]> {
+    try {
+      const templates = await db.select().from(schema.scopeTemplates)
+        .where(eq(schema.scopeTemplates.companyId, companyId));
+      return templates;
+    } catch (error) {
+      console.error("Database error in getScopeTemplates:", error);
+      return [];
+    }
+  }
+
+  async getScopeTemplate(id: string, companyId: string): Promise<ScopeTemplate | undefined> {
+    try {
+      const [template] = await db.select().from(schema.scopeTemplates)
+        .where(and(
+          eq(schema.scopeTemplates.id, id),
+          eq(schema.scopeTemplates.companyId, companyId)
+        ))
+        .limit(1);
+      return template;
+    } catch (error) {
+      console.error("Database error in getScopeTemplate:", error);
+      return undefined;
+    }
+  }
+
+  async createScopeTemplate(template: InsertScopeTemplate): Promise<ScopeTemplate> {
+    const [newTemplate] = await db.insert(schema.scopeTemplates)
+      .values(template)
+      .returning();
+    return newTemplate;
+  }
+
+  async updateScopeTemplate(id: string, template: Partial<InsertScopeTemplate>, companyId: string): Promise<ScopeTemplate | undefined> {
+    try {
+      const [updated] = await db.update(schema.scopeTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.scopeTemplates.id, id),
+          eq(schema.scopeTemplates.companyId, companyId)
+        ))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateScopeTemplate:", error);
+      return undefined;
+    }
+  }
+
+  async deleteScopeTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.scopeTemplates)
+        .where(and(
+          eq(schema.scopeTemplates.id, id),
+          eq(schema.scopeTemplates.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteScopeTemplate:", error);
+      return false;
+    }
+  }
+
+  async applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]> {
+    try {
+      // Get the template
+      const [template] = await db.select().from(schema.scopeTemplates)
+        .where(eq(schema.scopeTemplates.id, templateId))
+        .limit(1);
+      
+      if (!template) {
+        throw new Error("Template not found");
+      }
+
+      // Parse template data and create scope items
+      const templateData = template.templateData as any[];
+      const itemsToCreate = templateData.map((data: any) => ({
+        ...data,
+        projectId,
+        id: undefined, // Let database generate new IDs
+        createdAt: undefined,
+        updatedAt: undefined,
+      }));
+
+      return await this.bulkCreateScopeItems(itemsToCreate);
+    } catch (error) {
+      console.error("Database error in applyScopeTemplate:", error);
+      return [];
+    }
+  }
+
+  // Scope Gear Photos CRUD
+  async getScopeGearPhotos(scopeItemId: string): Promise<ScopeGearPhoto[]> {
+    try {
+      const photos = await db.select().from(schema.scopeGearPhotos)
+        .where(eq(schema.scopeGearPhotos.scopeItemId, scopeItemId));
+      return photos;
+    } catch (error) {
+      console.error("Database error in getScopeGearPhotos:", error);
+      return [];
+    }
+  }
+
+  async createScopeGearPhoto(photo: InsertScopeGearPhoto): Promise<ScopeGearPhoto> {
+    const [newPhoto] = await db.insert(schema.scopeGearPhotos)
+      .values(photo)
+      .returning();
+    return newPhoto;
+  }
+
+  async deleteScopeGearPhoto(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.scopeGearPhotos)
+        .where(eq(schema.scopeGearPhotos.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteScopeGearPhoto:", error);
+      return false;
+    }
+  }
+
+  // Scope Integration Helpers
+  async pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]> {
+    try {
+      // Get the scope items
+      const scopeItems = await db.select().from(schema.scopeItems)
+        .where(inArray(schema.scopeItems.id, scopeItemIds));
+
+      // Get the estimate to check if it exists
+      const [estimate] = await db.select().from(schema.estimates)
+        .where(eq(schema.estimates.id, estimateId))
+        .limit(1);
+      
+      if (!estimate) {
+        throw new Error("Estimate not found");
+      }
+
+      // Create estimate items from scope items
+      const estimateItems: InsertEstimateItem[] = scopeItems.map((scopeItem, index) => ({
+        estimateId,
+        groupId: null,
+        description: scopeItem.description || scopeItem.title,
+        costCodeId: scopeItem.costCodeId,
+        costCodeTitle: scopeItem.costCodeTitle,
+        quantity: 1,
+        unit: 'item',
+        unitCost: 0,
+        builderCost: 0,
+        markup: estimate.markupPercentage || 0,
+        clientPrice: 0,
+        taxAmount: 0,
+        displayOrder: index,
+      }));
+
+      const newItems = await this.bulkCreateEstimateItems(estimateItems);
+
+      // Update scope items to link to estimate items
+      for (let i = 0; i < scopeItems.length; i++) {
+        await db.update(schema.scopeItems)
+          .set({ estimateItemId: newItems[i].id })
+          .where(eq(schema.scopeItems.id, scopeItems[i].id));
+      }
+
+      return newItems;
+    } catch (error) {
+      console.error("Database error in pushScopeToEstimate:", error);
+      return [];
+    }
+  }
+
+  async createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq> {
+    try {
+      // Get the scope items
+      const scopeItems = await db.select().from(schema.scopeItems)
+        .where(inArray(schema.scopeItems.id, scopeItemIds));
+
+      // Create a combined description from scope items
+      const description = scopeItems.map(item => item.title).join('\n');
+      const scope = scopeItems.map(item => `${item.title}\n${item.description || ''}`).join('\n\n');
+
+      // Create RFQ
+      const [rfq] = await db.insert(schema.rfqs)
+        .values({
+          projectId,
+          title: 'RFQ from Scope',
+          description,
+          scope,
+          status: 'draft',
+          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
+        })
+        .returning();
+
+      // Link scope items to RFQ
+      for (const scopeItem of scopeItems) {
+        await db.update(schema.scopeItems)
+          .set({ rfqId: rfq.id })
+          .where(eq(schema.scopeItems.id, scopeItem.id));
+      }
+
+      return rfq;
+    } catch (error) {
+      console.error("Database error in createRfqFromScope:", error);
+      throw error;
+    }
+  }
+
+  async linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined> {
+    try {
+      const [updated] = await db.update(schema.scopeItems)
+        .set({ scheduleItemId })
+        .where(eq(schema.scopeItems.id, scopeItemId))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in linkScopeToScheduleItem:", error);
+      return undefined;
+    }
+  }
+  
   // Company CRUD
   async getCompany(id: string): Promise<import("@shared/schema").Company | undefined> {
     const [company] = await db.select().from(schema.companies)
