@@ -132,9 +132,11 @@ export interface IStorage {
 
   // User Project Access operations
   getUserProjectAccess(userId: string): Promise<UserProjectAccess[]>;
+  getProjectTeamMembers(projectId: string): Promise<UserWithRole[]>;
   createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess>;
   updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined>;
   deleteUserProjectAccess(id: string): Promise<boolean>;
+  revokeProjectAccess(userId: string, projectId: string): Promise<boolean>;
   grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess>;
 
   // User Invitation operations
@@ -1945,6 +1947,35 @@ export class MemStorage implements IStorage {
 
   async deleteUserProjectAccess(id: string): Promise<boolean> {
     return this.userProjectAccess.delete(id);
+  }
+
+  async getProjectTeamMembers(projectId: string): Promise<UserWithRole[]> {
+    // Get all user IDs with access to this project
+    const projectAccess = Array.from(this.userProjectAccess.values())
+      .filter(upa => upa.projectId === projectId);
+    
+    const userIds = projectAccess.map(pa => pa.userId);
+    
+    // Get users with their roles
+    const users = Array.from(this.users.values())
+      .filter(user => userIds.includes(user.id) && user.isActive)
+      .map(user => ({
+        ...user,
+        role: user.roleId ? this.userRoles.get(user.roleId) : undefined,
+      }));
+    
+    return users;
+  }
+
+  async revokeProjectAccess(userId: string, projectId: string): Promise<boolean> {
+    const existingAccess = Array.from(this.userProjectAccess.values())
+      .find(upa => upa.userId === userId && upa.projectId === projectId);
+    
+    if (existingAccess) {
+      return this.userProjectAccess.delete(existingAccess.id);
+    }
+    
+    return false;
   }
 
   async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> {

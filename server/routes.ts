@@ -1352,6 +1352,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project Team API Routes
+  app.get("/api/projects/:projectId/team", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const teamMembers = await storage.getProjectTeamMembers(req.params.projectId);
+      res.json(teamMembers);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project team members" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/team/:userId", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { accessLevel = "view" } = req.body;
+      const grantedBy = req.user?.id || "";
+      
+      const access = await storage.grantProjectAccess(
+        req.params.userId,
+        req.params.projectId,
+        accessLevel,
+        grantedBy
+      );
+      
+      res.status(201).json(access);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to grant project access" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/team/:userId", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.revokeProjectAccess(
+        req.params.userId,
+        req.params.projectId
+      );
+      
+      if (!success) {
+        return res.status(404).json({ error: "Project access not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to revoke project access" });
+    }
+  });
+
   // Task Views API Routes
   app.get("/api/task-views", async (req, res) => {
     try {

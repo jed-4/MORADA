@@ -72,6 +72,7 @@ import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
 import ProjectScope from "@/pages/ProjectScope";
+import ProjectTeam from "@/pages/ProjectTeam";
 
 function Router() {
   return (
@@ -148,7 +149,7 @@ function Router() {
       <Route path="/projects/:projectId/timesheets" component={Timesheets} />
       <Route path="/projects/:projectId/budget" component={Budget} />
       <Route path="/projects/:projectId/files" component={() => <ComingSoonPage section="files" />} />
-      <Route path="/projects/:projectId/team" component={() => <ComingSoonPage section="team" />} />
+      <Route path="/projects/:projectId/team" component={ProjectTeam} />
       
       {/* Global Project sections - Coming Soon */}
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
