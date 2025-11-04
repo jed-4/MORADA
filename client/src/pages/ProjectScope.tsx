@@ -23,52 +23,61 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import {
   ListTree,
   Plus,
   FileDown,
-  FileUp,
-  Save,
-  Trash2,
+  Send,
+  DollarSign,
+  Package,
   ChevronDown,
   ChevronRight,
   GripVertical,
-  Send,
-  Calendar as CalendarIcon,
-  DollarSign,
-  Image as ImageIcon,
-  Package,
+  Trash2,
+  CheckSquare,
+  Upload,
+  FileText,
 } from "lucide-react";
 import type { ScopeItem, ScopeTemplate, Estimate } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
-import { ColorChip } from "@/components/ui/color-chip";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, closestCenter, DragOverlay, DragEndEvent, DragOverEvent, DragStartEvent, useSensor, useSensors, PointerSensor, KeyboardSensor } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-
-// Tiptap editor
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import BulletList from '@tiptap/extension-bullet-list';
-import OrderedList from '@tiptap/extension-ordered-list';
-import ListItem from '@tiptap/extension-list-item';
-import { TextStyle } from '@tiptap/extension-text-style';
-import { Color } from '@tiptap/extension-color';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink } from '@react-pdf/renderer';
+
+// Define the 5 stages
+const STAGES = ['Prelim', 'Frame', 'Lockup', 'Fix', 'Handover'] as const;
+type Stage = typeof STAGES[number];
+
+// Casva lilac color
+const CASVA_LILAC = '#bba7db';
+
+interface StageState {
+  [key: string]: boolean;
+}
 
 interface SortableScopeItemProps {
   item: ScopeItem;
   onUpdate: (id: string, data: Partial<ScopeItem>) => void;
   onDelete: (id: string) => void;
+  onToggleSelect: (id: string) => void;
+  isSelected: boolean;
   level?: number;
   children?: ScopeItem[];
+  allItems?: ScopeItem[];
+  selectedItems?: Set<string>;
 }
 
-function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] }: SortableScopeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set() }: SortableScopeItemProps) {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [showGearList, setShowGearList] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [uploadingGearIndex, setUploadingGearIndex] = useState<number | null>(null);
+  const { toast } = useToast();
 
   const {
     attributes,
@@ -85,17 +94,8 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
     opacity: isDragging ? 0.5 : 1,
   };
 
-  // Initialize Tiptap editor for this item's description
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      BulletList,
-      OrderedList,
-      ListItem,
-      TextStyle,
-      Color,
-    ],
+    extensions: [StarterKit],
     content: item.description || '',
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
@@ -104,14 +104,39 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
     editable: isEditingDescription,
   });
 
-  const stageColors: Record<string, string> = {
-    'Preparation': '#bba7db', // Casva lilac
-    'Foundation': '#64748b',
-    'Framing': '#f59e0b',
-    'External': '#3b82f6',
-    'Internal': '#10b981',
-    'Finishing': '#a58bc7', // Casva lilac variant
-    'Landscaping': '#14b8a6',
+  const gearList = (item.gearList as any[] || []);
+
+  const handleToggleGearItem = (index: number) => {
+    const updated = [...gearList];
+    updated[index] = { ...updated[index], checked: !updated[index].checked };
+    onUpdate(item.id, { gearList: updated as any });
+  };
+
+  const handleGearPhotoUpload = async (index: number, file: File) => {
+    setUploadingGearIndex(index);
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      formData.append('scopeItemId', item.id);
+      formData.append('gearItemName', gearList[index].name);
+      
+      const response = await fetch('/api/scope/gear-photos', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) throw new Error('Upload failed');
+      
+      const result = await response.json();
+      const updated = [...gearList];
+      updated[index] = { ...updated[index], photoUrl: result.photoUrl };
+      onUpdate(item.id, { gearList: updated as any });
+      toast({ title: "Photo uploaded successfully" });
+    } catch (error) {
+      toast({ title: "Failed to upload photo", variant: "destructive" });
+    } finally {
+      setUploadingGearIndex(null);
+    }
   };
 
   const hasChildren = children.length > 0;
@@ -119,43 +144,44 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
   return (
     <div ref={setNodeRef} style={style} className={`mb-2 ${level > 0 ? 'ml-8' : ''}`}>
       <Card 
-        className="hover:shadow-xl hover:-translate-y-1 active:translate-y-0 transition-all duration-200 border-l-4"
+        className={`transition-all duration-200 border-l-4 ${isSelected ? 'ring-2 ring-primary' : 'hover:shadow-xl hover:-translate-y-1'}`}
         style={{ 
           minHeight: '40px',
-          borderLeftColor: item.stage ? stageColors[item.stage] : '#bba7db'
+          borderLeftColor: CASVA_LILAC
         }}
       >
         <CardContent className="py-1 px-3 flex items-start gap-2" style={{ minHeight: '40px' }}>
-          {/* Drag Handle */}
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1">
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-
           {/* Expand/Collapse for parent items */}
-          {hasChildren && (
+          {hasChildren ? (
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7"
+              className="h-7 w-7 mt-1"
               onClick={() => setIsExpanded(!isExpanded)}
               data-testid={`button-toggle-scope-${item.id}`}
             >
               {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </Button>
+          ) : (
+            <div className="w-7" />
           )}
+
+          {/* Selection Checkbox */}
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect(item.id)}
+            className="mt-1"
+            data-testid={`checkbox-select-${item.id}`}
+          />
+
+          {/* Drag Handle */}
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
 
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              {/* Stage Badge */}
-              {item.stage && (
-                <ColorChip 
-                  color={stageColors[item.stage] || '#bba7db'} 
-                  label={item.stage}
-                  size="sm"
-                />
-              )}
-
               {/* Title */}
               <Input
                 value={item.title}
@@ -165,72 +191,113 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
                 data-testid={`input-scope-title-${item.id}`}
               />
 
-              {/* Badges for flags */}
-              {item.needsRfi && (
-                <Badge variant="outline" className="h-6 text-xs" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>
-                  RFI
-                </Badge>
-              )}
+              {/* Badges */}
               {item.needsRfq && (
-                <Badge variant="outline" className="h-6 text-xs" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
+                <Badge variant="outline" className="h-6 text-xs bg-yellow-100 text-yellow-800">
                   RFQ
                 </Badge>
               )}
+              {item.estimateItemId && (
+                <Badge variant="outline" className="h-6 text-xs bg-green-100 text-green-800">
+                  <DollarSign className="h-3 w-3 mr-1" />
+                  Est
+                </Badge>
+              )}
               {item.poId && (
-                <Badge variant="outline" className="h-6 text-xs" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>
+                <Badge variant="outline" className="h-6 text-xs bg-blue-100 text-blue-800">
                   <Package className="h-3 w-3 mr-1" />
                   PO
                 </Badge>
               )}
             </div>
 
-            {/* Description Editor */}
-            <div className="mt-1">
-              {isEditingDescription && editor ? (
-                <div className="border rounded-md p-2 bg-background">
-                  <EditorContent editor={editor} className="prose prose-sm max-w-none" />
-                  <div className="flex gap-1 mt-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7"
-                      onClick={() => editor.chain().focus().toggleBold().run()}
-                    >
-                      <strong>B</strong>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7"
-                      onClick={() => editor.chain().focus().toggleItalic().run()}
-                    >
-                      <em>I</em>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7"
-                      onClick={() => editor.chain().focus().toggleBulletList().run()}
-                    >
-                      • List
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => setIsEditingDescription(false)}
-                      className="ml-auto h-7"
-                    >
-                      Done
-                    </Button>
+            {/* Description */}
+            {isEditingDescription && editor ? (
+              <div className="border rounded-md p-2 bg-background mt-1">
+                <EditorContent editor={editor} className="prose prose-sm max-w-none" />
+                <Button
+                  size="sm"
+                  onClick={() => setIsEditingDescription(false)}
+                  className="mt-2"
+                >
+                  Done
+                </Button>
+              </div>
+            ) : item.description ? (
+              <div
+                className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                onClick={() => setIsEditingDescription(true)}
+                dangerouslySetInnerHTML={{ __html: item.description }}
+              />
+            ) : (
+              <div
+                className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic"
+                onClick={() => setIsEditingDescription(true)}
+              >
+                Click to add description...
+              </div>
+            )}
+
+            {/* Gear Checklist */}
+            {gearList.length > 0 && (
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowGearList(!showGearList)}
+                  className="h-7"
+                >
+                  <CheckSquare className="h-3 w-3 mr-1" />
+                  Gear ({gearList.filter(g => g.checked).length}/{gearList.length})
+                  {showGearList ? <ChevronDown className="h-3 w-3 ml-1" /> : <ChevronRight className="h-3 w-3 ml-1" />}
+                </Button>
+                {showGearList && (
+                  <div className="ml-6 mt-1 space-y-1">
+                    {gearList.map((gear, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <Checkbox
+                          checked={gear.checked}
+                          onCheckedChange={() => handleToggleGearItem(idx)}
+                          data-testid={`checkbox-gear-${item.id}-${idx}`}
+                        />
+                        <span className={`text-sm ${gear.checked ? 'line-through text-muted-foreground' : ''}`}>
+                          {gear.name}
+                        </span>
+                        {gear.photoUrl && (
+                          <Badge variant="outline" className="h-5 text-xs bg-green-100 text-green-800">
+                            Photo
+                          </Badge>
+                        )}
+                        <label className="ml-auto cursor-pointer">
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-6"
+                            disabled={uploadingGearIndex === idx}
+                            asChild
+                          >
+                            <span>
+                              <Upload className="h-3 w-3" />
+                              {uploadingGearIndex === idx && <span className="ml-1 text-xs">...</span>}
+                            </span>
+                          </Button>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleGearPhotoUpload(idx, file);
+                            }}
+                            data-testid={`input-gear-photo-${item.id}-${idx}`}
+                          />
+                        </label>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ) : (
-                <div
-                  className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
-                  onClick={() => setIsEditingDescription(true)}
-                  dangerouslySetInnerHTML={{ __html: item.description || '<em>Click to add description...</em>' }}
-                />
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -248,7 +315,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
         </CardContent>
       </Card>
 
-      {/* Render children */}
+      {/* Render children recursively */}
       {hasChildren && isExpanded && (
         <div className="mt-1">
           {children.map((child) => (
@@ -257,7 +324,12 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
               item={child}
               onUpdate={onUpdate}
               onDelete={onDelete}
+              onToggleSelect={onToggleSelect}
+              isSelected={selectedItems.has(child.id)}
               level={level + 1}
+              children={allItems.filter(i => i.parentId === child.id)}
+              allItems={allItems}
+              selectedItems={selectedItems}
             />
           ))}
         </div>
@@ -266,57 +338,156 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
   );
 }
 
+interface DroppableStageProps {
+  stage: Stage;
+  items: ScopeItem[];
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onUpdate: (id: string, data: Partial<ScopeItem>) => void;
+  onDelete: (id: string) => void;
+  onToggleSelect: (id: string) => void;
+  selectedItems: Set<string>;
+  isOver?: boolean;
+  allItems?: ScopeItem[];
+}
+
+function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, onDelete, onToggleSelect, selectedItems, isOver, allItems = [] }: DroppableStageProps) {
+  const { setNodeRef } = useSortable({ id: `stage-${stage}` });
+
+  // Filter to only top-level items (no parent)
+  const topLevelItems = items.filter(item => !item.parentId);
+
+  return (
+    <div ref={setNodeRef} className="mb-4">
+      <Card 
+        className={`transition-all duration-200 ${isOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
+        style={{ borderLeftColor: CASVA_LILAC, borderLeftWidth: '4px' }}
+      >
+        <CardHeader 
+          className="py-2 px-4 cursor-pointer hover:bg-muted/50"
+          onClick={onToggleExpand}
+          style={{ minHeight: '40px' }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              <CardTitle className="text-base font-semibold" style={{ color: CASVA_LILAC }}>
+                {stage}
+              </CardTitle>
+              <Badge variant="secondary" className="ml-2">
+                {items.length}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        
+        {isExpanded && (
+          <CardContent className="pt-2 pb-4 space-y-2">
+            {topLevelItems.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm italic">
+                Drag items here or add new items to this stage
+              </div>
+            ) : (
+              <SortableContext
+                items={topLevelItems.map(item => item.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {topLevelItems.map((item) => (
+                  <SortableScopeItem
+                    key={item.id}
+                    item={item}
+                    onUpdate={onUpdate}
+                    onDelete={onDelete}
+                    onToggleSelect={onToggleSelect}
+                    isSelected={selectedItems.has(item.id)}
+                    children={allItems.filter(i => i.parentId === item.id)}
+                    allItems={allItems}
+                    selectedItems={selectedItems}
+                  />
+                ))}
+              </SortableContext>
+            )}
+          </CardContent>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// PDF Document Component
+const ScopePDF = ({ stage, items }: { stage: string; items: ScopeItem[] }) => (
+  <Document>
+    <Page size="A4" style={pdfStyles.page}>
+      <View style={pdfStyles.header}>
+        <Text style={pdfStyles.title}>Scope of Works - {stage}</Text>
+      </View>
+      {items.map((item, index) => (
+        <View key={item.id} style={pdfStyles.item}>
+          <Text style={pdfStyles.itemNumber}>{index + 1}.</Text>
+          <View style={pdfStyles.itemContent}>
+            <Text style={pdfStyles.itemTitle}>{item.title}</Text>
+            {item.description && (
+              <Text style={pdfStyles.itemDescription}>{item.description.replace(/<[^>]*>/g, '')}</Text>
+            )}
+          </View>
+        </View>
+      ))}
+    </Page>
+  </Document>
+);
+
+const pdfStyles = StyleSheet.create({
+  page: { padding: 40, fontSize: 11 },
+  header: { marginBottom: 20, borderBottom: '2px solid #bba7db' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#bba7db', marginBottom: 10 },
+  item: { flexDirection: 'row', marginBottom: 12 },
+  itemNumber: { width: 30, fontWeight: 'bold' },
+  itemContent: { flex: 1 },
+  itemTitle: { fontWeight: 'bold', marginBottom: 4 },
+  itemDescription: { color: '#666', fontSize: 10 },
+});
+
 export default function ProjectScope() {
   const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedStage, setSelectedStage] = useState<string>("Preparation");
-  const [newItemTitle, setNewItemTitle] = useState("");
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  
+  const [stageExpanded, setStageExpanded] = useState<StageState>({
+    Prelim: true,
+    Frame: true,
+    Lockup: true,
+    Fix: true,
+    Handover: true,
+  });
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [isPushDialogOpen, setIsPushDialogOpen] = useState(false);
+  const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
+  const [isRfqDialogOpen, setIsRfqDialogOpen] = useState(false);
+  const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
+  const [pdfStage, setPdfStage] = useState<Stage>('Prelim');
 
-  console.log('ProjectScope - projectId:', projectId);
-  console.log('ProjectScope - user:', user);
-  console.log('ProjectScope - user.companyId:', user?.companyId);
-
-  // Fetch scope items for the project
+  // Fetch scope items
   const { data: scopeItems = [], isLoading } = useQuery<ScopeItem[]>({
     queryKey: [`/api/projects/${projectId}/scope`],
     enabled: !!projectId,
   });
 
-  // Fetch scope templates
+  // Fetch templates
   const { data: templates = [] } = useQuery<ScopeTemplate[]>({
     queryKey: ['/api/scope-templates'],
   });
 
-  // Fetch estimates for push-to-estimate dropdown
+  // Fetch estimates
   const { data: estimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
     select: (data) => data.filter(est => est.projectId === projectId),
   });
 
-  // Create scope item mutation
-  const createItemMutation = useMutation({
-    mutationFn: async (data: Partial<ScopeItem>) => {
-      const payload = {
-        ...data,
-        companyId: user?.companyId,
-      };
-      return apiRequest(`/api/projects/${projectId}/scope`, 'POST', payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
-      setNewItemTitle("");
-      toast({ title: "Scope item created" });
-    },
-    onError: (error: any) => {
-      console.error("Failed to create scope item:", error);
-      toast({ title: "Failed to create scope item", variant: "destructive" });
-    },
-  });
-
-  // Update scope item mutation
+  // Update mutation
   const updateItemMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ScopeItem> }) => {
       return apiRequest(`/api/scope/${id}`, 'PATCH', data);
@@ -326,7 +497,7 @@ export default function ProjectScope() {
     },
   });
 
-  // Delete scope item mutation
+  // Delete mutation
   const deleteItemMutation = useMutation({
     mutationFn: async (id: string) => {
       return apiRequest(`/api/scope/${id}`, 'DELETE');
@@ -345,7 +516,7 @@ export default function ProjectScope() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
       setIsTemplateDialogOpen(false);
-      toast({ title: "Template applied successfully" });
+      toast({ title: "Template applied successfully - 12 items added!" });
     },
   });
 
@@ -355,61 +526,119 @@ export default function ProjectScope() {
       return apiRequest('/api/scope/push-to-estimate', 'POST', { scopeItemIds, estimateId });
     },
     onSuccess: () => {
-      toast({ title: "Items pushed to estimate successfully" });
+      setIsPushDialogOpen(false);
+      setSelectedItems(new Set());
+      toast({ title: "Items pushed to estimate successfully!" });
+    },
+  });
+
+  // Create RFQ mutation
+  const createRfqMutation = useMutation({
+    mutationFn: async (scopeItemIds: string[]) => {
+      return apiRequest('/api/scope/create-rfq', 'POST', { scopeItemIds, projectId });
+    },
+    onSuccess: () => {
+      setIsRfqDialogOpen(false);
+      setSelectedItems(new Set());
+      toast({ title: "RFQ created successfully!" });
     },
   });
 
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Handle drag end
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = scopeItems.findIndex(item => item.id === active.id);
-    const newIndex = scopeItems.findIndex(item => item.id === over.id);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      const reorderedItems = arrayMove(scopeItems, oldIndex, newIndex);
-      const updates = reorderedItems.map((item, index) => ({
-        id: item.id,
-        displayOrder: index,
-      }));
-
-      apiRequest('/api/scope/reorder', 'POST', { updates }).then(() => {
-        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
-      });
-    }
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
   };
 
-  const handleAddItem = () => {
-    if (!newItemTitle.trim()) return;
+  const handleDragOver = (event: DragOverEvent) => {
+    setOverId(event.over?.id as string || null);
+  };
 
-    console.log('handleAddItem - projectId:', projectId);
-    console.log('handleAddItem - user.companyId:', user?.companyId);
-    console.log('handleAddItem - about to create with data:', {
-      title: newItemTitle,
-      stage: selectedStage,
-      displayOrder: scopeItems.length,
-      needsRfi: false,
-      needsRfq: false,
-      projectId,
-      companyId: user?.companyId,
-    });
+  // Helper function to check if an item is a descendant of another
+  const isDescendant = (potentialDescendant: ScopeItem, ancestor: ScopeItem): boolean => {
+    if (!potentialDescendant.parentId) return false;
+    if (potentialDescendant.parentId === ancestor.id) return true;
+    const parent = scopeItems.find(i => i.id === potentialDescendant.parentId);
+    if (!parent) return false;
+    return isDescendant(parent, ancestor);
+  };
 
-    createItemMutation.mutate({
-      title: newItemTitle,
-      stage: selectedStage,
-      displayOrder: scopeItems.length,
-      needsRfi: false,
-      needsRfq: false,
-    });
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
+    
+    if (!over) return;
+
+    const overId = over.id as string;
+    const activeItem = scopeItems.find(i => i.id === active.id);
+    if (!activeItem) return;
+    
+    // Check if dragged over a stage
+    if (overId.startsWith('stage-')) {
+      const targetStage = overId.replace('stage-', '') as Stage;
+      if (activeItem.stage !== targetStage) {
+        updateItemMutation.mutate({ 
+          id: activeItem.id, 
+          data: { stage: targetStage, parentId: null } 
+        });
+        toast({ title: `Moved to ${targetStage}` });
+      }
+      return;
+    }
+
+    // Check if dragged over another item (nest it)
+    const overItem = scopeItems.find(i => i.id === overId);
+    if (overItem && overItem.id !== activeItem.id && overItem.id !== activeItem.parentId) {
+      // Prevent creating cycles - don't allow dragging a parent onto its descendant
+      if (isDescendant(overItem, activeItem)) {
+        toast({ 
+          title: "Cannot nest item", 
+          description: "Cannot nest a parent under its own child",
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      // Nest the active item under the over item
+      updateItemMutation.mutate({
+        id: activeItem.id,
+        data: { 
+          parentId: overItem.id,
+          stage: overItem.stage // Inherit parent's stage
+        }
+      });
+      toast({ title: `Nested under ${overItem.title}` });
+      return;
+    }
+
+    // Reorder within same stage and parent level
+    if (activeItem && overItem && activeItem.stage === overItem.stage && activeItem.parentId === overItem.parentId) {
+      const siblingItems = scopeItems.filter(i => 
+        i.stage === activeItem.stage && i.parentId === activeItem.parentId
+      );
+      const oldIndex = siblingItems.findIndex(i => i.id === active.id);
+      const newIndex = siblingItems.findIndex(i => i.id === overId);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reordered = arrayMove(siblingItems, oldIndex, newIndex);
+        const updates = reordered.map((item, index) => ({
+          id: item.id,
+          displayOrder: index,
+          parentId: item.parentId || null,
+        }));
+        
+        apiRequest('/api/scope/reorder', 'POST', { updates }).then(() => {
+          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+        }).catch((error) => {
+          toast({ title: "Failed to reorder", variant: "destructive" });
+        });
+      }
+    }
   };
 
   const handleUpdateItem = (id: string, data: Partial<ScopeItem>) => {
@@ -420,17 +649,25 @@ export default function ProjectScope() {
     deleteItemMutation.mutate(id);
   };
 
-  // Build hierarchical tree (parent/children structure)
-  const buildTree = (items: ScopeItem[]): ScopeItem[] => {
-    const topLevel = items.filter(item => !item.parentId);
-    return topLevel;
+  const handleToggleSelect = (id: string) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedItems(newSelected);
   };
 
-  const getChildren = (parentId: string): ScopeItem[] => {
-    return scopeItems.filter(item => item.parentId === parentId);
+  const toggleStage = (stage: Stage) => {
+    setStageExpanded(prev => ({ ...prev, [stage]: !prev[stage] }));
   };
 
-  const tree = buildTree(scopeItems);
+  const getItemsByStage = (stage: Stage) => {
+    return scopeItems
+      .filter(item => item.stage === stage)
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  };
 
   if (isLoading) {
     return (
@@ -445,7 +682,7 @@ export default function ProjectScope() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b bg-card">
         <div className="flex items-center gap-3">
-          <ListTree className="h-6 w-6 text-primary" />
+          <ListTree className="h-6 w-6" style={{ color: CASVA_LILAC }} />
           <div>
             <h1 className="text-2xl font-bold">Scope</h1>
             <p className="text-sm text-muted-foreground">The DNA of your project</p>
@@ -453,7 +690,7 @@ export default function ProjectScope() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Template Dropdown */}
+          {/* Load Template */}
           <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" data-testid="button-load-template">
@@ -497,109 +734,181 @@ export default function ProjectScope() {
           </Dialog>
 
           {/* Push to Estimate */}
-          {estimates.length > 0 && scopeItems.length > 0 && (
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => {
-                const estimateId = estimates[0].id;
-                const allIds = scopeItems.map(i => i.id);
-                pushToEstimateMutation.mutate({ scopeItemIds: allIds, estimateId });
-              }}
-              data-testid="button-push-to-estimate"
-            >
-              <DollarSign className="h-4 w-4 mr-2" />
-              Push to Estimate
-            </Button>
+          {selectedItems.size > 0 && estimates.length > 0 && (
+            <Dialog open={isPushDialogOpen} onOpenChange={setIsPushDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-push-to-estimate">
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  Push ({selectedItems.size})
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Push to Estimate</DialogTitle>
+                  <DialogDescription>
+                    Select an estimate to push {selectedItems.size} selected items
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Estimate</Label>
+                    <Select value={selectedEstimateId} onValueChange={setSelectedEstimateId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an estimate" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {estimates.map((est) => (
+                          <SelectItem key={est.id} value={est.id}>
+                            {est.name || 'Untitled Estimate'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    onClick={() => selectedEstimateId && pushToEstimateMutation.mutate({ 
+                      scopeItemIds: Array.from(selectedItems), 
+                      estimateId: selectedEstimateId 
+                    })}
+                    disabled={!selectedEstimateId || pushToEstimateMutation.isPending}
+                  >
+                    {pushToEstimateMutation.isPending ? "Pushing..." : "Push Items"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
 
           {/* Create RFQ */}
-          <Button variant="outline" size="sm" data-testid="button-create-rfq">
-            <Send className="h-4 w-4 mr-2" />
-            Create RFQ
-          </Button>
+          {selectedItems.size > 0 && (
+            <Dialog open={isRfqDialogOpen} onOpenChange={setIsRfqDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-create-rfq">
+                  <Send className="h-4 w-4 mr-2" />
+                  Create RFQ
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create RFQ</DialogTitle>
+                  <DialogDescription>
+                    Generate a Request for Quote from {selectedItems.size} selected items
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    onClick={() => createRfqMutation.mutate(Array.from(selectedItems))}
+                    disabled={createRfqMutation.isPending}
+                  >
+                    {createRfqMutation.isPending ? "Creating..." : "Create RFQ"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
 
           {/* Export PDF */}
-          <Button variant="outline" size="sm" data-testid="button-export-pdf">
-            <FileUp className="h-4 w-4 mr-2" />
-            Export PDF
-          </Button>
+          <Dialog open={isPdfDialogOpen} onOpenChange={setIsPdfDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" data-testid="button-export-pdf">
+                <FileText className="h-4 w-4 mr-2" />
+                Export PDF
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Export PDF</DialogTitle>
+                <DialogDescription>
+                  Select a stage to export
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Stage</Label>
+                  <Select value={pdfStage} onValueChange={(v) => setPdfStage(v as Stage)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STAGES.map((stage) => (
+                        <SelectItem key={stage} value={stage}>
+                          {stage} ({getItemsByStage(stage).length} items)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <PDFDownloadLink
+                  document={<ScopePDF stage={pdfStage} items={getItemsByStage(pdfStage)} />}
+                  fileName={`scope-${pdfStage.toLowerCase()}.pdf`}
+                >
+                  {({ loading }) => (
+                    <Button disabled={loading}>
+                      {loading ? 'Generating...' : 'Download PDF'}
+                    </Button>
+                  )}
+                </PDFDownloadLink>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-5xl mx-auto space-y-4">
-          {/* Add New Item */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Add Scope Item</CardTitle>
-            </CardHeader>
-            <CardContent className="flex gap-2">
-              <Select value={selectedStage} onValueChange={setSelectedStage}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Preparation">Preparation</SelectItem>
-                  <SelectItem value="Foundation">Foundation</SelectItem>
-                  <SelectItem value="Framing">Framing</SelectItem>
-                  <SelectItem value="External">External</SelectItem>
-                  <SelectItem value="Internal">Internal</SelectItem>
-                  <SelectItem value="Finishing">Finishing</SelectItem>
-                  <SelectItem value="Landscaping">Landscaping</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Input
-                value={newItemTitle}
-                onChange={(e) => setNewItemTitle(e.target.value)}
-                placeholder="Enter scope item title..."
-                onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
-                className="flex-1"
-                data-testid="input-new-scope-item"
-              />
-
-              <Button 
-                onClick={handleAddItem}
-                disabled={!newItemTitle.trim() || createItemMutation.isPending}
-                data-testid="button-add-scope-item"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Item
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Scope Items List */}
-          {tree.length === 0 ? (
+        <div className="max-w-5xl mx-auto">
+          {scopeItems.length === 0 ? (
             <Card className="p-12">
               <div className="text-center text-muted-foreground">
                 <ListTree className="h-12 w-12 mx-auto mb-4 opacity-20" />
                 <p className="text-lg font-medium mb-2">No scope items yet</p>
-                <p className="text-sm">Add your first scope item or load a template to get started</p>
+                <p className="text-sm">Load the "Standard Slab" template to get started with 12 pre-filled items</p>
               </div>
             </Card>
           ) : (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={tree.map(item => item.id)}
+                items={[...STAGES.map(s => `stage-${s}`), ...scopeItems.map(i => i.id)]}
                 strategy={verticalListSortingStrategy}
               >
-                {tree.map((item) => (
-                  <SortableScopeItem
-                    key={item.id}
-                    item={item}
+                {STAGES.map((stage) => (
+                  <DroppableStage
+                    key={stage}
+                    stage={stage}
+                    items={getItemsByStage(stage)}
+                    isExpanded={stageExpanded[stage]}
+                    onToggleExpand={() => toggleStage(stage)}
                     onUpdate={handleUpdateItem}
                     onDelete={handleDeleteItem}
-                    children={getChildren(item.id)}
+                    onToggleSelect={handleToggleSelect}
+                    selectedItems={selectedItems}
+                    isOver={overId === `stage-${stage}`}
+                    allItems={scopeItems}
                   />
                 ))}
               </SortableContext>
+
+              <DragOverlay>
+                {activeId && scopeItems.find(i => i.id === activeId) ? (
+                  <Card className="opacity-90 border-l-4" style={{ borderLeftColor: CASVA_LILAC }}>
+                    <CardContent className="py-2 px-3">
+                      <div className="font-medium text-sm">
+                        {scopeItems.find(i => i.id === activeId)?.title}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </DragOverlay>
             </DndContext>
           )}
         </div>
