@@ -32,7 +32,7 @@ export function CasvaTaskRow({
     <>
       {/* Checkbox Column */}
       {showCheckbox && (
-        <TableCell className="w-12">
+        <TableCell className="w-12 h-10 py-1">
           <Checkbox
             checked={isCompleted}
             onCheckedChange={onToggleComplete}
@@ -42,7 +42,7 @@ export function CasvaTaskRow({
       )}
 
       {/* Title Column */}
-      <TableCell>
+      <TableCell className="h-10 py-1">
         <div className="flex items-center gap-2">
           {isDraggable && (
             <div 
@@ -61,12 +61,12 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Status Column */}
-      <TableCell className="w-32">
+      <TableCell className="w-32 h-10 py-1">
         <ColorChip type="status" value={task.status || "todo"} />
       </TableCell>
 
       {/* Priority Column */}
-      <TableCell className="w-32">
+      <TableCell className="w-32 h-10 py-1">
         {task.priority ? (
           <ColorChip type="priority" value={task.priority} />
         ) : (
@@ -75,7 +75,7 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Assignee Column */}
-      <TableCell className="w-40">
+      <TableCell className="w-40 h-10 py-1">
         {task.assigneeName ? (
           <div className="text-xs text-muted-foreground truncate" data-testid="task-assignee">
             {task.assigneeName}
@@ -86,7 +86,7 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Due Date Column */}
-      <TableCell className="w-32">
+      <TableCell className="w-32 h-10 py-1">
         {task.dueDate ? (
           <div className="text-xs text-muted-foreground" data-testid="task-due-date">
             {format(new Date(task.dueDate), 'MMM d, yyyy')}
@@ -97,7 +97,7 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Actions Column */}
-      <TableCell className="w-12">
+      <TableCell className="w-12 h-10 py-1">
         <Button
           variant="ghost"
           size="icon"

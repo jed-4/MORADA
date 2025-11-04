@@ -31,21 +31,21 @@ export function CasvaTaskList({
       <ScrollArea style={{ maxHeight }} className="w-full">
         <Table>
           <TableHeader className="sticky top-0 bg-muted/50 z-10">
-            <TableRow className="hover:bg-transparent border-b-2">
-              {showCheckboxes && <TableHead className="w-12"></TableHead>}
-              <TableHead className="font-semibold">Task</TableHead>
-              <TableHead className="font-semibold w-32">Status</TableHead>
-              <TableHead className="font-semibold w-32">Priority</TableHead>
-              <TableHead className="font-semibold w-40">Assignee</TableHead>
-              <TableHead className="font-semibold w-32">Due Date</TableHead>
-              <TableHead className="w-12"></TableHead>
+            <TableRow className="hover:bg-transparent border-b-2 h-10">
+              {showCheckboxes && <TableHead className="w-12 h-10 py-2"></TableHead>}
+              <TableHead className="font-semibold h-10 py-2">Task</TableHead>
+              <TableHead className="font-semibold w-32 h-10 py-2">Status</TableHead>
+              <TableHead className="font-semibold w-32 h-10 py-2">Priority</TableHead>
+              <TableHead className="font-semibold w-40 h-10 py-2">Assignee</TableHead>
+              <TableHead className="font-semibold w-32 h-10 py-2">Due Date</TableHead>
+              <TableHead className="w-12 h-10 py-2"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {tasks.map((task) => (
               <TableRow 
                 key={task.id} 
-                className="group casva-row casva-hover-lift h-10 hover:bg-accent/5 transition-colors"
+                className="group casva-row h-10 hover:bg-accent/5 transition-colors border-b"
                 data-testid={`task-row-${task.id}`}
               >
                 <CasvaTaskRow
