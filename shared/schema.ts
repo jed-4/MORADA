@@ -2222,6 +2222,35 @@ export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
 export const updateScheduleSchema = insertScheduleSchema.partial();
 export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;
 
+// Scope Stages (editable stage categories for scope organization)
+export const scopeStages = pgTable("scope_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(), // "Prelim", "Frame", "Custom Stage", etc.
+  displayOrder: integer("display_order").notNull().default(0), // Sort order
+  parentId: varchar("parent_id"), // For nested stages (optional)
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScopeStageSchema = createInsertSchema(scopeStages).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Stage name is required"),
+});
+
+export type InsertScopeStage = z.infer<typeof insertScopeStageSchema>;
+export type ScopeStage = typeof scopeStages.$inferSelect;
+
+export const updateScopeStageSchema = insertScopeStageSchema.partial();
+export type UpdateScopeStage = z.infer<typeof updateScopeStageSchema>;
+
 // Scope Items (the DNA of every job - flows to Estimate, RFQ, PO, Schedule)
 export const scopeItems = pgTable("scope_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
