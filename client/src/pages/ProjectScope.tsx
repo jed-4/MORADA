@@ -201,15 +201,13 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       <Card 
         className={`transition-all duration-200 border-l-4 ${isSelected ? 'ring-2 ring-primary' : 'hover:shadow-xl hover:-translate-y-1'}`}
         style={{ 
-          minHeight: isCollapsed ? '40px' : '80px',
-          maxHeight: isCollapsed ? '40px' : 'none',
+          minHeight: isCollapsed ? '40px' : 'auto',
           borderLeftColor: CASVA_LILAC,
-          overflow: isCollapsed ? 'hidden' : 'visible'
         }}
       >
-        <CardContent className="py-1 px-3" style={{ minHeight: '40px' }}>
+        <CardContent className="px-3 py-0 flex flex-col justify-center" style={{ minHeight: '40px' }}>
           {/* Row 1: Everything in one neat row */}
-          <div className="flex items-center gap-2 h-[40px]">
+          <div className="flex items-center gap-2 py-1">
             {/* Drag Handle */}
             <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
               <GripVertical className="h-4 w-4 text-muted-foreground" />
