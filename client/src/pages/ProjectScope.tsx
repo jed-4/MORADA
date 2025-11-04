@@ -275,6 +275,10 @@ export default function ProjectScope() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
 
+  console.log('ProjectScope - projectId:', projectId);
+  console.log('ProjectScope - user:', user);
+  console.log('ProjectScope - user.companyId:', user?.companyId);
+
   // Fetch scope items for the project
   const { data: scopeItems = [], isLoading } = useQuery<ScopeItem[]>({
     queryKey: [`/api/projects/${projectId}/scope`],
@@ -386,6 +390,18 @@ export default function ProjectScope() {
 
   const handleAddItem = () => {
     if (!newItemTitle.trim()) return;
+
+    console.log('handleAddItem - projectId:', projectId);
+    console.log('handleAddItem - user.companyId:', user?.companyId);
+    console.log('handleAddItem - about to create with data:', {
+      title: newItemTitle,
+      stage: selectedStage,
+      displayOrder: scopeItems.length,
+      needsRfi: false,
+      needsRfq: false,
+      projectId,
+      companyId: user?.companyId,
+    });
 
     createItemMutation.mutate({
       title: newItemTitle,
