@@ -86,7 +86,10 @@ import {
   insertRfqSchema,
   insertRfqItemSchema,
   insertRfqQuoteSchema,
-  insertRfqFollowUpSchema
+  insertRfqFollowUpSchema,
+  insertScopeItemSchema,
+  insertScopeTemplateSchema,
+  insertScopeGearPhotoSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -2515,6 +2518,378 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch estimate data" });
+    }
+  });
+
+  // ============================================================
+  // SCOPE SECTION API ROUTES (Single Source of Truth)
+  // ============================================================
+
+  // Get all scope items for a project
+  app.get("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const items = await storage.getScopeItems(req.params.projectId);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching scope items:", error);
+      res.status(500).json({ error: "Failed to fetch scope items" });
+    }
+  });
+
+  // Get a single scope item
+  app.get("/api/scope/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const item = await storage.getScopeItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Scope item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Error fetching scope item:", error);
+      res.status(500).json({ error: "Failed to fetch scope item" });
+    }
+  });
+
+  // Create a new scope item
+  app.post("/api/projects/:projectId/scope", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertScopeItemSchema.omit({ projectId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const newItem = await storage.createScopeItem({
+        ...validationResult.data,
+        projectId: req.params.projectId,
+      });
+
+      res.status(201).json(newItem);
+    } catch (error) {
+      console.error("Error creating scope item:", error);
+      res.status(500).json({ error: "Failed to create scope item" });
+    }
+  });
+
+  // Bulk create scope items
+  app.post("/api/projects/:projectId/scope/bulk", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "Items must be an array" });
+      }
+
+      const itemsWithProject = items.map(item => ({
+        ...item,
+        projectId: req.params.projectId,
+      }));
+
+      const newItems = await storage.bulkCreateScopeItems(itemsWithProject);
+      res.status(201).json(newItems);
+    } catch (error) {
+      console.error("Error bulk creating scope items:", error);
+      res.status(500).json({ error: "Failed to bulk create scope items" });
+    }
+  });
+
+  // Update a scope item
+  app.patch("/api/scope/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const updateSchema = insertScopeItemSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const updatedItem = await storage.updateScopeItem(req.params.id, validationResult.data);
+      if (!updatedItem) {
+        return res.status(404).json({ error: "Scope item not found" });
+      }
+
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Error updating scope item:", error);
+      res.status(500).json({ error: "Failed to update scope item" });
+    }
+  });
+
+  // Delete a scope item
+  app.delete("/api/scope/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deleteScopeItem(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Scope item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting scope item:", error);
+      res.status(500).json({ error: "Failed to delete scope item" });
+    }
+  });
+
+  // Reorder scope items (with drag-drop support)
+  app.post("/api/scope/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { updates } = req.body;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Updates must be an array" });
+      }
+
+      await storage.reorderScopeItems(updates);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error reordering scope items:", error);
+      res.status(500).json({ error: "Failed to reorder scope items" });
+    }
+  });
+
+  // ============================================================
+  // SCOPE TEMPLATES
+  // ============================================================
+
+  // Get all scope templates for company
+  app.get("/api/scope-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const templates = await storage.getScopeTemplates(companyId);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching scope templates:", error);
+      res.status(500).json({ error: "Failed to fetch scope templates" });
+    }
+  });
+
+  // Get a single scope template
+  app.get("/api/scope-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const template = await storage.getScopeTemplate(req.params.id, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      console.error("Error fetching scope template:", error);
+      res.status(500).json({ error: "Failed to fetch scope template" });
+    }
+  });
+
+  // Create a scope template
+  app.post("/api/scope-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const validationResult = insertScopeTemplateSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const newTemplate = await storage.createScopeTemplate({
+        ...validationResult.data,
+        companyId,
+      });
+
+      res.status(201).json(newTemplate);
+    } catch (error) {
+      console.error("Error creating scope template:", error);
+      res.status(500).json({ error: "Failed to create scope template" });
+    }
+  });
+
+  // Update a scope template
+  app.patch("/api/scope-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const updateSchema = insertScopeTemplateSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const updatedTemplate = await storage.updateScopeTemplate(req.params.id, validationResult.data, companyId);
+      if (!updatedTemplate) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error("Error updating scope template:", error);
+      res.status(500).json({ error: "Failed to update scope template" });
+    }
+  });
+
+  // Delete a scope template
+  app.delete("/api/scope-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const success = await storage.deleteScopeTemplate(req.params.id, companyId);
+      if (!success) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting scope template:", error);
+      res.status(500).json({ error: "Failed to delete scope template" });
+    }
+  });
+
+  // Apply a template to a project
+  app.post("/api/scope-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.body;
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required" });
+      }
+
+      const items = await storage.applyScopeTemplate(req.params.id, projectId);
+      res.status(201).json(items);
+    } catch (error) {
+      console.error("Error applying scope template:", error);
+      res.status(500).json({ error: "Failed to apply scope template" });
+    }
+  });
+
+  // ============================================================
+  // SCOPE GEAR PHOTOS
+  // ============================================================
+
+  // Multer configuration for gear photo uploads
+  const gearPhotoUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        cb(null, 'uploads/gear-photos/');
+      },
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + '-' + file.originalname);
+      }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  });
+
+  // Get gear photos for a scope item
+  app.get("/api/scope/:scopeItemId/gear-photos", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const photos = await storage.getScopeGearPhotos(req.params.scopeItemId);
+      res.json(photos);
+    } catch (error) {
+      console.error("Error fetching gear photos:", error);
+      res.status(500).json({ error: "Failed to fetch gear photos" });
+    }
+  });
+
+  // Upload a gear photo
+  app.post("/api/scope/:scopeItemId/gear-photos", requireAuth, requireTeamMember, gearPhotoUpload.single('photo'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No photo uploaded" });
+      }
+
+      const photoData = {
+        scopeItemId: req.params.scopeItemId,
+        photoUrl: `/uploads/gear-photos/${req.file.filename}`,
+        caption: req.body.caption || null,
+      };
+
+      const validationResult = insertScopeGearPhotoSchema.safeParse(photoData);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const newPhoto = await storage.createScopeGearPhoto(validationResult.data);
+      res.status(201).json(newPhoto);
+    } catch (error) {
+      console.error("Error uploading gear photo:", error);
+      res.status(500).json({ error: "Failed to upload gear photo" });
+    }
+  });
+
+  // Delete a gear photo
+  app.delete("/api/gear-photos/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deleteScopeGearPhoto(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Photo not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting gear photo:", error);
+      res.status(500).json({ error: "Failed to delete gear photo" });
+    }
+  });
+
+  // ============================================================
+  // SCOPE INTEGRATION HELPERS
+  // ============================================================
+
+  // Push scope items to estimate
+  app.post("/api/scope/push-to-estimate", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { scopeItemIds, estimateId } = req.body;
+      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
+        return res.status(400).json({ error: "Scope item IDs must be an array" });
+      }
+      if (!estimateId) {
+        return res.status(400).json({ error: "Estimate ID is required" });
+      }
+
+      const estimateItems = await storage.pushScopeToEstimate(scopeItemIds, estimateId);
+      res.status(201).json(estimateItems);
+    } catch (error) {
+      console.error("Error pushing scope to estimate:", error);
+      res.status(500).json({ error: "Failed to push scope to estimate" });
+    }
+  });
+
+  // Create RFQ from scope items
+  app.post("/api/scope/create-rfq", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { scopeItemIds, projectId } = req.body;
+      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
+        return res.status(400).json({ error: "Scope item IDs must be an array" });
+      }
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required" });
+      }
+
+      const rfq = await storage.createRfqFromScope(scopeItemIds, projectId);
+      res.status(201).json(rfq);
+    } catch (error) {
+      console.error("Error creating RFQ from scope:", error);
+      res.status(500).json({ error: "Failed to create RFQ from scope" });
+    }
+  });
+
+  // Link scope item to schedule item
+  app.post("/api/scope/:scopeItemId/link-schedule", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { scheduleItemId } = req.body;
+      if (!scheduleItemId) {
+        return res.status(400).json({ error: "Schedule item ID is required" });
+      }
+
+      const updatedItem = await storage.linkScopeToScheduleItem(req.params.scopeItemId, scheduleItemId);
+      if (!updatedItem) {
+        return res.status(404).json({ error: "Scope item not found" });
+      }
+
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Error linking scope to schedule:", error);
+      res.status(500).json({ error: "Failed to link scope to schedule" });
     }
   });
 
