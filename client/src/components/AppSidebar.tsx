@@ -32,6 +32,7 @@ import {
   Archive,
   AlertCircle,
   ClipboardList,
+  ListTree,
 } from "lucide-react";
 
 import {
@@ -73,6 +74,7 @@ import { useAuth } from "@/hooks/use-auth";
 // Project sections base configuration
 const projectItemsBase = [
   { title: "Overview", baseUrl: "", icon: Home },
+  { title: "Scope", baseUrl: "/scope", icon: ListTree },
   { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
   { title: "Notes", baseUrl: "/notes", icon: FileText },
   { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },

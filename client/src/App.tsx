@@ -71,6 +71,7 @@ import { SocketProvider } from "@/lib/socket";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
+import ProjectScope from "@/pages/ProjectScope";
 
 function Router() {
   return (
@@ -109,6 +110,7 @@ function Router() {
       
       {/* Project-specific routes */}
       <Route path="/projects/:projectId" component={Dashboard} />
+      <Route path="/projects/:projectId/scope" component={ProjectScope} />
       <Route path="/projects/:projectId/notes" component={Notes} />
       <Route path="/projects/:projectId/messages" component={Messages} />
       <Route path="/projects/:projectId/minutes" component={Minutes} />
