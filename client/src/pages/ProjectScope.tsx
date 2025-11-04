@@ -207,150 +207,52 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           overflow: isCollapsed ? 'hidden' : 'visible'
         }}
       >
-        <CardContent className="py-1 px-3 flex items-start gap-2" style={{ minHeight: '40px' }}>
-          {/* Drag Handle - LEFT SIDE */}
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing self-center">
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
+        <CardContent className="py-1 px-3" style={{ minHeight: '40px' }}>
+          {/* Row 1: Everything in one neat row */}
+          <div className="flex items-center gap-2 h-[40px]">
+            {/* Drag Handle */}
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+            </div>
 
-          {/* Expand/Collapse button - always visible */}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 self-center"
-            onClick={() => {
-              // If has children, toggle child expansion
-              if (hasChildren) {
-                setIsExpanded(!isExpanded);
-              }
-              // Always toggle description collapse
-              if (onToggleCollapse) {
-                onToggleCollapse(item.id);
-              }
-            }}
-            data-testid={`button-toggle-scope-${item.id}`}
-          >
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
+            {/* Expand/Collapse button */}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => {
+                // If has children, toggle child expansion
+                if (hasChildren) {
+                  setIsExpanded(!isExpanded);
+                }
+                // Always toggle description collapse
+                if (onToggleCollapse) {
+                  onToggleCollapse(item.id);
+                }
+              }}
+              data-testid={`button-toggle-scope-${item.id}`}
+            >
+              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
 
-          {/* Selection Checkbox */}
-          <Checkbox
-            checked={isSelected}
-            onCheckedChange={() => onToggleSelect(item.id)}
-            className="self-center"
-            data-testid={`checkbox-select-${item.id}`}
-          />
+            {/* Selection Checkbox */}
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={() => onToggleSelect(item.id)}
+              data-testid={`checkbox-select-${item.id}`}
+            />
 
-          {/* Content */}
-          <div className="flex-1 min-w-0">
             {/* Title - Inter 16px */}
             <Input
               value={item.title}
               onChange={(e) => onUpdate(item.id, { title: e.target.value })}
-              className="h-7 text-base font-semibold border-0 focus-visible:ring-1 px-2"
+              className="h-7 text-base font-semibold border-0 focus-visible:ring-1 px-2 flex-1"
               style={{ fontFamily: 'Inter, sans-serif' }}
               placeholder="Item title"
               data-testid={`input-scope-title-${item.id}`}
             />
 
-            {/* Description - Hidden when collapsed, Manrope 14px */}
-            {!isCollapsed && (
-              <>
-                {isEditingDescription && editor ? (
-                  <div className="border rounded-md p-2 bg-background mt-1" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                    <EditorContent editor={editor} className="prose prose-sm max-w-none" />
-                    <Button
-                      size="sm"
-                      onClick={() => setIsEditingDescription(false)}
-                      className="mt-2"
-                    >
-                      Done
-                    </Button>
-                  </div>
-                ) : item.description ? (
-                  <div
-                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 mt-1"
-                    style={{ fontFamily: 'Manrope, sans-serif' }}
-                    onClick={() => setIsEditingDescription(true)}
-                    dangerouslySetInnerHTML={{ __html: item.description }}
-                  />
-                ) : (
-                  <div
-                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic mt-1"
-                    style={{ fontFamily: 'Manrope, sans-serif' }}
-                    onClick={() => setIsEditingDescription(true)}
-                  >
-                    Click to add description...
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Gear Checklist */}
-            {gearList.length > 0 && (
-              <div className="mt-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowGearList(!showGearList)}
-                  className="h-7"
-                >
-                  <CheckSquare className="h-3 w-3 mr-1" />
-                  Gear ({gearList.filter(g => g.checked).length}/{gearList.length})
-                  {showGearList ? <ChevronDown className="h-3 w-3 ml-1" /> : <ChevronRight className="h-3 w-3 ml-1" />}
-                </Button>
-                {showGearList && (
-                  <div className="ml-6 mt-1 space-y-1">
-                    {gearList.map((gear, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <Checkbox
-                          checked={gear.checked}
-                          onCheckedChange={() => handleToggleGearItem(idx)}
-                          data-testid={`checkbox-gear-${item.id}-${idx}`}
-                        />
-                        <span className={`text-sm ${gear.checked ? 'line-through text-muted-foreground' : ''}`}>
-                          {gear.name}
-                        </span>
-                        {gear.photoUrl && (
-                          <Badge variant="outline" className="h-5 text-xs bg-green-100 text-green-800">
-                            Photo
-                          </Badge>
-                        )}
-                        <label className="ml-auto cursor-pointer">
-                          <Button 
-                            size="sm" 
-                            variant="ghost" 
-                            className="h-6"
-                            disabled={uploadingGearIndex === idx}
-                            asChild
-                          >
-                            <span>
-                              <Upload className="h-3 w-3" />
-                              {uploadingGearIndex === idx && <span className="ml-1 text-xs">...</span>}
-                            </span>
-                          </Button>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleGearPhotoUpload(idx, file);
-                            }}
-                            data-testid={`input-gear-photo-${item.id}-${idx}`}
-                          />
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Chips (vertical stack) + 3 dots menu on hover */}
-          <div className="flex flex-col items-end gap-2 min-w-0">
-            {/* Type Badge - More compact, 20px tall */}
+            {/* Type Badge - Scope chip */}
             {getTypeLabel && (
               <Badge 
                 variant="secondary"
@@ -365,16 +267,16 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </Badge>
             )}
 
-            {/* Badges - Scope 2.0: Smart Links (vertical stack) */}
+            {/* Smart Links */}
             {item.needsRfq && (
-              <Badge variant="outline" className="h-6 text-xs bg-yellow-100 text-yellow-800 shrink-0">
+              <Badge variant="outline" className="h-5 text-xs bg-yellow-100 text-yellow-800 shrink-0">
                 RFQ
               </Badge>
             )}
             {item.estimateItemId && (
               <Badge 
                 variant="outline" 
-                className="h-6 text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 shrink-0"
+                className="h-5 text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 shrink-0"
                 onClick={() => window.location.href = `/projects/${item.projectId}/estimates`}
                 data-testid={`link-estimate-${item.id}`}
               >
@@ -385,7 +287,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             {item.poId && (
               <Badge 
                 variant="outline" 
-                className="h-6 text-xs bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200 shrink-0"
+                className="h-5 text-xs bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200 shrink-0"
                 onClick={() => window.location.href = `/projects/${item.projectId}/purchase-orders`}
                 data-testid={`link-po-${item.id}`}
               >
@@ -394,7 +296,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </Badge>
             )}
 
-            {/* 3 dots menu with options (hidden, shown on group hover) */}
+            {/* 3 dots menu - shown on hover */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -431,6 +333,100 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {/* Row 2: Description (when expanded) */}
+          {!isCollapsed && (
+            <div className="mt-2 ml-12">
+              {isEditingDescription && editor ? (
+                <div className="border rounded-md p-2 bg-background" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                  <EditorContent editor={editor} className="prose prose-sm max-w-none" />
+                  <Button
+                    size="sm"
+                    onClick={() => setIsEditingDescription(false)}
+                    className="mt-2"
+                  >
+                    Done
+                  </Button>
+                </div>
+              ) : item.description ? (
+                <div
+                  className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                  style={{ fontFamily: 'Manrope, sans-serif' }}
+                  onClick={() => setIsEditingDescription(true)}
+                  dangerouslySetInnerHTML={{ __html: item.description }}
+                />
+              ) : (
+                <div
+                  className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic"
+                  style={{ fontFamily: 'Manrope, sans-serif' }}
+                  onClick={() => setIsEditingDescription(true)}
+                >
+                  Click to add description...
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Gear Checklist (separate section) */}
+          {gearList.length > 0 && (
+            <div className="mt-2 ml-12">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowGearList(!showGearList)}
+                className="h-7"
+              >
+                <CheckSquare className="h-3 w-3 mr-1" />
+                Gear ({gearList.filter(g => g.checked).length}/{gearList.length})
+                {showGearList ? <ChevronDown className="h-3 w-3 ml-1" /> : <ChevronRight className="h-3 w-3 ml-1" />}
+              </Button>
+              {showGearList && (
+                <div className="ml-6 mt-1 space-y-1">
+                  {gearList.map((gear, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Checkbox
+                        checked={gear.checked}
+                        onCheckedChange={() => handleToggleGearItem(idx)}
+                        data-testid={`checkbox-gear-${item.id}-${idx}`}
+                      />
+                      <span className={`text-sm ${gear.checked ? 'line-through text-muted-foreground' : ''}`}>
+                        {gear.name}
+                      </span>
+                      {gear.photoUrl && (
+                        <Badge variant="outline" className="h-5 text-xs bg-green-100 text-green-800">
+                          Photo
+                        </Badge>
+                      )}
+                      <label className="ml-auto cursor-pointer">
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-6"
+                          disabled={uploadingGearIndex === idx}
+                          asChild
+                        >
+                          <span>
+                            <Upload className="h-3 w-3" />
+                            {uploadingGearIndex === idx && <span className="ml-1 text-xs">...</span>}
+                          </span>
+                        </Button>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleGearPhotoUpload(idx, file);
+                          }}
+                          data-testid={`input-gear-photo-${item.id}-${idx}`}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
