@@ -74,6 +74,7 @@ import {
   type ChannelMember, type InsertChannelMember,
   type Message, type InsertMessage,
   type ScopeItem, type InsertScopeItem,
+  type ScopeStage, type InsertScopeStage,
   type ScopeTemplate, type InsertScopeTemplate,
   type ScopeGearPhoto, type InsertScopeGearPhoto
 } from "@shared/schema";
@@ -292,6 +293,15 @@ export interface IStorage {
   updateScopeItem(id: string, item: Partial<InsertScopeItem>): Promise<ScopeItem | undefined>;
   deleteScopeItem(id: string): Promise<boolean>;
   reorderScopeItems(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void>;
+  
+  // Scope Stages CRUD (editable stage categories)
+  getScopeStages(projectId: string): Promise<ScopeStage[]>;
+  getScopeStage(id: string): Promise<ScopeStage | undefined>;
+  createScopeStage(stage: InsertScopeStage): Promise<ScopeStage>;
+  updateScopeStage(id: string, stage: Partial<InsertScopeStage>): Promise<ScopeStage | undefined>;
+  deleteScopeStage(id: string): Promise<boolean>;
+  reorderScopeStages(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void>;
+  initializeDefaultStages(projectId: string, companyId: string): Promise<ScopeStage[]>;
   
   // Scope Templates CRUD
   getScopeTemplates(companyId: string): Promise<ScopeTemplate[]>;
@@ -7043,6 +7053,107 @@ export class DbStorage implements IStorage {
       }
     } catch (error) {
       console.error("Database error in reorderScopeItems:", error);
+    }
+  }
+
+  // Scope Stages CRUD
+  async getScopeStages(projectId: string): Promise<ScopeStage[]> {
+    try {
+      const [project] = await db.select().from(schema.projects)
+        .where(eq(schema.projects.id, projectId))
+        .limit(1);
+      
+      if (!project) return [];
+      
+      const stages = await db.select().from(schema.scopeStages)
+        .where(and(
+          eq(schema.scopeStages.projectId, projectId),
+          eq(schema.scopeStages.companyId, project.companyId)
+        ))
+        .orderBy(asc(schema.scopeStages.displayOrder));
+      return stages;
+    } catch (error) {
+      console.error("Database error in getScopeStages:", error);
+      return [];
+    }
+  }
+
+  async getScopeStage(id: string): Promise<ScopeStage | undefined> {
+    try {
+      const [stage] = await db.select().from(schema.scopeStages)
+        .where(eq(schema.scopeStages.id, id))
+        .limit(1);
+      return stage;
+    } catch (error) {
+      console.error("Database error in getScopeStage:", error);
+      return undefined;
+    }
+  }
+
+  async createScopeStage(stage: InsertScopeStage): Promise<ScopeStage> {
+    const [newStage] = await db.insert(schema.scopeStages)
+      .values(stage)
+      .returning();
+    return newStage;
+  }
+
+  async updateScopeStage(id: string, stage: Partial<InsertScopeStage>): Promise<ScopeStage | undefined> {
+    try {
+      const [updated] = await db.update(schema.scopeStages)
+        .set({ ...stage, updatedAt: new Date() })
+        .where(eq(schema.scopeStages.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateScopeStage:", error);
+      return undefined;
+    }
+  }
+
+  async deleteScopeStage(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.scopeStages)
+        .where(eq(schema.scopeStages.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteScopeStage:", error);
+      return false;
+    }
+  }
+
+  async reorderScopeStages(updates: Array<{id: string, displayOrder: number, parentId?: string | null}>): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db.update(schema.scopeStages)
+          .set({ displayOrder: update.displayOrder, parentId: update.parentId })
+          .where(eq(schema.scopeStages.id, update.id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderScopeStages:", error);
+    }
+  }
+
+  async initializeDefaultStages(projectId: string, companyId: string): Promise<ScopeStage[]> {
+    try {
+      const defaultStages = ['Prelim', 'Frame', 'Lockup', 'Fix', 'Handover'];
+      const stages: ScopeStage[] = [];
+      
+      for (let i = 0; i < defaultStages.length; i++) {
+        const [stage] = await db.insert(schema.scopeStages)
+          .values({
+            projectId,
+            companyId,
+            name: defaultStages[i],
+            displayOrder: i,
+          })
+          .returning();
+        stages.push(stage);
+      }
+      
+      return stages;
+    } catch (error) {
+      console.error("Database error in initializeDefaultStages:", error);
+      return [];
     }
   }
 
