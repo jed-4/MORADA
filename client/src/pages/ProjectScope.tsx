@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -146,8 +146,18 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       const html = editor.getHTML();
       onUpdate(item.id, { description: html });
     },
-    editable: isEditingDescription,
   });
+
+  // Update editor editable state when isEditingDescription changes
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(isEditingDescription);
+      if (isEditingDescription) {
+        // Focus the editor when entering edit mode
+        editor.commands.focus();
+      }
+    }
+  }, [isEditingDescription, editor]);
 
   const gearList = (item.gearList as any[] || []);
 
@@ -203,20 +213,25 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
 
-          {/* Expand/Collapse for parent items */}
-          {hasChildren ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 mt-1"
-              onClick={() => setIsExpanded(!isExpanded)}
-              data-testid={`button-toggle-scope-${item.id}`}
-            >
-              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </Button>
-          ) : (
-            <div className="w-7" />
-          )}
+          {/* Expand/Collapse button - always visible */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 mt-1"
+            onClick={() => {
+              // If has children, toggle child expansion
+              if (hasChildren) {
+                setIsExpanded(!isExpanded);
+              }
+              // Always toggle description collapse
+              if (onToggleCollapse) {
+                onToggleCollapse(item.id);
+              }
+            }}
+            data-testid={`button-toggle-scope-${item.id}`}
+          >
+            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
 
           {/* Selection Checkbox */}
           <Checkbox
@@ -604,16 +619,12 @@ function DroppableStage({
                   <GripVertical className="h-5 w-5 text-muted-foreground" style={{ color: CASVA_LILAC }} />
                 </div>
 
-                {/* Expand/Collapse and Name */}
+                {/* Expand/Collapse and Name - Always show chevron */}
                 <div 
                   className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 -m-2 p-2 rounded" 
                   onClick={onToggleExpand}
                 >
-                  {hasChildren || items.length > 0 ? (
-                    isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />
-                  ) : (
-                    <div className="w-5" />
-                  )}
+                  {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
                   {isEditing ? (
                     <Input
                       value={editingStageName}
