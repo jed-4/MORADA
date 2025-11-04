@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
@@ -267,6 +268,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
 
 export default function ProjectScope() {
   const { id: projectId } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [selectedStage, setSelectedStage] = useState<string>("Preparation");
   const [newItemTitle, setNewItemTitle] = useState("");
@@ -293,9 +295,13 @@ export default function ProjectScope() {
   // Create scope item mutation
   const createItemMutation = useMutation({
     mutationFn: async (data: Partial<ScopeItem>) => {
+      const payload = {
+        ...data,
+        companyId: user?.companyId, // ADD companyId from session
+      };
       return apiRequest(`/api/projects/${projectId}/scope`, {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: () => {
