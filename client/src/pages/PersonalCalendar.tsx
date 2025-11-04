@@ -20,6 +20,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Skeleton } from "@/components/ui/skeleton";
+import CalendarSingleDayView from "@/components/calendar/CalendarSingleDayView";
+import CalendarWeekView from "@/components/calendar/CalendarWeekView";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -42,6 +44,7 @@ export default function PersonalCalendar() {
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
+  const [currentDate, setCurrentDate] = useState(new Date());
   const { toast } = useToast();
   const { user } = useAuth();
   const defaultViewCreationAttempted = useRef(false);
@@ -482,15 +485,39 @@ export default function PersonalCalendar() {
       <div className="flex-1 min-h-0 p-3 sm:p-6">
         <Card className="h-full flex flex-col">
           <div className="flex-1 min-h-0">
-            <EnhancedCalendar
-              events={filteredEvents}
-              onEventClick={handleEventClick}
-              onEventComplete={handleEventComplete}
-              onEventReschedule={handleEventReschedule}
-              onEventResize={handleEventResize}
-              showCompletionCheckbox={true}
-              initialView={calendarMode as any}
-            />
+            {calendarMode === "day" ? (
+              <CalendarSingleDayView
+                currentDate={currentDate}
+                events={filteredEvents}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                onDateChange={setCurrentDate}
+                showCompletionCheckbox={true}
+              />
+            ) : calendarMode === "week" ? (
+              <CalendarWeekView
+                currentDate={currentDate}
+                events={filteredEvents}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                onDateChange={setCurrentDate}
+                showCompletionCheckbox={true}
+              />
+            ) : (
+              <EnhancedCalendar
+                events={filteredEvents}
+                onEventClick={handleEventClick}
+                onEventComplete={handleEventComplete}
+                onEventReschedule={handleEventReschedule}
+                onEventResize={handleEventResize}
+                showCompletionCheckbox={true}
+                initialView={calendarMode as any}
+              />
+            )}
           </div>
         </Card>
       </div>
