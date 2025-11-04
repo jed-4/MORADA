@@ -422,20 +422,6 @@ export function ProjectBoard({ projects, isLoading }: ProjectBoardProps) {
           filterFn: (p: Project) => p.projectSubStatus === status.key,
         }));
 
-    // Add "Unassigned" column
-    mainColumns.push({
-      id: "unassigned",
-      title: "Unassigned",
-      color: "#9ca3af",
-      filterFn: (p: Project) => {
-        if (preferences.groupBy === "parent") {
-          return !p.projectStatus;
-        } else {
-          return !p.projectSubStatus;
-        }
-      },
-    });
-
     return mainColumns;
   }, [preferences.groupBy, parentStatuses, subStatuses]);
 
@@ -591,14 +577,14 @@ export function ProjectBoard({ projects, isLoading }: ProjectBoardProps) {
         if (activeProject.projectStatus !== columnId) {
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
-            newStatus: columnId === "unassigned" ? null : columnId 
+            newStatus: columnId 
           });
         }
       } else {
         if (activeProject.projectSubStatus !== columnId) {
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
-            newSubStatus: columnId === "unassigned" ? null : columnId 
+            newSubStatus: columnId 
           });
         }
       }
