@@ -346,12 +346,13 @@ interface DroppableStageProps {
   onUpdate: (id: string, data: Partial<ScopeItem>) => void;
   onDelete: (id: string) => void;
   onToggleSelect: (id: string) => void;
+  onAddItem: (stage: Stage) => void;
   selectedItems: Set<string>;
   isOver?: boolean;
   allItems?: ScopeItem[];
 }
 
-function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, onDelete, onToggleSelect, selectedItems, isOver, allItems = [] }: DroppableStageProps) {
+function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, onDelete, onToggleSelect, onAddItem, selectedItems, isOver, allItems = [] }: DroppableStageProps) {
   const { setNodeRef } = useSortable({ id: `stage-${stage}` });
 
   // Filter to only top-level items (no parent)
@@ -364,12 +365,11 @@ function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, on
         style={{ borderLeftColor: CASVA_LILAC, borderLeftWidth: '4px' }}
       >
         <CardHeader 
-          className="py-2 px-4 cursor-pointer hover:bg-muted/50"
-          onClick={onToggleExpand}
+          className="py-2 px-4"
           style={{ minHeight: '40px' }}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 -m-2 p-2 rounded" onClick={onToggleExpand}>
               {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
               <CardTitle className="text-base font-semibold" style={{ color: CASVA_LILAC }}>
                 {stage}
@@ -378,6 +378,18 @@ function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, on
                 {items.length}
               </Badge>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddItem(stage);
+              }}
+              data-testid={`button-add-item-${stage.toLowerCase()}`}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Item
+            </Button>
           </div>
         </CardHeader>
         
@@ -467,8 +479,13 @@ export default function ProjectScope() {
   const [isPushDialogOpen, setIsPushDialogOpen] = useState(false);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [isRfqDialogOpen, setIsRfqDialogOpen] = useState(false);
+  const [isPoDialogOpen, setIsPoDialogOpen] = useState(false);
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
   const [pdfStage, setPdfStage] = useState<Stage>('Prelim');
+  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
+  const [addItemStage, setAddItemStage] = useState<Stage | null>(null);
+  const [newItemTitle, setNewItemTitle] = useState("");
+  const [newItemDescription, setNewItemDescription] = useState("");
 
   // Fetch scope items
   const { data: scopeItems = [], isLoading } = useQuery<ScopeItem[]>({
@@ -532,6 +549,27 @@ export default function ProjectScope() {
     },
   });
 
+  // Create scope item mutation
+  const createItemMutation = useMutation({
+    mutationFn: async ({ title, description, stage }: { title: string; description: string; stage: Stage }) => {
+      return apiRequest(`/api/projects/${projectId}/scope`, 'POST', {
+        title,
+        description,
+        stage,
+        displayOrder: scopeItems.filter(i => i.stage === stage).length,
+        needsRfi: false,
+        needsRfq: false,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      setIsAddItemDialogOpen(false);
+      setNewItemTitle("");
+      setNewItemDescription("");
+      toast({ title: "Scope item added successfully!" });
+    },
+  });
+
   // Create RFQ mutation
   const createRfqMutation = useMutation({
     mutationFn: async (scopeItemIds: string[]) => {
@@ -541,6 +579,18 @@ export default function ProjectScope() {
       setIsRfqDialogOpen(false);
       setSelectedItems(new Set());
       toast({ title: "RFQ created successfully!" });
+    },
+  });
+
+  // Create PO mutation
+  const createPoMutation = useMutation({
+    mutationFn: async (scopeItemIds: string[]) => {
+      return apiRequest('/api/scope/create-po', 'POST', { scopeItemIds, projectId });
+    },
+    onSuccess: () => {
+      setIsPoDialogOpen(false);
+      setSelectedItems(new Set());
+      toast({ title: "PO created successfully with auto-number!" });
     },
   });
 
@@ -657,6 +707,20 @@ export default function ProjectScope() {
       newSelected.add(id);
     }
     setSelectedItems(newSelected);
+  };
+
+  const handleAddItem = (stage: Stage) => {
+    setAddItemStage(stage);
+    setIsAddItemDialogOpen(true);
+  };
+
+  const handleCreateItem = () => {
+    if (!newItemTitle.trim() || !addItemStage) return;
+    createItemMutation.mutate({
+      title: newItemTitle.trim(),
+      description: newItemDescription,
+      stage: addItemStage,
+    });
   };
 
   const toggleStage = (stage: Stage) => {
@@ -809,6 +873,34 @@ export default function ProjectScope() {
             </Dialog>
           )}
 
+          {/* Create PO */}
+          {selectedItems.size > 0 && (
+            <Dialog open={isPoDialogOpen} onOpenChange={setIsPoDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-create-po">
+                  <Package className="h-4 w-4 mr-2" />
+                  Create PO
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Purchase Order</DialogTitle>
+                  <DialogDescription>
+                    Generate a Purchase Order from {selectedItems.size} selected items with auto-numbering
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    onClick={() => createPoMutation.mutate(Array.from(selectedItems))}
+                    disabled={createPoMutation.isPending}
+                  >
+                    {createPoMutation.isPending ? "Creating..." : "Create PO"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
           {/* Export PDF */}
           <Dialog open={isPdfDialogOpen} onOpenChange={setIsPdfDialogOpen}>
             <DialogTrigger asChild>
@@ -891,6 +983,7 @@ export default function ProjectScope() {
                     onUpdate={handleUpdateItem}
                     onDelete={handleDeleteItem}
                     onToggleSelect={handleToggleSelect}
+                    onAddItem={handleAddItem}
                     selectedItems={selectedItems}
                     isOver={overId === `stage-${stage}`}
                     allItems={scopeItems}
@@ -913,6 +1006,62 @@ export default function ProjectScope() {
           )}
         </div>
       </div>
+
+      {/* Add Item Dialog with Tiptap */}
+      <Dialog open={isAddItemDialogOpen} onOpenChange={(open) => {
+        setIsAddItemDialogOpen(open);
+        if (!open) {
+          setNewItemTitle("");
+          setNewItemDescription("");
+          setAddItemStage(null);
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Scope Item to {addItemStage}</DialogTitle>
+            <DialogDescription>
+              Create a new scope item with rich text description
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="item-title">Title</Label>
+              <Input
+                id="item-title"
+                value={newItemTitle}
+                onChange={(e) => setNewItemTitle(e.target.value)}
+                placeholder="e.g., Concrete Pour"
+                data-testid="input-new-item-title"
+              />
+            </div>
+            <div>
+              <Label htmlFor="item-description">Description (Rich Text)</Label>
+              <div className="border rounded-md p-3 min-h-[200px] prose max-w-none">
+                <textarea
+                  id="item-description"
+                  value={newItemDescription}
+                  onChange={(e) => setNewItemDescription(e.target.value)}
+                  placeholder="Add detailed description with HTML formatting..."
+                  className="w-full min-h-[160px] border-0 focus:ring-0 resize-none"
+                  data-testid="textarea-new-item-description"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Tip: You can use HTML formatting like &lt;p&gt;, &lt;ul&gt;, &lt;li&gt;, &lt;strong&gt;
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleCreateItem}
+              disabled={!newItemTitle.trim() || createItemMutation.isPending}
+              data-testid="button-create-scope-item"
+            >
+              {createItemMutation.isPending ? "Creating..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -2883,6 +2883,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create PO from scope items
+  app.post("/api/scope/create-po", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { scopeItemIds, projectId } = req.body;
+      if (!scopeItemIds || !Array.isArray(scopeItemIds)) {
+        return res.status(400).json({ error: "Scope item IDs must be an array" });
+      }
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required" });
+      }
+
+      const po = await storage.createPoFromScope(scopeItemIds, projectId);
+      res.status(201).json(po);
+    } catch (error) {
+      console.error("Error creating PO from scope:", error);
+      res.status(500).json({ error: "Failed to create PO from scope" });
+    }
+  });
+
   // Link scope item to schedule item
   app.post("/api/scope/:scopeItemId/link-schedule", requireAuth, requireTeamMember, async (req, res) => {
     try {

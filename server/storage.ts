@@ -309,6 +309,7 @@ export interface IStorage {
   // Scope Integration Helpers
   pushScopeToEstimate(scopeItemIds: string[], estimateId: string): Promise<EstimateItem[]>;
   createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq>;
+  createPoFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").PurchaseOrder>;
   linkScopeToScheduleItem(scopeItemId: string, scheduleItemId: string): Promise<ScopeItem | undefined>;
 
   // Company CRUD
@@ -7218,9 +7219,29 @@ export class DbStorage implements IStorage {
 
   async createRfqFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").Rfq> {
     try {
-      // Get the scope items
+      // Get project to verify company ownership
+      const [project] = await db.select().from(schema.projects)
+        .where(eq(schema.projects.id, projectId))
+        .limit(1);
+
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      // Get scope items and validate they all belong to this project/company
       const scopeItems = await db.select().from(schema.scopeItems)
         .where(inArray(schema.scopeItems.id, scopeItemIds));
+
+      // Security: Verify ALL scope items belong to the target project and company
+      for (const item of scopeItems) {
+        if (item.projectId !== projectId || item.companyId !== project.companyId) {
+          throw new Error('Unauthorized: Scope item does not belong to this project/company');
+        }
+      }
+
+      if (scopeItems.length !== scopeItemIds.length) {
+        throw new Error('Some scope items not found');
+      }
 
       // Create a combined description from scope items
       const description = scopeItems.map(item => item.title).join('\n');
@@ -7248,6 +7269,89 @@ export class DbStorage implements IStorage {
       return rfq;
     } catch (error) {
       console.error("Database error in createRfqFromScope:", error);
+      throw error;
+    }
+  }
+
+  async createPoFromScope(scopeItemIds: string[], projectId: string): Promise<import("@shared/schema").PurchaseOrder> {
+    try {
+      // Get project to verify company ownership
+      const [project] = await db.select().from(schema.projects)
+        .where(eq(schema.projects.id, projectId))
+        .limit(1);
+
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      // Get scope items and validate they all belong to this project/company
+      const scopeItems = await db.select().from(schema.scopeItems)
+        .where(inArray(schema.scopeItems.id, scopeItemIds));
+
+      // Security: Verify ALL scope items belong to the target project and company
+      for (const item of scopeItems) {
+        if (item.projectId !== projectId || item.companyId !== project.companyId) {
+          throw new Error('Unauthorized: Scope item does not belong to this project/company');
+        }
+      }
+
+      if (scopeItems.length !== scopeItemIds.length) {
+        throw new Error('Some scope items not found');
+      }
+
+      // Generate PO number atomically using advisory lock
+      const result = await db.transaction(async (tx) => {
+        // Use PostgreSQL advisory lock to prevent concurrent PO creation for same company
+        // Use hashtext to convert UUID to deterministic bigint for advisory lock
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${project.companyId}))`);
+
+        // Now safely get the highest PO number for this company
+        const existingPos = await tx.select({ poNumber: schema.purchaseOrders.poNumber })
+          .from(schema.purchaseOrders)
+          .where(eq(schema.purchaseOrders.companyId, project.companyId))
+          .orderBy(sql`${schema.purchaseOrders.poNumber} DESC`)
+          .limit(1);
+
+        // Extract number from PO-XXXX format and increment
+        let nextNumber = 1;
+        if (existingPos.length > 0 && existingPos[0].poNumber) {
+          const match = existingPos[0].poNumber.match(/PO-(\d+)/);
+          if (match) {
+            nextNumber = parseInt(match[1], 10) + 1;
+          }
+        }
+        const poNumber = `PO-${String(nextNumber).padStart(4, '0')}`;
+
+        // Create a combined description from scope items
+        const description = scopeItems.map(item => `${item.title}\n${item.description || ''}`).join('\n\n');
+
+        // Create Purchase Order within transaction
+        const [po] = await tx.insert(schema.purchaseOrders)
+          .values({
+            projectId,
+            companyId: project.companyId,
+            poNumber,
+            title: 'PO from Scope',
+            description,
+            status: 'draft',
+            total: 0,
+          })
+          .returning();
+
+        // Link scope items to PO
+        for (const scopeItem of scopeItems) {
+          await tx.update(schema.scopeItems)
+            .set({ poId: po.id })
+            .where(eq(schema.scopeItems.id, scopeItem.id));
+        }
+
+        // Advisory lock is automatically released at transaction end
+        return po;
+      });
+
+      return result;
+    } catch (error) {
+      console.error("Database error in createPoFromScope:", error);
       throw error;
     }
   }
