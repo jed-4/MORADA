@@ -41,6 +41,7 @@ import {
   FileText,
   Pen,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate } from "@shared/schema";
 import {
   AlertDialog,
@@ -180,17 +181,22 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   const hasChildren = children.length > 0;
 
   return (
-    <div ref={setNodeRef} style={style} className={`mb-2 ${level > 0 ? 'ml-8' : ''}`}>
+    <div ref={setNodeRef} style={style} className={`mb-2 ${level > 0 ? 'ml-8' : ''} group`}>
       <Card 
         className={`transition-all duration-200 border-l-4 ${isSelected ? 'ring-2 ring-primary' : 'hover:shadow-xl hover:-translate-y-1'}`}
         style={{ 
-          minHeight: isCollapsed ? '40px' : '120px',
+          minHeight: isCollapsed ? '40px' : '80px',
           maxHeight: isCollapsed ? '40px' : 'none',
           borderLeftColor: CASVA_LILAC,
           overflow: isCollapsed ? 'hidden' : 'visible'
         }}
       >
         <CardContent className="py-1 px-3 flex items-start gap-2" style={{ minHeight: '40px' }}>
+          {/* Drag Handle - LEFT SIDE */}
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
+
           {/* Expand/Collapse for parent items */}
           {hasChildren ? (
             <Button
@@ -214,75 +220,23 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             data-testid={`checkbox-select-${item.id}`}
           />
 
-          {/* Drag Handle */}
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1">
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-
           {/* Content */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              {/* Scope 2.0: Type Badge - Clickable to toggle collapse */}
-              {getTypeLabel && onToggleCollapse && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onToggleCollapse(item.id)}
-                  className="h-6 px-2 text-xs font-bold rounded-md"
-                  style={{
-                    backgroundColor: CASVA_LILAC,
-                    color: 'white',
-                  }}
-                  data-testid={`badge-type-${item.id}`}
-                >
-                  {getTypeLabel(item.itemType)}
-                </Button>
-              )}
+            {/* Title - Inter 16px */}
+            <Input
+              value={item.title}
+              onChange={(e) => onUpdate(item.id, { title: e.target.value })}
+              className="h-7 text-base font-semibold border-0 focus-visible:ring-1 px-2"
+              style={{ fontFamily: 'Inter, sans-serif' }}
+              placeholder="Item title"
+              data-testid={`input-scope-title-${item.id}`}
+            />
 
-              {/* Title */}
-              <Input
-                value={item.title}
-                onChange={(e) => onUpdate(item.id, { title: e.target.value })}
-                className="h-7 text-sm font-medium border-0 focus-visible:ring-1 px-2"
-                placeholder="Item title"
-                data-testid={`input-scope-title-${item.id}`}
-              />
-
-              {/* Badges - Scope 2.0: Smart Links */}
-              {item.needsRfq && (
-                <Badge variant="outline" className="h-6 text-xs bg-yellow-100 text-yellow-800">
-                  RFQ
-                </Badge>
-              )}
-              {item.estimateItemId && (
-                <Badge 
-                  variant="outline" 
-                  className="h-6 text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200"
-                  onClick={() => window.location.href = `/projects/${item.projectId}/estimates`}
-                  data-testid={`link-estimate-${item.id}`}
-                >
-                  <DollarSign className="h-3 w-3 mr-1" />
-                  Est →
-                </Badge>
-              )}
-              {item.poId && (
-                <Badge 
-                  variant="outline" 
-                  className="h-6 text-xs bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200"
-                  onClick={() => window.location.href = `/projects/${item.projectId}/purchase-orders`}
-                  data-testid={`link-po-${item.id}`}
-                >
-                  <Package className="h-3 w-3 mr-1" />
-                  PO →
-                </Badge>
-              )}
-            </div>
-
-            {/* Description - Hidden when collapsed */}
+            {/* Description - Hidden when collapsed, Manrope 14px */}
             {!isCollapsed && (
               <>
                 {isEditingDescription && editor ? (
-                  <div className="border rounded-md p-2 bg-background mt-1">
+                  <div className="border rounded-md p-2 bg-background mt-1" style={{ fontFamily: 'Manrope, sans-serif' }}>
                     <EditorContent editor={editor} className="prose prose-sm max-w-none" />
                     <Button
                       size="sm"
@@ -294,13 +248,15 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                   </div>
                 ) : item.description ? (
                   <div
-                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 mt-1"
+                    style={{ fontFamily: 'Manrope, sans-serif' }}
                     onClick={() => setIsEditingDescription(true)}
                     dangerouslySetInnerHTML={{ __html: item.description }}
                   />
                 ) : (
                   <div
-                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic"
+                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic mt-1"
+                    style={{ fontFamily: 'Manrope, sans-serif' }}
                     onClick={() => setIsEditingDescription(true)}
                   >
                     Click to add description...
@@ -371,16 +327,63 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             )}
           </div>
 
-          {/* Actions */}
-          <div className="flex gap-1">
+          {/* Right Column: Chips (vertical stack) + 3 dots menu on hover */}
+          <div className="flex flex-col items-end gap-2 min-w-0">
+            {/* Type Badge - Clickable to toggle collapse, 24px tall */}
+            {getTypeLabel && onToggleCollapse && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onToggleCollapse(item.id)}
+                className="h-6 px-2 text-xs font-bold rounded-md shrink-0"
+                style={{
+                  backgroundColor: CASVA_LILAC,
+                  color: 'white',
+                }}
+                data-testid={`badge-type-${item.id}`}
+              >
+                {getTypeLabel(item.itemType)}
+              </Button>
+            )}
+
+            {/* Badges - Scope 2.0: Smart Links (vertical stack) */}
+            {item.needsRfq && (
+              <Badge variant="outline" className="h-6 text-xs bg-yellow-100 text-yellow-800 shrink-0">
+                RFQ
+              </Badge>
+            )}
+            {item.estimateItemId && (
+              <Badge 
+                variant="outline" 
+                className="h-6 text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 shrink-0"
+                onClick={() => window.location.href = `/projects/${item.projectId}/estimates`}
+                data-testid={`link-estimate-${item.id}`}
+              >
+                <DollarSign className="h-3 w-3 mr-1" />
+                Est →
+              </Badge>
+            )}
+            {item.poId && (
+              <Badge 
+                variant="outline" 
+                className="h-6 text-xs bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200 shrink-0"
+                onClick={() => window.location.href = `/projects/${item.projectId}/purchase-orders`}
+                data-testid={`link-po-${item.id}`}
+              >
+                <Package className="h-3 w-3 mr-1" />
+                PO →
+              </Badge>
+            )}
+
+            {/* 3 dots menu (hidden, shown on group hover) */}
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               onClick={() => onDelete(item.id)}
               data-testid={`button-delete-scope-${item.id}`}
             >
-              <Trash2 className="h-4 w-4 text-destructive" />
+              <span className="text-lg leading-none">⋯</span>
             </Button>
           </div>
         </CardContent>
@@ -539,11 +542,11 @@ function DroppableStage({
     <>
       <div 
         ref={setNodeRef} 
-        style={style}
-        className={`mb-4 ${level > 0 ? 'ml-8' : ''}`}
+        style={{...style, width: '90%', margin: '0 auto 1rem auto'}}
+        className={`${level > 0 ? 'ml-8' : ''}`}
       >
         <Card 
-          className={`transition-all duration-200 ${isOver && isDraggingStage ? 'ring-2 bg-[#bba7db]/10' : ''}`}
+          className={`transition-all duration-200 rounded-xl shadow-sm ${isOver && isDraggingStage ? 'ring-2 bg-[#bba7db]/10' : ''}`}
           style={{ 
             borderLeftColor: CASVA_LILAC, 
             borderLeftWidth: '4px',
@@ -584,18 +587,18 @@ function DroppableStage({
                       onBlur={handleSaveEdit}
                       autoFocus
                       className="h-7 text-base font-semibold border-2 px-2"
-                      style={{ borderColor: CASVA_LILAC, color: CASVA_LILAC }}
+                      style={{ borderColor: CASVA_LILAC, color: CASVA_LILAC, fontFamily: 'Inter, sans-serif' }}
                       data-testid={`input-edit-stage-${stageData.id}`}
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <CardTitle 
+                    <h3 
                       className="text-base font-semibold" 
-                      style={{ color: CASVA_LILAC }}
+                      style={{ color: CASVA_LILAC, fontFamily: 'Inter, sans-serif' }}
                       data-testid={`text-stage-name-${stageData.id}`}
                     >
                       {stageData.name}
-                    </CardTitle>
+                    </h3>
                   )}
                   {!isEditing && (
                     <Button
@@ -663,8 +666,17 @@ function DroppableStage({
           {isExpanded && (
             <CardContent className="pt-2 pb-4 space-y-2">
               {topLevelItems.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-sm italic">
-                  Drag items here or add new items to this stage
+                <div 
+                  className="text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center"
+                  style={{ 
+                    height: '60px',
+                    borderColor: CASVA_LILAC + '40'
+                  }}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-2xl opacity-40">↕</span>
+                    <span className="text-xs opacity-60">Drop here</span>
+                  </div>
                 </div>
               ) : (
                 <SortableContext
@@ -1401,14 +1413,20 @@ export default function ProjectScope() {
       {/* Secondary Actions Bar */}
       <div className="flex items-center justify-end px-6 py-2 border-b bg-muted/20">
         <div className="flex items-center gap-2">
-          {/* Load Template */}
+          {/* Load Template - Icon Only */}
           <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-load-template">
-                <FileDown className="h-4 w-4 mr-2" />
-                Load Template
-              </Button>
-            </DialogTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-9 w-9" data-testid="button-load-template">
+                    <FileDown className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Load Template</p>
+              </TooltipContent>
+            </Tooltip>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Apply Scope Template</DialogTitle>
@@ -1548,19 +1566,25 @@ export default function ProjectScope() {
             </Dialog>
           )}
 
-          {/* Export PDF */}
+          {/* Export PDF - Icon Only */}
           <Dialog open={isPdfDialogOpen} onOpenChange={(open) => {
             setIsPdfDialogOpen(open);
             if (!open) {
               setHideClientCosts(false); // Reset toggle when dialog closes
             }
           }}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-export-pdf">
-                <FileText className="h-4 w-4 mr-2" />
-                Export PDF
-              </Button>
-            </DialogTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-9 w-9" data-testid="button-export-pdf">
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Export PDF</p>
+              </TooltipContent>
+            </Tooltip>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Export PDF</DialogTitle>
