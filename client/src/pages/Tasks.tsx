@@ -626,7 +626,7 @@ export default function Tasks() {
 
             {/* Keyboard Shortcuts Indicator */}
             <Badge variant="outline" className="gap-1 shrink-0">
-              <Zap className="h-3 w-3 text-amber-500" />
+              <Zap className="h-3 w-3 text-casva-500" />
               <span className="text-xs">Ctrl+N / G / D</span>
             </Badge>
 

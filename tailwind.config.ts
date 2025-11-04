@@ -11,6 +11,12 @@ export default {
         sm: ".1875rem", /* 3px */
       },
       colors: {
+        casva: {
+          50: '#f5f3ff',
+          100: '#ede9fe',
+          500: '#c1a2f2',
+          600: '#a78bfa',
+        },
         // Flat / base colors (regular buttons)
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",

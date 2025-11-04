@@ -32,15 +32,15 @@
 
   --sidebar-border: 214 32% 91%;
 
-  --sidebar-primary: 38 92% 50%; /* Amber-500 accent */
+  --sidebar-primary: 266 68% 76%; /* Lavender Purple #c1a2f2 */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 214 32% 96%;
+  --sidebar-accent: 266 100% 98%;
 
   --sidebar-accent-foreground: 215 25% 17%;
 
-  --sidebar-ring: 38 92% 50%; /* Amber accent */
+  --sidebar-ring: 266 68% 76%; /* Lavender accent */
 
   --popover: 0 0% 100%;
 
@@ -48,12 +48,12 @@
 
   --popover-border: 214 32% 91%;
 
-  /* Casva Amber Palette */
-  --primary: 38 92% 50%; /* Amber-500 #f59e0b */
+  /* Casva Lavender Purple Palette */
+  --primary: 266 68% 76%; /* Lavender Purple #c1a2f2 */
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 38 92% 95%; /* Light amber background */
+  --secondary: 266 100% 98%; /* Light lavender background */
 
   --secondary-foreground: 215 25% 17%;
 
@@ -61,7 +61,7 @@
 
   --muted-foreground: 215 16% 47%; /* Slate-600 */
 
-  --accent: 38 92% 50%; /* Amber accent */
+  --accent: 266 68% 76%; /* Lavender accent */
 
   --accent-foreground: 0 0% 100%;
 
@@ -347,11 +347,20 @@
   }
 
   .casva-hover-lift:hover {
-    @apply -translate-y-0.5 shadow-md;
+    @apply -translate-y-1 shadow-lg bg-casva-50;
   }
 
   .casva-edit-icon {
     @apply opacity-0 group-hover:opacity-100 transition-opacity duration-200;
+  }
+
+  /* Card hover enhancements */
+  .casva-card-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .casva-card-hover:hover {
+    @apply shadow-lg bg-casva-50 -translate-y-1;
   }
 
   /* ========== CASVA PRINCIPLE 3: Color Chips ========== */
@@ -380,7 +389,7 @@
   }
 
   .casva-chip-priority-medium {
-    @apply bg-amber-100 text-amber-700;
+    @apply bg-casva-100 text-casva-600;
   }
 
   .casva-chip-priority-high {
@@ -393,7 +402,7 @@
 
   /* ========== CASVA PRINCIPLE 4: Free-flow Drag-drop Glow ========== */
   .casva-drag-glow {
-    @apply ring-2 ring-amber-500 ring-opacity-50 shadow-lg shadow-amber-500/20;
+    @apply ring-2 ring-casva-500 ring-opacity-50 shadow-lg shadow-casva-500/20;
   }
 
   .casva-drag-ghost {
@@ -401,16 +410,16 @@
   }
 
   .casva-drop-zone-active {
-    @apply ring-2 ring-amber-500 bg-amber-50;
+    @apply ring-2 ring-casva-500 bg-casva-50;
     animation: casvaGlow 1.5s ease-in-out infinite;
   }
 
   @keyframes casvaGlow {
     0%, 100% { 
-      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3); 
+      box-shadow: 0 0 0 2px rgba(193, 162, 242, 0.3); 
     }
     50% { 
-      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.5), 0 0 12px rgba(245, 158, 11, 0.3); 
+      box-shadow: 0 0 0 4px rgba(193, 162, 242, 0.5), 0 0 12px rgba(193, 162, 242, 0.3); 
     }
   }
 
