@@ -224,16 +224,14 @@ export default function Header() {
         {/* Time Clock Widget */}
         <TimeClockWidget />
 
-        {/* Lilac Mode Toggle */}
+        {/* Dark Mode Toggle */}
         <Button 
           variant="ghost" 
-          size="sm" 
+          size="icon" 
           onClick={toggleDarkMode}
-          className="gap-2"
-          data-testid="button-lilac-mode"
+          data-testid="button-dark-mode"
         >
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          <span className="hidden sm:inline">Lilac Mode</span>
         </Button>
         
         {/* User Menu */}
