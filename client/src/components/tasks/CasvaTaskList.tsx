@@ -43,14 +43,17 @@ export function CasvaTaskList({
           </TableHeader>
           <TableBody>
             {tasks.map((task) => (
-              <TableRow key={task.id} className="border-0 hover:bg-transparent h-10">
-                <td colSpan={7} className="p-0">
-                  <CasvaTaskRow
-                    task={task}
-                    onEdit={() => onEditTask(task)}
-                    onToggleComplete={onToggleComplete ? () => onToggleComplete(task) : undefined}
-                  />
-                </td>
+              <TableRow 
+                key={task.id} 
+                className="group casva-row casva-hover-lift h-10 hover:bg-accent/5 transition-colors"
+                data-testid={`task-row-${task.id}`}
+              >
+                <CasvaTaskRow
+                  task={task}
+                  onEdit={() => onEditTask(task)}
+                  onToggleComplete={onToggleComplete ? () => onToggleComplete(task) : undefined}
+                  showCheckbox={showCheckboxes}
+                />
               </TableRow>
             ))}
           </TableBody>
