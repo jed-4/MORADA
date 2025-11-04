@@ -56,6 +56,32 @@ type Stage = typeof STAGES[number];
 // Casva lilac color
 const CASVA_LILAC = '#bba7db';
 
+// Helper function to convert Tiptap JSON to plain text for PDF
+const tiptapJsonToText = (jsonOrHtml: string | null | undefined): string => {
+  if (!jsonOrHtml) return '';
+  
+  // Try to parse as JSON first (for new items)
+  try {
+    const parsed = JSON.parse(jsonOrHtml);
+    if (parsed.type && parsed.content) {
+      // It's Tiptap JSON, extract text recursively
+      const extractText = (node: any): string => {
+        if (node.text) return node.text;
+        if (node.content) {
+          return node.content.map((child: any) => extractText(child)).join(' ');
+        }
+        return '';
+      };
+      return extractText(parsed);
+    }
+  } catch {
+    // Not JSON, treat as HTML
+  }
+  
+  // Fallback: strip HTML tags (for existing items)
+  return jsonOrHtml.replace(/<[^>]*>/g, '');
+};
+
 interface StageState {
   [key: string]: boolean;
 }
@@ -427,11 +453,14 @@ function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, on
 }
 
 // PDF Document Component
-const ScopePDF = ({ stage, items }: { stage: string; items: ScopeItem[] }) => (
+const ScopePDF = ({ stage, items, hideClientCosts = false }: { stage: string; items: ScopeItem[]; hideClientCosts?: boolean }) => (
   <Document>
     <Page size="A4" style={pdfStyles.page}>
       <View style={pdfStyles.header}>
         <Text style={pdfStyles.title}>Scope of Works - {stage}</Text>
+        {hideClientCosts && (
+          <Text style={pdfStyles.subtitle}>Client Version</Text>
+        )}
       </View>
       {items.map((item, index) => (
         <View key={item.id} style={pdfStyles.item}>
@@ -439,7 +468,10 @@ const ScopePDF = ({ stage, items }: { stage: string; items: ScopeItem[] }) => (
           <View style={pdfStyles.itemContent}>
             <Text style={pdfStyles.itemTitle}>{item.title}</Text>
             {item.description && (
-              <Text style={pdfStyles.itemDescription}>{item.description.replace(/<[^>]*>/g, '')}</Text>
+              <Text style={pdfStyles.itemDescription}>{tiptapJsonToText(item.description)}</Text>
+            )}
+            {!hideClientCosts && item.costCodeTitle && (
+              <Text style={pdfStyles.itemCostCode}>Cost Code: {item.costCodeTitle}</Text>
             )}
           </View>
         </View>
@@ -452,11 +484,13 @@ const pdfStyles = StyleSheet.create({
   page: { padding: 40, fontSize: 11 },
   header: { marginBottom: 20, borderBottom: '2px solid #bba7db' },
   title: { fontSize: 24, fontWeight: 'bold', color: '#bba7db', marginBottom: 10 },
+  subtitle: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 4 },
   item: { flexDirection: 'row', marginBottom: 12 },
   itemNumber: { width: 30, fontWeight: 'bold' },
   itemContent: { flex: 1 },
   itemTitle: { fontWeight: 'bold', marginBottom: 4 },
   itemDescription: { color: '#666', fontSize: 10 },
+  itemCostCode: { color: '#bba7db', fontSize: 9, marginTop: 4, fontStyle: 'italic' },
 });
 
 export default function ProjectScope() {
@@ -482,10 +516,22 @@ export default function ProjectScope() {
   const [isPoDialogOpen, setIsPoDialogOpen] = useState(false);
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
   const [pdfStage, setPdfStage] = useState<Stage>('Prelim');
+  const [hideClientCosts, setHideClientCosts] = useState(false); // Client toggle for PDF
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [addItemStage, setAddItemStage] = useState<Stage | null>(null);
   const [newItemTitle, setNewItemTitle] = useState("");
   const [newItemDescription, setNewItemDescription] = useState("");
+
+  // Tiptap editor for Add Item dialog
+  const addItemEditor = useEditor({
+    extensions: [StarterKit, Underline],
+    content: '',
+    editorProps: {
+      attributes: {
+        class: 'prose prose-sm max-w-none focus:outline-none min-h-[150px] p-3',
+      },
+    },
+  });
 
   // Fetch scope items
   const { data: scopeItems = [], isLoading } = useQuery<ScopeItem[]>({
@@ -554,7 +600,7 @@ export default function ProjectScope() {
     mutationFn: async ({ title, description, stage }: { title: string; description: string; stage: Stage }) => {
       return apiRequest(`/api/projects/${projectId}/scope`, 'POST', {
         title,
-        description,
+        description, // Store as HTML (consistent with existing items)
         stage,
         displayOrder: scopeItems.filter(i => i.stage === stage).length,
         needsRfi: false,
@@ -715,12 +761,19 @@ export default function ProjectScope() {
   };
 
   const handleCreateItem = () => {
-    if (!newItemTitle.trim() || !addItemStage) return;
+    if (!newItemTitle.trim() || !addItemStage || !addItemEditor) return;
+    
+    // Get HTML from Tiptap editor (maintains compatibility with existing editing/display)
+    const descriptionHtml = addItemEditor.getHTML();
+    
     createItemMutation.mutate({
       title: newItemTitle.trim(),
-      description: newItemDescription,
+      description: descriptionHtml,
       stage: addItemStage,
     });
+    
+    // Clear editor after creation
+    addItemEditor.commands.clearContent();
   };
 
   const toggleStage = (stage: Stage) => {
@@ -902,7 +955,12 @@ export default function ProjectScope() {
           )}
 
           {/* Export PDF */}
-          <Dialog open={isPdfDialogOpen} onOpenChange={setIsPdfDialogOpen}>
+          <Dialog open={isPdfDialogOpen} onOpenChange={(open) => {
+            setIsPdfDialogOpen(open);
+            if (!open) {
+              setHideClientCosts(false); // Reset toggle when dialog closes
+            }
+          }}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" data-testid="button-export-pdf">
                 <FileText className="h-4 w-4 mr-2" />
@@ -913,7 +971,7 @@ export default function ProjectScope() {
               <DialogHeader>
                 <DialogTitle>Export PDF</DialogTitle>
                 <DialogDescription>
-                  Select a stage to export
+                  Select a stage and customize for clients
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -932,11 +990,25 @@ export default function ProjectScope() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="hide-costs"
+                    checked={hideClientCosts}
+                    onCheckedChange={(checked) => setHideClientCosts(!!checked)}
+                    data-testid="checkbox-hide-costs"
+                  />
+                  <Label htmlFor="hide-costs" className="text-sm font-normal cursor-pointer">
+                    Client-facing (hide costs)
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Enable to generate a clean PDF without pricing for clients
+                </p>
               </div>
               <DialogFooter>
                 <PDFDownloadLink
-                  document={<ScopePDF stage={pdfStage} items={getItemsByStage(pdfStage)} />}
-                  fileName={`scope-${pdfStage.toLowerCase()}.pdf`}
+                  document={<ScopePDF stage={pdfStage} items={getItemsByStage(pdfStage)} hideClientCosts={hideClientCosts} />}
+                  fileName={`scope-${pdfStage.toLowerCase()}${hideClientCosts ? '-client' : ''}.pdf`}
                 >
                   {({ loading }) => (
                     <Button disabled={loading}>
@@ -1012,7 +1084,7 @@ export default function ProjectScope() {
         setIsAddItemDialogOpen(open);
         if (!open) {
           setNewItemTitle("");
-          setNewItemDescription("");
+          addItemEditor?.commands.clearContent();
           setAddItemStage(null);
         }
       }}>
@@ -1030,24 +1102,60 @@ export default function ProjectScope() {
                 id="item-title"
                 value={newItemTitle}
                 onChange={(e) => setNewItemTitle(e.target.value)}
-                placeholder="e.g., Concrete Pour"
+                placeholder="e.g., Concrete Pour, Skylight Installation"
                 data-testid="input-new-item-title"
               />
             </div>
             <div>
-              <Label htmlFor="item-description">Description (Rich Text)</Label>
-              <div className="border rounded-md p-3 min-h-[200px] prose max-w-none">
-                <textarea
-                  id="item-description"
-                  value={newItemDescription}
-                  onChange={(e) => setNewItemDescription(e.target.value)}
-                  placeholder="Add detailed description with HTML formatting..."
-                  className="w-full min-h-[160px] border-0 focus:ring-0 resize-none"
-                  data-testid="textarea-new-item-description"
-                />
-              </div>
+              <Label>Description (Rich Text)</Label>
+              {addItemEditor && (
+                <div className="border rounded-md overflow-hidden" data-testid="tiptap-editor">
+                  <div className="border-b bg-muted/30 p-2 flex items-center gap-1 flex-wrap">
+                    <Button
+                      type="button"
+                      variant={addItemEditor.isActive('bold') ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => addItemEditor.chain().focus().toggleBold().run()}
+                      className="h-8 w-8 p-0"
+                    >
+                      <strong className="text-xs">B</strong>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={addItemEditor.isActive('italic') ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => addItemEditor.chain().focus().toggleItalic().run()}
+                      className="h-8 w-8 p-0"
+                    >
+                      <em className="text-xs">I</em>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={addItemEditor.isActive('bulletList') ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => addItemEditor.chain().focus().toggleBulletList().run()}
+                      className="h-8 w-8 p-0"
+                    >
+                      <span className="text-xs">•</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={addItemEditor.isActive('orderedList') ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => addItemEditor.chain().focus().toggleOrderedList().run()}
+                      className="h-8 w-8 p-0"
+                    >
+                      <span className="text-xs">1.</span>
+                    </Button>
+                  </div>
+                  <EditorContent 
+                    editor={addItemEditor}
+                    className="prose prose-sm max-w-none p-3 min-h-[200px]"
+                  />
+                </div>
+              )}
               <p className="text-xs text-muted-foreground mt-1">
-                Tip: You can use HTML formatting like &lt;p&gt;, &lt;ul&gt;, &lt;li&gt;, &lt;strong&gt;
+                Use the toolbar to format text with bold, italic, and lists
               </p>
             </div>
           </div>
