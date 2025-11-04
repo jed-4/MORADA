@@ -1503,7 +1503,7 @@ export default function ProjectScope() {
               </div>
               <DialogFooter>
                 <Button
-                  onClick={handleCreateStage}
+                  onClick={handleCreateNewStage}
                   disabled={!newStageName.trim()}
                   data-testid="button-confirm-add-stage"
                 >
