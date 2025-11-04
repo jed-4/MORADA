@@ -104,9 +104,13 @@ interface SortableScopeItemProps {
   children?: ScopeItem[];
   allItems?: ScopeItem[];
   selectedItems?: Set<string>;
+  isCollapsed?: boolean; // Scope 2.0: minimize/expand state
+  onToggleCollapse?: (itemId: string) => void; // Scope 2.0: toggle function
+  getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0: type label helper
+  collapsedItems?: Set<string>; // Scope 2.0: full collapsed items set
 }
 
-function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set() }: SortableScopeItemProps) {
+function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems }: SortableScopeItemProps) {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [showGearList, setShowGearList] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -180,8 +184,10 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       <Card 
         className={`transition-all duration-200 border-l-4 ${isSelected ? 'ring-2 ring-primary' : 'hover:shadow-xl hover:-translate-y-1'}`}
         style={{ 
-          minHeight: '40px',
-          borderLeftColor: CASVA_LILAC
+          minHeight: isCollapsed ? '40px' : '120px',
+          maxHeight: isCollapsed ? '40px' : 'none',
+          borderLeftColor: CASVA_LILAC,
+          overflow: isCollapsed ? 'hidden' : 'visible'
         }}
       >
         <CardContent className="py-1 px-3 flex items-start gap-2" style={{ minHeight: '40px' }}>
@@ -216,6 +222,23 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
+              {/* Scope 2.0: Type Badge - Clickable to toggle collapse */}
+              {getTypeLabel && onToggleCollapse && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onToggleCollapse(item.id)}
+                  className="h-6 px-2 text-xs font-bold rounded-md"
+                  style={{
+                    backgroundColor: CASVA_LILAC,
+                    color: 'white',
+                  }}
+                  data-testid={`badge-type-${item.id}`}
+                >
+                  {getTypeLabel(item.itemType)}
+                </Button>
+              )}
+
               {/* Title */}
               <Input
                 value={item.title}
@@ -225,51 +248,65 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 data-testid={`input-scope-title-${item.id}`}
               />
 
-              {/* Badges */}
+              {/* Badges - Scope 2.0: Smart Links */}
               {item.needsRfq && (
                 <Badge variant="outline" className="h-6 text-xs bg-yellow-100 text-yellow-800">
                   RFQ
                 </Badge>
               )}
               {item.estimateItemId && (
-                <Badge variant="outline" className="h-6 text-xs bg-green-100 text-green-800">
+                <Badge 
+                  variant="outline" 
+                  className="h-6 text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200"
+                  onClick={() => window.location.href = `/projects/${item.projectId}/estimates`}
+                  data-testid={`link-estimate-${item.id}`}
+                >
                   <DollarSign className="h-3 w-3 mr-1" />
-                  Est
+                  Est →
                 </Badge>
               )}
               {item.poId && (
-                <Badge variant="outline" className="h-6 text-xs bg-blue-100 text-blue-800">
+                <Badge 
+                  variant="outline" 
+                  className="h-6 text-xs bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200"
+                  onClick={() => window.location.href = `/projects/${item.projectId}/purchase-orders`}
+                  data-testid={`link-po-${item.id}`}
+                >
                   <Package className="h-3 w-3 mr-1" />
-                  PO
+                  PO →
                 </Badge>
               )}
             </div>
 
-            {/* Description */}
-            {isEditingDescription && editor ? (
-              <div className="border rounded-md p-2 bg-background mt-1">
-                <EditorContent editor={editor} className="prose prose-sm max-w-none" />
-                <Button
-                  size="sm"
-                  onClick={() => setIsEditingDescription(false)}
-                  className="mt-2"
-                >
-                  Done
-                </Button>
-              </div>
-            ) : item.description ? (
-              <div
-                className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
-                onClick={() => setIsEditingDescription(true)}
-                dangerouslySetInnerHTML={{ __html: item.description }}
-              />
-            ) : (
-              <div
-                className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic"
-                onClick={() => setIsEditingDescription(true)}
-              >
-                Click to add description...
-              </div>
+            {/* Description - Hidden when collapsed */}
+            {!isCollapsed && (
+              <>
+                {isEditingDescription && editor ? (
+                  <div className="border rounded-md p-2 bg-background mt-1">
+                    <EditorContent editor={editor} className="prose prose-sm max-w-none" />
+                    <Button
+                      size="sm"
+                      onClick={() => setIsEditingDescription(false)}
+                      className="mt-2"
+                    >
+                      Done
+                    </Button>
+                  </div>
+                ) : item.description ? (
+                  <div
+                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                    onClick={() => setIsEditingDescription(true)}
+                    dangerouslySetInnerHTML={{ __html: item.description }}
+                  />
+                ) : (
+                  <div
+                    className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic"
+                    onClick={() => setIsEditingDescription(true)}
+                  >
+                    Click to add description...
+                  </div>
+                )}
+              </>
             )}
 
             {/* Gear Checklist */}
@@ -352,20 +389,31 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       {/* Render children recursively */}
       {hasChildren && isExpanded && (
         <div className="mt-1">
-          {children.map((child) => (
-            <SortableScopeItem
-              key={child.id}
-              item={child}
-              onUpdate={onUpdate}
-              onDelete={onDelete}
-              onToggleSelect={onToggleSelect}
-              isSelected={selectedItems.has(child.id)}
-              level={level + 1}
-              children={allItems.filter(i => i.parentId === child.id)}
-              allItems={allItems}
-              selectedItems={selectedItems}
-            />
-          ))}
+          {children.map((child) => {
+            // Scope 2.0: Get collapse state from parent's collapsed set if provided
+            const childCollapsed = onToggleCollapse && getTypeLabel 
+              ? (collapsedItems?.has(child.id) ?? false) 
+              : false;
+            
+            return (
+              <SortableScopeItem
+                key={child.id}
+                item={child}
+                onUpdate={onUpdate}
+                onDelete={onDelete}
+                onToggleSelect={onToggleSelect}
+                isSelected={selectedItems.has(child.id)}
+                level={level + 1}
+                children={allItems.filter(i => i.parentId === child.id)}
+                allItems={allItems}
+                selectedItems={selectedItems}
+                isCollapsed={childCollapsed} // Scope 2.0: use actual collapse state
+                onToggleCollapse={onToggleCollapse} // Scope 2.0
+                getTypeLabel={getTypeLabel} // Scope 2.0
+                collapsedItems={collapsedItems} // Scope 2.0: pass down collapsed items set
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -395,6 +443,9 @@ interface DroppableStageProps {
   isDraggingStage?: boolean;
   children?: ScopeStage[];
   allStages?: ScopeStage[];
+  collapsedItems?: Set<string>; // Scope 2.0
+  onToggleItemCollapse?: (itemId: string) => void; // Scope 2.0
+  getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0
 }
 
 function DroppableStage({ 
@@ -420,6 +471,9 @@ function DroppableStage({
   isDraggingStage = false,
   children = [],
   allStages = [],
+  collapsedItems = new Set(), // Scope 2.0
+  onToggleItemCollapse, // Scope 2.0
+  getTypeLabel, // Scope 2.0
 }: DroppableStageProps) {
   const {
     attributes,
@@ -628,6 +682,10 @@ function DroppableStage({
                       children={allItems.filter(i => i.parentId === item.id)}
                       allItems={allItems}
                       selectedItems={selectedItems}
+                      isCollapsed={collapsedItems.has(item.id)} // Scope 2.0
+                      onToggleCollapse={onToggleItemCollapse} // Scope 2.0
+                      getTypeLabel={getTypeLabel} // Scope 2.0
+                      collapsedItems={collapsedItems} // Scope 2.0: pass down collapsed items set
                     />
                   ))}
                 </SortableContext>
@@ -667,6 +725,9 @@ function DroppableStage({
                 isDraggingStage={isDraggingStage}
                 children={allStages.filter(s => s.parentId === childStage.id)}
                 allStages={allStages}
+                collapsedItems={collapsedItems} // Scope 2.0
+                onToggleItemCollapse={onToggleItemCollapse} // Scope 2.0
+                getTypeLabel={getTypeLabel} // Scope 2.0
               />
             );
           })}
@@ -744,6 +805,10 @@ const pdfStyles = StyleSheet.create({
   itemCostCode: { color: '#bba7db', fontSize: 9, marginTop: 4, fontStyle: 'italic' },
 });
 
+// Scope item types
+const SCOPE_TYPES = ['e-note', 'scope', 'note', 'tool', 'material'] as const;
+type ScopeItemType = typeof SCOPE_TYPES[number];
+
 export default function ProjectScope() {
   const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
@@ -766,6 +831,11 @@ export default function ProjectScope() {
   const [addItemStage, setAddItemStage] = useState<string | null>(null);
   const [newItemTitle, setNewItemTitle] = useState("");
   const [newItemDescription, setNewItemDescription] = useState("");
+  const [newItemType, setNewItemType] = useState<ScopeItemType>("scope"); // Scope 2.0: item type
+  
+  // Scope 2.0: Type filtering
+  const [activeTypeFilters, setActiveTypeFilters] = useState<Set<ScopeItemType>>(new Set(SCOPE_TYPES));
+  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set()); // Minimize/expand
   
   // Stage editing state
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
@@ -1196,10 +1266,12 @@ export default function ProjectScope() {
       title: newItemTitle.trim(),
       description: descriptionHtml,
       stage: addItemStage,
+      itemType: newItemType, // Scope 2.0: Include item type
     });
     
-    // Clear editor after creation
+    // Clear editor and reset type after creation
     addItemEditor.commands.clearContent();
+    setNewItemType("scope");
   };
 
   const toggleStage = (stageName: string) => {
@@ -1209,7 +1281,42 @@ export default function ProjectScope() {
   const getItemsByStage = (stageName: string) => {
     return scopeItems
       .filter(item => item.stage === stageName)
+      .filter(item => activeTypeFilters.has((item.itemType as ScopeItemType) || 'scope'))  // Scope 2.0: Type filtering
       .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  };
+
+  // Scope 2.0: Toggle type filter
+  const toggleTypeFilter = (type: ScopeItemType) => {
+    const newFilters = new Set(activeTypeFilters);
+    if (newFilters.has(type)) {
+      newFilters.delete(type);
+    } else {
+      newFilters.add(type);
+    }
+    setActiveTypeFilters(newFilters);
+  };
+
+  // Scope 2.0: Toggle item collapse/expand
+  const toggleItemCollapse = (itemId: string) => {
+    const newCollapsed = new Set(collapsedItems);
+    if (newCollapsed.has(itemId)) {
+      newCollapsed.delete(itemId);
+    } else {
+      newCollapsed.add(itemId);
+    }
+    setCollapsedItems(newCollapsed);
+  };
+
+  // Scope 2.0: Type label helper
+  const getTypeLabel = (type: string | null | undefined): string => {
+    const typeMap: Record<string, string> = {
+      'e-note': 'E-NOTE',
+      'scope': 'SCOPE',
+      'note': 'NOTE',
+      'tool': 'TOOL',
+      'material': 'MATERIAL',
+    };
+    return typeMap[type || 'scope'] || 'SCOPE';
   };
 
   const handleEditStage = (stageId: string, newName: string) => {
@@ -1263,6 +1370,36 @@ export default function ProjectScope() {
           </div>
         </div>
 
+        <div className="flex items-center gap-2">
+          {/* Scope 2.0: Type Filter Chips */}
+          <div className="flex items-center gap-2 px-3 py-1 bg-muted/30 rounded-lg">
+            {SCOPE_TYPES.map((type) => (
+              <Button
+                key={type}
+                size="sm"
+                variant={activeTypeFilters.has(type) ? "default" : "ghost"}
+                onClick={() => toggleTypeFilter(type)}
+                className={`h-8 text-xs font-medium rounded-full transition-all ${
+                  activeTypeFilters.has(type) 
+                    ? 'shadow-md' 
+                    : 'opacity-60 hover:opacity-100'
+                }`}
+                style={activeTypeFilters.has(type) ? {
+                  backgroundColor: CASVA_LILAC,
+                  color: 'white',
+                  borderColor: CASVA_LILAC,
+                } : {}}
+                data-testid={`chip-filter-${type}`}
+              >
+                {getTypeLabel(type)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Secondary Actions Bar */}
+      <div className="flex items-center justify-end px-6 py-2 border-b bg-muted/20">
         <div className="flex items-center gap-2">
           {/* Load Template */}
           <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
@@ -1538,6 +1675,9 @@ export default function ProjectScope() {
                         setEditingStageName={setEditingStageName}
                         children={scopeStages.filter(s => s.parentId === stage.id)}
                         allStages={scopeStages}
+                        collapsedItems={collapsedItems} // Scope 2.0
+                        onToggleItemCollapse={toggleItemCollapse} // Scope 2.0
+                        getTypeLabel={getTypeLabel} // Scope 2.0
                       />
                     ))}
 
@@ -1599,6 +1739,21 @@ export default function ProjectScope() {
                 placeholder="e.g., Concrete Pour, Skylight Installation"
                 data-testid="input-new-item-title"
               />
+            </div>
+            <div>
+              <Label htmlFor="item-type">Type</Label>
+              <Select value={newItemType} onValueChange={(value) => setNewItemType(value as ScopeItemType)}>
+                <SelectTrigger id="item-type" data-testid="select-item-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="e-note">E-Note</SelectItem>
+                  <SelectItem value="scope">Scope</SelectItem>
+                  <SelectItem value="note">Note</SelectItem>
+                  <SelectItem value="tool">Tool</SelectItem>
+                  <SelectItem value="material">Material</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Description (Rich Text)</Label>
