@@ -1356,7 +1356,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/team", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const teamMembers = await storage.getProjectTeamMembers(req.params.projectId);
-      res.json(teamMembers);
+      // Sanitize user data to remove sensitive fields
+      const safeTeamMembers = teamMembers.map(user => toSafeUser(user));
+      res.json(safeTeamMembers);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project team members" });
     }
