@@ -1,6 +1,6 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon } from "lucide-react";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import CreateProjectDialog from "./CreateProjectDialog";
 import {
@@ -58,8 +58,14 @@ export default function Header() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isDark, setIsDark] = useState(false);
   const { toast } = useToast();
   const { user, logout } = useAuth();
+
+  // Initialize dark mode state on mount
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains('dark'));
+  }, []);
 
   // Helper to get user initials
   const getUserInitials = () => {
@@ -104,6 +110,11 @@ export default function Header() {
 
   const handleNewSelection = () => {
     navigate('/selections');
+  };
+
+  const toggleDarkMode = () => {
+    document.documentElement.classList.toggle('dark');
+    setIsDark(document.documentElement.classList.contains('dark'));
   };
   
   return (
@@ -213,7 +224,17 @@ export default function Header() {
         {/* Time Clock Widget */}
         <TimeClockWidget />
 
-        <ThemeToggle />
+        {/* Lilac Mode Toggle */}
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={toggleDarkMode}
+          className="gap-2"
+          data-testid="button-lilac-mode"
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          <span className="hidden sm:inline">Lilac Mode</span>
+        </Button>
         
         {/* User Menu */}
         <DropdownMenu>
