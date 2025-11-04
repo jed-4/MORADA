@@ -88,6 +88,7 @@ import {
   insertRfqQuoteSchema,
   insertRfqFollowUpSchema,
   insertScopeItemSchema,
+  insertScopeStageSchema,
   insertScopeTemplateSchema,
   insertScopeGearPhotoSchema
 } from "@shared/schema";
@@ -2653,6 +2654,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error reordering scope items:", error);
       res.status(500).json({ error: "Failed to reorder scope items" });
+    }
+  });
+
+  // ============================================================
+  // SCOPE STAGES (Editable Categories)
+  // ============================================================
+
+  // Get all scope stages for a project
+  app.get("/api/projects/:projectId/scope-stages", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const stages = await storage.getScopeStages(req.params.projectId);
+      res.json(stages);
+    } catch (error) {
+      console.error("Error fetching scope stages:", error);
+      res.status(500).json({ error: "Failed to fetch scope stages" });
+    }
+  });
+
+  // Create a new scope stage
+  app.post("/api/projects/:projectId/scope-stages", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertScopeStageSchema.omit({ projectId: true, companyId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const companyId = req.user!.companyId!;
+      const newStage = await storage.createScopeStage({
+        ...validationResult.data,
+        projectId: req.params.projectId,
+        companyId,
+      });
+
+      res.status(201).json(newStage);
+    } catch (error) {
+      console.error("Error creating scope stage:", error);
+      res.status(500).json({ error: "Failed to create scope stage" });
+    }
+  });
+
+  // Update a scope stage (for inline editing)
+  app.patch("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const updateSchema = insertScopeStageSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const updatedStage = await storage.updateScopeStage(req.params.id, validationResult.data);
+      if (!updatedStage) {
+        return res.status(404).json({ error: "Scope stage not found" });
+      }
+
+      res.json(updatedStage);
+    } catch (error) {
+      console.error("Error updating scope stage:", error);
+      res.status(500).json({ error: "Failed to update scope stage" });
+    }
+  });
+
+  // Delete a scope stage
+  app.delete("/api/scope-stages/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deleteScopeStage(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Scope stage not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting scope stage:", error);
+      res.status(500).json({ error: "Failed to delete scope stage" });
+    }
+  });
+
+  // Reorder scope stages (with drag-drop support)
+  app.post("/api/scope-stages/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { updates } = req.body;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Updates must be an array" });
+      }
+
+      await storage.reorderScopeStages(updates);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error reordering scope stages:", error);
+      res.status(500).json({ error: "Failed to reorder scope stages" });
+    }
+  });
+
+  // Initialize default stages for a project
+  app.post("/api/projects/:projectId/scope-stages/initialize", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const stages = await storage.initializeDefaultStages(req.params.projectId, companyId);
+      res.status(201).json(stages);
+    } catch (error) {
+      console.error("Error initializing scope stages:", error);
+      res.status(500).json({ error: "Failed to initialize scope stages" });
     }
   });
 
