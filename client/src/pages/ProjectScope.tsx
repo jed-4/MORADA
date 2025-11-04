@@ -39,8 +39,19 @@ import {
   CheckSquare,
   Upload,
   FileText,
+  Pen,
 } from "lucide-react";
-import type { ScopeItem, ScopeTemplate, Estimate } from "@shared/schema";
+import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate } from "@shared/schema";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { DndContext, closestCenter, DragOverlay, DragEndEvent, DragOverEvent, DragStartEvent, useSensor, useSensors, PointerSensor, KeyboardSensor } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -49,10 +60,6 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink } from '@react-pdf/renderer';
-
-// Define the 5 stages
-const STAGES = ['Prelim', 'Frame', 'Lockup', 'Fix', 'Handover'] as const;
-type Stage = typeof STAGES[number];
 
 // Casva lilac color
 const CASVA_LILAC = '#bba7db';
@@ -366,90 +373,333 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
 }
 
 interface DroppableStageProps {
-  stage: Stage;
+  stageData: ScopeStage;
   items: ScopeItem[];
   isExpanded: boolean;
   onToggleExpand: () => void;
   onUpdate: (id: string, data: Partial<ScopeItem>) => void;
   onDelete: (id: string) => void;
   onToggleSelect: (id: string) => void;
-  onAddItem: (stage: Stage) => void;
+  onAddItem: (stage: string) => void;
+  onEditStage: (stageId: string, newName: string) => void;
+  onDeleteStage: (stageId: string) => void;
+  onAddNewStage: (afterStageId: string) => void;
   selectedItems: Set<string>;
   isOver?: boolean;
   allItems?: ScopeItem[];
+  editingStageId: string | null;
+  editingStageName: string;
+  setEditingStageId: (id: string | null) => void;
+  setEditingStageName: (name: string) => void;
+  level?: number;
+  isDraggingStage?: boolean;
+  children?: ScopeStage[];
+  allStages?: ScopeStage[];
 }
 
-function DroppableStage({ stage, items, isExpanded, onToggleExpand, onUpdate, onDelete, onToggleSelect, onAddItem, selectedItems, isOver, allItems = [] }: DroppableStageProps) {
-  const { setNodeRef } = useSortable({ id: `stage-${stage}` });
+function DroppableStage({ 
+  stageData, 
+  items, 
+  isExpanded, 
+  onToggleExpand, 
+  onUpdate, 
+  onDelete, 
+  onToggleSelect, 
+  onAddItem, 
+  onEditStage,
+  onDeleteStage,
+  onAddNewStage,
+  selectedItems, 
+  isOver, 
+  allItems = [],
+  editingStageId,
+  editingStageName,
+  setEditingStageId,
+  setEditingStageName,
+  level = 0,
+  isDraggingStage = false,
+  children = [],
+  allStages = [],
+}: DroppableStageProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stageData.id });
+  
+  const { toast } = useToast();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   // Filter to only top-level items (no parent)
   const topLevelItems = items.filter(item => !item.parentId);
 
+  const isEditing = editingStageId === stageData.id;
+
+  const handleSaveEdit = () => {
+    if (editingStageName.trim() && editingStageName.trim() !== stageData.name) {
+      onEditStage(stageData.id, editingStageName.trim());
+    }
+    setEditingStageId(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingStageId(null);
+    setEditingStageName(stageData.name);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancelEdit();
+    }
+  };
+
+  const handleDeleteStage = () => {
+    if (items.length > 0) {
+      toast({ 
+        title: "Cannot delete stage", 
+        description: "Stage must be empty before deleting",
+        variant: "destructive" 
+      });
+      return;
+    }
+    onDeleteStage(stageData.id);
+    setShowDeleteDialog(false);
+  };
+
+  const hasChildren = children.length > 0;
+
   return (
-    <div ref={setNodeRef} className="mb-4">
-      <Card 
-        className={`transition-all duration-200 ${isOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
-        style={{ borderLeftColor: CASVA_LILAC, borderLeftWidth: '4px' }}
+    <>
+      <div 
+        ref={setNodeRef} 
+        style={style}
+        className={`mb-4 ${level > 0 ? 'ml-8' : ''}`}
       >
-        <CardHeader 
-          className="py-2 px-4"
-          style={{ minHeight: '40px' }}
+        <Card 
+          className={`transition-all duration-200 ${isOver && isDraggingStage ? 'ring-2 bg-[#bba7db]/10' : ''}`}
+          style={{ 
+            borderLeftColor: CASVA_LILAC, 
+            borderLeftWidth: '4px',
+            ...(level > 0 ? { borderLeftStyle: 'dashed' } : {})
+          }}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 -m-2 p-2 rounded" onClick={onToggleExpand}>
-              {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-              <CardTitle className="text-base font-semibold" style={{ color: CASVA_LILAC }}>
-                {stage}
-              </CardTitle>
-              <Badge variant="secondary" className="ml-2">
-                {items.length}
-              </Badge>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddItem(stage);
-              }}
-              data-testid={`button-add-item-${stage.toLowerCase()}`}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add Item
-            </Button>
-          </div>
-        </CardHeader>
-        
-        {isExpanded && (
-          <CardContent className="pt-2 pb-4 space-y-2">
-            {topLevelItems.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm italic">
-                Drag items here or add new items to this stage
+          <CardHeader 
+            className="py-2 px-4 group"
+            style={{ minHeight: '40px' }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {/* Drag Handle */}
+                <div 
+                  {...attributes} 
+                  {...listeners} 
+                  className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+                  data-testid={`drag-handle-stage-${stageData.id}`}
+                >
+                  <GripVertical className="h-5 w-5 text-muted-foreground" style={{ color: CASVA_LILAC }} />
+                </div>
+
+                {/* Expand/Collapse and Name */}
+                <div 
+                  className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 -m-2 p-2 rounded" 
+                  onClick={onToggleExpand}
+                >
+                  {hasChildren || items.length > 0 ? (
+                    isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />
+                  ) : (
+                    <div className="w-5" />
+                  )}
+                  {isEditing ? (
+                    <Input
+                      value={editingStageName}
+                      onChange={(e) => setEditingStageName(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      onBlur={handleSaveEdit}
+                      autoFocus
+                      className="h-7 text-base font-semibold border-2 px-2"
+                      style={{ borderColor: CASVA_LILAC, color: CASVA_LILAC }}
+                      data-testid={`input-edit-stage-${stageData.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <CardTitle 
+                      className="text-base font-semibold" 
+                      style={{ color: CASVA_LILAC }}
+                      data-testid={`text-stage-name-${stageData.id}`}
+                    >
+                      {stageData.name}
+                    </CardTitle>
+                  )}
+                  {!isEditing && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingStageId(stageData.id);
+                        setEditingStageName(stageData.name);
+                      }}
+                      data-testid={`button-edit-stage-${stageData.id}`}
+                    >
+                      <Pen className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                <Badge variant="secondary" className="ml-2">
+                  {items.length}
+                </Badge>
               </div>
-            ) : (
-              <SortableContext
-                items={topLevelItems.map(item => item.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {topLevelItems.map((item) => (
-                  <SortableScopeItem
-                    key={item.id}
-                    item={item}
-                    onUpdate={onUpdate}
-                    onDelete={onDelete}
-                    onToggleSelect={onToggleSelect}
-                    isSelected={selectedItems.has(item.id)}
-                    children={allItems.filter(i => i.parentId === item.id)}
-                    allItems={allItems}
-                    selectedItems={selectedItems}
-                  />
-                ))}
-              </SortableContext>
-            )}
-          </CardContent>
-        )}
-      </Card>
-    </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddNewStage(stageData.id);
+                  }}
+                  data-testid={`button-add-stage-after-${stageData.id}`}
+                  className="h-7"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Stage
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddItem(stageData.name);
+                  }}
+                  data-testid={`button-add-item-${stageData.name.toLowerCase().replace(/\s+/g, '-')}`}
+                  className="h-7"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Item
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteDialog(true);
+                  }}
+                  data-testid={`button-delete-stage-${stageData.id}`}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          
+          {isExpanded && (
+            <CardContent className="pt-2 pb-4 space-y-2">
+              {topLevelItems.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm italic">
+                  Drag items here or add new items to this stage
+                </div>
+              ) : (
+                <SortableContext
+                  items={topLevelItems.map(item => item.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {topLevelItems.map((item) => (
+                    <SortableScopeItem
+                      key={item.id}
+                      item={item}
+                      onUpdate={onUpdate}
+                      onDelete={onDelete}
+                      onToggleSelect={onToggleSelect}
+                      isSelected={selectedItems.has(item.id)}
+                      children={allItems.filter(i => i.parentId === item.id)}
+                      allItems={allItems}
+                      selectedItems={selectedItems}
+                    />
+                  ))}
+                </SortableContext>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      </div>
+
+      {/* Render nested child stages */}
+      {hasChildren && isExpanded && (
+        <div className="mt-2">
+          {children.map((childStage) => {
+            const childItems = allItems.filter(item => item.stage === childStage.name);
+            return (
+              <DroppableStage
+                key={childStage.id}
+                stageData={childStage}
+                items={childItems}
+                isExpanded={stageExpanded[childStage.name] ?? true}
+                onToggleExpand={onToggleExpand}
+                onUpdate={onUpdate}
+                onDelete={onDelete}
+                onToggleSelect={onToggleSelect}
+                onAddItem={onAddItem}
+                onEditStage={onEditStage}
+                onDeleteStage={onDeleteStage}
+                onAddNewStage={onAddNewStage}
+                selectedItems={selectedItems}
+                isOver={isOver}
+                allItems={allItems}
+                editingStageId={editingStageId}
+                editingStageName={editingStageName}
+                setEditingStageId={setEditingStageId}
+                setEditingStageName={setEditingStageName}
+                level={level + 1}
+                isDraggingStage={isDraggingStage}
+                children={allStages.filter(s => s.parentId === childStage.id)}
+                allStages={allStages}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Stage</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the "{stageData.name}" stage? This action cannot be undone.
+              {items.length > 0 && (
+                <span className="block mt-2 text-destructive font-medium">
+                  This stage contains {items.length} item{items.length !== 1 ? 's' : ''}. Please move or delete all items first.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteStage}
+              disabled={items.length > 0}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid={`confirm-delete-stage-${stageData.id}`}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -499,13 +749,7 @@ export default function ProjectScope() {
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [stageExpanded, setStageExpanded] = useState<StageState>({
-    Prelim: true,
-    Frame: true,
-    Lockup: true,
-    Fix: true,
-    Handover: true,
-  });
+  const [stageExpanded, setStageExpanded] = useState<StageState>({});
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -516,12 +760,19 @@ export default function ProjectScope() {
   const [isRfqDialogOpen, setIsRfqDialogOpen] = useState(false);
   const [isPoDialogOpen, setIsPoDialogOpen] = useState(false);
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
-  const [pdfStage, setPdfStage] = useState<Stage>('Prelim');
+  const [pdfStage, setPdfStage] = useState<string>('');
   const [hideClientCosts, setHideClientCosts] = useState(false); // Client toggle for PDF
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
-  const [addItemStage, setAddItemStage] = useState<Stage | null>(null);
+  const [addItemStage, setAddItemStage] = useState<string | null>(null);
   const [newItemTitle, setNewItemTitle] = useState("");
   const [newItemDescription, setNewItemDescription] = useState("");
+  
+  // Stage editing state
+  const [editingStageId, setEditingStageId] = useState<string | null>(null);
+  const [editingStageName, setEditingStageName] = useState("");
+  const [isAddStageDialogOpen, setIsAddStageDialogOpen] = useState(false);
+  const [newStageName, setNewStageName] = useState("");
+  const [addStageAfterId, setAddStageAfterId] = useState<string | null>(null);
 
   // Tiptap editor for Add Item dialog
   const addItemEditor = useEditor({
@@ -549,6 +800,70 @@ export default function ProjectScope() {
   const { data: estimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
     select: (data) => data.filter(est => est.projectId === projectId),
+  });
+
+  // Fetch scope stages
+  const { data: scopeStages = [], isLoading: isLoadingStages } = useQuery<ScopeStage[]>({
+    queryKey: [`/api/projects/${projectId}/scope-stages`],
+    enabled: !!projectId,
+  });
+
+  // Initialize default stages if empty
+  const initializeStagesMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/projects/${projectId}/scope-stages/initialize`, 'POST');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      toast({ title: "Default stages initialized" });
+    },
+  });
+
+  // Create stage mutation
+  const createStageMutation = useMutation({
+    mutationFn: async ({ name, displayOrder }: { name: string; displayOrder: number }) => {
+      return apiRequest(`/api/projects/${projectId}/scope-stages`, 'POST', {
+        projectId,
+        name,
+        displayOrder,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      toast({ title: "Stage added successfully" });
+    },
+  });
+
+  // Update stage mutation
+  const updateStageMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      return apiRequest(`/api/scope-stages/${id}`, 'PATCH', { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      toast({ title: "Stage updated successfully" });
+    },
+  });
+
+  // Delete stage mutation
+  const deleteStageMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest(`/api/scope-stages/${id}`, 'DELETE');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      toast({ title: "Stage deleted successfully" });
+    },
+  });
+
+  // Reorder stages mutation
+  const reorderStagesMutation = useMutation({
+    mutationFn: async (updates: { id: string; displayOrder: number }[]) => {
+      return apiRequest('/api/scope-stages/reorder', 'POST', { updates });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+    },
   });
 
   // Update mutation
@@ -598,7 +913,7 @@ export default function ProjectScope() {
 
   // Create scope item mutation
   const createItemMutation = useMutation({
-    mutationFn: async ({ title, description, stage }: { title: string; description: string; stage: Stage }) => {
+    mutationFn: async ({ title, description, stage }: { title: string; description: string; stage: string }) => {
       return apiRequest(`/api/projects/${projectId}/scope`, 'POST', {
         title,
         description, // Store as HTML (consistent with existing items)
@@ -641,12 +956,23 @@ export default function ProjectScope() {
     },
   });
 
-  // DnD sensors
+  // DnD sensors for items
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // Separate DnD sensors for stages
+  const stageSensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  // Stage drag state
+  const [activeStageId, setActiveStageId] = useState<string | null>(null);
+  const [overStageId, setOverStageId] = useState<string | null>(null);
+
+  // Item drag handlers
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
   };
@@ -654,6 +980,105 @@ export default function ProjectScope() {
   const handleDragOver = (event: DragOverEvent) => {
     setOverId(event.over?.id as string || null);
   };
+
+  // Stage drag handlers
+  const handleStageDragStart = (event: DragStartEvent) => {
+    setActiveStageId(event.active.id as string);
+  };
+
+  const handleStageDragOver = (event: DragOverEvent) => {
+    setOverStageId(event.over?.id as string || null);
+  };
+
+  // Helper function to check if a stage is a descendant of another
+  const isStageDescendant = (potentialDescendant: ScopeStage, ancestor: ScopeStage): boolean => {
+    if (!potentialDescendant.parentId) return false;
+    if (potentialDescendant.parentId === ancestor.id) return true;
+    const parent = scopeStages.find(s => s.id === potentialDescendant.parentId);
+    if (!parent) return false;
+    return isStageDescendant(parent, ancestor);
+  };
+
+  const handleStageDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveStageId(null);
+    setOverStageId(null);
+    
+    if (!over || active.id === over.id) return;
+
+    const activeStage = scopeStages.find(s => s.id === active.id);
+    const overStage = scopeStages.find(s => s.id === over.id);
+    
+    if (!activeStage || !overStage) return;
+
+    // Prevent nesting cycles
+    if (isStageDescendant(overStage, activeStage)) {
+      toast({ 
+        title: "Cannot nest stage", 
+        description: "Cannot nest a parent stage under its own child",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    // Determine if this is a reorder or a nest operation
+    // If both stages have the same parent, it's a reorder
+    // Otherwise, nest the active under the over
+    const isSameParent = activeStage.parentId === overStage.parentId;
+    
+    if (isSameParent) {
+      // Reorder within same parent level
+      const siblingStages = scopeStages.filter(s => s.parentId === activeStage.parentId);
+      const oldIndex = siblingStages.findIndex(s => s.id === active.id);
+      const newIndex = siblingStages.findIndex(s => s.id === over.id);
+      
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        const reordered = arrayMove(siblingStages, oldIndex, newIndex);
+        const updates = reordered.map((stage, index) => ({
+          id: stage.id,
+          displayOrder: index,
+          parentId: stage.parentId || null,
+        }));
+        
+        reorderStagesMutation.mutate(updates);
+        toast({ title: "Stages reordered" });
+      }
+    } else {
+      // Nest active stage under over stage
+      // Get all stages at the same level as the target
+      const targetSiblings = scopeStages.filter(s => s.parentId === overStage.id);
+      const newDisplayOrder = targetSiblings.length;
+      
+      // Update the dragged stage to be a child of the target
+      const updates = [{
+        id: activeStage.id,
+        displayOrder: newDisplayOrder,
+        parentId: overStage.id,
+      }];
+      
+      reorderStagesMutation.mutate(updates);
+      toast({ title: `"${activeStage.name}" nested under "${overStage.name}"` });
+    }
+  };
+
+  // Initialize default stages on first load
+  if (!isLoadingStages && scopeStages.length === 0 && projectId && !initializeStagesMutation.isPending) {
+    initializeStagesMutation.mutate();
+  }
+
+  // Initialize stage expanded state when stages load
+  if (scopeStages.length > 0 && Object.keys(stageExpanded).length === 0) {
+    const initialExpanded: StageState = {};
+    scopeStages.forEach(stage => {
+      initialExpanded[stage.name] = true;
+    });
+    setStageExpanded(initialExpanded);
+    
+    // Set first stage as default for PDF if not set
+    if (!pdfStage && scopeStages[0]) {
+      setPdfStage(scopeStages[0].name);
+    }
+  }
 
   // Helper function to check if an item is a descendant of another
   const isDescendant = (potentialDescendant: ScopeItem, ancestor: ScopeItem): boolean => {
@@ -677,7 +1102,7 @@ export default function ProjectScope() {
     
     // Check if dragged over a stage
     if (overId.startsWith('stage-')) {
-      const targetStage = overId.replace('stage-', '') as Stage;
+      const targetStage = overId.replace('stage-', '');
       if (activeItem.stage !== targetStage) {
         updateItemMutation.mutate({ 
           id: activeItem.id, 
@@ -756,7 +1181,7 @@ export default function ProjectScope() {
     setSelectedItems(newSelected);
   };
 
-  const handleAddItem = (stage: Stage) => {
+  const handleAddItem = (stage: string) => {
     setAddItemStage(stage);
     setIsAddItemDialogOpen(true);
   };
@@ -777,14 +1202,45 @@ export default function ProjectScope() {
     addItemEditor.commands.clearContent();
   };
 
-  const toggleStage = (stage: Stage) => {
-    setStageExpanded(prev => ({ ...prev, [stage]: !prev[stage] }));
+  const toggleStage = (stageName: string) => {
+    setStageExpanded(prev => ({ ...prev, [stageName]: !prev[stageName] }));
   };
 
-  const getItemsByStage = (stage: Stage) => {
+  const getItemsByStage = (stageName: string) => {
     return scopeItems
-      .filter(item => item.stage === stage)
+      .filter(item => item.stage === stageName)
       .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  };
+
+  const handleEditStage = (stageId: string, newName: string) => {
+    updateStageMutation.mutate({ id: stageId, name: newName });
+  };
+
+  const handleDeleteStage = (stageId: string) => {
+    deleteStageMutation.mutate(stageId);
+  };
+
+  const handleAddNewStage = (afterStageId: string) => {
+    setAddStageAfterId(afterStageId);
+    setIsAddStageDialogOpen(true);
+  };
+
+  const handleCreateNewStage = () => {
+    if (!newStageName.trim() || !addStageAfterId) return;
+    
+    const afterStage = scopeStages.find(s => s.id === addStageAfterId);
+    if (!afterStage) return;
+    
+    const displayOrder = afterStage.displayOrder + 1;
+    
+    createStageMutation.mutate({
+      name: newStageName.trim(),
+      displayOrder,
+    });
+    
+    setIsAddStageDialogOpen(false);
+    setNewStageName("");
+    setAddStageAfterId(null);
   };
 
   if (isLoading) {
@@ -978,14 +1434,14 @@ export default function ProjectScope() {
               <div className="space-y-4">
                 <div>
                   <Label>Stage</Label>
-                  <Select value={pdfStage} onValueChange={(v) => setPdfStage(v as Stage)}>
+                  <Select value={pdfStage} onValueChange={setPdfStage}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {STAGES.map((stage) => (
-                        <SelectItem key={stage} value={stage}>
-                          {stage} ({getItemsByStage(stage).length} items)
+                      {scopeStages.map((stage) => (
+                        <SelectItem key={stage.id} value={stage.name}>
+                          {stage.name} ({getItemsByStage(stage.name).length} items)
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1035,43 +1491,80 @@ export default function ProjectScope() {
               </div>
             </Card>
           ) : (
+            // Stage DnD Context (separate from item DnD)
             <DndContext
-              sensors={sensors}
+              sensors={stageSensors}
               collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
+              onDragStart={handleStageDragStart}
+              onDragOver={handleStageDragOver}
+              onDragEnd={handleStageDragEnd}
             >
               <SortableContext
-                items={[...STAGES.map(s => `stage-${s}`), ...scopeItems.map(i => i.id)]}
+                items={scopeStages.map(s => s.id)}
                 strategy={verticalListSortingStrategy}
               >
-                {STAGES.map((stage) => (
-                  <DroppableStage
-                    key={stage}
-                    stage={stage}
-                    items={getItemsByStage(stage)}
-                    isExpanded={stageExpanded[stage]}
-                    onToggleExpand={() => toggleStage(stage)}
-                    onUpdate={handleUpdateItem}
-                    onDelete={handleDeleteItem}
-                    onToggleSelect={handleToggleSelect}
-                    onAddItem={handleAddItem}
-                    selectedItems={selectedItems}
-                    isOver={overId === `stage-${stage}`}
-                    allItems={scopeItems}
-                  />
-                ))}
+                {/* Item DnD Context (nested inside stage DnD) */}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDragEnd={handleDragEnd}
+                >
+                  {scopeStages
+                    .filter(stage => !stage.parentId) // Only show top-level stages
+                    .sort((a, b) => a.displayOrder - b.displayOrder)
+                    .map((stage) => (
+                      <DroppableStage
+                        key={stage.id}
+                        stageData={stage}
+                        items={getItemsByStage(stage.name)}
+                        isExpanded={stageExpanded[stage.name] ?? true}
+                        onToggleExpand={() => toggleStage(stage.name)}
+                        onUpdate={handleUpdateItem}
+                        onDelete={handleDeleteItem}
+                        onToggleSelect={handleToggleSelect}
+                        onAddItem={handleAddItem}
+                        onEditStage={handleEditStage}
+                        onDeleteStage={handleDeleteStage}
+                        onAddNewStage={handleAddNewStage}
+                        selectedItems={selectedItems}
+                        isOver={overStageId === stage.id}
+                        isDraggingStage={!!activeStageId}
+                        allItems={scopeItems}
+                        editingStageId={editingStageId}
+                        editingStageName={editingStageName}
+                        setEditingStageId={setEditingStageId}
+                        setEditingStageName={setEditingStageName}
+                        children={scopeStages.filter(s => s.parentId === stage.id)}
+                        allStages={scopeStages}
+                      />
+                    ))}
+
+                  {/* Item Drag Overlay */}
+                  <DragOverlay>
+                    {activeId && scopeItems.find(i => i.id === activeId) ? (
+                      <Card className="opacity-90 border-l-4" style={{ borderLeftColor: CASVA_LILAC }}>
+                        <CardContent className="py-2 px-3">
+                          <div className="font-medium text-sm">
+                            {scopeItems.find(i => i.id === activeId)?.title}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : null}
+                  </DragOverlay>
+                </DndContext>
               </SortableContext>
 
+              {/* Stage Drag Overlay */}
               <DragOverlay>
-                {activeId && scopeItems.find(i => i.id === activeId) ? (
+                {activeStageId && scopeStages.find(s => s.id === activeStageId) ? (
                   <Card className="opacity-90 border-l-4" style={{ borderLeftColor: CASVA_LILAC }}>
-                    <CardContent className="py-2 px-3">
-                      <div className="font-medium text-sm">
-                        {scopeItems.find(i => i.id === activeId)?.title}
-                      </div>
-                    </CardContent>
+                    <CardHeader className="py-2 px-4">
+                      <CardTitle className="text-base font-semibold" style={{ color: CASVA_LILAC }}>
+                        {scopeStages.find(s => s.id === activeStageId)?.name}
+                      </CardTitle>
+                    </CardHeader>
                   </Card>
                 ) : null}
               </DragOverlay>
@@ -1167,6 +1660,50 @@ export default function ProjectScope() {
               data-testid="button-create-scope-item"
             >
               {createItemMutation.isPending ? "Creating..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add New Stage Dialog */}
+      <Dialog open={isAddStageDialogOpen} onOpenChange={(open) => {
+        setIsAddStageDialogOpen(open);
+        if (!open) {
+          setNewStageName("");
+          setAddStageAfterId(null);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Stage</DialogTitle>
+            <DialogDescription>
+              Create a new stage after the selected stage
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="stage-name">Stage Name</Label>
+              <Input
+                id="stage-name"
+                value={newStageName}
+                onChange={(e) => setNewStageName(e.target.value)}
+                placeholder="e.g., Pre-Construction, Finishing"
+                data-testid="input-new-stage-name"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newStageName.trim()) {
+                    handleCreateNewStage();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleCreateNewStage}
+              disabled={!newStageName.trim() || createStageMutation.isPending}
+              data-testid="button-create-stage"
+            >
+              {createStageMutation.isPending ? "Creating..." : "Add Stage"}
             </Button>
           </DialogFooter>
         </DialogContent>
