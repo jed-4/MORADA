@@ -21,6 +21,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,7 +60,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { DndContext, closestCenter, DragOverlay, DragEndEvent, DragOverEvent, DragStartEvent, useSensor, useSensors, PointerSensor, KeyboardSensor } from '@dnd-kit/core';
+import { DndContext, closestCenter, DragOverlay, DragEndEvent, DragOverEvent, DragStartEvent, useSensor, useSensors, PointerSensor, KeyboardSensor, useDroppable } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -329,13 +335,11 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
 
           {/* Right Column: Chips (vertical stack) + 3 dots menu on hover */}
           <div className="flex flex-col items-end gap-2 min-w-0">
-            {/* Type Badge - Clickable to toggle collapse, 24px tall */}
-            {getTypeLabel && onToggleCollapse && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onToggleCollapse(item.id)}
-                className="h-6 px-2 text-xs font-bold rounded-md shrink-0"
+            {/* Type Badge - More compact, 20px tall */}
+            {getTypeLabel && (
+              <Badge 
+                variant="secondary"
+                className="h-5 px-1.5 text-xs font-semibold rounded shrink-0"
                 style={{
                   backgroundColor: CASVA_LILAC,
                   color: 'white',
@@ -343,7 +347,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 data-testid={`badge-type-${item.id}`}
               >
                 {getTypeLabel(item.itemType)}
-              </Button>
+              </Badge>
             )}
 
             {/* Badges - Scope 2.0: Smart Links (vertical stack) */}
@@ -375,16 +379,42 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </Badge>
             )}
 
-            {/* 3 dots menu (hidden, shown on group hover) */}
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              onClick={() => onDelete(item.id)}
-              data-testid={`button-delete-scope-${item.id}`}
-            >
-              <span className="text-lg leading-none">⋯</span>
-            </Button>
+            {/* 3 dots menu with options (hidden, shown on group hover) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  data-testid={`button-menu-scope-${item.id}`}
+                >
+                  <span className="text-lg leading-none">⋯</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => {
+                    if (onToggleCollapse) onToggleCollapse(item.id);
+                  }}
+                  data-testid={`menu-toggle-description-${item.id}`}
+                >
+                  {isCollapsed ? 'Expand Description' : 'Collapse Description'}
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setIsEditingDescription(true)}
+                  data-testid={`menu-edit-description-${item.id}`}
+                >
+                  Edit Description
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => onDelete(item.id)}
+                  className="text-destructive"
+                  data-testid={`menu-delete-scope-${item.id}`}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardContent>
       </Card>
@@ -486,6 +516,11 @@ function DroppableStage({
     transition,
     isDragging,
   } = useSortable({ id: stageData.id });
+  
+  // Droppable zone for items to be dragged into this stage
+  const { setNodeRef: setDroppableRef, isOver: isDroppableOver } = useDroppable({
+    id: `stage-${stageData.name}`,
+  });
   
   const { toast } = useToast();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -626,19 +661,6 @@ function DroppableStage({
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onAddNewStage(stageData.id);
-                  }}
-                  data-testid={`button-add-stage-after-${stageData.id}`}
-                  className="h-7"
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Stage
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
                     onAddItem(stageData.name);
                   }}
                   data-testid={`button-add-item-${stageData.name.toLowerCase().replace(/\s+/g, '-')}`}
@@ -647,30 +669,54 @@ function DroppableStage({
                   <Plus className="h-4 w-4 mr-1" />
                   Item
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowDeleteDialog(true);
-                  }}
-                  data-testid={`button-delete-stage-${stageData.id}`}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid={`button-menu-stage-${stageData.id}`}
+                    >
+                      <span className="text-lg leading-none">⋯</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddNewStage(stageData.id);
+                      }}
+                      data-testid={`menu-add-stage-after-${stageData.id}`}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Stage
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDeleteDialog(true);
+                      }}
+                      className="text-destructive"
+                      data-testid={`menu-delete-stage-${stageData.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Stage
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </CardHeader>
           
           {isExpanded && (
-            <CardContent className="pt-2 pb-4 space-y-2">
+            <CardContent ref={setDroppableRef} className="pt-2 pb-4 space-y-2">
               {topLevelItems.length === 0 ? (
                 <div 
-                  className="text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center"
+                  className={`text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center ${isDroppableOver ? 'bg-primary/5 border-primary' : ''}`}
                   style={{ 
                     height: '60px',
-                    borderColor: CASVA_LILAC + '40'
+                    borderColor: isDroppableOver ? CASVA_LILAC : CASVA_LILAC + '40'
                   }}
                 >
                   <div className="flex flex-col items-center gap-1">
@@ -1413,6 +1459,60 @@ export default function ProjectScope() {
       {/* Secondary Actions Bar */}
       <div className="flex items-center justify-end px-6 py-2 border-b bg-muted/20">
         <div className="flex items-center gap-2">
+          {/* Add Stage - Icon Only */}
+          <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    className="h-9 w-9" 
+                    onClick={() => {
+                      if (scopeStages.length > 0) {
+                        setAddStageAfterId(scopeStages[scopeStages.length - 1].id);
+                      }
+                    }}
+                    data-testid="button-add-stage"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Add Stage</p>
+              </TooltipContent>
+            </Tooltip>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Stage</DialogTitle>
+                <DialogDescription>
+                  Create a new stage for your scope
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Stage Name</Label>
+                  <Input
+                    value={newStageName}
+                    onChange={(e) => setNewStageName(e.target.value)}
+                    placeholder="Enter stage name"
+                    data-testid="input-new-stage-name"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={handleCreateStage}
+                  disabled={!newStageName.trim()}
+                  data-testid="button-confirm-add-stage"
+                >
+                  Create Stage
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Load Template - Icon Only */}
           <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
             <Tooltip>
