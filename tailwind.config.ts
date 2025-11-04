@@ -12,10 +12,10 @@ export default {
       },
       colors: {
         casva: {
-          50: '#f5f3ff',
-          100: '#ede9fe',
-          500: '#c1a2f2',
-          600: '#a78bfa',
+          50: '#f5f1ff',
+          100: '#e9e1f7',
+          500: '#bba7db',
+          700: '#a58bc7',
         },
         // Flat / base colors (regular buttons)
         background: "hsl(var(--background) / <alpha-value>)",

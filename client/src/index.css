@@ -32,15 +32,15 @@
 
   --sidebar-border: 214 32% 91%;
 
-  --sidebar-primary: 266 68% 76%; /* Lavender Purple #c1a2f2 */
+  --sidebar-primary: 265 44% 76%; /* Lilac Purple #bba7db */
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 266 100% 98%;
+  --sidebar-accent: 265 100% 98%;
 
   --sidebar-accent-foreground: 215 25% 17%;
 
-  --sidebar-ring: 266 68% 76%; /* Lavender accent */
+  --sidebar-ring: 265 44% 76%; /* Lilac accent */
 
   --popover: 0 0% 100%;
 
@@ -48,12 +48,12 @@
 
   --popover-border: 214 32% 91%;
 
-  /* Casva Lavender Purple Palette */
-  --primary: 266 68% 76%; /* Lavender Purple #c1a2f2 */
+  /* Casva Lilac Purple Palette */
+  --primary: 265 44% 76%; /* Lilac Purple #bba7db */
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 266 100% 98%; /* Light lavender background */
+  --secondary: 265 100% 98%; /* Light lilac background */
 
   --secondary-foreground: 215 25% 17%;
 
@@ -61,7 +61,7 @@
 
   --muted-foreground: 215 16% 47%; /* Slate-600 */
 
-  --accent: 266 68% 76%; /* Lavender accent */
+  --accent: 265 44% 76%; /* Lilac accent */
 
   --accent-foreground: 0 0% 100%;
 
@@ -347,7 +347,7 @@
   }
 
   .casva-hover-lift:hover {
-    @apply -translate-y-1 shadow-lg bg-casva-50;
+    @apply -translate-y-1 shadow-xl bg-casva-50;
   }
 
   .casva-edit-icon {
@@ -360,7 +360,16 @@
   }
 
   .casva-card-hover:hover {
-    @apply shadow-lg bg-casva-50 -translate-y-1;
+    @apply shadow-xl bg-casva-50 -translate-y-1;
+  }
+  
+  /* Button enhancements with lilac */
+  .casva-button {
+    @apply bg-casva-500 text-white transition-all duration-200;
+  }
+  
+  .casva-button:hover {
+    @apply bg-casva-700 shadow-md;
   }
 
   /* ========== CASVA PRINCIPLE 3: Color Chips ========== */
@@ -389,7 +398,7 @@
   }
 
   .casva-chip-priority-medium {
-    @apply bg-casva-100 text-casva-600;
+    @apply bg-casva-100 text-casva-700;
   }
 
   .casva-chip-priority-high {
@@ -416,11 +425,25 @@
 
   @keyframes casvaGlow {
     0%, 100% { 
-      box-shadow: 0 0 0 2px rgba(193, 162, 242, 0.3); 
+      box-shadow: 0 0 0 2px rgba(187, 167, 219, 0.3); 
     }
     50% { 
-      box-shadow: 0 0 0 4px rgba(193, 162, 242, 0.5), 0 0 12px rgba(193, 162, 242, 0.3); 
+      box-shadow: 0 0 0 4px rgba(187, 167, 219, 0.5), 0 0 12px rgba(187, 167, 219, 0.3); 
     }
+  }
+  
+  /* Ripple effect on click - Lilac radial gradient */
+  @keyframes casvaRipple {
+    0% {
+      box-shadow: 0 0 0 0 rgba(187, 167, 219, 0.7);
+    }
+    100% {
+      box-shadow: 0 0 0 10px rgba(187, 167, 219, 0);
+    }
+  }
+  
+  .casva-ripple:active {
+    animation: casvaRipple 0.4s ease-out;
   }
 
   /* Hide ugly search cancel button in Chrome until we can style it properly */
