@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import type { ScopeItem, ScopeTemplate, Estimate } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
-import ColorChip from "@/components/ui/color-chip";
+import { ColorChip } from "@/components/ui/color-chip";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -104,12 +104,12 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
   });
 
   const stageColors: Record<string, string> = {
-    'Preparation': '#bba7db',
+    'Preparation': '#bba7db', // Casva lilac
     'Foundation': '#64748b',
     'Framing': '#f59e0b',
     'External': '#3b82f6',
     'Internal': '#10b981',
-    'Finishing': '#8b5cf6',
+    'Finishing': '#a58bc7', // Casva lilac variant
     'Landscaping': '#14b8a6',
   };
 
@@ -118,10 +118,13 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
   return (
     <div ref={setNodeRef} style={style} className={`mb-2 ${level > 0 ? 'ml-8' : ''}`}>
       <Card 
-        className="hover-elevate active-elevate-2 transition-all duration-200"
-        style={{ minHeight: '40px' }}
+        className="hover:shadow-xl hover:-translate-y-1 active:translate-y-0 transition-all duration-200 border-l-4"
+        style={{ 
+          minHeight: '40px',
+          borderLeftColor: item.stage ? stageColors[item.stage] : '#bba7db'
+        }}
       >
-        <CardContent className="p-2 flex items-start gap-2">
+        <CardContent className="py-1 px-3 flex items-start gap-2" style={{ minHeight: '40px' }}>
           {/* Drag Handle */}
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1">
             <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -132,7 +135,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
             <Button
               size="icon"
               variant="ghost"
-              className="h-6 w-6 mt-1"
+              className="h-7 w-7"
               onClick={() => setIsExpanded(!isExpanded)}
               data-testid={`button-toggle-scope-${item.id}`}
             >
@@ -163,17 +166,17 @@ function SortableScopeItem({ item, onUpdate, onDelete, level = 0, children = [] 
 
               {/* Badges for flags */}
               {item.needsRfi && (
-                <Badge variant="outline" className="h-6 text-xs bg-blue-50">
+                <Badge variant="outline" className="h-6 text-xs" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>
                   RFI
                 </Badge>
               )}
               {item.needsRfq && (
-                <Badge variant="outline" className="h-6 text-xs bg-amber-50">
+                <Badge variant="outline" className="h-6 text-xs" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
                   RFQ
                 </Badge>
               )}
               {item.poId && (
-                <Badge variant="outline" className="h-6 text-xs bg-green-50">
+                <Badge variant="outline" className="h-6 text-xs" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>
                   <Package className="h-3 w-3 mr-1" />
                   PO
                 </Badge>

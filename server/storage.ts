@@ -6962,8 +6962,18 @@ export class DbStorage implements IStorage {
   // Scope Items CRUD
   async getScopeItems(projectId: string): Promise<ScopeItem[]> {
     try {
+      // Get project to verify company
+      const [project] = await db.select().from(schema.projects)
+        .where(eq(schema.projects.id, projectId))
+        .limit(1);
+      
+      if (!project) return [];
+      
       const items = await db.select().from(schema.scopeItems)
-        .where(eq(schema.scopeItems.projectId, projectId))
+        .where(and(
+          eq(schema.scopeItems.projectId, projectId),
+          eq(schema.scopeItems.companyId, project.companyId)
+        ))
         .orderBy(asc(schema.scopeItems.displayOrder));
       return items;
     } catch (error) {

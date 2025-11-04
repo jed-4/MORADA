@@ -2561,9 +2561,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const companyId = req.user!.companyId!;
       const newItem = await storage.createScopeItem({
         ...validationResult.data,
         projectId: req.params.projectId,
+        companyId,
       });
 
       res.status(201).json(newItem);
@@ -2581,9 +2583,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Items must be an array" });
       }
 
+      const companyId = req.user!.companyId!;
       const itemsWithProject = items.map(item => ({
         ...item,
         projectId: req.params.projectId,
+        companyId,
       }));
 
       const newItems = await storage.bulkCreateScopeItems(itemsWithProject);
@@ -2795,10 +2799,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No photo uploaded" });
       }
 
+      const companyId = req.user!.companyId!;
       const photoData = {
         scopeItemId: req.params.scopeItemId,
         photoUrl: `/uploads/gear-photos/${req.file.filename}`,
-        caption: req.body.caption || null,
+        gearItemName: req.body.gearItemName || 'Unnamed Item',
+        companyId,
       };
 
       const validationResult = insertScopeGearPhotoSchema.safeParse(photoData);
