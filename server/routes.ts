@@ -8214,6 +8214,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Schedule item dependency management
+  app.post("/api/schedule-items/:id/dependencies", async (req, res) => {
+    try {
+      const { predecessorId, type = "FS" } = req.body;
+      
+      if (!predecessorId) {
+        return res.status(400).json({ error: "predecessorId is required" });
+      }
+
+      // Validate dependency type
+      if (!["FS", "SS", "FF", "SF"].includes(type)) {
+        return res.status(400).json({ error: "Invalid dependency type. Must be FS, SS, FF, or SF" });
+      }
+
+      const item = await storage.getScheduleItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+
+      // Check if dependency already exists
+      const dependencies = (item.dependencies as any[]) || [];
+      const existingDep = dependencies.find(d => d.id === predecessorId);
+      if (existingDep) {
+        return res.status(400).json({ error: "Dependency already exists" });
+      }
+
+      // Check for circular dependencies
+      const predecessor = await storage.getScheduleItem(predecessorId);
+      if (!predecessor) {
+        return res.status(404).json({ error: "Predecessor item not found" });
+      }
+
+      // Simple circular dependency check - prevent item from depending on itself
+      if (predecessorId === req.params.id) {
+        return res.status(400).json({ error: "Item cannot depend on itself" });
+      }
+
+      // Add dependency
+      const updatedDependencies = [...dependencies, { id: predecessorId, type }];
+      const updatedItem = await storage.updateScheduleItem(req.params.id, {
+        dependencies: updatedDependencies
+      });
+
+      res.json(updatedItem);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to add dependency",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/schedule-items/:id/dependencies/:predecessorId", async (req, res) => {
+    try {
+      const item = await storage.getScheduleItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+
+      const dependencies = (item.dependencies as any[]) || [];
+      const updatedDependencies = dependencies.filter(d => d.id !== req.params.predecessorId);
+
+      const updatedItem = await storage.updateScheduleItem(req.params.id, {
+        dependencies: updatedDependencies
+      });
+
+      res.json(updatedItem);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to remove dependency",
+        details: error.message 
+      });
+    }
+  });
+
   // Schedule Templates routes
   app.get("/api/schedule-templates", async (req, res) => {
     try {

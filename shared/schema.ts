@@ -2136,8 +2136,10 @@ export const scheduleItems = pgTable("schedule_items", {
   costCodeId: varchar("cost_code_id").references(() => costCodes.id), // Link to cost code
   costCodeTitle: text("cost_code_title"), // Cached for performance
   
-  // Dependencies
-  predecessorIds: json("predecessor_ids").default([]), // Array of schedule item IDs that must complete first
+  // Dependencies - array of objects: [{id: string, type: "FS" | "SS" | "FF" | "SF"}]
+  // FS = Finish-to-Start (default), SS = Start-to-Start, FF = Finish-to-Finish, SF = Start-to-Finish
+  dependencies: json("dependencies").default([]), // Array of dependency objects
+  predecessorIds: json("predecessor_ids").default([]), // Legacy: Array of schedule item IDs that must complete first
   
   // Progress and completion
   progressPercent: integer("progress_percent").notNull().default(0), // 0-100
@@ -2184,6 +2186,10 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   completedAt: z.coerce.date().optional(),
   duration: z.number().default(1),
   progressPercent: z.number().int().min(0).max(100).default(0),
+  dependencies: z.array(z.object({
+    id: z.string(), // ID of the predecessor item
+    type: z.enum(["FS", "SS", "FF", "SF"]).default("FS"), // Dependency type
+  })).optional(),
   predecessorIds: z.array(z.string()).optional(),
   checklistIds: z.array(z.string()).optional(),
   taskIds: z.array(z.string()).optional(),
