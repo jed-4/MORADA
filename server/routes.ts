@@ -68,6 +68,7 @@ import {
   updateScheduleItemSchema,
   insertScheduleTemplateSchema,
   updateScheduleTemplateSchema,
+  insertActivityNoteSchema,
   insertCalendarViewSchema,
   insertTimesheetAllowanceSchema,
   insertAllowanceItemSchema,
@@ -8303,6 +8304,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to remove dependency",
+        details: error.message 
+      });
+    }
+  });
+
+  // Activity Notes routes
+  app.get("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const offset = parseInt(req.query.offset as string) || 0;
+      
+      const [notes, totalCount] = await Promise.all([
+        storage.getActivityNotes(req.params.scheduleItemId, limit, offset),
+        storage.getActivityNoteCount(req.params.scheduleItemId)
+      ]);
+      
+      res.json({
+        notes,
+        totalCount,
+        hasMore: offset + notes.length < totalCount
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch activity notes",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertActivityNoteSchema.safeParse({
+        ...req.body,
+        scheduleItemId: req.params.scheduleItemId,
+        userId: req.user!.id,
+        userName: `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim() || req.user!.email,
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).message 
+        });
+      }
+
+      const newNote = await storage.createActivityNote(validationResult.data);
+      res.status(201).json(newNote);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create activity note",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/activity-notes/:id", requireAuth, async (req, res) => {
+    try {
+      // Check if user can edit (5-minute window)
+      const canEdit = await storage.canEditActivityNote(req.params.id, req.user!.id);
+      if (!canEdit) {
+        return res.status(403).json({ 
+          error: "Cannot edit note. Notes can only be edited within 5 minutes of creation by the author." 
+        });
+      }
+
+      const validationResult = insertActivityNoteSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).message 
+        });
+      }
+
+      const updatedNote = await storage.updateActivityNote(req.params.id, validationResult.data);
+      if (!updatedNote) {
+        return res.status(404).json({ error: "Activity note not found" });
+      }
+
+      res.json(updatedNote);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update activity note",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/activity-notes/:id", requireAuth, async (req, res) => {
+    try {
+      // Check if user is admin or the note author
+      const canDelete = await storage.canEditActivityNote(req.params.id, req.user!.id);
+      const isAdmin = req.user!.roleName === 'Admin' || req.user!.roleName === 'Owner';
+      
+      if (!canDelete && !isAdmin) {
+        return res.status(403).json({ 
+          error: "Cannot delete note. Only the author (within 5 minutes) or admins can delete notes." 
+        });
+      }
+
+      const success = await storage.deleteActivityNote(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Activity note not found" });
+      }
+
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete activity note",
         details: error.message 
       });
     }
