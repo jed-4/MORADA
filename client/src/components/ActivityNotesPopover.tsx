@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ActivityNote } from "@shared/schema";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,7 +33,7 @@ export function ActivityNotesPopover({
 
   // Fetch activity notes with pagination
   const { data, isLoading, refetch } = useQuery({
-    queryKey: [`/api/schedule-items/${scheduleItemId}/activity-notes`, offset],
+    queryKey: [`/api/schedule-items/${scheduleItemId}/activity-notes`, `?limit=${LIMIT}&offset=${offset}`],
     enabled: isOpen,
   });
 
@@ -40,9 +41,9 @@ export function ActivityNotesPopover({
   const totalCount = (data as any)?.totalCount || 0;
   const hasMore = (data as any)?.hasMore || false;
 
-  // Update external note count when it changes
+  // Update external note count when it changes (including zero state)
   useEffect(() => {
-    if (totalCount > 0 && onNoteCountChange) {
+    if (onNoteCountChange) {
       onNoteCountChange(totalCount);
     }
   }, [totalCount, onNoteCountChange]);
@@ -56,6 +57,7 @@ export function ActivityNotesPopover({
       });
     },
     onSuccess: () => {
+      // Invalidate all activity notes queries for this schedule item
       queryClient.invalidateQueries({ 
         queryKey: [`/api/schedule-items/${scheduleItemId}/activity-notes`] 
       });
@@ -105,14 +107,25 @@ export function ActivityNotesPopover({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={hasNotes ? "text-blue-600 dark:text-blue-400" : ""}
-          data-testid="button-activity-notes"
-        >
-          <MessageSquare className="h-4 w-4" />
-        </Button>
+        <div className="relative inline-flex">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-6 w-6 ${hasNotes ? "text-primary" : ""}`}
+            data-testid="button-activity-notes"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+          {hasNotes && totalCount > 0 && (
+            <Badge 
+              variant="default"
+              className="absolute -top-1 -right-1 rounded-full px-1"
+              data-testid="badge-note-count"
+            >
+              {totalCount > 99 ? "99+" : totalCount}
+            </Badge>
+          )}
+        </div>
       </PopoverTrigger>
       <PopoverContent 
         className="w-[400px] p-0" 
