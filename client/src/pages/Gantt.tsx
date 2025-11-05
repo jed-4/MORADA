@@ -202,26 +202,39 @@ export default function Gantt() {
     },
   });
 
-  // Save baseline mutation - saves current dates as baseline
+  // Save baseline mutation - saves current dates as baseline for stages AND subtasks
   const saveBaselineMutation = useMutation({
     mutationFn: async () => {
-      const updates = stages.map(stage => ({
+      // Save baseline for stages
+      const stageUpdates = stages.map(stage => ({
         id: stage.id,
         baselineStartDate: stage.startDate,
         baselineEndDate: stage.endDate,
       }));
       
-      return Promise.all(
-        updates.map(update =>
-          apiRequest(`/api/projects/${projectId}/gantt/stages/${update.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              baselineStartDate: update.baselineStartDate,
-              baselineEndDate: update.baselineEndDate,
-            }),
-          })
-        )
+      const stagePromises = stageUpdates.map(update =>
+        apiRequest(`/api/projects/${projectId}/gantt/stages/${update.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            baselineStartDate: update.baselineStartDate,
+            baselineEndDate: update.baselineEndDate,
+          }),
+        })
       );
+
+      // Save baseline for all subtasks
+      const allSubtasks = Object.values(subtasksByStage).flat();
+      const subtaskPromises = allSubtasks.map(subtask =>
+        apiRequest(`/api/projects/${projectId}/gantt/subtasks/${subtask.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            baselineStartDate: subtask.startDate,
+            baselineEndDate: subtask.endDate,
+          }),
+        })
+      );
+      
+      return Promise.all([...stagePromises, ...subtaskPromises]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
@@ -231,10 +244,11 @@ export default function Gantt() {
     },
   });
 
-  // Revert to baseline mutation
+  // Revert to baseline mutation - reverts stages AND subtasks to baseline
   const revertToBaselineMutation = useMutation({
     mutationFn: async () => {
-      const updates = stages
+      // Revert stages
+      const stageUpdates = stages
         .filter(stage => stage.baselineStartDate && stage.baselineEndDate)
         .map(stage => ({
           id: stage.id,
@@ -242,17 +256,37 @@ export default function Gantt() {
           endDate: stage.baselineEndDate,
         }));
       
-      return Promise.all(
-        updates.map(update =>
-          apiRequest(`/api/projects/${projectId}/gantt/stages/${update.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              startDate: update.startDate,
-              endDate: update.endDate,
-            }),
-          })
-        )
+      const stagePromises = stageUpdates.map(update =>
+        apiRequest(`/api/projects/${projectId}/gantt/stages/${update.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            startDate: update.startDate,
+            endDate: update.endDate,
+          }),
+        })
       );
+
+      // Revert all subtasks
+      const allSubtasks = Object.values(subtasksByStage).flat();
+      const subtaskUpdates = allSubtasks
+        .filter(subtask => subtask.baselineStartDate && subtask.baselineEndDate)
+        .map(subtask => ({
+          id: subtask.id,
+          startDate: subtask.baselineStartDate,
+          endDate: subtask.baselineEndDate,
+        }));
+
+      const subtaskPromises = subtaskUpdates.map(update =>
+        apiRequest(`/api/projects/${projectId}/gantt/subtasks/${update.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            startDate: update.startDate,
+            endDate: update.endDate,
+          }),
+        })
+      );
+      
+      return Promise.all([...stagePromises, ...subtaskPromises]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
@@ -541,14 +575,16 @@ export default function Gantt() {
                   variant="outline" 
                   size="sm" 
                   onClick={() => saveBaselineMutation.mutate()}
-                  disabled={saveBaselineMutation.isPending}
+                  disabled={saveBaselineMutation.isPending || subtaskQueries.isLoading || subtaskQueries.isFetching || !subtaskQueries.data}
                   data-testid="button-save-baseline"
                 >
                   <FileDown className="w-4 h-4 mr-2" />
                   Save Baseline
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Save current dates as baseline for comparison</TooltipContent>
+              <TooltipContent>
+                {(subtaskQueries.isLoading || subtaskQueries.isFetching) ? "Loading subtasks..." : "Save current dates as baseline for comparison"}
+              </TooltipContent>
             </Tooltip>
 
             {stages.some(s => s.baselineStartDate) && (
@@ -573,13 +609,15 @@ export default function Gantt() {
                       variant="outline" 
                       size="sm" 
                       onClick={() => revertToBaselineMutation.mutate()}
-                      disabled={revertToBaselineMutation.isPending}
+                      disabled={revertToBaselineMutation.isPending || subtaskQueries.isLoading || subtaskQueries.isFetching || !subtaskQueries.data}
                       data-testid="button-revert-baseline"
                     >
                       Revert to Baseline
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Revert all dates to baseline schedule</TooltipContent>
+                  <TooltipContent>
+                    {(subtaskQueries.isLoading || subtaskQueries.isFetching) ? "Loading subtasks..." : "Revert all dates to baseline schedule"}
+                  </TooltipContent>
                 </Tooltip>
               </>
             )}
