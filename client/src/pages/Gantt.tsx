@@ -103,7 +103,8 @@ export default function Gantt() {
     if (zoomLevel === 'day') {
       return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => ({
         date: day,
-        label: format(day, 'EEE d'),
+        dateLabel: format(day, 'd'),
+        dayLabel: format(day, 'EEE'),
         width: 40,
       }));
     } else if (zoomLevel === 'week') {
@@ -114,7 +115,8 @@ export default function Gantt() {
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
         return {
           date: week,
-          label: format(week, 'EEE MMM d'),
+          dateLabel: format(week, 'MMM d'),
+          dayLabel: format(week, 'EEE'),
           width: daysInSegment * 20,
         };
       });
@@ -126,7 +128,8 @@ export default function Gantt() {
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
         return {
           date: week,
-          label: format(week, 'MMM d'),
+          dateLabel: format(week, 'MMM d'),
+          dayLabel: '',
           width: daysInSegment * 10,
         };
       });
@@ -415,10 +418,11 @@ export default function Gantt() {
                 return (
                   <div
                     key={idx}
-                    className={`border-r text-xs text-center py-3 ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
+                    className={`border-r text-xs text-center py-2 flex flex-col justify-center ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
                     style={{ width: `${header.width}px` }}
                   >
-                    {header.label}
+                    <div>{header.dateLabel}</div>
+                    {header.dayLabel && <div className="text-[10px] text-muted-foreground">{header.dayLabel}</div>}
                   </div>
                 );
               })}
