@@ -70,10 +70,7 @@ export default function Gantt() {
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
     mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
-      return apiRequest(`/api/schedule-items/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ startDate, endDate }),
-      });
+      return apiRequest(`/api/schedule-items/${id}`, "PATCH", { startDate, endDate });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
@@ -106,7 +103,7 @@ export default function Gantt() {
     if (zoomLevel === 'day') {
       return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => ({
         date: day,
-        label: format(day, 'd'),
+        label: format(day, 'EEE d'),
         width: 40,
       }));
     } else if (zoomLevel === 'week') {
@@ -117,7 +114,7 @@ export default function Gantt() {
         const daysInSegment = differenceInDays(segmentEnd, week) + 1;
         return {
           date: week,
-          label: format(week, 'MMM d'),
+          label: format(week, 'EEE MMM d'),
           width: daysInSegment * 20,
         };
       });
@@ -149,6 +146,33 @@ export default function Gantt() {
   const getPosition = (date: Date) => {
     const days = differenceInDays(date, timelineStart);
     return days * pixelsPerDay;
+  };
+
+  // Calculate effective dates for parent items (span across all children)
+  const getEffectiveDates = (parentItem: ScheduleItem) => {
+    const children = childItemsByParent[parentItem.id] || [];
+    
+    if (children.length === 0) {
+      // No children, use parent's own dates
+      return {
+        startDate: new Date(parentItem.startDate),
+        endDate: new Date(parentItem.endDate),
+      };
+    }
+    
+    // Get earliest start and latest end from children
+    const childDates = children.flatMap(child => [
+      new Date(child.startDate),
+      new Date(child.endDate)
+    ]);
+    
+    const minStart = new Date(Math.min(...childDates.map(d => d.getTime())));
+    const maxEnd = new Date(Math.max(...childDates.map(d => d.getTime())));
+    
+    return {
+      startDate: minStart,
+      endDate: maxEnd,
+    };
   };
 
   // Get bar color based on status or custom color
@@ -399,8 +423,11 @@ export default function Gantt() {
               {parentItems.map((parentItem) => {
                 const isCollapsed = collapsedItems.has(parentItem.id);
                 const childItems = childItemsByParent[parentItem.id] || [];
-                const parentStart = getPosition(new Date(parentItem.startDate));
-                const parentDuration = differenceInDays(new Date(parentItem.endDate), new Date(parentItem.startDate)) + 1;
+                
+                // Calculate effective dates (span across children if they exist)
+                const effectiveDates = getEffectiveDates(parentItem);
+                const parentStart = getPosition(effectiveDates.startDate);
+                const parentDuration = differenceInDays(effectiveDates.endDate, effectiveDates.startDate) + 1;
                 const parentWidth = parentDuration * pixelsPerDay;
                 const barColor = getBarColor(parentItem);
                 const isOverdue = new Date(parentItem.endDate) < new Date() && parentItem.status !== 'completed';
@@ -422,7 +449,7 @@ export default function Gantt() {
                         data-testid={`bar-parent-${parentItem.id}`}
                       >
                         <span className="text-xs font-medium text-white truncate">
-                          {format(new Date(parentItem.startDate), 'MMM d')} - {format(new Date(parentItem.endDate), 'MMM d')}
+                          {format(effectiveDates.startDate, 'MMM d')} - {format(effectiveDates.endDate, 'MMM d')}
                         </span>
                       </div>
                     </div>
