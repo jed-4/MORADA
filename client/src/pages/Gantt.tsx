@@ -24,7 +24,7 @@ export default function Gantt() {
   const { projectId } = useParams();
   const { toast } = useToast();
   const timelineRef = useRef<HTMLDivElement>(null);
-  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
+  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('day');
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState<{
     id: string;
@@ -550,6 +550,10 @@ export default function Gantt() {
                 const barColor = getBarColor(parentItem);
                 const isOverdue = new Date(parentItem.endDate) < new Date() && parentItem.status !== 'completed';
 
+                // Check if name fits in bar (approximate: 7px per character + 16px padding)
+                const approximateTextWidth = parentItem.name.length * 7 + 16;
+                const nameFitsInBar = approximateTextWidth <= parentWidth;
+
                 return (
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
@@ -566,10 +570,22 @@ export default function Gantt() {
                         onMouseDown={(e) => handleBarMouseDown(e, parentItem)}
                         data-testid={`bar-parent-${parentItem.id}`}
                       >
-                        <span className="text-xs font-medium text-white truncate">
-                          {parentItem.name}
-                        </span>
+                        {nameFitsInBar && (
+                          <span className="text-xs font-medium text-white truncate">
+                            {parentItem.name}
+                          </span>
+                        )}
                       </div>
+                      {!nameFitsInBar && (
+                        <div
+                          className="absolute top-2 h-6 flex items-center pl-2 z-20"
+                          style={{ left: `${parentStart + parentWidth + 4}px` }}
+                        >
+                          <span className="text-xs font-medium whitespace-nowrap">
+                            {parentItem.name}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Child item bar rows */}
@@ -579,6 +595,10 @@ export default function Gantt() {
                       const childWidth = childDuration * pixelsPerDay;
                       const childColor = getBarColor(childItem);
                       const rowIdx = parentIdx * 1000 + childIdx + 1;
+
+                      // Check if child name fits in bar
+                      const childTextWidth = childItem.name.length * 7 + 16;
+                      const childNameFits = childTextWidth <= childWidth;
 
                       return (
                         <div key={childItem.id} className={`h-10 border-b relative group ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
@@ -594,10 +614,22 @@ export default function Gantt() {
                             onMouseDown={(e) => handleBarMouseDown(e, childItem)}
                             data-testid={`bar-child-${childItem.id}`}
                           >
-                            <span className="text-xs font-medium text-white truncate">
-                              {childItem.name}
-                            </span>
+                            {childNameFits && (
+                              <span className="text-xs font-medium text-white truncate">
+                                {childItem.name}
+                              </span>
+                            )}
                           </div>
+                          {!childNameFits && (
+                            <div
+                              className="absolute top-2 h-6 flex items-center pl-2 z-20"
+                              style={{ left: `${childStart + childWidth + 4}px` }}
+                            >
+                              <span className="text-xs font-medium whitespace-nowrap">
+                                {childItem.name}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
