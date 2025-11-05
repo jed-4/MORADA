@@ -3,9 +3,16 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User } from "lucide-react";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval } from "date-fns";
 import { useState, useRef, useMemo } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { GanttStage, GanttSubtask } from "@shared/schema";
 
@@ -25,6 +32,10 @@ export default function Gantt() {
     duration: number;
   } | null>(null);
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
+  const [selectedTask, setSelectedTask] = useState<{
+    type: 'stage' | 'subtask';
+    data: GanttStage | GanttSubtask;
+  } | null>(null);
 
   // Fetch stages
   const { data: stages = [], isLoading } = useQuery<GanttStage[]>({
@@ -136,6 +147,22 @@ export default function Gantt() {
     return '#bba7db'; // default lilac
   };
 
+  // Bar click handler - open modal or start drag
+  const handleBarClick = (
+    e: React.MouseEvent,
+    type: 'stage' | 'subtask',
+    data: GanttStage | GanttSubtask
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setSelectedTask({ type, data });
+
+    // Ripple effect
+    setRipple({ x: e.clientX, y: e.clientY });
+    setTimeout(() => setRipple(null), 600);
+  };
+
   // Drag handlers
   const handleBarMouseDown = (
     e: React.MouseEvent,
@@ -147,6 +174,9 @@ export default function Gantt() {
     e.preventDefault();
     e.stopPropagation();
     
+    // Only start dragging if holding shift key (otherwise click opens modal)
+    if (!e.shiftKey) return;
+    
     setDragging({
       type,
       id,
@@ -154,10 +184,6 @@ export default function Gantt() {
       originalStart: startDate,
       duration: differenceInDays(endDate, startDate),
     });
-
-    // Ripple effect
-    setRipple({ x: e.clientX, y: e.clientY });
-    setTimeout(() => setRipple(null), 600);
   };
 
   const handleMouseMove = (e: MouseEvent) => {
@@ -295,6 +321,20 @@ export default function Gantt() {
                       )}
                     </button>
                     <span className="font-medium text-sm truncate flex-1">{stage.name}</span>
+                    <div className="flex items-center gap-1 ml-2">
+                      {stage.status && (
+                        <Badge variant="secondary" className="text-xs px-1.5 h-5">
+                          {stage.status}
+                        </Badge>
+                      )}
+                      {stage.supplierName && (
+                        <Avatar className="w-5 h-5">
+                          <AvatarFallback className="text-[10px]">
+                            {stage.supplierName.substring(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                    </div>
                   </div>
 
                   {/* Subtask rows */}
@@ -304,7 +344,21 @@ export default function Gantt() {
                       className="h-10 flex items-center pl-10 pr-2 border-b hover-elevate active-elevate-2 cursor-pointer"
                       data-testid={`row-subtask-${subtask.id}`}
                     >
-                      <span className="text-sm text-muted-foreground truncate">{subtask.name}</span>
+                      <span className="text-sm text-muted-foreground truncate flex-1">{subtask.name}</span>
+                      <div className="flex items-center gap-1 ml-2">
+                        {subtask.status && (
+                          <Badge variant="outline" className="text-xs px-1.5 h-5">
+                            {subtask.status}
+                          </Badge>
+                        )}
+                        {subtask.supplierName && (
+                          <Avatar className="w-5 h-5">
+                            <AvatarFallback className="text-[10px]">
+                              {subtask.supplierName.substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -348,13 +402,14 @@ export default function Gantt() {
                     {/* Stage bar row */}
                     <div className="h-10 border-b relative group">
                       <div
-                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-move shadow-sm hover:shadow-md transition-shadow"
+                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-md transition-shadow"
                         style={{
                           left: `${stageStart}px`,
                           width: `${stageWidth}px`,
                           backgroundColor: barColor,
                           border: stage.isDelayed ? '2px dashed #dc2626' : 'none',
                         }}
+                        onClick={(e) => handleBarClick(e, 'stage', stage)}
                         onMouseDown={(e) => handleBarMouseDown(e, 'stage', stage.id, new Date(stage.startDate), new Date(stage.endDate))}
                         data-testid={`bar-stage-${stage.id}`}
                       >
@@ -374,13 +429,14 @@ export default function Gantt() {
                       return (
                         <div key={subtask.id} className="h-10 border-b relative group">
                           <div
-                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-move shadow-sm hover:shadow-md transition-shadow"
+                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-md transition-shadow"
                             style={{
                               left: `${subtaskStart}px`,
                               width: `${subtaskWidth}px`,
                               backgroundColor: subtaskColor,
                               border: '2px dotted rgba(255, 255, 255, 0.6)',
                             }}
+                            onClick={(e) => handleBarClick(e, 'subtask', subtask)}
                             onMouseDown={(e) => handleBarMouseDown(e, 'subtask', subtask.id, new Date(subtask.startDate), new Date(subtask.endDate))}
                             data-testid={`bar-subtask-${subtask.id}`}
                           >
@@ -415,6 +471,75 @@ export default function Gantt() {
           }}
         />
       )}
+
+      {/* Task Detail Modal */}
+      <Dialog open={!!selectedTask} onOpenChange={() => setSelectedTask(null)}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-task-detail">
+          <DialogHeader>
+            <DialogTitle className="text-xl" style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>
+              {selectedTask?.data.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {selectedTask?.data.description && (
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">Description</h3>
+                <p className="text-sm">{selectedTask.data.description}</p>
+              </div>
+            )}
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">Start Date</h3>
+                <p className="text-sm font-medium">
+                  {selectedTask && format(new Date(selectedTask.data.startDate), 'MMM d, yyyy')}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">End Date</h3>
+                <p className="text-sm font-medium">
+                  {selectedTask && format(new Date(selectedTask.data.endDate), 'MMM d, yyyy')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">Status</h3>
+                <Badge variant="secondary" className="mt-1">
+                  {selectedTask?.data.status || 'Not set'}
+                </Badge>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">Assignee</h3>
+                {selectedTask?.data.supplierName ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Avatar className="w-6 h-6">
+                      <AvatarFallback className="text-xs">
+                        {selectedTask.data.supplierName.substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm">{selectedTask.data.supplierName}</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground mt-1">Not assigned</p>
+                )}
+              </div>
+            </div>
+
+            {selectedTask?.data.isDelayed && (
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                <p className="text-sm font-medium text-destructive">⚠️ This task is delayed</p>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-2 text-xs text-muted-foreground">
+              <span>Type: {selectedTask?.type === 'stage' ? 'Stage' : 'Subtask'}</span>
+              <span>Drag with Shift key to reschedule</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
