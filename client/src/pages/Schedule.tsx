@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
+import Gantt from "./Gantt";
 
 interface ScheduleParams {
   projectId: string;
@@ -68,7 +69,7 @@ export default function Schedule() {
   const params = useParams<ScheduleParams>();
   const projectId = params.projectId || currentProject?.id;
 
-  const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("list");
+  const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("gantt");
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -644,10 +645,6 @@ export default function Schedule() {
         {/* View Tabs */}
         <Tabs value={activeView} onValueChange={(v) => setActiveView(v as typeof activeView)} className="px-4">
           <TabsList>
-            <TabsTrigger value="list" data-testid="tab-list">
-              <List className="w-4 h-4 mr-2" />
-              List
-            </TabsTrigger>
             <TabsTrigger value="gantt" data-testid="tab-gantt">
               <GanttChart className="w-4 h-4 mr-2" />
               Gantt
@@ -655,6 +652,10 @@ export default function Schedule() {
             <TabsTrigger value="calendar" data-testid="tab-calendar">
               <CalendarIcon className="w-4 h-4 mr-2" />
               Calendar
+            </TabsTrigger>
+            <TabsTrigger value="list" data-testid="tab-list">
+              <List className="w-4 h-4 mr-2" />
+              List
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -690,95 +691,8 @@ export default function Schedule() {
             )}
           </TabsContent>
 
-          <TabsContent value="gantt" className="h-full m-0 p-4">
-            <div className="space-y-4">
-              {filteredItems.length === 0 ? (
-                <Card className="p-12 text-center">
-                  <CardTitle className="mb-2">No Schedule Items</CardTitle>
-                  <p className="text-muted-foreground">
-                    Add schedule items to see them in the Gantt view.
-                  </p>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {filteredItems
-                    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-                    .map((item) => {
-                      const startDate = new Date(item.startDate);
-                      const endDate = new Date(item.endDate);
-                      
-                      // Use memoized timeline boundaries
-                      const { timelineStart, totalDays } = ganttTimeline;
-                      
-                      const daysSinceStart = Math.ceil((startDate.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24));
-                      const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                      
-                      const leftPercent = (daysSinceStart / totalDays) * 100;
-                      const widthPercent = (duration / totalDays) * 100;
-                      
-                      // Color by type
-                      let barColor = "bg-blue-500";
-                      if (item.type === "inspection") barColor = "bg-red-500";
-                      else if (item.type === "milestone") barColor = "bg-purple-500";
-                      else if (item.type === "delivery") barColor = "bg-yellow-500";
-                      else if (item.type === "meeting") barColor = "bg-green-500";
-                      
-                      if (item.status === "completed") barColor = "bg-gray-400";
-                      else if (item.status === "on_hold") barColor = "bg-gray-500";
-
-                      return (
-                        <Card 
-                          key={item.id} 
-                          className="p-4 hover-elevate cursor-pointer"
-                          onClick={() => {
-                            if (schedule?.status !== "locked") {
-                              setEditingItem(item);
-                              setShowItemDialog(true);
-                            }
-                          }}
-                          data-testid={`gantt-item-${item.id}`}
-                        >
-                          <div className="flex items-start gap-4">
-                            <div className="flex-shrink-0 w-48">
-                              <div className="font-medium text-sm mb-1">{item.name}</div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Badge variant="outline" className="text-xs">
-                                  {item.type}
-                                </Badge>
-                                <span>{item.status.replace("_", " ")}</span>
-                              </div>
-                              {item.assignedToName && (
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {item.assignedToName}
-                                </div>
-                              )}
-                            </div>
-                            
-                            <div className="flex-1 py-2">
-                              <div className="relative h-6 bg-muted rounded">
-                                <div
-                                  className={`absolute h-full ${barColor} rounded flex items-center justify-center text-xs text-white font-medium`}
-                                  style={{
-                                    left: `${leftPercent}%`,
-                                    width: `${widthPercent}%`,
-                                  }}
-                                >
-                                  {item.progressPercent > 0 && (
-                                    <div className="absolute inset-0 bg-green-600 rounded" style={{ width: `${item.progressPercent}%` }} />
-                                  )}
-                                  <span className="relative z-10 px-2 truncate">
-                                    {startDate.toLocaleDateString()} - {endDate.toLocaleDateString()}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </Card>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
+          <TabsContent value="gantt" className="h-full m-0">
+            <Gantt />
           </TabsContent>
 
           <TabsContent value="calendar" className="h-full m-0">
