@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
+import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import type { ScheduleItem } from "@shared/schema";
 
 type ZoomLevel = 'day' | 'week' | 'month';
@@ -56,6 +57,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   });
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
+  const colorPickerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch schedule items for this project
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
@@ -365,6 +368,45 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     }
   };
 
+  const handleColorChange = async (item: ScheduleItem, color: string | null) => {
+    try {
+      await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { color });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Color updated", description: "Schedule item color has been changed." });
+    } catch (error) {
+      toast({ title: "Failed to update color", description: "Could not update item color.", variant: "destructive" });
+    }
+  };
+
+  const handleColorPickerMouseEnter = (itemId: string) => {
+    if (colorPickerTimeoutRef.current) {
+      clearTimeout(colorPickerTimeoutRef.current);
+      colorPickerTimeoutRef.current = null;
+    }
+    setColorPickerOpen(itemId);
+  };
+
+  const handleColorPickerMouseLeave = () => {
+    if (colorPickerTimeoutRef.current) {
+      clearTimeout(colorPickerTimeoutRef.current);
+      colorPickerTimeoutRef.current = null;
+    }
+    colorPickerTimeoutRef.current = setTimeout(() => {
+      setColorPickerOpen(null);
+      colorPickerTimeoutRef.current = null;
+    }, 200);
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (colorPickerTimeoutRef.current) {
+        clearTimeout(colorPickerTimeoutRef.current);
+        colorPickerTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   // Today line
   const todayPosition = getPosition(new Date());
 
@@ -570,6 +612,34 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             <Check className="mr-2 h-4 w-4" />
                             {parentItem.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            asChild
+                            onSelect={(e) => e.preventDefault()}
+                            data-testid="menu-colour"
+                            onMouseEnter={() => handleColorPickerMouseEnter(parentItem.id)}
+                            onMouseLeave={handleColorPickerMouseLeave}
+                          >
+                            <div className="flex items-center cursor-pointer">
+                              <Palette className="mr-2 h-4 w-4" />
+                              <span className="flex-1">Colour</span>
+                              <ScheduleColorPicker
+                                currentColor={parentItem.color}
+                                assigneeId={parentItem.assignedToId}
+                                assigneeName={parentItem.assignedToName}
+                                onColorChange={(color) => {
+                                  handleColorChange(parentItem, color);
+                                  setColorPickerOpen(null);
+                                }}
+                                align="end"
+                                open={colorPickerOpen === parentItem.id}
+                                onMouseEnter={() => handleColorPickerMouseEnter(parentItem.id)}
+                                onMouseLeave={handleColorPickerMouseLeave}
+                                triggerButton={
+                                  <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: parentItem.color || '#9ca3af' }} />
+                                }
+                              />
+                            </div>
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => handleDeleteItem(parentItem)} className="text-destructive" data-testid="menu-delete">
                             <Trash2 className="mr-2 h-4 w-4" />
@@ -645,6 +715,34 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               <DropdownMenuItem onClick={() => handleToggleComplete(childItem)} data-testid="menu-complete">
                                 <Check className="mr-2 h-4 w-4" />
                                 {childItem.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                asChild
+                                onSelect={(e) => e.preventDefault()}
+                                data-testid="menu-colour"
+                                onMouseEnter={() => handleColorPickerMouseEnter(childItem.id)}
+                                onMouseLeave={handleColorPickerMouseLeave}
+                              >
+                                <div className="flex items-center cursor-pointer">
+                                  <Palette className="mr-2 h-4 w-4" />
+                                  <span className="flex-1">Colour</span>
+                                  <ScheduleColorPicker
+                                    currentColor={childItem.color}
+                                    assigneeId={childItem.assignedToId}
+                                    assigneeName={childItem.assignedToName}
+                                    onColorChange={(color) => {
+                                      handleColorChange(childItem, color);
+                                      setColorPickerOpen(null);
+                                    }}
+                                    align="end"
+                                    open={colorPickerOpen === childItem.id}
+                                    onMouseEnter={() => handleColorPickerMouseEnter(childItem.id)}
+                                    onMouseLeave={handleColorPickerMouseLeave}
+                                    triggerButton={
+                                      <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: childItem.color || '#9ca3af' }} />
+                                    }
+                                  />
+                                </div>
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => handleDeleteItem(childItem)} className="text-destructive" data-testid="menu-delete">

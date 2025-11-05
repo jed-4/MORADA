@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +48,9 @@ interface ScheduleColorPickerProps {
   onColorChange: (color: string | null) => void;
   triggerButton?: React.ReactNode;
   align?: "start" | "end" | "center";
+  open?: boolean;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
 export function ScheduleColorPicker({
@@ -58,18 +60,19 @@ export function ScheduleColorPicker({
   onColorChange,
   triggerButton,
   align = "end",
+  open,
+  onMouseEnter,
+  onMouseLeave,
 }: ScheduleColorPickerProps) {
-  const [open, setOpen] = useState(false);
 
   const assigneeColor = assigneeId ? generateColorFromString(assigneeId) : null;
 
   const handleColorSelect = (color: string | null) => {
     onColorChange(color);
-    setOpen(false);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open}>
       <PopoverTrigger asChild>
         {triggerButton || (
           <Button size="icon" variant="ghost" className="h-6 w-6" data-testid="button-color-picker">
@@ -77,7 +80,13 @@ export function ScheduleColorPicker({
           </Button>
         )}
       </PopoverTrigger>
-      <PopoverContent align={align} className="w-64 p-3" data-testid="popover-color-picker">
+      <PopoverContent 
+        align={align} 
+        className="w-64 p-3" 
+        data-testid="popover-color-picker"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
         <div className="space-y-3">
           {/* Assignee Color Option */}
           {assigneeColor && (
