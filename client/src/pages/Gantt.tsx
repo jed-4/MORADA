@@ -4,9 +4,9 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ChevronRight, ChevronDown, MoreVertical } from "lucide-react";
+import { Plus, ChevronRight, ChevronDown, MoreVertical, FileDown, FileText, Download } from "lucide-react";
 import { format, differenceInDays, addDays, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,11 +20,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { GanttStage, GanttSubtask } from "@shared/schema";
+import { exportGanttToPDF } from "@/components/GanttPDFExport";
 
 export default function Gantt() {
   const { projectId } = useParams();
@@ -33,6 +40,13 @@ export default function Gantt() {
   const [addSubtaskOpen, setAddSubtaskOpen] = useState(false);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
+  const [draggingItem, setDraggingItem] = useState<{type: 'stage' | 'subtask', id: string, originalStartDate: Date} | null>(null);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   // Fetch stages
   const { data: stages = [], isLoading } = useQuery<GanttStage[]>({
@@ -42,11 +56,11 @@ export default function Gantt() {
   // Fetch all subtasks for all stages
   const stageIds = stages.map(s => s.id);
   const subtaskQueries = useQuery({
-    queryKey: [`/api/gantt/subtasks`, stageIds],
+    queryKey: [`/api/projects/${projectId}/gantt/subtasks`, stageIds],
     queryFn: async () => {
       const subtasksByStage: Record<string, GanttSubtask[]> = {};
       for (const stageId of stageIds) {
-        const response = await fetch(`/api/gantt/stages/${stageId}/subtasks`);
+        const response = await fetch(`/api/projects/${projectId}/gantt/stages/${stageId}/subtasks`);
         if (response.ok) {
           subtasksByStage[stageId] = await response.json();
         } else {
@@ -78,23 +92,52 @@ export default function Gantt() {
   // Create subtask mutation
   const createSubtaskMutation = useMutation({
     mutationFn: async (data: { stageId: string; name: string; description?: string; startDate: Date; endDate: Date }) => {
-      return apiRequest(`/api/gantt/stages/${data.stageId}/subtasks`, {
+      return apiRequest(`/api/projects/${projectId}/gantt/stages/${data.stageId}/subtasks`, {
         method: "POST",
         body: JSON.stringify(data),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/gantt/subtasks`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
       setAddSubtaskOpen(false);
       toast({ title: "Subtask created successfully" });
     },
   });
 
+  // Update stage dates mutation
+  const updateStageDatesMutation = useMutation({
+    mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
+      return apiRequest(`/api/projects/${projectId}/gantt/stages/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ startDate, endDate }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
+      toast({ title: "Stage dates updated" });
+    },
+  });
+
+  // Update subtask dates mutation
+  const updateSubtaskDatesMutation = useMutation({
+    mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
+      return apiRequest(`/api/projects/${projectId}/gantt/subtasks/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ startDate, endDate }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
+      toast({ title: "Subtask dates updated" });
+    },
+  });
+
   // Delete stage mutation
   const deleteStageMutation = useMutation({
     mutationFn: async (stageId: string) => {
-      return apiRequest(`/api/gantt/stages/${stageId}`, { method: "DELETE" });
+      return apiRequest(`/api/projects/${projectId}/gantt/stages/${stageId}`, { method: "DELETE" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
@@ -105,10 +148,10 @@ export default function Gantt() {
   // Delete subtask mutation
   const deleteSubtaskMutation = useMutation({
     mutationFn: async (subtaskId: string) => {
-      return apiRequest(`/api/gantt/subtasks/${subtaskId}`, { method: "DELETE" });
+      return apiRequest(`/api/projects/${projectId}/gantt/subtasks/${subtaskId}`, { method: "DELETE" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/gantt/subtasks`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
       toast({ title: "Subtask deleted successfully" });
     },
@@ -117,7 +160,7 @@ export default function Gantt() {
   // Toggle collapse mutation
   const toggleCollapseMutation = useMutation({
     mutationFn: async (stageId: string) => {
-      return apiRequest(`/api/gantt/stages/${stageId}/toggle-collapse`, {
+      return apiRequest(`/api/projects/${projectId}/gantt/stages/${stageId}/toggle-collapse`, {
         method: "POST",
       });
     },
@@ -149,6 +192,11 @@ export default function Gantt() {
   const timelineDays = eachDayOfInterval({ start: timelineStart, end: timelineEnd });
   const totalDays = timelineDays.length;
 
+  // Today line position
+  const today = new Date();
+  const todayOffset = differenceInDays(today, timelineStart);
+  const todayPercent = (todayOffset / totalDays) * 100;
+
   // Calculate bar position and width
   const getBarStyle = (startDate: Date, endDate: Date) => {
     const daysFromStart = differenceInDays(new Date(startDate), timelineStart);
@@ -161,33 +209,211 @@ export default function Gantt() {
     };
   };
 
+  // Critical path calculation (simplified - marks stages on longest path)
+  const calculateCriticalPath = () => {
+    // Simple heuristic: stages with longest duration and dependencies
+    const criticalStages = new Set<string>();
+    stages.forEach(stage => {
+      const duration = differenceInDays(new Date(stage.endDate), new Date(stage.startDate));
+      if (duration > 14) { // Stages longer than 2 weeks are considered critical
+        criticalStages.add(stage.id);
+      }
+    });
+    return criticalStages;
+  };
+
+  const criticalPath = calculateCriticalPath();
+
+  // Drag and drop handlers with global event listeners
+  const handleBarMouseDown = (e: React.MouseEvent, type: 'stage' | 'subtask', id: string, startDate: Date) => {
+    e.stopPropagation();
+    if (!timelineRef.current) return;
+    
+    setDraggingItem({ type, id, originalStartDate: startDate });
+    setDragStartX(e.clientX);
+
+    // Add ripple effect
+    const rippleId = Math.random().toString();
+    setRipples(prev => [...prev, { id: rippleId, x: e.clientX, y: e.clientY }]);
+    setTimeout(() => {
+      setRipples(prev => prev.filter(r => r.id !== rippleId));
+    }, 600);
+  };
+
+  // Global mouse move handler
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!draggingItem || !timelineRef.current) return;
+      // Visual feedback could be added here (e.g., cursor style)
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (!draggingItem || !timelineRef.current) return;
+
+      const timelineRect = timelineRef.current.getBoundingClientRect();
+      const dragDeltaX = e.clientX - dragStartX;
+      const dragDeltaDays = Math.round((dragDeltaX / timelineRect.width) * totalDays);
+      
+      // Calculate new start date by adding delta to original start date
+      const newStartDate = addDays(draggingItem.originalStartDate, dragDeltaDays);
+
+      if (draggingItem.type === 'stage') {
+        const stage = stages.find(s => s.id === draggingItem.id);
+        if (stage) {
+          const duration = differenceInDays(new Date(stage.endDate), new Date(stage.startDate));
+          
+          // Clamp to timeline bounds accounting for duration
+          const maxStartDate = addDays(timelineEnd, -duration);
+          const clampedStartDate = newStartDate < timelineStart ? timelineStart : 
+                                  newStartDate > maxStartDate ? maxStartDate : newStartDate;
+          
+          const newEndDate = addDays(clampedStartDate, duration);
+          updateStageDatesMutation.mutate({
+            id: draggingItem.id,
+            startDate: clampedStartDate,
+            endDate: newEndDate,
+          });
+        }
+      } else {
+        const stageId = Object.keys(subtasksByStage).find(sid => 
+          subtasksByStage[sid].some(st => st.id === draggingItem.id)
+        );
+        if (stageId) {
+          const subtask = subtasksByStage[stageId].find(st => st.id === draggingItem.id);
+          if (subtask) {
+            const duration = differenceInDays(new Date(subtask.endDate), new Date(subtask.startDate));
+            
+            // Clamp to timeline bounds accounting for duration
+            const maxStartDate = addDays(timelineEnd, -duration);
+            const clampedStartDate = newStartDate < timelineStart ? timelineStart : 
+                                    newStartDate > maxStartDate ? maxStartDate : newStartDate;
+            
+            const newEndDate = addDays(clampedStartDate, duration);
+            updateSubtaskDatesMutation.mutate({
+              id: draggingItem.id,
+              startDate: clampedStartDate,
+              endDate: newEndDate,
+            });
+          }
+        }
+      }
+
+      setDraggingItem(null);
+    };
+
+    if (draggingItem) {
+      window.addEventListener('mousemove', handleGlobalMouseMove);
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+      
+      return () => {
+        window.removeEventListener('mousemove', handleGlobalMouseMove);
+        window.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    }
+  }, [draggingItem, dragStartX, totalDays, timelineStart, timelineEnd, stages, subtasksByStage, updateStageDatesMutation, updateSubtaskDatesMutation]);
+
+  // Mobile swipe handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+    if (scrollContainerRef.current) {
+      setScrollOffset(scrollContainerRef.current.scrollLeft);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX === null || !scrollContainerRef.current) return;
+    const touchX = e.touches[0].clientX;
+    const diff = touchStartX - touchX;
+    scrollContainerRef.current.scrollLeft = scrollOffset + diff;
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStartX(null);
+  };
+
+  // PDF Export
+  const handleExportPDF = async () => {
+    try {
+      toast({ title: "Generating PDF...", description: "Your Gantt chart is being exported." });
+      await exportGanttToPDF(stages, subtasksByStage, "Project Timeline");
+      toast({ title: "PDF exported successfully!", description: "Your Gantt chart has been downloaded." });
+    } catch (error) {
+      toast({ 
+        title: "Export failed", 
+        description: "There was an error exporting the PDF.", 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  // Template Save/Load
+  const handleSaveTemplate = () => {
+    toast({ title: "Saving template...", description: "This feature will be available soon." });
+    // TODO: Implement template save
+  };
+
   if (isLoading) {
     return <div className="p-6">Loading Gantt chart...</div>;
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Top Bar */}
+      {/* Top Bar with Actions */}
       <div className="flex items-center justify-between p-4 border-b">
         <h1 className="text-2xl font-semibold" style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>Gantt Chart</h1>
-        <Dialog open={addStageOpen} onOpenChange={setAddStageOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-stage">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Stage
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Stage</DialogTitle>
-            </DialogHeader>
-            <AddStageForm onSubmit={(data) => createStageMutation.mutate(data)} />
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" onClick={handleSaveTemplate} data-testid="button-save-template">
+                  <FileText className="w-4 h-4 mr-2" />
+                  Template
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Save current timeline as template</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" onClick={handleExportPDF} data-testid="button-export-pdf">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Export Gantt chart to PDF</TooltipContent>
+            </Tooltip>
+
+            <Dialog open={addStageOpen} onOpenChange={setAddStageOpen}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-add-stage">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Stage
+                    </Button>
+                  </DialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Add a new stage to the timeline</TooltipContent>
+              </Tooltip>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Stage</DialogTitle>
+                </DialogHeader>
+                <AddStageForm onSubmit={(data) => createStageMutation.mutate(data)} />
+              </DialogContent>
+            </Dialog>
+          </TooltipProvider>
+        </div>
       </div>
 
       {/* Gantt Chart */}
-      <div className="flex-1 overflow-auto p-6">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-auto p-6"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <Card>
           <CardHeader>
             <CardTitle>Project Timeline</CardTitle>
@@ -196,7 +422,10 @@ export default function Gantt() {
             {/* Timeline Header */}
             <div className="flex border-b mb-4">
               <div className="w-64 flex-shrink-0 font-semibold p-2">Stage / Task</div>
-              <div className="flex-1 relative h-12">
+              <div 
+                ref={timelineRef}
+                className="flex-1 relative h-12"
+              >
                 {timelineDays.map((day, idx) => {
                   const isFirstOfMonth = day.getDate() === 1;
                   return (
@@ -211,6 +440,17 @@ export default function Gantt() {
                     </div>
                   );
                 })}
+                
+                {/* Today Line (Amber) */}
+                {todayOffset >= 0 && todayOffset <= totalDays && (
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-amber-500 z-10"
+                    style={{ left: `${todayPercent}%` }}
+                    data-testid="today-line"
+                  >
+                    <div className="absolute -top-1 -left-2 w-4 h-4 bg-amber-500 rounded-full" />
+                  </div>
+                )}
               </div>
               <div className="w-48 flex-shrink-0 text-center font-semibold p-2">Assigned</div>
             </div>
@@ -222,15 +462,17 @@ export default function Gantt() {
               </div>
             ) : (
               <div className="space-y-0">
-                {stages.map((stage) => {
+                {stages.map((stage, stageIdx) => {
                   const isCollapsed = collapsedStages.has(stage.id);
                   const subtasks = subtasksByStage[stage.id] || [];
+                  const isCritical = criticalPath.has(stage.id);
+                  const nextStage = stages[stageIdx + 1];
 
                   return (
                     <div key={stage.id}>
                       {/* Stage Row */}
                       <div
-                        className="flex items-center h-10 hover-elevate rounded-md"
+                        className="flex items-center h-10 hover-elevate rounded-md transition-all duration-200"
                         style={{
                           backgroundColor: '#f8f4ff',
                         }}
@@ -238,7 +480,7 @@ export default function Gantt() {
                         <div className="w-64 flex-shrink-0 flex items-center gap-2 px-2">
                           <button
                             onClick={() => toggleCollapseMutation.mutate(stage.id)}
-                            className="p-1 hover-elevate rounded"
+                            className="p-1 hover-elevate rounded transition-transform duration-200 hover:scale-110"
                             data-testid={`button-toggle-collapse-${stage.id}`}
                           >
                             {isCollapsed ? (
@@ -252,16 +494,41 @@ export default function Gantt() {
                           </span>
                         </div>
                         <div className="flex-1 relative h-full flex items-center">
-                          {/* Stage Bar */}
+                          {/* Stage Bar - Draggable with hover lift */}
                           <div
-                            className="absolute h-6 rounded flex items-center px-2 text-white text-xs font-medium"
+                            className="absolute h-6 rounded flex items-center px-2 text-white text-xs font-medium cursor-move transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
                             style={{
                               ...getBarStyle(new Date(stage.startDate), new Date(stage.endDate)),
                               backgroundColor: stage.color || '#bba7db',
+                              border: isCritical ? '2px solid #ef4444' : 'none',
                             }}
+                            onMouseDown={(e) => handleBarMouseDown(e, 'stage', stage.id, new Date(stage.startDate))}
+                            data-testid={`stage-bar-${stage.id}`}
                           >
                             {stage.name}
                           </div>
+
+                          {/* Critical Path Line to Next Stage */}
+                          {isCritical && nextStage && criticalPath.has(nextStage.id) && (() => {
+                            const currentBar = getBarStyle(new Date(stage.startDate), new Date(stage.endDate));
+                            const nextBar = getBarStyle(new Date(nextStage.startDate), new Date(nextStage.endDate));
+                            const x1 = parseFloat(currentBar.left || '0') + parseFloat(currentBar.width || '0');
+                            const x2 = parseFloat(nextBar.left || '0');
+                            return (
+                              <svg className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }} viewBox="0 0 100 100" preserveAspectRatio="none">
+                                <line
+                                  x1={x1}
+                                  y1="50"
+                                  x2={x2}
+                                  y2="50"
+                                  stroke="#ef4444"
+                                  strokeWidth="0.5"
+                                  strokeDasharray="2,2"
+                                  vectorEffect="non-scaling-stroke"
+                                />
+                              </svg>
+                            );
+                          })()}
                         </div>
                         <div className="w-48 flex-shrink-0 flex items-center justify-center gap-2 px-2">
                           {stage.foremanName && (
@@ -301,7 +568,10 @@ export default function Gantt() {
                       {!isCollapsed && subtasks.map((subtask) => (
                         <div
                           key={subtask.id}
-                          className="flex items-center h-10 hover-elevate rounded-md ml-8"
+                          className="flex items-center h-10 hover-elevate rounded-md ml-8 transition-all duration-200"
+                          style={{
+                            backgroundColor: '#fafafa',
+                          }}
                         >
                           <div className="w-56 flex-shrink-0 px-2">
                             <span className="text-sm truncate" style={{ fontFamily: 'Manrope, sans-serif' }}>
@@ -309,14 +579,16 @@ export default function Gantt() {
                             </span>
                           </div>
                           <div className="flex-1 relative h-full flex items-center">
-                            {/* Subtask Bar (dotted) */}
+                            {/* Subtask Bar (dotted) - Draggable with hover lift */}
                             <div
-                              className="absolute h-4 rounded flex items-center px-2 text-xs"
+                              className="absolute h-4 rounded flex items-center px-2 text-xs cursor-move transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
                               style={{
                                 ...getBarStyle(new Date(subtask.startDate), new Date(subtask.endDate)),
                                 backgroundColor: '#e5dff5',
                                 border: '2px dotted #bba7db',
                               }}
+                              onMouseDown={(e) => handleBarMouseDown(e, 'subtask', subtask.id, new Date(subtask.startDate))}
+                              data-testid={`subtask-bar-${subtask.id}`}
                             >
                               {subtask.name}
                             </div>
@@ -363,6 +635,38 @@ export default function Gantt() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Ripple Effects */}
+      {ripples.map((ripple) => (
+        <div
+          key={ripple.id}
+          className="fixed pointer-events-none animate-ripple rounded-full"
+          style={{
+            left: ripple.x - 20,
+            top: ripple.y - 20,
+            width: 40,
+            height: 40,
+            backgroundColor: '#bba7db',
+            opacity: 0.6,
+          }}
+        />
+      ))}
+
+      <style>{`
+        @keyframes ripple {
+          0% {
+            transform: scale(0);
+            opacity: 0.6;
+          }
+          100% {
+            transform: scale(4);
+            opacity: 0;
+          }
+        }
+        .animate-ripple {
+          animation: ripple 600ms ease-out;
+        }
+      `}</style>
     </div>
   );
 }
