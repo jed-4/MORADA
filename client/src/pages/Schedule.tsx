@@ -983,6 +983,7 @@ export default function Schedule() {
                   onChange={(e) => {
                     setFormData({ ...formData, startDate: e.target.value });
                   }}
+                  required
                   data-testid="input-item-start-date"
                 />
               </div>
@@ -1021,6 +1022,7 @@ export default function Schedule() {
                   type="date"
                   value={formData.endDate}
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  required
                   data-testid="input-item-end-date"
                 />
               </div>
