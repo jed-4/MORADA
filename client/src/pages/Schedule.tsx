@@ -82,6 +82,7 @@ export default function Schedule() {
     startDate: "",
     endDate: "",
     assignedToId: "",
+    parentItemId: "",
     progressPercent: 0,
   });
   const [filters, setFilters] = useState({
@@ -245,6 +246,7 @@ export default function Schedule() {
       startDate: "",
       endDate: "",
       assignedToId: "",
+      parentItemId: "",
       progressPercent: 0,
     });
   };
@@ -273,6 +275,7 @@ export default function Schedule() {
       scheduleId: schedule.id,
       ...formData,
       assignedToId: formData.assignedToId || undefined,
+      parentItemId: formData.parentItemId || undefined,
     };
 
     if (editingItem) {
@@ -294,6 +297,7 @@ export default function Schedule() {
         startDate: editingItem.startDate ? new Date(editingItem.startDate).toISOString().split('T')[0] : "",
         endDate: editingItem.endDate ? new Date(editingItem.endDate).toISOString().split('T')[0] : "",
         assignedToId: editingItem.assignedToId || "",
+        parentItemId: editingItem.parentItemId || "",
         progressPercent: editingItem.progressPercent || 0,
       });
     } else {
@@ -318,6 +322,17 @@ export default function Schedule() {
       resource: item,
     }));
   }, [scheduleItems]);
+
+  // Get parent items (stages) for dropdown - exclude the current editing item and its children
+  const parentItems = useMemo(() => {
+    return scheduleItems.filter(item => {
+      // Must not have a parent (top-level items only)
+      if (item.parentItemId) return false;
+      // Exclude the current editing item (can't be its own parent)
+      if (editingItem && item.id === editingItem.id) return false;
+      return true;
+    });
+  }, [scheduleItems, editingItem]);
 
   // Memoize filtered items computation
   const filteredItems = useMemo(() => {
@@ -755,6 +770,30 @@ export default function Schedule() {
                 rows={3}
                 data-testid="input-item-description"
               />
+            </div>
+
+            {/* Parent Item (Stage) Selector */}
+            <div className="space-y-2">
+              <Label htmlFor="item-parent">Stage (Parent Item)</Label>
+              <Select
+                value={formData.parentItemId || "none"}
+                onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? "" : value })}
+              >
+                <SelectTrigger id="item-parent" data-testid="select-item-parent">
+                  <SelectValue placeholder="None (Top-level item)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (Top-level item)</SelectItem>
+                  {parentItems.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select a parent item to make this a sub-item. Leave as "None" to create a top-level stage.
+              </p>
             </div>
 
             {/* Type and Priority Row */}
