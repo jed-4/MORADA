@@ -116,6 +116,34 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     },
   });
 
+  const createDependencyMutation = useMutation({
+    mutationFn: async ({ itemId, predecessorId, type }: { itemId: string; predecessorId: string; type: string }) => {
+      return apiRequest(`/api/schedule-items/${itemId}/dependencies`, "POST", { predecessorId, type });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Dependency created" });
+    },
+    onError: (error: any) => {
+      const errorMsg = error?.error || error?.message || "This would create a circular dependency";
+      toast({ 
+        title: "Failed to create dependency", 
+        description: errorMsg,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const deleteDependencyMutation = useMutation({
+    mutationFn: async ({ itemId, predecessorId }: { itemId: string; predecessorId: string }) => {
+      return apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Dependency removed" });
+    },
+  });
+
   // Calculate timeline bounds
   const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
     if (allItems.length === 0) {
@@ -324,7 +352,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         }
       } else if (dragging.type === 'dependency') {
         // Handle dependency creation (check if dropped on another bar)
-        // This will be handled by the bar's onMouseUp handler
+        if (hoveredBar && hoveredBar !== dragging.id) {
+          await createDependencyMutation.mutateAsync({
+            itemId: hoveredBar,
+            predecessorId: dragging.id,
+            type: 'finish-to-start',
+          });
+        }
       }
 
       setDragging(null);
@@ -1014,6 +1048,109 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   </div>
                 );
               })}
+
+              {/* Dependency arrows SVG overlay */}
+              <svg
+                className="absolute top-0 left-0 pointer-events-none z-15"
+                style={{ width: `${timelineWidth}px`, height: '100%' }}
+              >
+                {parentItems.flatMap((parentItem, parentIdx) => {
+                  const isCollapsed = collapsedItems.has(parentItem.id);
+                  const childItems = childItemsByParent[parentItem.id] || [];
+                  const allItems = [parentItem, ...(isCollapsed ? [] : childItems)];
+                  
+                  return allItems.flatMap((item, itemIdx) => {
+                    if (!item.dependencies || item.dependencies.length === 0) return [];
+                    
+                    const targetY = (isCollapsed ? parentIdx : (parentIdx + itemIdx)) * 40 + 20;
+                    const targetEffective = item === parentItem && childItems.length > 0 ? getEffectiveDates(item) : null;
+                    const targetStart = targetEffective 
+                      ? getPosition(targetEffective.startDate)
+                      : getPosition(new Date(item.startDate));
+                    
+                    return item.dependencies.map((dep: any) => {
+                      // Find the predecessor item
+                      const predItem = allItems.find(i => i.id === dep.id);
+                      if (!predItem) return null;
+                      
+                      // Calculate predecessor position
+                      let predIdx = 0;
+                      let predY = 0;
+                      parentItems.forEach((p, pIdx) => {
+                        if (p.id === predItem.id) {
+                          predIdx = pIdx;
+                          predY = pIdx * 40 + 20;
+                        } else if (!collapsedItems.has(p.id)) {
+                          const children = childItemsByParent[p.id] || [];
+                          const childIdx = children.findIndex(c => c.id === predItem.id);
+                          if (childIdx !== -1) {
+                            predIdx = pIdx + childIdx + 1;
+                            predY = (pIdx + childIdx + 1) * 40 + 20;
+                          }
+                        }
+                      });
+                      
+                      const predEffective = predItem.parentId === null && (childItemsByParent[predItem.id]?.length || 0) > 0
+                        ? getEffectiveDates(predItem)
+                        : null;
+                      const predEnd = predEffective
+                        ? getPosition(predEffective.endDate) + (differenceInDays(predEffective.endDate, predEffective.startDate) + 1) * pixelsPerDay
+                        : getPosition(new Date(predItem.endDate)) + (differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1) * pixelsPerDay;
+                      
+                      // Create curved arrow path
+                      const startX = predEnd;
+                      const startY = predY;
+                      const endX = targetStart;
+                      const endY = targetY;
+                      
+                      const midX = (startX + endX) / 2;
+                      const controlOffset = Math.min(50, Math.abs(endX - startX) / 3);
+                      
+                      const path = `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
+                      
+                      return (
+                        <g key={`${item.id}-${dep.id}`}>
+                          <path
+                            d={path}
+                            stroke="#6366f1"
+                            strokeWidth="2"
+                            fill="none"
+                            markerEnd="url(#arrowhead)"
+                          />
+                        </g>
+                      );
+                    }).filter(Boolean);
+                  });
+                })}
+                
+                {/* Arrow marker definition */}
+                <defs>
+                  <marker
+                    id="arrowhead"
+                    markerWidth="10"
+                    markerHeight="10"
+                    refX="9"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <polygon points="0 0, 10 3, 0 6" fill="#6366f1" />
+                  </marker>
+                </defs>
+                
+                {/* Drag-to-create dependency visual feedback */}
+                {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && (
+                  <line
+                    x1={dragging.startX}
+                    y1={dragging.startY}
+                    x2={dragging.currentX}
+                    y2={dragging.currentY}
+                    stroke="#6366f1"
+                    strokeWidth="2"
+                    strokeDasharray="5,5"
+                    markerEnd="url(#arrowhead)"
+                  />
+                )}
+              </svg>
 
               {/* Today line */}
               <div

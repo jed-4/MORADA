@@ -8246,9 +8246,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Predecessor item not found" });
       }
 
-      // Simple circular dependency check - prevent item from depending on itself
+      // Prevent item from depending on itself
       if (predecessorId === req.params.id) {
         return res.status(400).json({ error: "Item cannot depend on itself" });
+      }
+
+      // Check for circular dependency chains using depth-first search
+      const wouldCreateCycle = (startId: string, targetId: string, visited = new Set<string>()): boolean => {
+        if (startId === targetId) return true;
+        if (visited.has(startId)) return false;
+        visited.add(startId);
+
+        const predDeps = (predecessor.dependencies as any[]) || [];
+        for (const dep of predDeps) {
+          if (wouldCreateCycle(dep.id, targetId, visited)) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (wouldCreateCycle(predecessorId, req.params.id)) {
+        return res.status(400).json({ error: "This would create a circular dependency" });
       }
 
       // Add dependency
