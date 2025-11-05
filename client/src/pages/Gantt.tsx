@@ -50,10 +50,16 @@ export default function Gantt() {
   const [zoomLevel, setZoomLevel] = useState(1); // 1 = normal, 2 = zoomed in, 0.5 = zoomed out
   const [draggingStageId, setDraggingStageId] = useState<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
+  const [showBaseline, setShowBaseline] = useState(false);
 
   // Fetch stages
   const { data: stages = [], isLoading } = useQuery<GanttStage[]>({
     queryKey: [`/api/projects/${projectId}/gantt/stages`],
+  });
+
+  // Fetch suppliers for color mapping
+  const { data: suppliers = [] } = useQuery<any[]>({
+    queryKey: ['/api/suppliers'],
   });
 
   // Fetch all subtasks for all stages
@@ -196,6 +202,65 @@ export default function Gantt() {
     },
   });
 
+  // Save baseline mutation - saves current dates as baseline
+  const saveBaselineMutation = useMutation({
+    mutationFn: async () => {
+      const updates = stages.map(stage => ({
+        id: stage.id,
+        baselineStartDate: stage.startDate,
+        baselineEndDate: stage.endDate,
+      }));
+      
+      return Promise.all(
+        updates.map(update =>
+          apiRequest(`/api/projects/${projectId}/gantt/stages/${update.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              baselineStartDate: update.baselineStartDate,
+              baselineEndDate: update.baselineEndDate,
+            }),
+          })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
+      setShowBaseline(true);
+      toast({ title: "Baseline saved successfully" });
+    },
+  });
+
+  // Revert to baseline mutation
+  const revertToBaselineMutation = useMutation({
+    mutationFn: async () => {
+      const updates = stages
+        .filter(stage => stage.baselineStartDate && stage.baselineEndDate)
+        .map(stage => ({
+          id: stage.id,
+          startDate: stage.baselineStartDate,
+          endDate: stage.baselineEndDate,
+        }));
+      
+      return Promise.all(
+        updates.map(update =>
+          apiRequest(`/api/projects/${projectId}/gantt/stages/${update.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              startDate: update.startDate,
+              endDate: update.endDate,
+            }),
+          })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
+      toast({ title: "Reverted to baseline successfully" });
+    },
+  });
+
   // Sync local collapsed state with server state
   useEffect(() => {
     const serverCollapsedIds = stages.filter(s => s.isCollapsed).map(s => s.id);
@@ -226,13 +291,24 @@ export default function Gantt() {
     };
   };
 
-  // Critical path calculation (simplified - marks stages on longest path)
+  // Get bar color based on supplier color or default lilac
+  const getBarColor = (supplierId?: string | null, supplierColor?: string | null) => {
+    if (supplierId && supplierColor) {
+      return supplierColor;
+    }
+    const supplier = suppliers.find((s: any) => s.id === supplierId);
+    if (supplier?.color) {
+      return supplier.color;
+    }
+    return '#bba7db'; // Default lilac
+  };
+
+  // Critical path calculation (marks delayed stages)
   const calculateCriticalPath = () => {
-    // Simple heuristic: stages with longest duration and dependencies
+    // Mark stages that are delayed (isDelayed flag)
     const criticalStages = new Set<string>();
     stages.forEach(stage => {
-      const duration = differenceInDays(new Date(stage.endDate), new Date(stage.startDate));
-      if (duration > 14) { // Stages longer than 2 weeks are considered critical
+      if (stage.isDelayed) {
         criticalStages.add(stage.id);
       }
     });
@@ -461,6 +537,55 @@ export default function Gantt() {
 
             <Tooltip>
               <TooltipTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => saveBaselineMutation.mutate()}
+                  disabled={saveBaselineMutation.isPending}
+                  data-testid="button-save-baseline"
+                >
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Save Baseline
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Save current dates as baseline for comparison</TooltipContent>
+            </Tooltip>
+
+            {stages.some(s => s.baselineStartDate) && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={showBaseline ? "default" : "outline"} 
+                      size="sm" 
+                      onClick={() => setShowBaseline(!showBaseline)}
+                      data-testid="button-toggle-baseline"
+                    >
+                      {showBaseline ? "Hide" : "Show"} Baseline
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle baseline visibility</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => revertToBaselineMutation.mutate()}
+                      disabled={revertToBaselineMutation.isPending}
+                      data-testid="button-revert-baseline"
+                    >
+                      Revert to Baseline
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Revert all dates to baseline schedule</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button variant="outline" size="sm" onClick={handleExportPDF} data-testid="button-export-pdf">
                   <Download className="w-4 h-4 mr-2" />
                   Export
@@ -593,13 +718,26 @@ export default function Gantt() {
                           </span>
                         </div>
                         <div className="flex-1 relative h-full flex items-center" style={{ width: `${zoomLevel * 100}%` }}>
-                          {/* Stage Bar - Solid lilac with hover lift */}
+                          {/* Baseline Bar - Dotted gray line underneath */}
+                          {showBaseline && stage.baselineStartDate && stage.baselineEndDate && (
+                            <div
+                              className="absolute h-6 rounded border-2 border-dashed border-gray-400 opacity-60"
+                              style={{
+                                ...getBarStyle(new Date(stage.baselineStartDate), new Date(stage.baselineEndDate)),
+                                backgroundColor: 'transparent',
+                                pointerEvents: 'none',
+                              }}
+                              data-testid={`stage-baseline-${stage.id}`}
+                            />
+                          )}
+
+                          {/* Stage Bar - Supplier color or lilac with hover lift */}
                           <div
                             className="absolute h-6 rounded flex items-center px-2 text-white text-xs font-medium cursor-move transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
                             style={{
                               ...getBarStyle(new Date(stage.startDate), new Date(stage.endDate)),
-                              backgroundColor: '#bba7db',
-                              border: isCritical ? '2px solid #ef4444' : 'none',
+                              backgroundColor: getBarColor(stage.supplierId, stage.color),
+                              border: isCritical ? '2px dashed #ef4444' : 'none',
                             }}
                             onMouseDown={(e) => {
                               e.stopPropagation();
@@ -610,7 +748,7 @@ export default function Gantt() {
                             {stage.name}
                           </div>
 
-                          {/* Critical Path Line to Next Stage */}
+                          {/* Critical Path Line to Next Stage - Red dashed for delayed */}
                           {isCritical && nextStage && criticalPath.has(nextStage.id) && (() => {
                             const currentBar = getBarStyle(new Date(stage.startDate), new Date(stage.endDate));
                             const nextBar = getBarStyle(new Date(nextStage.startDate), new Date(nextStage.endDate));
@@ -624,8 +762,8 @@ export default function Gantt() {
                                   x2={x2}
                                   y2="50"
                                   stroke="#ef4444"
-                                  strokeWidth="0.5"
-                                  strokeDasharray="2,2"
+                                  strokeWidth="0.8"
+                                  strokeDasharray="4,4"
                                   vectorEffect="non-scaling-stroke"
                                 />
                               </svg>
@@ -635,6 +773,20 @@ export default function Gantt() {
                         {/* Chips Column - Vertical stack, 24px tall */}
                         <div className="w-48 flex-shrink-0 flex flex-col items-start justify-center gap-1 px-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
+                            {stage.supplierName && (
+                              <Badge 
+                                variant="secondary" 
+                                className="text-xs h-6 px-2 cursor-pointer hover-elevate" 
+                                style={{ 
+                                  backgroundColor: getBarColor(stage.supplierId, stage.color),
+                                  color: 'white',
+                                  border: 'none'
+                                }}
+                                data-testid={`chip-supplier-${stage.id}`}
+                              >
+                                {stage.supplierName}
+                              </Badge>
+                            )}
                             {stage.foremanName && (
                               <Badge variant="secondary" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-foreman-${stage.id}`}>
                                 {stage.foremanName}
@@ -694,13 +846,26 @@ export default function Gantt() {
                             </span>
                           </div>
                           <div className="flex-1 relative h-full flex items-center" style={{ width: `${zoomLevel * 100}%` }}>
-                            {/* Subtask Bar - Dotted border, light lilac fill */}
+                            {/* Baseline Bar for Subtask - Dotted gray line */}
+                            {showBaseline && subtask.baselineStartDate && subtask.baselineEndDate && (
+                              <div
+                                className="absolute h-4 rounded border border-dashed border-gray-400 opacity-60"
+                                style={{
+                                  ...getBarStyle(new Date(subtask.baselineStartDate), new Date(subtask.baselineEndDate)),
+                                  backgroundColor: 'transparent',
+                                  pointerEvents: 'none',
+                                }}
+                                data-testid={`subtask-baseline-${subtask.id}`}
+                              />
+                            )}
+
+                            {/* Subtask Bar - Supplier color or light lilac with dotted border */}
                             <div
                               className="absolute h-4 rounded flex items-center px-2 text-xs cursor-move transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
                               style={{
                                 ...getBarStyle(new Date(subtask.startDate), new Date(subtask.endDate)),
-                                backgroundColor: '#e5dff5',
-                                border: '2px dotted #bba7db',
+                                backgroundColor: subtask.supplierId ? `${getBarColor(subtask.supplierId, null)}40` : '#e5dff5',
+                                border: subtask.isDelayed ? '2px dashed #ef4444' : `2px dotted ${getBarColor(subtask.supplierId, null)}`,
                               }}
                               onMouseDown={(e) => handleBarMouseDown(e, 'subtask', subtask.id, new Date(subtask.startDate))}
                               data-testid={`subtask-bar-${subtask.id}`}
@@ -711,6 +876,20 @@ export default function Gantt() {
                           {/* Chips Column - 24px tall */}
                           <div className="w-48 flex-shrink-0 flex flex-col items-start justify-center gap-1 px-3">
                             <div className="flex items-center gap-1.5 flex-wrap">
+                              {subtask.supplierName && (
+                                <Badge 
+                                  variant="secondary" 
+                                  className="text-xs h-6 px-2 cursor-pointer hover-elevate" 
+                                  style={{ 
+                                    backgroundColor: getBarColor(subtask.supplierId, null),
+                                    color: 'white',
+                                    border: 'none'
+                                  }}
+                                  data-testid={`chip-supplier-${subtask.id}`}
+                                >
+                                  {subtask.supplierName}
+                                </Badge>
+                              )}
                               {subtask.assignedToName && (
                                 <Badge variant="secondary" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-assigned-${subtask.id}`}>
                                   {subtask.assignedToName}

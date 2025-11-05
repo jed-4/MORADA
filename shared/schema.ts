@@ -964,6 +964,7 @@ export const suppliers = pgTable("suppliers", {
   abn: text("abn"), // Australian Business Number
   address: text("address"),
   xeroContactId: text("xero_contact_id"), // For Xero integration linking
+  color: text("color").default("#bba7db"), // Gantt bar color, default lilac
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2511,6 +2512,8 @@ export const ganttStages = pgTable("gantt_stages", {
   // Timeline
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
+  baselineStartDate: timestamp("baseline_start_date"), // Original planned start (for baseline comparison)
+  baselineEndDate: timestamp("baseline_end_date"), // Original planned end (for baseline comparison)
   
   // Status and progress
   status: text("status").notNull().default("not_started"), // "not_started" | "in_progress" | "completed" | "on_hold"
@@ -2523,10 +2526,13 @@ export const ganttStages = pgTable("gantt_stages", {
   
   // Critical path tracking
   criticalPathRank: integer("critical_path_rank"), // Position in critical path (null if not on critical path)
+  isDelayed: boolean("is_delayed").notNull().default(false), // True if behind schedule
   
   // Assignment chips
   foremanId: varchar("foreman_id").references(() => users.id),
   foremanName: text("foreman_name"), // Cached
+  supplierId: varchar("supplier_id").references(() => suppliers.id), // Supplier for this stage
+  supplierName: text("supplier_name"), // Cached supplier name
   hasRfq: boolean("has_rfq").notNull().default(false),
   hasPo: boolean("has_po").notNull().default(false),
   
@@ -2569,6 +2575,8 @@ export const ganttSubtasks = pgTable("gantt_subtasks", {
   // Timeline
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
+  baselineStartDate: timestamp("baseline_start_date"), // Original planned start (for baseline comparison)
+  baselineEndDate: timestamp("baseline_end_date"), // Original planned end (for baseline comparison)
   
   // Status and progress
   status: text("status").notNull().default("not_started"), // "not_started" | "in_progress" | "completed" | "on_hold"
@@ -2580,9 +2588,14 @@ export const ganttSubtasks = pgTable("gantt_subtasks", {
   // Dependencies
   dependsOnSubtaskId: varchar("depends_on_subtask_id").references(() => ganttSubtasks.id), // Link to prerequisite subtask
   
+  // Critical path tracking
+  isDelayed: boolean("is_delayed").notNull().default(false), // True if behind schedule
+  
   // Assignment chips
   assignedToId: varchar("assigned_to_id").references(() => users.id),
   assignedToName: text("assigned_to_name"), // Cached
+  supplierId: varchar("supplier_id").references(() => suppliers.id), // Supplier for this subtask
+  supplierName: text("supplier_name"), // Cached supplier name
   hasRfq: boolean("has_rfq").notNull().default(false),
   hasPo: boolean("has_po").notNull().default(false),
   
