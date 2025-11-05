@@ -109,6 +109,18 @@ export default function Schedule() {
     queryKey: ["/api/contacts"],
   });
 
+  // Fetch schedule item status options from Field Settings
+  const { data: statusOptions = [] } = useQuery({
+    queryKey: ["/api/field-options", "schedule_item.status"],
+    queryFn: async () => {
+      const categories = await fetch("/api/field-categories").then(r => r.json());
+      const statusCategory = categories.find((c: any) => c.key === "schedule_item.status");
+      if (!statusCategory) return [];
+      const options = await fetch(`/api/field-categories/${statusCategory.id}/options`).then(r => r.json());
+      return options.filter((opt: any) => opt.isActive);
+    },
+  });
+
   // Create schedule if it doesn't exist
   const createScheduleMutation = useMutation({
     mutationFn: async () => {
@@ -848,11 +860,11 @@ export default function Schedule() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="not_started">Not Started</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="on_hold">On Hold</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    {statusOptions.map((option: any) => (
+                      <SelectItem key={option.id} value={option.key}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

@@ -1346,6 +1346,47 @@ export class MemStorage implements IStorage {
       };
       this.fieldOptions.set(option.id, option);
     });
+
+    // Schedule Item Status Category
+    const scheduleItemStatusCategory: FieldCategory = {
+      id: "cat-schedule-item-status",
+      key: "schedule_item.status",
+      label: "Schedule Item Statuses",
+      entity: "schedule_item",
+      description: "Status options for schedule items",
+      isBuiltIn: true,
+      isActive: true,
+      sortOrder: 8,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.fieldCategories.set(scheduleItemStatusCategory.id, scheduleItemStatusCategory);
+
+    // Add default options for Schedule Item Status
+    const scheduleItemStatusOptions = [
+      { key: "not_started", name: "Not Started", color: "#6B7280", isDefault: true, isCompleted: false },
+      { key: "in_progress", name: "In Progress", color: "#F59E0B", isDefault: false, isCompleted: false },
+      { key: "completed", name: "Completed", color: "#10B981", isDefault: false, isCompleted: true },
+      { key: "on_hold", name: "On Hold", color: "#EF4444", isDefault: false, isCompleted: false },
+      { key: "cancelled", name: "Cancelled", color: "#94A3B8", isDefault: false, isCompleted: false },
+    ];
+
+    scheduleItemStatusOptions.forEach((opt, index) => {
+      const option: FieldOption = {
+        id: `opt-schedule-item-status-${opt.key}`,
+        categoryId: scheduleItemStatusCategory.id,
+        key: opt.key,
+        name: opt.name,
+        color: opt.color,
+        isActive: true,
+        isDefault: opt.isDefault,
+        isCompleted: opt.isCompleted,
+        sortOrder: index,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.fieldOptions.set(option.id, option);
+    });
   }
 
   // Initialize default projects including business project
@@ -4715,6 +4756,14 @@ export class DbStorage implements IStorage {
           { id: 'opt-defect-trade-painting', categoryId, key: 'painting', name: 'Painting', color: '#7C3AED', isDefault: false, sortOrder: 4 },
           { id: 'opt-defect-trade-flooring', categoryId, key: 'flooring', name: 'Flooring', color: '#059669', isDefault: false, sortOrder: 5 },
           { id: 'opt-defect-trade-tiling', categoryId, key: 'tiling', name: 'Tiling', color: '#0891B2', isDefault: false, sortOrder: 6 },
+        ];
+      case 'schedule_item.status':
+        return [
+          { id: 'opt-schedule-item-status-not-started', categoryId, key: 'not_started', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-schedule-item-status-in-progress', categoryId, key: 'in_progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-schedule-item-status-completed', categoryId, key: 'completed', name: 'Completed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-schedule-item-status-on-hold', categoryId, key: 'on_hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
+          { id: 'opt-schedule-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#94A3B8', isDefault: false, isCompleted: false, sortOrder: 4 },
         ];
       default:
         return [];

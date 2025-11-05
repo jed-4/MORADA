@@ -518,6 +518,17 @@ export default function Gantt() {
 
             {/* Timeline Bars */}
             <div className="relative">
+              {/* Vertical grid lines */}
+              <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
+                {timelineHeaders.map((header, idx) => (
+                  <div
+                    key={idx}
+                    className="absolute top-0 bottom-0 border-r border-border"
+                    style={{ left: `${timelineHeaders.slice(0, idx + 1).reduce((sum, h) => sum + h.width, 0)}px` }}
+                  />
+                ))}
+              </div>
+
               {/* Today column background */}
               <div
                 className="absolute top-0 bottom-0 bg-[#bba7db]/10 pointer-events-none z-0"
