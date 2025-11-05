@@ -116,9 +116,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       httpOnly: true,
+      // Replit deployments always use HTTPS
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      // Don't set domain - let it default to the current domain
     },
+    // Force session to save on every request when modified
+    rolling: true,
   });
   
   app.use(sessionMiddleware);
@@ -3139,10 +3143,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: company.id,
       });
       
-      // Create session
+      // Create session and explicitly save it
       (req.session as any).userId = user.id;
       
-      res.status(201).json({ user: toSafeUser(user) });
+      // Force save session before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).json({ message: "Failed to save session" });
+        }
+        res.status(201).json({ user: toSafeUser(user) });
+      });
     } catch (error) {
       console.error("Registration error:", error);
       res.status(500).json({ message: "Failed to register user" });
@@ -3170,10 +3181,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid credentials" });
       }
       
-      // Create session
+      // Create session and explicitly save it
       (req.session as any).userId = user.id;
       
-      res.json({ user: toSafeUser(user) });
+      // Force save session before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).json({ message: "Failed to save session" });
+        }
+        res.json({ user: toSafeUser(user) });
+      });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Failed to login" });
