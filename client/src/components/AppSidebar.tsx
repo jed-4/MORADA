@@ -33,6 +33,7 @@ import {
   AlertCircle,
   ClipboardList,
   ListTree,
+  GanttChart,
 } from "lucide-react";
 
 import {
@@ -79,6 +80,7 @@ const projectItemsBase = [
   { title: "Notes", baseUrl: "/notes", icon: FileText },
   { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
+  { title: "Gantt", baseUrl: "/gantt", icon: GanttChart },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
   { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
   { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
