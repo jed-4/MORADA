@@ -799,9 +799,9 @@ export default function Notes() {
                 <div>
                   <label className="text-sm font-medium">Apply Template</label>
                   <Select 
-                    value={selectedTemplate || ""} 
+                    value={selectedTemplate || "none"} 
                     onValueChange={(value) => {
-                      if (value) {
+                      if (value && value !== "none") {
                         const template = noteTemplates.find(t => t.id === value);
                         if (template) applyTemplate(template);
                       } else {
@@ -814,7 +814,7 @@ export default function Notes() {
                       <SelectValue placeholder="Choose a template..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No template</SelectItem>
+                      <SelectItem value="none">No template</SelectItem>
                       {noteTemplates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
                           {template.name}

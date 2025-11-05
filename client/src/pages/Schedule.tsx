@@ -960,14 +960,14 @@ export default function Schedule() {
               <div className="space-y-2">
                 <Label htmlFor="item-assignee">Assignee</Label>
                 <Select
-                  value={formData.assignedToId}
-                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value })}
+                  value={formData.assignedToId || "unassigned"}
+                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value === "unassigned" ? "" : value })}
                 >
                   <SelectTrigger id="item-assignee" data-testid="select-item-assignee">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="unassigned">None</SelectItem>
                     {contacts.map((contact) => (
                       <SelectItem key={contact.id} value={contact.id}>
                         {contact.name}

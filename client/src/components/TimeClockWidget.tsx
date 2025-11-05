@@ -226,15 +226,15 @@ export function TimeClockWidget() {
                     Cost Code (Optional)
                   </label>
                   <Select
-                    value={selectedCostCodeId}
-                    onValueChange={setSelectedCostCodeId}
+                    value={selectedCostCodeId || "none"}
+                    onValueChange={(value) => setSelectedCostCodeId(value === "none" ? "" : value)}
                     disabled={loadingActive}
                   >
                     <SelectTrigger data-testid="select-cost-code">
                       <SelectValue placeholder="Select a cost code" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {costCodes
                         .filter(cc => cc.availableInTimesheets)
                         .map((costCode) => (
