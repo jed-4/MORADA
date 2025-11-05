@@ -326,7 +326,7 @@ export default function Gantt() {
           
           {/* Task rows */}
           <div className="flex-1 overflow-y-auto">
-            {parentItems.map((parentItem) => {
+            {parentItems.map((parentItem, parentIdx) => {
               const isCollapsed = collapsedItems.has(parentItem.id);
               const childItems = childItemsByParent[parentItem.id] || [];
 
@@ -334,7 +334,7 @@ export default function Gantt() {
                 <div key={parentItem.id}>
                   {/* Parent item row */}
                   <div
-                    className="h-10 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer group"
+                    className={`h-10 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer group ${parentIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {childItems.length > 0 && (
@@ -369,29 +369,32 @@ export default function Gantt() {
                   </div>
 
                   {/* Child item rows */}
-                  {!isCollapsed && childItems.map((childItem) => (
-                    <div
-                      key={childItem.id}
-                      className="h-10 flex items-center pl-10 pr-2 border-b hover-elevate active-elevate-2 cursor-pointer"
-                      data-testid={`row-child-${childItem.id}`}
-                    >
-                      <span className="text-sm text-muted-foreground truncate flex-1">{childItem.name}</span>
-                      <div className="flex items-center gap-1 ml-2">
-                        {childItem.status && (
-                          <Badge variant="outline" className="text-xs px-1.5 h-5">
-                            {childItem.status}
-                          </Badge>
-                        )}
-                        {childItem.assignedToName && (
-                          <Avatar className="w-5 h-5">
-                            <AvatarFallback className="text-[10px]">
-                              {childItem.assignedToName.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                        )}
+                  {!isCollapsed && childItems.map((childItem, childIdx) => {
+                    const rowIdx = parentIdx * 1000 + childIdx + 1;
+                    return (
+                      <div
+                        key={childItem.id}
+                        className={`h-10 flex items-center pl-10 pr-2 border-b hover-elevate active-elevate-2 cursor-pointer ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
+                        data-testid={`row-child-${childItem.id}`}
+                      >
+                        <span className="text-sm text-muted-foreground truncate flex-1">{childItem.name}</span>
+                        <div className="flex items-center gap-1 ml-2">
+                          {childItem.status && (
+                            <Badge variant="outline" className="text-xs px-1.5 h-5">
+                              {childItem.status}
+                            </Badge>
+                          )}
+                          {childItem.assignedToName && (
+                            <Avatar className="w-5 h-5">
+                              <AvatarFallback className="text-[10px]">
+                                {childItem.assignedToName.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}
@@ -406,21 +409,33 @@ export default function Gantt() {
         >
           <div style={{ width: `${timelineWidth}px`, position: 'relative' }}>
             {/* Timeline Header */}
-            <div className="h-12 border-b bg-card sticky top-0 z-10 flex">
-              {timelineHeaders.map((header, idx) => (
-                <div
-                  key={idx}
-                  className="border-r text-sm font-medium text-center py-3"
-                  style={{ width: `${header.width}px` }}
-                >
-                  {header.label}
-                </div>
-              ))}
+            <div className="h-12 border-b bg-card sticky top-0 z-10 flex" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              {timelineHeaders.map((header, idx) => {
+                const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                return (
+                  <div
+                    key={idx}
+                    className={`border-r text-sm font-bold text-center py-3 ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
+                    style={{ width: `${header.width}px` }}
+                  >
+                    {header.label}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Timeline Bars */}
             <div className="relative">
-              {parentItems.map((parentItem) => {
+              {/* Today column background */}
+              <div
+                className="absolute top-0 bottom-0 bg-[#bba7db]/10 pointer-events-none z-0"
+                style={{ 
+                  left: `${Math.max(0, todayPosition - pixelsPerDay / 2)}px`,
+                  width: `${pixelsPerDay}px`
+                }}
+              />
+              
+              {parentItems.map((parentItem, parentIdx) => {
                 const isCollapsed = collapsedItems.has(parentItem.id);
                 const childItems = childItemsByParent[parentItem.id] || [];
                 
@@ -435,9 +450,9 @@ export default function Gantt() {
                 return (
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
-                    <div className="h-10 border-b relative group">
+                    <div className={`h-10 border-b relative group ${parentIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
                       <div
-                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-md transition-shadow"
+                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all z-10"
                         style={{
                           left: `${parentStart}px`,
                           width: `${parentWidth}px`,
@@ -449,22 +464,23 @@ export default function Gantt() {
                         data-testid={`bar-parent-${parentItem.id}`}
                       >
                         <span className="text-xs font-medium text-white truncate">
-                          {format(effectiveDates.startDate, 'MMM d')} - {format(effectiveDates.endDate, 'MMM d')}
+                          {parentItem.name}
                         </span>
                       </div>
                     </div>
 
                     {/* Child item bar rows */}
-                    {!isCollapsed && childItems.map((childItem) => {
+                    {!isCollapsed && childItems.map((childItem, childIdx) => {
                       const childStart = getPosition(new Date(childItem.startDate));
                       const childDuration = differenceInDays(new Date(childItem.endDate), new Date(childItem.startDate)) + 1;
                       const childWidth = childDuration * pixelsPerDay;
                       const childColor = getBarColor(childItem);
+                      const rowIdx = parentIdx * 1000 + childIdx + 1;
 
                       return (
-                        <div key={childItem.id} className="h-10 border-b relative group">
+                        <div key={childItem.id} className={`h-10 border-b relative group ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
                           <div
-                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-md transition-shadow"
+                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all z-10"
                             style={{
                               left: `${childStart}px`,
                               width: `${childWidth}px`,
@@ -476,7 +492,7 @@ export default function Gantt() {
                             data-testid={`bar-child-${childItem.id}`}
                           >
                             <span className="text-xs font-medium text-white truncate">
-                              {format(new Date(childItem.startDate), 'MMM d')}
+                              {childItem.name}
                             </span>
                           </div>
                         </div>
