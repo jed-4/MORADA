@@ -6,12 +6,14 @@ import { useState } from "react";
 
 export interface CasvaScheduleListProps {
   items: ScheduleItem[];
+  noteCounts?: Record<string, number>;
   onEditItem: (item: ScheduleItem) => void;
   maxHeight?: string;
 }
 
 export function CasvaScheduleList({ 
   items, 
+  noteCounts = {},
   onEditItem, 
   maxHeight = "calc(100vh - 280px)"
 }: CasvaScheduleListProps) {
@@ -132,6 +134,7 @@ export function CasvaScheduleList({
                   >
                     <CasvaScheduleRow
                       item={item}
+                      noteCount={noteCounts[item.id] || 0}
                       onEdit={() => onEditItem(item)}
                       isDraggable={true}
                       isParent={hasSubtasks}
@@ -170,6 +173,7 @@ export function CasvaScheduleList({
                     >
                       <CasvaScheduleRow
                         item={subtask}
+                        noteCount={noteCounts[subtask.id] || 0}
                         onEdit={() => onEditItem(subtask)}
                         isSubtask={true}
                       />

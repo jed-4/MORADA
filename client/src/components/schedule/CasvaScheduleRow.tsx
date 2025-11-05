@@ -10,6 +10,7 @@ import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 
 export interface CasvaScheduleRowProps {
   item: ScheduleItem;
+  noteCount?: number;
   onEdit: () => void;
   isDraggable?: boolean;
   dragAttributes?: any;
@@ -23,6 +24,7 @@ export interface CasvaScheduleRowProps {
 
 export function CasvaScheduleRow({ 
   item, 
+  noteCount = 0,
   onEdit, 
   isDraggable = false,
   dragAttributes,
@@ -118,7 +120,10 @@ export function CasvaScheduleRow({
           {item.status && (
             <ColorChip type="status" value={item.status} />
           )}
-          <ActivityNotesPopover scheduleItemId={item.id} />
+          <ActivityNotesPopover 
+            scheduleItemId={item.id} 
+            noteCount={noteCount}
+          />
         </div>
       </TableCell>
 

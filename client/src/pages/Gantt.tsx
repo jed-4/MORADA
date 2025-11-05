@@ -71,6 +71,21 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     queryKey: [`/api/projects/${projectId}/schedule-items`],
   });
 
+  // Fetch note counts for all schedule items
+  const { data: noteCounts = {} } = useQuery<Record<string, number>>({
+    queryKey: ['/api/activity-notes/batch-counts', projectId],
+    queryFn: async () => {
+      const scheduleItemIds = allItems.map(item => item.id);
+      if (scheduleItemIds.length === 0) return {};
+      
+      const response = await apiRequest('/api/activity-notes/batch-counts', 'POST', {
+        scheduleItemIds
+      });
+      return response;
+    },
+    enabled: allItems.length > 0,
+  });
+
   // Separate items into parent items and child items, with search filtering
   const { parentItems, childItemsByParent } = useMemo(() => {
     const parents: ScheduleItem[] = [];
@@ -95,12 +110,24 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       }
     });
 
-    // Sort parent items by sortOrder
-    parents.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    // Sort parent items by startDate first, then sortOrder as tiebreaker
+    parents.sort((a, b) => {
+      if (a.startDate && b.startDate) {
+        const dateCompare = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+        if (dateCompare !== 0) return dateCompare;
+      }
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    });
 
-    // Sort child items within each parent
+    // Sort child items within each parent by startDate first, then sortOrder
     Object.keys(children).forEach(parentId => {
-      children[parentId].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      children[parentId].sort((a, b) => {
+        if (a.startDate && b.startDate) {
+          const dateCompare = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+          if (dateCompare !== 0) return dateCompare;
+        }
+        return (a.sortOrder || 0) - (b.sortOrder || 0);
+      });
     });
 
     return { parentItems: parents, childItemsByParent: children };
@@ -653,7 +680,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           </Badge>
                         );
                       })()}
-                      <ActivityNotesPopover scheduleItemId={parentItem.id} />
+                      <ActivityNotesPopover 
+                        scheduleItemId={parentItem.id} 
+                        noteCount={noteCounts[parentItem.id] || 0}
+                      />
                       {visibleColumns.completion && (
                         <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
                       )}
@@ -756,7 +786,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               </Badge>
                             );
                           })()}
-                          <ActivityNotesPopover scheduleItemId={childItem.id} />
+                          <ActivityNotesPopover 
+                            scheduleItemId={childItem.id} 
+                            noteCount={noteCounts[childItem.id] || 0}
+                          />
                           {visibleColumns.completion && (
                             <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
                           )}

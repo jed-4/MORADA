@@ -8310,6 +8310,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Activity Notes routes
+  app.post("/api/activity-notes/batch-counts", requireAuth, async (req, res) => {
+    try {
+      const { scheduleItemIds } = req.body;
+      
+      if (!Array.isArray(scheduleItemIds)) {
+        return res.status(400).json({ error: "scheduleItemIds must be an array" });
+      }
+      
+      const counts = await storage.getBatchActivityNoteCounts(scheduleItemIds);
+      res.json(counts);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch batch activity note counts",
+        details: error.message 
+      });
+    }
+  });
+
   app.get("/api/schedule-items/:scheduleItemId/activity-notes", requireAuth, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 10;

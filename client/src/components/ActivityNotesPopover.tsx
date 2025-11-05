@@ -61,6 +61,10 @@ export function ActivityNotesPopover({
       queryClient.invalidateQueries({ 
         queryKey: [`/api/schedule-items/${scheduleItemId}/activity-notes`] 
       });
+      // Invalidate batch counts to update badges across all views
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/activity-notes/batch-counts'] 
+      });
       setNewNoteContent("");
       setOffset(0);
       toast({
@@ -102,7 +106,12 @@ export function ActivityNotesPopover({
     return name.substring(0, 2).toUpperCase();
   };
 
-  const hasNotes = externalNoteCount !== undefined ? externalNoteCount > 0 : totalCount > 0;
+  // Use external count by default, but prefer the larger of the two when popover is open
+  // to ensure fresh counts after mutations while popover stays open
+  const effectiveCount = externalNoteCount !== undefined 
+    ? (isOpen ? Math.max(externalNoteCount, totalCount) : externalNoteCount)
+    : totalCount;
+  const hasNotes = effectiveCount > 0;
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -116,13 +125,13 @@ export function ActivityNotesPopover({
           >
             <MessageSquare className="h-4 w-4" />
           </Button>
-          {hasNotes && totalCount > 0 && (
+          {hasNotes && (
             <Badge 
               variant="default"
               className="absolute -top-1 -right-1 rounded-full px-1"
               data-testid="badge-note-count"
             >
-              {totalCount > 99 ? "99+" : totalCount}
+              {effectiveCount > 99 ? "99+" : effectiveCount}
             </Badge>
           )}
         </div>

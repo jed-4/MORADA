@@ -640,6 +640,7 @@ export interface IStorage {
   // Activity Notes CRUD
   getActivityNotes(scheduleItemId: string, limit?: number, offset?: number): Promise<ActivityNote[]>;
   getActivityNoteCount(scheduleItemId: string): Promise<number>;
+  getBatchActivityNoteCounts(scheduleItemIds: string[]): Promise<Record<string, number>>;
   createActivityNote(note: InsertActivityNote): Promise<ActivityNote>;
   updateActivityNote(id: string, note: Partial<InsertActivityNote>): Promise<ActivityNote | undefined>;
   deleteActivityNote(id: string): Promise<boolean>;
@@ -4441,6 +4442,24 @@ export class MemStorage implements IStorage {
     return Array.from(this.activityNotes.values())
       .filter(note => note.scheduleItemId === scheduleItemId)
       .length;
+  }
+
+  async getBatchActivityNoteCounts(scheduleItemIds: string[]): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    
+    // Initialize all IDs with 0
+    scheduleItemIds.forEach(id => {
+      counts[id] = 0;
+    });
+    
+    // Count notes for each schedule item
+    Array.from(this.activityNotes.values()).forEach(note => {
+      if (scheduleItemIds.includes(note.scheduleItemId)) {
+        counts[note.scheduleItemId]++;
+      }
+    });
+    
+    return counts;
   }
 
   async createActivityNote(note: InsertActivityNote): Promise<ActivityNote> {
@@ -10682,6 +10701,37 @@ export class DbStorage implements IStorage {
       return Number(result[0]?.count || 0);
     } catch (error) {
       console.error("Database error in getActivityNoteCount:", error);
+      throw error;
+    }
+  }
+
+  async getBatchActivityNoteCounts(scheduleItemIds: string[]): Promise<Record<string, number>> {
+    try {
+      if (scheduleItemIds.length === 0) return {};
+      
+      const results = await db.select({
+        scheduleItemId: schema.activityNotes.scheduleItemId,
+        count: sql<number>`count(*)`
+      })
+        .from(schema.activityNotes)
+        .where(inArray(schema.activityNotes.scheduleItemId, scheduleItemIds))
+        .groupBy(schema.activityNotes.scheduleItemId);
+
+      const counts: Record<string, number> = {};
+      results.forEach(row => {
+        counts[row.scheduleItemId] = Number(row.count);
+      });
+      
+      // Initialize all requested IDs with 0 if they don't have notes
+      scheduleItemIds.forEach(id => {
+        if (!(id in counts)) {
+          counts[id] = 0;
+        }
+      });
+      
+      return counts;
+    } catch (error) {
+      console.error("Database error in getBatchActivityNoteCounts:", error);
       throw error;
     }
   }

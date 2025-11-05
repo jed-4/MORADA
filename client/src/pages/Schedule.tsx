@@ -110,6 +110,21 @@ export default function Schedule() {
     enabled: !!projectId,
   });
 
+  // Fetch note counts for all schedule items
+  const { data: noteCounts = {} } = useQuery<Record<string, number>>({
+    queryKey: ['/api/activity-notes/batch-counts', projectId],
+    queryFn: async () => {
+      const scheduleItemIds = scheduleItems.map(item => item.id);
+      if (scheduleItemIds.length === 0) return {};
+      
+      const response = await apiRequest('/api/activity-notes/batch-counts', 'POST', {
+        scheduleItemIds
+      });
+      return response;
+    },
+    enabled: scheduleItems.length > 0,
+  });
+
   // Fetch contacts for assignee selection
   const { data: contacts = [] } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -723,6 +738,7 @@ export default function Schedule() {
             ) : (
               <CasvaScheduleList
                 items={filteredItems}
+                noteCounts={noteCounts}
                 onEditItem={(item) => {
                   setEditingItem(item);
                   setShowItemDialog(true);
