@@ -2804,7 +2804,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/projects/:projectId/scope-stages/initialize", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
-      const stages = await storage.initializeDefaultStages(req.params.projectId, companyId);
+      const projectId = req.params.projectId;
+      
+      // Verify project exists before initializing stages
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const stages = await storage.initializeDefaultStages(projectId, companyId);
       res.status(201).json(stages);
     } catch (error) {
       console.error("Error initializing scope stages:", error);
