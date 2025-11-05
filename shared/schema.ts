@@ -2206,6 +2206,55 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
 export type InsertScheduleItem = z.infer<typeof insertScheduleItemSchema>;
 export type ScheduleItem = typeof scheduleItems.$inferSelect;
 
+// Activity Notes for Schedule Items (manual notes + system-generated activity)
+export const activityNotes = pgTable("activity_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleItemId: varchar("schedule_item_id").notNull().references(() => scheduleItems.id, { onDelete: "cascade" }),
+  
+  // User info (null for system-generated notes)
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  userName: text("user_name"), // Cached for performance
+  
+  // Note type and content
+  type: text("type").notNull().default("user"), // "user" | "system"
+  content: text("content").notNull(),
+  
+  // System activity metadata
+  activityType: text("activity_type"), // "status_change" | "date_change" | "dependency_change" | "assignment_change" etc.
+  metadata: json("metadata"), // Store old/new values for system activities: {oldValue, newValue, field}
+  
+  // @Mentions support
+  mentionedUserIds: json("mentioned_user_ids").default([]), // Array of user IDs mentioned in the note
+  
+  // Edit tracking
+  editedAt: timestamp("edited_at"),
+  isEdited: boolean("is_edited").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("activity_notes_schedule_item_idx").on(table.scheduleItemId),
+  index("activity_notes_created_at_idx").on(table.createdAt),
+  index("activity_notes_user_idx").on(table.userId),
+]);
+
+export const insertActivityNoteSchema = createInsertSchema(activityNotes).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  type: z.enum(["user", "system"]).default("user"),
+  activityType: z.enum(["status_change", "date_change", "dependency_change", "assignment_change", "priority_change", "progress_change"]).optional(),
+  metadata: z.object({
+    field: z.string().optional(),
+    oldValue: z.any().optional(),
+    newValue: z.any().optional(),
+  }).optional(),
+  mentionedUserIds: z.array(z.string()).optional(),
+  editedAt: z.coerce.date().optional(),
+});
+
+export type InsertActivityNote = z.infer<typeof insertActivityNoteSchema>;
+export type ActivityNote = typeof activityNotes.$inferSelect;
+
 // Schedule Templates (reusable schedule templates)
 export const scheduleTemplates = pgTable("schedule_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
