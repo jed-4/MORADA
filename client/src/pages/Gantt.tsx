@@ -101,37 +101,57 @@ export default function Gantt() {
 
     const start = startOfWeek(new Date(Math.min(...allDates.map(d => d.getTime()))));
     const end = addDays(new Date(Math.max(...allDates.map(d => d.getTime()))), 14);
-    const days = differenceInDays(end, start);
+    const days = differenceInDays(end, start) + 1; // +1 to match eachDayOfInterval inclusive behavior
 
     return { timelineStart: start, timelineEnd: end, totalDays: days };
   }, [stages, subtasksByStage]);
 
   // Generate timeline headers based on zoom level
   const timelineHeaders = useMemo(() => {
-    if (zoomLevel === 'week') {
-      return eachWeekOfInterval({ start: timelineStart, end: timelineEnd }).map(week => ({
-        date: week,
-        label: format(week, 'MMM d'),
-        width: 140, // pixels per week
-      }));
-    } else if (zoomLevel === 'day') {
+    if (zoomLevel === 'day') {
       return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => ({
         date: day,
         label: format(day, 'd'),
         width: 40, // pixels per day
       }));
+    } else if (zoomLevel === 'week') {
+      const weeks = eachWeekOfInterval({ start: timelineStart, end: timelineEnd });
+      return weeks.map((week, idx) => {
+        // Calculate actual days in this week segment (bounded by timelineEnd)
+        const nextWeek = weeks[idx + 1];
+        const segmentEnd = nextWeek ? addDays(nextWeek, -1) : timelineEnd;
+        const daysInSegment = differenceInDays(segmentEnd, week) + 1;
+        return {
+          date: week,
+          label: format(week, 'MMM d'),
+          width: daysInSegment * 20, // 20px per day in week view
+        };
+      });
     } else {
-      // month view - group by weeks
-      return eachWeekOfInterval({ start: timelineStart, end: timelineEnd }).map(week => ({
-        date: week,
-        label: format(week, 'MMM d'),
-        width: 80, // pixels per week in month view
-      }));
+      // month view - compressed weeks
+      const weeks = eachWeekOfInterval({ start: timelineStart, end: timelineEnd });
+      return weeks.map((week, idx) => {
+        // Calculate actual days in this week segment (bounded by timelineEnd)
+        const nextWeek = weeks[idx + 1];
+        const segmentEnd = nextWeek ? addDays(nextWeek, -1) : timelineEnd;
+        const daysInSegment = differenceInDays(segmentEnd, week) + 1;
+        return {
+          date: week,
+          label: format(week, 'MMM d'),
+          width: daysInSegment * 10, // 10px per day in month view
+        };
+      });
     }
   }, [timelineStart, timelineEnd, zoomLevel]);
 
-  const timelineWidth = timelineHeaders.reduce((sum, h) => sum + h.width, 0);
-  const pixelsPerDay = timelineWidth / totalDays;
+  // Calculate pixels per day based on zoom level
+  const pixelsPerDay = useMemo(() => {
+    if (zoomLevel === 'day') return 40;
+    if (zoomLevel === 'week') return 20; // 140px / 7 days
+    return 10; // 70px / 7 days for month view
+  }, [zoomLevel]);
+
+  const timelineWidth = totalDays * pixelsPerDay;
 
   // Convert date to pixel position
   const getPosition = (date: Date) => {
@@ -186,49 +206,50 @@ export default function Gantt() {
     });
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!dragging || !timelineRef.current) return;
+  // Attach global listeners with proper cleanup
+  useEffect(() => {
+    if (!dragging) return;
 
-    const deltaX = e.clientX - dragging.startX;
-    const deltaDays = Math.round(deltaX / pixelsPerDay);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragging || !timelineRef.current) return;
+
+      const deltaX = e.clientX - dragging.startX;
+      const deltaDays = Math.round(deltaX / pixelsPerDay);
+      
+      if (deltaDays === 0) return; // No change
+
+      const newStart = addDays(dragging.originalStart, deltaDays);
+      const newEnd = addDays(newStart, dragging.duration);
+
+      if (dragging.type === 'stage') {
+        updateStageMutation.mutate({
+          id: dragging.id,
+          startDate: newStart,
+          endDate: newEnd,
+        });
+      } else {
+        updateSubtaskMutation.mutate({
+          id: dragging.id,
+          startDate: newStart,
+          endDate: newEnd,
+        });
+      }
+
+      setDragging(null);
+    };
+
+    const handleMouseUp = () => {
+      setDragging(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
     
-    if (deltaDays === 0) return; // No change
-
-    const newStart = addDays(dragging.originalStart, deltaDays);
-    const newEnd = addDays(newStart, dragging.duration);
-
-    if (dragging.type === 'stage') {
-      updateStageMutation.mutate({
-        id: dragging.id,
-        startDate: newStart,
-        endDate: newEnd,
-      });
-    } else {
-      updateSubtaskMutation.mutate({
-        id: dragging.id,
-        startDate: newStart,
-        endDate: newEnd,
-      });
-    }
-
-    setDragging(null);
-  };
-
-  const handleMouseUp = () => {
-    setDragging(null);
-  };
-
-  // Attach global listeners
-  useMemo(() => {
-    if (dragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [dragging]);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragging, pixelsPerDay, updateStageMutation, updateSubtaskMutation]);
 
   const toggleCollapse = (stageId: string) => {
     setCollapsedStages(prev => {
@@ -393,7 +414,7 @@ export default function Gantt() {
                 const isCollapsed = collapsedStages.has(stage.id);
                 const subtasks = subtasksByStage[stage.id] || [];
                 const stageStart = getPosition(new Date(stage.startDate));
-                const stageDuration = differenceInDays(new Date(stage.endDate), new Date(stage.startDate)) + 1;
+                const stageDuration = differenceInDays(new Date(stage.endDate), new Date(stage.startDate)) + 1; // +1 for inclusive span
                 const stageWidth = stageDuration * pixelsPerDay;
                 const barColor = getBarColor(stage.status, stage.isDelayed);
 
@@ -422,7 +443,7 @@ export default function Gantt() {
                     {/* Subtask bar rows */}
                     {!isCollapsed && subtasks.map((subtask) => {
                       const subtaskStart = getPosition(new Date(subtask.startDate));
-                      const subtaskDuration = differenceInDays(new Date(subtask.endDate), new Date(subtask.startDate)) + 1;
+                      const subtaskDuration = differenceInDays(new Date(subtask.endDate), new Date(subtask.startDate)) + 1; // +1 for inclusive span
                       const subtaskWidth = subtaskDuration * pixelsPerDay;
                       const subtaskColor = getBarColor(subtask.status, subtask.isDelayed);
 
