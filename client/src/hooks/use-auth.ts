@@ -18,8 +18,9 @@ export function useAuth() {
       const response = await apiRequest('/api/auth/login', 'POST', { email, password });
       return response;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+    onSuccess: async () => {
+      // Force refetch the user data after successful login
+      await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
     },
   });
 
@@ -43,8 +44,9 @@ export function useAuth() {
       });
       return response;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+    onSuccess: async () => {
+      // Force refetch the user data after successful registration
+      await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
     },
   });
 
