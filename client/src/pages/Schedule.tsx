@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
@@ -53,6 +53,7 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -1025,6 +1026,123 @@ export default function Schedule() {
                   }}
                   data-testid="input-item-progress"
                 />
+              </div>
+            )}
+
+            {/* Dependencies Section */}
+            {editingItem && (
+              <div className="space-y-2 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <Label>Dependencies (Predecessors)</Label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-testid="button-add-dependency"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Predecessor
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      {allItems
+                        .filter(item => 
+                          item.id !== editingItem.id && 
+                          !(editingItem.dependencies as any[] || []).some((d: any) => d.id === item.id)
+                        )
+                        .map(item => (
+                          <DropdownMenuItem
+                            key={item.id}
+                            onClick={async () => {
+                              try {
+                                const updatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}/dependencies`, "POST", {
+                                  predecessorId: item.id,
+                                  type: "FS",
+                                });
+                                // Update local editingItem state to reflect the change immediately
+                                setEditingItem(updatedItem);
+                                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                toast({ title: "Dependency added" });
+                              } catch (error: any) {
+                                toast({
+                                  title: "Failed to add dependency",
+                                  description: error.error || error.message || "This would create a circular dependency",
+                                  variant: "destructive",
+                                });
+                              }
+                            }}
+                            data-testid={`option-add-dependency-${item.id}`}
+                          >
+                            {item.name}
+                          </DropdownMenuItem>
+                        ))}
+                      {allItems.filter(item => 
+                        item.id !== editingItem.id && 
+                        !(editingItem.dependencies as any[] || []).some((d: any) => d.id === item.id)
+                      ).length === 0 && (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          No available items
+                        </div>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="space-y-2">
+                  {(editingItem.dependencies as any[] || []).length > 0 ? (
+                    (editingItem.dependencies as any[]).map((dep: any) => {
+                      const predItem = allItems.find(i => i.id === dep.id);
+                      return predItem ? (
+                        <div
+                          key={dep.id}
+                          className="flex items-center justify-between p-2 rounded-md border bg-card"
+                          data-testid={`dependency-${dep.id}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium">{predItem.name}</div>
+                            <Badge variant="outline" className="text-xs">
+                              {dep.type || "FS"}
+                            </Badge>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={async () => {
+                              try {
+                                const updatedItem = await apiRequest(
+                                  `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                  "DELETE"
+                                );
+                                // Update local editingItem state to reflect the change immediately
+                                setEditingItem(updatedItem);
+                                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                toast({ title: "Dependency removed" });
+                              } catch (error) {
+                                toast({
+                                  title: "Failed to remove dependency",
+                                  variant: "destructive",
+                                });
+                              }
+                            }}
+                            data-testid={`button-remove-dependency-${dep.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      ) : null;
+                    })
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No dependencies. This item can start at any time.
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Dependencies control when this item can start. It will wait for predecessor items to finish (Finish-to-Start).
+                </p>
               </div>
             )}
           </div>
