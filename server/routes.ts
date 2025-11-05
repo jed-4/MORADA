@@ -8093,6 +8093,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get schedule items for a specific project (used by Gantt timeline)
+  app.get("/api/projects/:projectId/schedule-items", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const items = await storage.getScheduleItemsByProject(req.params.projectId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedule items",
+        details: error.message 
+      });
+    }
+  });
+
   // Get all schedule items across all schedules/projects
   app.get("/api/schedule-items/all", async (req, res) => {
     try {

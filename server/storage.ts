@@ -614,6 +614,7 @@ export interface IStorage {
 
   // Schedule Items CRUD
   getScheduleItems(scheduleId: string): Promise<ScheduleItem[]>;
+  getScheduleItemsByProject(projectId: string): Promise<ScheduleItem[]>;
   getAllScheduleItems(companyId: string): Promise<ScheduleItem[]>;
   getScheduleItem(id: string): Promise<ScheduleItem | undefined>;
   createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem>;
@@ -10275,6 +10276,21 @@ export class DbStorage implements IStorage {
         .orderBy(schema.scheduleItems.sortOrder, schema.scheduleItems.startDate);
     } catch (error) {
       console.error("Database error in getScheduleItems:", error);
+      throw error;
+    }
+  }
+
+  async getScheduleItemsByProject(projectId: string): Promise<ScheduleItem[]> {
+    try {
+      const items = await db.select()
+        .from(schema.scheduleItems)
+        .innerJoin(schema.schedules, eq(schema.scheduleItems.scheduleId, schema.schedules.id))
+        .where(eq(schema.schedules.projectId, projectId))
+        .orderBy(schema.scheduleItems.sortOrder, schema.scheduleItems.startDate);
+      
+      return items.map(item => item.schedule_items);
+    } catch (error) {
+      console.error("Database error in getScheduleItemsByProject:", error);
       throw error;
     }
   }
