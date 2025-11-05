@@ -4,7 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ChevronRight, ChevronDown, MoreVertical, FileDown, FileText, Download } from "lucide-react";
+import { Plus, ChevronRight, ChevronDown, MoreVertical, FileDown, FileText, Download, ZoomIn, ZoomOut } from "lucide-react";
 import { format, differenceInDays, addDays, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -47,6 +47,9 @@ export default function Gantt() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(1); // 1 = normal, 2 = zoomed in, 0.5 = zoomed out
+  const [draggingStageId, setDraggingStageId] = useState<string | null>(null);
+  const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
   // Fetch stages
   const { data: stages = [], isLoading } = useQuery<GanttStage[]>({
@@ -176,6 +179,20 @@ export default function Gantt() {
         }
         return next;
       });
+    },
+  });
+
+  // Reorder stages mutation
+  const reorderStagesMutation = useMutation({
+    mutationFn: async ({ stageId, newIndex }: { stageId: string; newIndex: number }) => {
+      return apiRequest(`/api/projects/${projectId}/gantt/stages/${stageId}/reorder`, {
+        method: "PATCH",
+        body: JSON.stringify({ displayOrder: newIndex }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
+      toast({ title: "Stages reordered" });
     },
   });
 
@@ -352,6 +369,40 @@ export default function Gantt() {
     // TODO: Implement template save
   };
 
+  // Drag-to-reorder handlers
+  const handleStageDragStart = (e: React.DragEvent, stageId: string) => {
+    setDraggingStageId(stageId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleStageDragOver = (e: React.DragEvent, stageId: string) => {
+    e.preventDefault();
+    if (draggingStageId && draggingStageId !== stageId) {
+      setDragOverStageId(stageId);
+    }
+  };
+
+  const handleStageDrop = (e: React.DragEvent, targetStageId: string) => {
+    e.preventDefault();
+    if (draggingStageId && draggingStageId !== targetStageId) {
+      // Find the indices
+      const draggedIndex = stages.findIndex(s => s.id === draggingStageId);
+      const targetIndex = stages.findIndex(s => s.id === targetStageId);
+      
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        // Update the display order on the server
+        reorderStagesMutation.mutate({ stageId: draggingStageId, newIndex: targetIndex });
+      }
+    }
+    setDraggingStageId(null);
+    setDragOverStageId(null);
+  };
+
+  const handleStageDragEnd = () => {
+    setDraggingStageId(null);
+    setDragOverStageId(null);
+  };
+
   if (isLoading) {
     return <div className="p-6">Loading Gantt chart...</div>;
   }
@@ -361,8 +412,43 @@ export default function Gantt() {
       {/* Top Bar with Actions */}
       <div className="flex items-center justify-between p-4 border-b">
         <h1 className="text-2xl font-semibold" style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>Gantt Chart</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          {/* Zoom Controls */}
           <TooltipProvider>
+            <div className="flex items-center gap-2 px-3 py-1 rounded-lg border">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7"
+                    onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.25))}
+                    disabled={zoomLevel <= 0.5}
+                    data-testid="button-zoom-out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Zoom out</TooltipContent>
+              </Tooltip>
+              <span className="text-sm font-medium w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7"
+                    onClick={() => setZoomLevel(prev => Math.min(2, prev + 0.25))}
+                    disabled={zoomLevel >= 2}
+                    data-testid="button-zoom-in"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Zoom in</TooltipContent>
+              </Tooltip>
+            </div>
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="sm" onClick={handleSaveTemplate} data-testid="button-save-template">
@@ -425,6 +511,7 @@ export default function Gantt() {
               <div 
                 ref={timelineRef}
                 className="flex-1 relative h-12"
+                style={{ width: `${zoomLevel * 100}%` }}
               >
                 {timelineDays.map((day, idx) => {
                   const isFirstOfMonth = day.getDate() === 1;
@@ -470,17 +557,29 @@ export default function Gantt() {
 
                   return (
                     <div key={stage.id}>
-                      {/* Stage Row */}
+                      {/* Stage Row - 40px height, draggable, rounded-xl */}
                       <div
-                        className="flex items-center h-10 hover-elevate rounded-md transition-all duration-200"
+                        draggable
+                        onDragStart={(e) => handleStageDragStart(e, stage.id)}
+                        onDragOver={(e) => handleStageDragOver(e, stage.id)}
+                        onDrop={(e) => handleStageDrop(e, stage.id)}
+                        onDragEnd={handleStageDragEnd}
+                        className={`flex items-center h-10 hover-elevate rounded-xl transition-all duration-200 cursor-move ${
+                          dragOverStageId === stage.id ? 'border-2 border-primary' : ''
+                        } ${draggingStageId === stage.id ? 'opacity-50' : ''}`}
                         style={{
+                          height: '40px',
                           backgroundColor: '#f8f4ff',
                         }}
+                        data-testid={`stage-row-${stage.id}`}
                       >
-                        <div className="w-64 flex-shrink-0 flex items-center gap-2 px-2">
+                        <div className="w-64 flex-shrink-0 flex items-center gap-2 px-3">
                           <button
-                            onClick={() => toggleCollapseMutation.mutate(stage.id)}
-                            className="p-1 hover-elevate rounded transition-transform duration-200 hover:scale-110"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCollapseMutation.mutate(stage.id);
+                            }}
+                            className="p-1 hover-elevate rounded transition-transform duration-200 hover:scale-110 flex-shrink-0"
                             data-testid={`button-toggle-collapse-${stage.id}`}
                           >
                             {isCollapsed ? (
@@ -489,20 +588,23 @@ export default function Gantt() {
                               <ChevronDown className="w-4 h-4" />
                             )}
                           </button>
-                          <span className="font-semibold truncate" style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>
+                          <span className="font-semibold truncate" style={{ fontFamily: 'Clash Grotesk, sans-serif', fontSize: '18px' }}>
                             {stage.name}
                           </span>
                         </div>
-                        <div className="flex-1 relative h-full flex items-center">
-                          {/* Stage Bar - Draggable with hover lift */}
+                        <div className="flex-1 relative h-full flex items-center" style={{ width: `${zoomLevel * 100}%` }}>
+                          {/* Stage Bar - Solid lilac with hover lift */}
                           <div
                             className="absolute h-6 rounded flex items-center px-2 text-white text-xs font-medium cursor-move transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
                             style={{
                               ...getBarStyle(new Date(stage.startDate), new Date(stage.endDate)),
-                              backgroundColor: stage.color || '#bba7db',
+                              backgroundColor: '#bba7db',
                               border: isCritical ? '2px solid #ef4444' : 'none',
                             }}
-                            onMouseDown={(e) => handleBarMouseDown(e, 'stage', stage.id, new Date(stage.startDate))}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleBarMouseDown(e, 'stage', stage.id, new Date(stage.startDate));
+                            }}
                             data-testid={`stage-bar-${stage.id}`}
                           >
                             {stage.name}
@@ -530,56 +632,69 @@ export default function Gantt() {
                             );
                           })()}
                         </div>
-                        <div className="w-48 flex-shrink-0 flex items-center justify-center gap-2 px-2">
-                          {stage.foremanName && (
-                            <Badge variant="secondary" className="text-xs">
-                              {stage.foremanName}
-                            </Badge>
-                          )}
-                          {stage.hasRfq && <Badge variant="outline" className="text-xs">RFQ</Badge>}
-                          {stage.hasPo && <Badge variant="outline" className="text-xs">PO</Badge>}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6">
-                                <MoreVertical className="w-3 h-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setSelectedStageId(stage.id);
-                                  setAddSubtaskOpen(true);
-                                }}
-                              >
-                                Add Subtask
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => deleteStageMutation.mutate(stage.id)}
-                                className="text-destructive"
-                              >
-                                Delete Stage
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                        {/* Chips Column - Vertical stack, 24px tall */}
+                        <div className="w-48 flex-shrink-0 flex flex-col items-start justify-center gap-1 px-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {stage.foremanName && (
+                              <Badge variant="secondary" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-foreman-${stage.id}`}>
+                                {stage.foremanName}
+                              </Badge>
+                            )}
+                            {stage.hasRfq && (
+                              <Badge variant="outline" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-rfq-${stage.id}`}>
+                                RFQ
+                              </Badge>
+                            )}
+                            {stage.hasPo && (
+                              <Badge variant="outline" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-po-${stage.id}`}>
+                                PO
+                              </Badge>
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => e.stopPropagation()}>
+                                  <MoreVertical className="w-3 h-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedStageId(stage.id);
+                                    setAddSubtaskOpen(true);
+                                  }}
+                                >
+                                  Add Subtask
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => deleteStageMutation.mutate(stage.id)}
+                                  className="text-destructive"
+                                >
+                                  Delete Stage
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Subtasks */}
+                      {/* Subtasks - 40px height, indented, dotted bars */}
                       {!isCollapsed && subtasks.map((subtask) => (
                         <div
                           key={subtask.id}
-                          className="flex items-center h-10 hover-elevate rounded-md ml-8 transition-all duration-200"
+                          className="flex items-center hover-elevate rounded-md ml-8 transition-all duration-200"
                           style={{
+                            height: '40px',
                             backgroundColor: '#fafafa',
                           }}
+                          data-testid={`subtask-row-${subtask.id}`}
                         >
-                          <div className="w-56 flex-shrink-0 px-2">
+                          <div className="w-56 flex-shrink-0 px-3">
                             <span className="text-sm truncate" style={{ fontFamily: 'Manrope, sans-serif' }}>
                               {subtask.name}
                             </span>
                           </div>
-                          <div className="flex-1 relative h-full flex items-center">
-                            {/* Subtask Bar (dotted) - Draggable with hover lift */}
+                          <div className="flex-1 relative h-full flex items-center" style={{ width: `${zoomLevel * 100}%` }}>
+                            {/* Subtask Bar - Dotted border, light lilac fill */}
                             <div
                               className="absolute h-4 rounded flex items-center px-2 text-xs cursor-move transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
                               style={{
@@ -593,22 +708,34 @@ export default function Gantt() {
                               {subtask.name}
                             </div>
                           </div>
-                          <div className="w-48 flex-shrink-0 flex items-center justify-center gap-2 px-2">
-                            {subtask.assignedToName && (
-                              <Badge variant="secondary" className="text-xs">
-                                {subtask.assignedToName}
-                              </Badge>
-                            )}
-                            {subtask.hasRfq && <Badge variant="outline" className="text-xs">RFQ</Badge>}
-                            {subtask.hasPo && <Badge variant="outline" className="text-xs">PO</Badge>}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => deleteSubtaskMutation.mutate(subtask.id)}
-                            >
-                              <MoreVertical className="w-3 h-3" />
-                            </Button>
+                          {/* Chips Column - 24px tall */}
+                          <div className="w-48 flex-shrink-0 flex flex-col items-start justify-center gap-1 px-3">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {subtask.assignedToName && (
+                                <Badge variant="secondary" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-assigned-${subtask.id}`}>
+                                  {subtask.assignedToName}
+                                </Badge>
+                              )}
+                              {subtask.hasRfq && (
+                                <Badge variant="outline" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-rfq-${subtask.id}`}>
+                                  RFQ
+                                </Badge>
+                              )}
+                              {subtask.hasPo && (
+                                <Badge variant="outline" className="text-xs h-6 px-2 cursor-pointer hover-elevate" data-testid={`chip-po-${subtask.id}`}>
+                                  PO
+                                </Badge>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => deleteSubtaskMutation.mutate(subtask.id)}
+                                data-testid={`button-delete-subtask-${subtask.id}`}
+                              >
+                                <MoreVertical className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ))}
