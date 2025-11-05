@@ -4597,6 +4597,16 @@ export class DbStorage implements IStorage {
         isActive: true,
         sortOrder: 12,
       },
+      {
+        id: 'cat-schedule-item-status',
+        key: 'schedule_item.status',
+        label: 'Schedule Item Statuses',
+        entity: 'schedule_item',
+        description: 'Status options for schedule items',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 13,
+      },
     ];
 
     for (const categoryData of requiredCategories) {
