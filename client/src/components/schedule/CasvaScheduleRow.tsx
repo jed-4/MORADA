@@ -6,6 +6,7 @@ import { Pencil, GripVertical, ChevronRight, ChevronDown } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TableCell } from "@/components/ui/table";
+import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 
 export interface CasvaScheduleRowProps {
   item: ScheduleItem;
@@ -117,6 +118,7 @@ export function CasvaScheduleRow({
           {item.status && (
             <ColorChip type="status" value={item.status} />
           )}
+          <ActivityNotesPopover scheduleItemId={item.id} />
         </div>
       </TableCell>
 

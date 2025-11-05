@@ -25,6 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
+import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 import type { ScheduleItem } from "@shared/schema";
 
 type ZoomLevel = 'day' | 'week' | 'month';
@@ -652,6 +653,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           </Badge>
                         );
                       })()}
+                      <ActivityNotesPopover scheduleItemId={parentItem.id} />
                       {visibleColumns.completion && (
                         <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
                       )}
@@ -754,6 +756,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               </Badge>
                             );
                           })()}
+                          <ActivityNotesPopover scheduleItemId={childItem.id} />
                           {visibleColumns.completion && (
                             <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
                           )}
