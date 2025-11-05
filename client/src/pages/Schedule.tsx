@@ -267,6 +267,8 @@ export default function Schedule() {
       parentItemId: "",
       progressPercent: 0,
     });
+    setDescriptionExpanded(false);
+    setNotesExpanded(false);
   };
 
   // Handle submit
@@ -319,6 +321,9 @@ export default function Schedule() {
         parentItemId: editingItem.parentItemId || "",
         progressPercent: editingItem.progressPercent || 0,
       });
+      // Auto-expand description/notes only if they have content
+      setDescriptionExpanded(!!(editingItem.description && editingItem.description.trim()));
+      setNotesExpanded(!!(editingItem.notes && editingItem.notes.trim()));
     } else {
       resetForm();
     }
@@ -761,14 +766,14 @@ export default function Schedule() {
 
       {/* Create/Edit Item Dialog */}
       <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
             <DialogDescription>
               {editingItem ? "Update the schedule item details." : "Create a new item in the schedule."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 flex-1 overflow-y-auto">
+          <div className="space-y-4 overflow-y-auto flex-1 px-1">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="item-name">
@@ -1023,7 +1028,7 @@ export default function Schedule() {
               </div>
             )}
           </div>
-          <DialogFooter className="sticky bottom-0 bg-background border-t pt-4 flex-shrink-0">
+          <DialogFooter className="border-t pt-4 mt-4">
             <Button 
               variant="outline" 
               onClick={() => {
