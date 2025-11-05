@@ -42,10 +42,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState<{
     id: string;
+    type: 'move' | 'resize-left' | 'resize-right' | 'dependency';
     startX: number;
+    startY: number;
     originalStart: Date;
-    duration: number;
+    originalEnd: Date;
+    currentX?: number;
+    currentY?: number;
   } | null>(null);
+  const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -239,19 +244,21 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   // Drag handlers
   const handleBarMouseDown = (
     e: React.MouseEvent,
-    item: ScheduleItem
+    item: ScheduleItem,
+    dragType: 'move' | 'resize-left' | 'resize-right' | 'dependency' = 'move'
   ) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Only start dragging if holding shift key (otherwise click opens modal)
-    if (!e.shiftKey) return;
-    
     setDragging({
       id: item.id,
+      type: dragType,
       startX: e.clientX,
+      startY: e.clientY,
       originalStart: new Date(item.startDate),
-      duration: differenceInDays(new Date(item.endDate), new Date(item.startDate)),
+      originalEnd: new Date(item.endDate),
+      currentX: e.clientX,
+      currentY: e.clientY,
     });
   };
 
@@ -260,26 +267,66 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     if (!dragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragging || !timelineRef.current) return;
+      if (!dragging) return;
+
+      // Update current position for dependency line drawing
+      setDragging(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+    };
+
+    const handleMouseUp = async (e: MouseEvent) => {
+      if (!dragging || !timelineRef.current) {
+        setDragging(null);
+        return;
+      }
 
       const deltaX = e.clientX - dragging.startX;
       const deltaDays = Math.round(deltaX / pixelsPerDay);
-      
-      if (deltaDays === 0) return;
 
-      const newStart = addDays(dragging.originalStart, deltaDays);
-      const newEnd = addDays(newStart, dragging.duration);
+      if (dragging.type === 'move') {
+        // Move the entire bar (reschedule)
+        if (deltaDays !== 0) {
+          const newStart = addDays(dragging.originalStart, deltaDays);
+          const newEnd = addDays(dragging.originalEnd, deltaDays);
 
-      updateItemMutation.mutate({
-        id: dragging.id,
-        startDate: newStart,
-        endDate: newEnd,
-      });
+          await updateItemMutation.mutateAsync({
+            id: dragging.id,
+            startDate: newStart,
+            endDate: newEnd,
+          });
+        }
+      } else if (dragging.type === 'resize-left') {
+        // Resize from the left (change start date)
+        if (deltaDays !== 0) {
+          const newStart = addDays(dragging.originalStart, deltaDays);
+          
+          // Ensure start is before end (minimum 1 day duration)
+          if (newStart < dragging.originalEnd) {
+            await updateItemMutation.mutateAsync({
+              id: dragging.id,
+              startDate: newStart,
+              endDate: dragging.originalEnd,
+            });
+          }
+        }
+      } else if (dragging.type === 'resize-right') {
+        // Resize from the right (change end date)
+        if (deltaDays !== 0) {
+          const newEnd = addDays(dragging.originalEnd, deltaDays);
+          
+          // Ensure end is after start (minimum 1 day duration)
+          if (newEnd > dragging.originalStart) {
+            await updateItemMutation.mutateAsync({
+              id: dragging.id,
+              startDate: dragging.originalStart,
+              endDate: newEnd,
+            });
+          }
+        }
+      } else if (dragging.type === 'dependency') {
+        // Handle dependency creation (check if dropped on another bar)
+        // This will be handled by the bar's onMouseUp handler
+      }
 
-      setDragging(null);
-    };
-
-    const handleMouseUp = () => {
       setDragging(null);
     };
 
@@ -824,7 +871,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     {/* Parent item bar row */}
                     <div className={`h-10 border-b relative group ${parentIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
                       <div
-                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all z-10"
+                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-move shadow-sm hover:shadow-lg transition-all z-10 group/bar"
                         style={{
                           left: `${parentStart}px`,
                           width: `${parentWidth}px`,
@@ -832,14 +879,47 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           border: isOverdue ? '2px dashed #dc2626' : 'none',
                         }}
                         onClick={(e) => handleBarClick(e, parentItem)}
-                        onMouseDown={(e) => handleBarMouseDown(e, parentItem)}
+                        onMouseDown={(e) => handleBarMouseDown(e, parentItem, 'move')}
+                        onMouseEnter={() => setHoveredBar(parentItem.id)}
+                        onMouseLeave={() => setHoveredBar(null)}
                         data-testid={`bar-parent-${parentItem.id}`}
                       >
+                        {/* Left resize handle */}
+                        <div
+                          className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleBarMouseDown(e, parentItem, 'resize-left');
+                          }}
+                          data-testid={`resize-left-${parentItem.id}`}
+                        />
+                        
                         {nameFitsInBar && (
-                          <span className="text-xs font-medium text-white truncate">
+                          <span className="text-xs font-medium text-white truncate pointer-events-none">
                             {parentItem.name}
                           </span>
                         )}
+                        
+                        {/* Right resize handle */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleBarMouseDown(e, parentItem, 'resize-right');
+                          }}
+                          data-testid={`resize-right-${parentItem.id}`}
+                        />
+                        
+                        {/* Dependency connector circle (right side) */}
+                        <div
+                          className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleBarMouseDown(e, parentItem, 'dependency');
+                          }}
+                          title="Drag to create dependency"
+                          data-testid={`dependency-handle-${parentItem.id}`}
+                        />
                       </div>
                       {!nameFitsInBar && (
                         <div
@@ -868,7 +948,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       return (
                         <div key={childItem.id} className={`h-10 border-b relative group ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
                           <div
-                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-pointer shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all z-10"
+                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-move shadow-sm hover:shadow-lg transition-all z-10 group/bar"
                             style={{
                               left: `${childStart}px`,
                               width: `${childWidth}px`,
@@ -876,14 +956,47 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               border: '2px dotted rgba(255, 255, 255, 0.6)',
                             }}
                             onClick={(e) => handleBarClick(e, childItem)}
-                            onMouseDown={(e) => handleBarMouseDown(e, childItem)}
+                            onMouseDown={(e) => handleBarMouseDown(e, childItem, 'move')}
+                            onMouseEnter={() => setHoveredBar(childItem.id)}
+                            onMouseLeave={() => setHoveredBar(null)}
                             data-testid={`bar-child-${childItem.id}`}
                           >
+                            {/* Left resize handle */}
+                            <div
+                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleBarMouseDown(e, childItem, 'resize-left');
+                              }}
+                              data-testid={`resize-left-${childItem.id}`}
+                            />
+                            
                             {childNameFits && (
-                              <span className="text-xs font-medium text-white truncate">
+                              <span className="text-xs font-medium text-white truncate pointer-events-none">
                                 {childItem.name}
                               </span>
                             )}
+                            
+                            {/* Right resize handle */}
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleBarMouseDown(e, childItem, 'resize-right');
+                              }}
+                              data-testid={`resize-right-${childItem.id}`}
+                            />
+                            
+                            {/* Dependency connector circle (right side) */}
+                            <div
+                              className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleBarMouseDown(e, childItem, 'dependency');
+                              }}
+                              title="Drag to create dependency"
+                              data-testid={`dependency-handle-${childItem.id}`}
+                            />
                           </div>
                           {!childNameFits && (
                             <div
