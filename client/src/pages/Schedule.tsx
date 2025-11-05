@@ -53,6 +53,7 @@ import {
   Settings,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
 
 interface ScheduleParams {
   projectId: string;
@@ -679,67 +680,13 @@ export default function Schedule() {
                 )}
               </Card>
             ) : (
-              <div className="space-y-2">
-                {filteredItems.map((item) => (
-                  <Card key={item.id} className="hover-elevate" data-testid={`card-item-${item.id}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-medium">{item.name}</h3>
-                            <Badge variant="outline" className="text-xs">
-                              {item.type}
-                            </Badge>
-                            <Badge variant="secondary" className="text-xs">
-                              {item.status.replace("_", " ")}
-                            </Badge>
-                          </div>
-                          {item.description && (
-                            <p className="text-sm text-muted-foreground mb-2">{item.description}</p>
-                          )}
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <span>
-                              {new Date(item.startDate).toLocaleDateString()} -{" "}
-                              {new Date(item.endDate).toLocaleDateString()}
-                            </span>
-                            {item.assignedToName && (
-                              <span className="flex items-center gap-1">
-                                {item.assignedToColor && (
-                                  <span
-                                    className="w-3 h-3 rounded-full"
-                                    style={{ backgroundColor: item.assignedToColor }}
-                                  />
-                                )}
-                                {item.assignedToName}
-                              </span>
-                            )}
-                            {item.progressPercent > 0 && <span>{item.progressPercent}% complete</span>}
-                          </div>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-item-menu-${item.id}`}>
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingItem(item);
-                                setShowItemDialog(true);
-                              }}
-                              data-testid={`menu-item-edit-${item.id}`}
-                            >
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem data-testid={`menu-item-delete-${item.id}`}>Delete</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+              <CasvaScheduleList
+                items={filteredItems}
+                onEditItem={(item) => {
+                  setEditingItem(item);
+                  setShowItemDialog(true);
+                }}
+              />
             )}
           </TabsContent>
 
