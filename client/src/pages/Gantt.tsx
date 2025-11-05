@@ -208,13 +208,16 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     };
   };
 
-  // Get bar color - using neutral color, status colors shown in badges
+  // Get bar color - using custom color if set, otherwise neutral gray
   const getBarColor = (item: ScheduleItem) => {
+    // Use custom color if set
+    if (item.color) return item.color;
+    
     // Check if overdue
     const isOverdue = new Date(item.endDate) < new Date() && item.status !== 'completed';
     if (isOverdue) return '#ef4444'; // red for overdue
     
-    // Use neutral gray color for all bars
+    // Use neutral gray color as default
     return '#9ca3af'; // neutral gray
   };
 
