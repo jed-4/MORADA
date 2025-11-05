@@ -116,25 +116,14 @@ export function ActivityNotesPopover({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <div className="relative inline-flex">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-6 w-6 ${hasNotes ? "text-primary" : ""}`}
-            data-testid="button-activity-notes"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-          {hasNotes && (
-            <Badge 
-              variant="default"
-              className="absolute -top-1 -right-1 rounded-full px-1"
-              data-testid="badge-note-count"
-            >
-              {effectiveCount > 99 ? "99+" : effectiveCount}
-            </Badge>
-          )}
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-6 w-6 ${hasNotes ? "" : "text-muted-foreground"}`}
+          data-testid="button-activity-notes"
+        >
+          <MessageSquare className={`h-4 w-4 ${hasNotes ? "fill-primary text-primary" : ""}`} />
+        </Button>
       </PopoverTrigger>
       <PopoverContent 
         className="w-[400px] p-0" 

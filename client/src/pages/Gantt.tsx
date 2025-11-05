@@ -22,6 +22,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
@@ -55,7 +60,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showColumnConfig, setShowColumnConfig] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
@@ -578,63 +582,71 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             Filter
           </Button>
 
-          {/* Column Config Button */}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-8"
-            onClick={() => setShowColumnConfig(!showColumnConfig)}
-            data-testid="button-column-config"
-          >
-            <Columns className="w-4 h-4 mr-2" />
-            Columns
-          </Button>
+          {/* Column Config Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-8"
+                data-testid="button-column-config"
+              >
+                <Columns className="w-4 h-4 mr-2" />
+                Columns
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80" align="start">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-3">Show in left panel</h4>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.status}
+                        onChange={(e) => setVisibleColumns({ ...visibleColumns, status: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm">Status</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.assignee}
+                        onChange={(e) => setVisibleColumns({ ...visibleColumns, assignee: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm">Assignee</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.completion}
+                        onChange={(e) => setVisibleColumns({ ...visibleColumns, completion: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm">Completion %</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
-
-      {/* Column Config Dropdown */}
-      {showColumnConfig && (
-        <div className="px-6 py-3 border-b bg-muted/30">
-          <div className="flex items-center gap-4 text-sm">
-            <span className="font-medium text-muted-foreground">Show in left panel:</span>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={visibleColumns.status}
-                onChange={(e) => setVisibleColumns({ ...visibleColumns, status: e.target.checked })}
-                className="w-4 h-4"
-              />
-              <span>Status</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={visibleColumns.assignee}
-                onChange={(e) => setVisibleColumns({ ...visibleColumns, assignee: e.target.checked })}
-                className="w-4 h-4"
-              />
-              <span>Assignee</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={visibleColumns.completion}
-                onChange={(e) => setVisibleColumns({ ...visibleColumns, completion: e.target.checked })}
-                className="w-4 h-4"
-              />
-              <span>Completion %</span>
-            </label>
-          </div>
-        </div>
-      )}
 
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
         {/* Task Names Column (Fixed) */}
-        <div className="w-64 border-r flex flex-col bg-card">
-          {/* Header spacer */}
-          <div className="h-12 border-b flex items-center px-4 text-sm font-medium text-muted-foreground">
-            Task Name
+        <div className="w-80 border-r flex flex-col bg-card">
+          {/* Header row */}
+          <div className="h-12 border-b flex items-center px-2 text-xs font-medium text-muted-foreground">
+            <div className="flex-1 pl-2">Task Name</div>
+            {visibleColumns.status && <div className="w-20 text-center">Status</div>}
+            <div className="w-8 text-center">Notes</div>
+            {visibleColumns.completion && <div className="w-12 text-center">%</div>}
+            {visibleColumns.assignee && <div className="w-8 text-center">User</div>}
+            <div className="w-8"></div>
           </div>
           
           {/* Task rows */}
@@ -650,50 +662,75 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     className={`h-10 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer group ${parentIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
-                    {childItems.length > 0 && (
-                      <button
-                        onClick={() => toggleCollapse(parentItem.id)}
-                        className="p-1 hover:bg-accent rounded mr-1"
-                        data-testid={`button-toggle-${parentItem.id}`}
-                      >
-                        {isCollapsed ? (
-                          <ChevronRight className="w-4 h-4" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
-                      </button>
+                    {/* Task name column */}
+                    <div className="flex-1 flex items-center min-w-0">
+                      {childItems.length > 0 && (
+                        <button
+                          onClick={() => toggleCollapse(parentItem.id)}
+                          className="p-1 hover:bg-accent rounded flex-shrink-0"
+                          data-testid={`button-toggle-${parentItem.id}`}
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                      {childItems.length === 0 && <div className="w-6 flex-shrink-0" />}
+                      <span className="font-medium text-sm truncate">{parentItem.name}</span>
+                    </div>
+
+                    {/* Status column */}
+                    {visibleColumns.status && (
+                      <div className="w-20 flex items-center justify-center flex-shrink-0">
+                        {parentItem.status && (() => {
+                          const statusInfo = getStatusInfo(parentItem.status);
+                          return (
+                            <Badge 
+                              className="text-xs px-1.5 h-5 border-0"
+                              style={{
+                                backgroundColor: statusInfo.color,
+                                color: '#ffffff'
+                              }}
+                            >
+                              {statusInfo.name}
+                            </Badge>
+                          );
+                        })()}
+                      </div>
                     )}
-                    {childItems.length === 0 && <div className="w-6" />}
-                    <span className="font-medium text-sm truncate flex-1">{parentItem.name}</span>
-                    <div className="flex items-center gap-1 ml-2">
-                      {visibleColumns.status && parentItem.status && (() => {
-                        const statusInfo = getStatusInfo(parentItem.status);
-                        return (
-                          <Badge 
-                            className="text-xs px-1.5 h-5 border-0"
-                            style={{
-                              backgroundColor: statusInfo.color,
-                              color: '#ffffff'
-                            }}
-                          >
-                            {statusInfo.name}
-                          </Badge>
-                        );
-                      })()}
+
+                    {/* Notes column */}
+                    <div className="w-8 flex items-center justify-center flex-shrink-0">
                       <ActivityNotesPopover 
                         scheduleItemId={parentItem.id} 
-                        noteCount={noteCounts[parentItem.id] || 0}
+                        externalNoteCount={noteCounts[parentItem.id] || 0}
                       />
-                      {visibleColumns.completion && (
+                    </div>
+
+                    {/* Completion column */}
+                    {visibleColumns.completion && (
+                      <div className="w-12 flex items-center justify-center flex-shrink-0">
                         <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
-                      )}
-                      {visibleColumns.assignee && parentItem.assignedToName && (
-                        <Avatar className="w-5 h-5">
-                          <AvatarFallback className="text-[10px]">
-                            {parentItem.assignedToName.substring(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
+                      </div>
+                    )}
+
+                    {/* Assignee column */}
+                    {visibleColumns.assignee && (
+                      <div className="w-8 flex items-center justify-center flex-shrink-0">
+                        {parentItem.assignedToName && (
+                          <Avatar className="w-5 h-5">
+                            <AvatarFallback className="text-[10px]">
+                              {parentItem.assignedToName.substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Menu column */}
+                    <div className="w-8 flex items-center justify-center flex-shrink-0">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -767,39 +804,64 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     return (
                       <div
                         key={childItem.id}
-                        className={`h-10 flex items-center pl-10 pr-2 border-b hover-elevate active-elevate-2 cursor-pointer ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
+                        className={`h-10 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
                         data-testid={`row-child-${childItem.id}`}
                       >
-                        <span className="text-sm text-muted-foreground truncate flex-1">{childItem.name}</span>
-                        <div className="flex items-center gap-1 ml-2">
-                          {visibleColumns.status && childItem.status && (() => {
-                            const statusInfo = getStatusInfo(childItem.status);
-                            return (
-                              <Badge 
-                                className="text-xs px-1.5 h-5 border-0"
-                                style={{
-                                  backgroundColor: statusInfo.color,
-                                  color: '#ffffff'
-                                }}
-                              >
-                                {statusInfo.name}
-                              </Badge>
-                            );
-                          })()}
+                        {/* Task name column */}
+                        <div className="flex-1 flex items-center min-w-0 pl-8">
+                          <span className="text-sm text-muted-foreground truncate">{childItem.name}</span>
+                        </div>
+
+                        {/* Status column */}
+                        {visibleColumns.status && (
+                          <div className="w-20 flex items-center justify-center flex-shrink-0">
+                            {childItem.status && (() => {
+                              const statusInfo = getStatusInfo(childItem.status);
+                              return (
+                                <Badge 
+                                  className="text-xs px-1.5 h-5 border-0"
+                                  style={{
+                                    backgroundColor: statusInfo.color,
+                                    color: '#ffffff'
+                                  }}
+                                >
+                                  {statusInfo.name}
+                                </Badge>
+                              );
+                            })()}
+                          </div>
+                        )}
+
+                        {/* Notes column */}
+                        <div className="w-8 flex items-center justify-center flex-shrink-0">
                           <ActivityNotesPopover 
                             scheduleItemId={childItem.id} 
-                            noteCount={noteCounts[childItem.id] || 0}
+                            externalNoteCount={noteCounts[childItem.id] || 0}
                           />
-                          {visibleColumns.completion && (
+                        </div>
+
+                        {/* Completion column */}
+                        {visibleColumns.completion && (
+                          <div className="w-12 flex items-center justify-center flex-shrink-0">
                             <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
-                          )}
-                          {visibleColumns.assignee && childItem.assignedToName && (
-                            <Avatar className="w-5 h-5">
-                              <AvatarFallback className="text-[10px]">
-                                {childItem.assignedToName.substring(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                          )}
+                          </div>
+                        )}
+
+                        {/* Assignee column */}
+                        {visibleColumns.assignee && (
+                          <div className="w-8 flex items-center justify-center flex-shrink-0">
+                            {childItem.assignedToName && (
+                              <Avatar className="w-5 h-5">
+                                <AvatarFallback className="text-[10px]">
+                                  {childItem.assignedToName.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Menu column */}
+                        <div className="w-8 flex items-center justify-center flex-shrink-0">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
