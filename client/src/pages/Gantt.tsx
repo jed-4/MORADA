@@ -4,6 +4,8 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User } from "lucide-react";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
@@ -36,6 +38,8 @@ export default function Gantt() {
     type: 'stage' | 'subtask';
     data: GanttStage | GanttSubtask;
   } | null>(null);
+  const [showAddStage, setShowAddStage] = useState(false);
+  const [showAddSubtask, setShowAddSubtask] = useState<string | null>(null); // stageId
 
   // Fetch stages
   const { data: stages = [], isLoading } = useQuery<GanttStage[]>({
@@ -83,6 +87,40 @@ export default function Gantt() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
       toast({ title: "Subtask updated" });
+    },
+  });
+
+  const createStageMutation = useMutation({
+    mutationFn: async (data: { name: string; startDate: Date; endDate: Date; status?: string }) => {
+      return apiRequest(`/api/projects/${projectId}/gantt/stages`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...data,
+          projectId,
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/stages`] });
+      setShowAddStage(false);
+      toast({ title: "Stage created" });
+    },
+  });
+
+  const createSubtaskMutation = useMutation({
+    mutationFn: async (data: { stageId: string; name: string; startDate: Date; endDate: Date; status?: string }) => {
+      return apiRequest(`/api/projects/${projectId}/gantt/stages/${data.stageId}/subtasks`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...data,
+          projectId,
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/gantt/subtasks`] });
+      setShowAddSubtask(null);
+      toast({ title: "Subtask created" });
     },
   });
 
@@ -279,6 +317,15 @@ export default function Gantt() {
         </h1>
         <div className="flex items-center gap-2">
           <Button
+            onClick={() => setShowAddStage(true)}
+            size="sm"
+            data-testid="button-add-stage"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Stage
+          </Button>
+          <div className="w-px h-6 bg-border" />
+          <Button
             variant="outline"
             size="sm"
             onClick={() => setZoomLevel('day')}
@@ -343,6 +390,18 @@ export default function Gantt() {
                     </button>
                     <span className="font-medium text-sm truncate flex-1">{stage.name}</span>
                     <div className="flex items-center gap-1 ml-2">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowAddSubtask(stage.id);
+                        }}
+                        data-testid={`button-add-subtask-${stage.id}`}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </Button>
                       {stage.status && (
                         <Badge variant="secondary" className="text-xs px-1.5 h-5">
                           {stage.status}
@@ -561,6 +620,228 @@ export default function Gantt() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Add Stage Dialog */}
+      <AddStageDialog
+        open={showAddStage}
+        onOpenChange={setShowAddStage}
+        onSubmit={(data) => createStageMutation.mutate(data)}
+        isPending={createStageMutation.isPending}
+      />
+
+      {/* Add Subtask Dialog */}
+      <AddSubtaskDialog
+        open={!!showAddSubtask}
+        stageId={showAddSubtask || ''}
+        onOpenChange={() => setShowAddSubtask(null)}
+        onSubmit={(data) => createSubtaskMutation.mutate(data)}
+        isPending={createSubtaskMutation.isPending}
+      />
     </div>
+  );
+}
+
+// Add Stage Dialog Component
+function AddStageDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { name: string; startDate: Date; endDate: Date }) => void;
+  isPending: boolean;
+}) {
+  const [name, setName] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !startDate || !endDate) return;
+    
+    onSubmit({
+      name,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+    });
+    
+    // Reset form
+    setName('');
+    setStartDate('');
+    setEndDate('');
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="dialog-add-stage">
+        <DialogHeader>
+          <DialogTitle style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>
+            Add New Stage
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <div>
+            <Label htmlFor="stage-name">Stage Name</Label>
+            <Input
+              id="stage-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Framing, Electrical, Plumbing"
+              data-testid="input-stage-name"
+              required
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="stage-start">Start Date</Label>
+              <Input
+                id="stage-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                data-testid="input-stage-start"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="stage-end">End Date</Label>
+              <Input
+                id="stage-end"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                data-testid="input-stage-end"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              data-testid="button-cancel-stage"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isPending || !name || !startDate || !endDate}
+              data-testid="button-submit-stage"
+            >
+              {isPending ? 'Creating...' : 'Create Stage'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Add Subtask Dialog Component
+function AddSubtaskDialog({
+  open,
+  stageId,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  stageId: string;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { stageId: string; name: string; startDate: Date; endDate: Date }) => void;
+  isPending: boolean;
+}) {
+  const [name, setName] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !startDate || !endDate) return;
+    
+    onSubmit({
+      stageId,
+      name,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+    });
+    
+    // Reset form
+    setName('');
+    setStartDate('');
+    setEndDate('');
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="dialog-add-subtask">
+        <DialogHeader>
+          <DialogTitle style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>
+            Add New Subtask
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <div>
+            <Label htmlFor="subtask-name">Subtask Name</Label>
+            <Input
+              id="subtask-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Walls, Bracing, Roof Trusses"
+              data-testid="input-subtask-name"
+              required
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="subtask-start">Start Date</Label>
+              <Input
+                id="subtask-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                data-testid="input-subtask-start"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="subtask-end">End Date</Label>
+              <Input
+                id="subtask-end"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                data-testid="input-subtask-end"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              data-testid="button-cancel-subtask"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isPending || !name || !startDate || !endDate}
+              data-testid="button-submit-subtask"
+            >
+              {isPending ? 'Creating...' : 'Create Subtask'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
