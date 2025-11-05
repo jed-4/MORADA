@@ -561,12 +561,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         const statusInfo = getStatusInfo(parentItem.status);
                         return (
                           <Badge 
-                            variant="outline" 
-                            className="text-xs px-1.5 h-5 border-2"
+                            className="text-xs px-1.5 h-5 border-0"
                             style={{
-                              backgroundColor: `${statusInfo.color}15`,
-                              borderColor: statusInfo.color,
-                              color: statusInfo.color
+                              backgroundColor: statusInfo.color,
+                              color: '#ffffff'
                             }}
                           >
                             {statusInfo.name}
@@ -665,12 +663,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             const statusInfo = getStatusInfo(childItem.status);
                             return (
                               <Badge 
-                                variant="outline" 
-                                className="text-xs px-1.5 h-5 border-2"
+                                className="text-xs px-1.5 h-5 border-0"
                                 style={{
-                                  backgroundColor: `${statusInfo.color}15`,
-                                  borderColor: statusInfo.color,
-                                  color: statusInfo.color
+                                  backgroundColor: statusInfo.color,
+                                  color: '#ffffff'
                                 }}
                               >
                                 {statusInfo.name}

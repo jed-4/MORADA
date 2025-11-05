@@ -51,6 +51,8 @@ import {
   Download,
   Upload,
   Settings,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -73,6 +75,8 @@ export default function Schedule() {
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(true);
+  const [notesExpanded, setNotesExpanded] = useState(true);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -757,14 +761,14 @@ export default function Schedule() {
 
       {/* Create/Edit Item Dialog */}
       <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>{editingItem ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
             <DialogDescription>
               {editingItem ? "Update the schedule item details." : "Create a new item in the schedule."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 flex-1 overflow-y-auto">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="item-name">
@@ -781,31 +785,61 @@ export default function Schedule() {
 
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="item-description">Description</Label>
-              <Textarea
-                id="item-description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Add details about this schedule item..."
-                rows={3}
-                data-testid="input-item-description"
-              />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="item-description">Description</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+                  data-testid="button-toggle-description"
+                >
+                  {descriptionExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </div>
+              {descriptionExpanded && (
+                <Textarea
+                  id="item-description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Add details about this schedule item..."
+                  rows={3}
+                  data-testid="input-item-description"
+                />
+              )}
             </div>
 
             {/* Notes */}
             <div className="space-y-2">
-              <Label htmlFor="item-notes">Notes</Label>
-              <Textarea
-                id="item-notes"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Add internal notes about this schedule item..."
-                rows={4}
-                data-testid="input-item-notes"
-              />
-              <p className="text-xs text-muted-foreground">
-                Internal notes for tracking progress, decisions, or important details.
-              </p>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="item-notes">Notes</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => setNotesExpanded(!notesExpanded)}
+                  data-testid="button-toggle-notes"
+                >
+                  {notesExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </div>
+              {notesExpanded && (
+                <>
+                  <Textarea
+                    id="item-notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Add internal notes about this schedule item..."
+                    rows={4}
+                    data-testid="input-item-notes"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Internal notes for tracking progress, decisions, or important details.
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Parent Item (Stage) Selector */}
@@ -989,7 +1023,7 @@ export default function Schedule() {
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 bg-background border-t pt-4 flex-shrink-0">
             <Button 
               variant="outline" 
               onClick={() => {
