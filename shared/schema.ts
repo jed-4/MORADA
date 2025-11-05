@@ -2153,6 +2153,13 @@ export const scheduleItems = pgTable("schedule_items", {
   // Site diary integration
   siteDiaryEntryIds: json("site_diary_entry_ids").default([]), // Linked site diary entries
   
+  // Hierarchy (for nesting items as stages/subtasks in Gantt view)
+  parentItemId: varchar("parent_item_id").references(() => scheduleItems.id, { onDelete: "cascade" }),
+  
+  // Baseline tracking (for Gantt timeline comparison)
+  baselineStartDate: timestamp("baseline_start_date"),
+  baselineEndDate: timestamp("baseline_end_date"),
+  
   // Display
   color: text("color"), // Custom color override
   sortOrder: integer("sort_order").notNull().default(0),
