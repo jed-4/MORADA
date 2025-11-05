@@ -415,7 +415,7 @@ export default function Gantt() {
                 return (
                   <div
                     key={idx}
-                    className={`border-r text-sm font-bold text-center py-3 ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
+                    className={`border-r text-xs text-center py-3 ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
                     style={{ width: `${header.width}px` }}
                   >
                     {header.label}
