@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2 } from "lucide-react";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
@@ -15,12 +15,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import type { ScheduleItem } from "@shared/schema";
 
 type ZoomLevel = 'day' | 'week' | 'month';
 
-export default function Gantt() {
+interface GanttProps {
+  onEditItem?: (item: ScheduleItem) => void;
+}
+
+export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -41,6 +52,8 @@ export default function Gantt() {
     status: true,
     completion: false,
   });
+  const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
 
   // Fetch schedule items for this project
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
@@ -288,6 +301,70 @@ export default function Gantt() {
     });
   };
 
+  // Menu action handlers
+  const handleEditItem = (item: ScheduleItem) => {
+    if (onEditItem) {
+      onEditItem(item);
+    } else {
+      // Fallback for standalone usage
+      setEditingItem(item);
+      setShowEditDialog(true);
+    }
+  };
+
+  const handleViewItem = (item: ScheduleItem) => {
+    setSelectedTask(item);
+  };
+
+  const handleDuplicateItem = async (item: ScheduleItem) => {
+    try {
+      const duplicatedItem = {
+        scheduleId: item.scheduleId,
+        name: `${item.name} (Copy)`,
+        description: item.description,
+        notes: item.notes,
+        type: item.type,
+        status: "not_started",
+        priority: item.priority,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        assignedToId: item.assignedToId,
+        parentItemId: item.parentItemId,
+        progressPercent: 0,
+        color: item.color,
+      };
+      
+      await apiRequest("/api/schedule-items", "POST", duplicatedItem);
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Item duplicated", description: "Schedule item has been copied." });
+    } catch (error) {
+      toast({ title: "Failed to duplicate", description: "Could not duplicate item.", variant: "destructive" });
+    }
+  };
+
+  const handleToggleComplete = async (item: ScheduleItem) => {
+    try {
+      const newStatus = item.status === "completed" ? "not_started" : "completed";
+      await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { status: newStatus });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: newStatus === "completed" ? "Marked complete" : "Marked incomplete" });
+    } catch (error) {
+      toast({ title: "Failed to update", description: "Could not update item status.", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteItem = async (item: ScheduleItem) => {
+    if (!confirm(`Are you sure you want to delete "${item.name}"?`)) return;
+    
+    try {
+      await apiRequest(`/api/schedule-items/${item.id}`, "DELETE");
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Item deleted", description: "Schedule item has been removed." });
+    } catch (error) {
+      toast({ title: "Failed to delete", description: "Could not delete item.", variant: "destructive" });
+    }
+  };
+
   // Today line
   const todayPosition = getPosition(new Date());
 
@@ -453,6 +530,42 @@ export default function Gantt() {
                           </AvatarFallback>
                         </Avatar>
                       )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            data-testid={`button-menu-${parentItem.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" data-testid={`menu-${parentItem.id}`}>
+                          <DropdownMenuItem onClick={() => handleEditItem(parentItem)} data-testid="menu-edit">
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleViewItem(parentItem)} data-testid="menu-view">
+                            <Eye className="mr-2 h-4 w-4" />
+                            View
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDuplicateItem(parentItem)} data-testid="menu-duplicate">
+                            <Copy className="mr-2 h-4 w-4" />
+                            Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleToggleComplete(parentItem)} data-testid="menu-complete">
+                            <Check className="mr-2 h-4 w-4" />
+                            {parentItem.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleDeleteItem(parentItem)} className="text-destructive" data-testid="menu-delete">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
 
@@ -482,6 +595,42 @@ export default function Gantt() {
                               </AvatarFallback>
                             </Avatar>
                           )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                data-testid={`button-menu-${childItem.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" data-testid={`menu-${childItem.id}`}>
+                              <DropdownMenuItem onClick={() => handleEditItem(childItem)} data-testid="menu-edit">
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleViewItem(childItem)} data-testid="menu-view">
+                                <Eye className="mr-2 h-4 w-4" />
+                                View
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDuplicateItem(childItem)} data-testid="menu-duplicate">
+                                <Copy className="mr-2 h-4 w-4" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleComplete(childItem)} data-testid="menu-complete">
+                                <Check className="mr-2 h-4 w-4" />
+                                {childItem.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleDeleteItem(childItem)} className="text-destructive" data-testid="menu-delete">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     );

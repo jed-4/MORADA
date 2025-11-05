@@ -76,6 +76,7 @@ export default function Schedule() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
+    notes: "",
     type: "task",
     status: "not_started",
     priority: "medium",
@@ -252,6 +253,7 @@ export default function Schedule() {
     setFormData({
       name: "",
       description: "",
+      notes: "",
       type: "task",
       status: "not_started",
       priority: "medium",
@@ -303,6 +305,7 @@ export default function Schedule() {
       setFormData({
         name: editingItem.name || "",
         description: editingItem.description || "",
+        notes: editingItem.notes || "",
         type: editingItem.type || "task",
         status: editingItem.status || "not_started",
         priority: editingItem.priority || "medium",
@@ -719,7 +722,12 @@ export default function Schedule() {
           </TabsContent>
 
           <TabsContent value="gantt" className="h-full m-0">
-            <Gantt />
+            <Gantt
+              onEditItem={(item) => {
+                setEditingItem(item);
+                setShowItemDialog(true);
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="calendar" className="h-full m-0">
@@ -782,6 +790,22 @@ export default function Schedule() {
                 rows={3}
                 data-testid="input-item-description"
               />
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label htmlFor="item-notes">Notes</Label>
+              <Textarea
+                id="item-notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Add internal notes about this schedule item..."
+                rows={4}
+                data-testid="input-item-notes"
+              />
+              <p className="text-xs text-muted-foreground">
+                Internal notes for tracking progress, decisions, or important details.
+              </p>
             </div>
 
             {/* Parent Item (Stage) Selector */}
