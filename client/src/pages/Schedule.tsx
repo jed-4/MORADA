@@ -879,7 +879,7 @@ export default function Schedule() {
             </div>
 
             {/* Dates Row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="item-start-date">
                   Start Date <span className="text-destructive">*</span>
@@ -888,8 +888,35 @@ export default function Schedule() {
                   id="item-start-date"
                   type="date"
                   value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, startDate: e.target.value });
+                  }}
                   data-testid="input-item-start-date"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item-duration">Duration (days)</Label>
+                <Input
+                  id="item-duration"
+                  type="number"
+                  min="1"
+                  placeholder="Auto"
+                  value={
+                    formData.startDate && formData.endDate
+                      ? Math.ceil((new Date(formData.endDate).getTime() - new Date(formData.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const days = parseInt(e.target.value, 10);
+                    if (formData.startDate && !isNaN(days) && days > 0) {
+                      const start = new Date(formData.startDate);
+                      const end = new Date(start);
+                      end.setDate(start.getDate() + days - 1);
+                      setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
+                    }
+                  }}
+                  data-testid="input-item-duration"
                 />
               </div>
 

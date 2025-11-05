@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns } from "lucide-react";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
@@ -34,18 +34,33 @@ export default function Gantt() {
   } | null>(null);
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState({
+    assignee: true,
+    status: true,
+    completion: false,
+  });
 
   // Fetch schedule items for this project
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
     queryKey: [`/api/projects/${projectId}/schedule-items`],
   });
 
-  // Separate items into parent items and child items
+  // Separate items into parent items and child items, with search filtering
   const { parentItems, childItemsByParent } = useMemo(() => {
     const parents: ScheduleItem[] = [];
     const children: Record<string, ScheduleItem[]> = {};
 
-    allItems.forEach(item => {
+    // Apply search filter
+    const filteredItems = searchQuery
+      ? allItems.filter(item =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : allItems;
+
+    filteredItems.forEach(item => {
       if (item.parentItemId) {
         if (!children[item.parentItemId]) {
           children[item.parentItemId] = [];
@@ -65,7 +80,7 @@ export default function Gantt() {
     });
 
     return { parentItems: parents, childItemsByParent: children };
-  }, [allItems]);
+  }, [allItems, searchQuery]);
 
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
@@ -282,41 +297,108 @@ export default function Gantt() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b">
-        <h1 className="text-xl font-semibold" style={{ fontFamily: 'Clash Grotesk, sans-serif' }}>
-          Project Timeline
-        </h1>
+      {/* Search and Filter Bar */}
+      <div className="flex items-center justify-between gap-3 px-6 py-3 border-b">
+        {/* Left: Search */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search schedule items..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+            data-testid="input-search-items"
+          />
+        </div>
+
+        {/* Right: Controls */}
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setZoomLevel('day')}
-            className={zoomLevel === 'day' ? 'bg-accent' : ''}
-            data-testid="button-zoom-day"
-          >
-            Day
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 border rounded-md p-0.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setZoomLevel('day')}
+              className={`h-7 px-2 text-xs ${zoomLevel === 'day' ? 'bg-accent' : ''}`}
+              data-testid="button-zoom-day"
+            >
+              Day
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setZoomLevel('week')}
+              className={`h-7 px-2 text-xs ${zoomLevel === 'week' ? 'bg-accent' : ''}`}
+              data-testid="button-zoom-week"
+            >
+              Week
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setZoomLevel('month')}
+              className={`h-7 px-2 text-xs ${zoomLevel === 'month' ? 'bg-accent' : ''}`}
+              data-testid="button-zoom-month"
+            >
+              Month
+            </Button>
+          </div>
+
+          {/* Filter Button */}
+          <Button variant="outline" size="sm" className="h-8" data-testid="button-filter">
+            <Filter className="w-4 h-4 mr-2" />
+            Filter
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setZoomLevel('week')}
-            className={zoomLevel === 'week' ? 'bg-accent' : ''}
-            data-testid="button-zoom-week"
+
+          {/* Column Config Button */}
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8"
+            onClick={() => setShowColumnConfig(!showColumnConfig)}
+            data-testid="button-column-config"
           >
-            Week
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setZoomLevel('month')}
-            className={zoomLevel === 'month' ? 'bg-accent' : ''}
-            data-testid="button-zoom-month"
-          >
-            Month
+            <Columns className="w-4 h-4 mr-2" />
+            Columns
           </Button>
         </div>
       </div>
+
+      {/* Column Config Dropdown */}
+      {showColumnConfig && (
+        <div className="px-6 py-3 border-b bg-muted/30">
+          <div className="flex items-center gap-4 text-sm">
+            <span className="font-medium text-muted-foreground">Show in left panel:</span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={visibleColumns.status}
+                onChange={(e) => setVisibleColumns({ ...visibleColumns, status: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <span>Status</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={visibleColumns.assignee}
+                onChange={(e) => setVisibleColumns({ ...visibleColumns, assignee: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <span>Assignee</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={visibleColumns.completion}
+                onChange={(e) => setVisibleColumns({ ...visibleColumns, completion: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <span>Completion %</span>
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
@@ -356,12 +438,15 @@ export default function Gantt() {
                     {childItems.length === 0 && <div className="w-6" />}
                     <span className="font-medium text-sm truncate flex-1">{parentItem.name}</span>
                     <div className="flex items-center gap-1 ml-2">
-                      {parentItem.status && (
+                      {visibleColumns.status && parentItem.status && (
                         <Badge variant="secondary" className="text-xs px-1.5 h-5">
                           {parentItem.status}
                         </Badge>
                       )}
-                      {parentItem.assignedToName && (
+                      {visibleColumns.completion && (
+                        <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
+                      )}
+                      {visibleColumns.assignee && parentItem.assignedToName && (
                         <Avatar className="w-5 h-5">
                           <AvatarFallback className="text-[10px]">
                             {parentItem.assignedToName.substring(0, 2).toUpperCase()}
@@ -382,12 +467,15 @@ export default function Gantt() {
                       >
                         <span className="text-sm text-muted-foreground truncate flex-1">{childItem.name}</span>
                         <div className="flex items-center gap-1 ml-2">
-                          {childItem.status && (
+                          {visibleColumns.status && childItem.status && (
                             <Badge variant="outline" className="text-xs px-1.5 h-5">
                               {childItem.status}
                             </Badge>
                           )}
-                          {childItem.assignedToName && (
+                          {visibleColumns.completion && (
+                            <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
+                          )}
+                          {visibleColumns.assignee && childItem.assignedToName && (
                             <Avatar className="w-5 h-5">
                               <AvatarFallback className="text-[10px]">
                                 {childItem.assignedToName.substring(0, 2).toUpperCase()}
