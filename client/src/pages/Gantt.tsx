@@ -116,20 +116,36 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
     // Sort parent items by startDate first, then sortOrder as tiebreaker
     parents.sort((a, b) => {
-      if (a.startDate && b.startDate) {
-        const dateCompare = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-        if (dateCompare !== 0) return dateCompare;
+      // Items without startDate go to the end
+      if (!a.startDate && !b.startDate) {
+        return (a.sortOrder || 0) - (b.sortOrder || 0);
       }
+      if (!a.startDate) return 1;
+      if (!b.startDate) return -1;
+      
+      // Both have startDate, compare them
+      const dateCompare = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      if (dateCompare !== 0) return dateCompare;
+      
+      // Dates are equal, use sortOrder as tiebreaker
       return (a.sortOrder || 0) - (b.sortOrder || 0);
     });
 
     // Sort child items within each parent by startDate first, then sortOrder
     Object.keys(children).forEach(parentId => {
       children[parentId].sort((a, b) => {
-        if (a.startDate && b.startDate) {
-          const dateCompare = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-          if (dateCompare !== 0) return dateCompare;
+        // Items without startDate go to the end
+        if (!a.startDate && !b.startDate) {
+          return (a.sortOrder || 0) - (b.sortOrder || 0);
         }
+        if (!a.startDate) return 1;
+        if (!b.startDate) return -1;
+        
+        // Both have startDate, compare them
+        const dateCompare = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        
+        // Dates are equal, use sortOrder as tiebreaker
         return (a.sortOrder || 0) - (b.sortOrder || 0);
       });
     });
