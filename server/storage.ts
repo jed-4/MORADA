@@ -57,6 +57,7 @@ import {
   type Schedule, type InsertSchedule,
   type ScheduleItem, type InsertScheduleItem,
   type ScheduleTemplate, type InsertScheduleTemplate,
+  type ActivityNote, type InsertActivityNote,
   type CalendarView, type InsertCalendarView,
   type Proposal, type InsertProposal,
   type ProposalSection, type InsertProposalSection,
@@ -636,6 +637,14 @@ export interface IStorage {
   updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined>;
   deleteCalendarView(id: string, companyId: string): Promise<boolean>;
 
+  // Activity Notes CRUD
+  getActivityNotes(scheduleItemId: string, limit?: number, offset?: number): Promise<ActivityNote[]>;
+  getActivityNoteCount(scheduleItemId: string): Promise<number>;
+  createActivityNote(note: InsertActivityNote): Promise<ActivityNote>;
+  updateActivityNote(id: string, note: Partial<InsertActivityNote>): Promise<ActivityNote | undefined>;
+  deleteActivityNote(id: string): Promise<boolean>;
+  canEditActivityNote(noteId: string, userId: string): Promise<boolean>; // Check 5-minute edit window
+
   // Defects CRUD
   getDefects(projectId?: string, status?: string): Promise<Defect[]>;
   getDefectById(id: string): Promise<Defect | null>;
@@ -743,6 +752,7 @@ export class MemStorage implements IStorage {
   private siteDiaryTemplates: Map<string, SiteDiaryTemplate>;
   private siteDiaryEntries: Map<string, SiteDiaryEntry>;
   private calendarViews: Map<string, CalendarView>;
+  private activityNotes: Map<string, ActivityNote>;
 
   constructor() {
     this.users = new Map();
@@ -773,6 +783,7 @@ export class MemStorage implements IStorage {
     this.siteDiaryTemplates = new Map();
     this.siteDiaryEntries = new Map();
     this.calendarViews = new Map();
+    this.activityNotes = new Map();
     this.initializeDefaultRoleSystem();
     this.initializeDefaultCustomFields();
     this.initializeDefaultFieldCategories();
@@ -4414,6 +4425,64 @@ export class MemStorage implements IStorage {
     const existing = this.calendarViews.get(id);
     if (!existing || existing.companyId !== companyId) return false;
     return this.calendarViews.delete(id);
+  }
+
+  // Activity Notes CRUD
+  async getActivityNotes(scheduleItemId: string, limit: number = 10, offset: number = 0): Promise<ActivityNote[]> {
+    const notes = Array.from(this.activityNotes.values())
+      .filter(note => note.scheduleItemId === scheduleItemId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Newest first
+      .slice(offset, offset + limit)
+      .map(note => structuredClone(note));
+    return notes;
+  }
+
+  async getActivityNoteCount(scheduleItemId: string): Promise<number> {
+    return Array.from(this.activityNotes.values())
+      .filter(note => note.scheduleItemId === scheduleItemId)
+      .length;
+  }
+
+  async createActivityNote(note: InsertActivityNote): Promise<ActivityNote> {
+    const id = randomUUID();
+    const now = new Date();
+    const newNote: ActivityNote = {
+      id,
+      ...structuredClone(note),
+      isEdited: false,
+      createdAt: now,
+    } as ActivityNote;
+    this.activityNotes.set(id, structuredClone(newNote));
+    return structuredClone(newNote);
+  }
+
+  async updateActivityNote(id: string, note: Partial<InsertActivityNote>): Promise<ActivityNote | undefined> {
+    const existing = this.activityNotes.get(id);
+    if (!existing) return undefined;
+    
+    const updated: ActivityNote = {
+      ...existing,
+      ...structuredClone(note),
+      id,
+      isEdited: true,
+      editedAt: new Date(),
+    } as ActivityNote;
+    const stored = structuredClone(updated);
+    this.activityNotes.set(id, stored);
+    return structuredClone(stored);
+  }
+
+  async deleteActivityNote(id: string): Promise<boolean> {
+    return this.activityNotes.delete(id);
+  }
+
+  async canEditActivityNote(noteId: string, userId: string): Promise<boolean> {
+    const note = this.activityNotes.get(noteId);
+    if (!note || note.userId !== userId || note.type !== 'user') return false;
+    
+    // Check if within 5-minute edit window
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return new Date(note.createdAt) > fiveMinutesAgo;
   }
 
   async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
@@ -10586,6 +10655,93 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteCalendarView:", error);
+      throw error;
+    }
+  }
+
+  // Activity Notes CRUD
+  async getActivityNotes(scheduleItemId: string, limit: number = 10, offset: number = 0): Promise<ActivityNote[]> {
+    try {
+      return await db.select()
+        .from(schema.activityNotes)
+        .where(eq(schema.activityNotes.scheduleItemId, scheduleItemId))
+        .orderBy(desc(schema.activityNotes.createdAt)) // Newest first
+        .limit(limit)
+        .offset(offset);
+    } catch (error) {
+      console.error("Database error in getActivityNotes:", error);
+      throw error;
+    }
+  }
+
+  async getActivityNoteCount(scheduleItemId: string): Promise<number> {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)` })
+        .from(schema.activityNotes)
+        .where(eq(schema.activityNotes.scheduleItemId, scheduleItemId));
+      return Number(result[0]?.count || 0);
+    } catch (error) {
+      console.error("Database error in getActivityNoteCount:", error);
+      throw error;
+    }
+  }
+
+  async createActivityNote(note: InsertActivityNote): Promise<ActivityNote> {
+    try {
+      const result = await db.insert(schema.activityNotes)
+        .values(note)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createActivityNote:", error);
+      throw error;
+    }
+  }
+
+  async updateActivityNote(id: string, note: Partial<InsertActivityNote>): Promise<ActivityNote | undefined> {
+    try {
+      const result = await db.update(schema.activityNotes)
+        .set({ 
+          ...note, 
+          isEdited: true,
+          editedAt: new Date()
+        })
+        .where(eq(schema.activityNotes.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateActivityNote:", error);
+      throw error;
+    }
+  }
+
+  async deleteActivityNote(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.activityNotes)
+        .where(eq(schema.activityNotes.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteActivityNote:", error);
+      throw error;
+    }
+  }
+
+  async canEditActivityNote(noteId: string, userId: string): Promise<boolean> {
+    try {
+      const result = await db.select()
+        .from(schema.activityNotes)
+        .where(eq(schema.activityNotes.id, noteId))
+        .limit(1);
+      
+      const note = result[0];
+      if (!note || note.userId !== userId || note.type !== 'user') return false;
+      
+      // Check if within 5-minute edit window
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      return new Date(note.createdAt) > fiveMinutesAgo;
+    } catch (error) {
+      console.error("Database error in canEditActivityNote:", error);
       throw error;
     }
   }
