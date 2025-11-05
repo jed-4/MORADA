@@ -1047,7 +1047,7 @@ export default function Schedule() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56">
-                      {allItems
+                      {scheduleItems
                         .filter(item => 
                           item.id !== editingItem.id && 
                           !(editingItem.dependencies as any[] || []).some((d: any) => d.id === item.id)
@@ -1078,7 +1078,7 @@ export default function Schedule() {
                             {item.name}
                           </DropdownMenuItem>
                         ))}
-                      {allItems.filter(item => 
+                      {scheduleItems.filter(item => 
                         item.id !== editingItem.id && 
                         !(editingItem.dependencies as any[] || []).some((d: any) => d.id === item.id)
                       ).length === 0 && (
@@ -1092,7 +1092,7 @@ export default function Schedule() {
                 <div className="space-y-2">
                   {(editingItem.dependencies as any[] || []).length > 0 ? (
                     (editingItem.dependencies as any[]).map((dep: any) => {
-                      const predItem = allItems.find(i => i.id === dep.id);
+                      const predItem = scheduleItems.find(i => i.id === dep.id);
                       return predItem ? (
                         <div
                           key={dep.id}
