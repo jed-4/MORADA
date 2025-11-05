@@ -3136,6 +3136,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update a stage (project-scoped)
+  app.patch("/api/projects/:projectId/gantt/stages/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Verify stage belongs to project
+      const existingStage = await storage.getGanttStage(req.params.id);
+      if (!existingStage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      if (existingStage.projectId !== req.params.projectId) {
+        return res.status(403).json({ error: "Stage does not belong to this project" });
+      }
+
+      const updateSchema = insertGanttStageSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const updatedStage = await storage.updateGanttStage(req.params.id, validationResult.data);
+      if (!updatedStage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+
+      res.json(updatedStage);
+    } catch (error) {
+      console.error("Error updating gantt stage:", error);
+      res.status(500).json({ error: "Failed to update gantt stage" });
+    }
+  });
+
+  // Reorder a stage (project-scoped)
+  app.patch("/api/projects/:projectId/gantt/stages/:id/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Verify stage belongs to project
+      const existingStage = await storage.getGanttStage(req.params.id);
+      if (!existingStage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      if (existingStage.projectId !== req.params.projectId) {
+        return res.status(403).json({ error: "Stage does not belong to this project" });
+      }
+
+      const { displayOrder } = req.body;
+      if (typeof displayOrder !== 'number') {
+        return res.status(400).json({ error: "displayOrder must be a number" });
+      }
+
+      const updatedStage = await storage.updateGanttStage(req.params.id, { displayOrder });
+      if (!updatedStage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+
+      res.json(updatedStage);
+    } catch (error) {
+      console.error("Error reordering gantt stage:", error);
+      res.status(500).json({ error: "Failed to reorder gantt stage" });
+    }
+  });
+
+  // Toggle stage collapse (project-scoped)
+  app.post("/api/projects/:projectId/gantt/stages/:id/toggle-collapse", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Verify stage belongs to project
+      const existingStage = await storage.getGanttStage(req.params.id);
+      if (!existingStage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      if (existingStage.projectId !== req.params.projectId) {
+        return res.status(403).json({ error: "Stage does not belong to this project" });
+      }
+
+      const stage = await storage.toggleGanttStageCollapse(req.params.id);
+      if (!stage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      res.json(stage);
+    } catch (error) {
+      console.error("Error toggling stage collapse:", error);
+      res.status(500).json({ error: "Failed to toggle stage collapse" });
+    }
+  });
+
+  // Delete a stage (project-scoped)
+  app.delete("/api/projects/:projectId/gantt/stages/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Verify stage belongs to project
+      const existingStage = await storage.getGanttStage(req.params.id);
+      if (!existingStage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      if (existingStage.projectId !== req.params.projectId) {
+        return res.status(403).json({ error: "Stage does not belong to this project" });
+      }
+
+      const success = await storage.deleteGanttStage(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting gantt stage:", error);
+      res.status(500).json({ error: "Failed to delete gantt stage" });
+    }
+  });
+
   // Update a stage
   app.patch("/api/gantt/stages/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
@@ -3226,6 +3334,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching gantt subtask:", error);
       res.status(500).json({ error: "Failed to fetch gantt subtask" });
+    }
+  });
+
+  // Get subtasks for a stage (project-scoped)
+  app.get("/api/projects/:projectId/gantt/stages/:stageId/subtasks", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const subtasks = await storage.getGanttSubtasks(req.params.stageId);
+      res.json(subtasks);
+    } catch (error) {
+      console.error("Error fetching gantt subtasks:", error);
+      res.status(500).json({ error: "Failed to fetch gantt subtasks" });
+    }
+  });
+
+  // Create a new subtask (project-scoped)
+  app.post("/api/projects/:projectId/gantt/stages/:stageId/subtasks", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const stageId = req.params.stageId;
+      const projectId = req.params.projectId;
+      
+      const validationResult = insertGanttSubtaskSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const newSubtask = await storage.createGanttSubtask({
+        ...validationResult.data,
+        stageId,
+        projectId,
+        companyId,
+        createdBy: req.user!.id,
+        createdByName: `${req.user!.firstName || ''} ${req.user!.lastName || ''}`.trim(),
+      });
+
+      res.status(201).json(newSubtask);
+    } catch (error) {
+      console.error("Error creating gantt subtask:", error);
+      res.status(500).json({ error: "Failed to create gantt subtask" });
+    }
+  });
+
+  // Update a subtask (project-scoped)
+  app.patch("/api/projects/:projectId/gantt/subtasks/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Verify subtask belongs to project
+      const existingSubtask = await storage.getGanttSubtask(req.params.id);
+      if (!existingSubtask) {
+        return res.status(404).json({ error: "Subtask not found" });
+      }
+      if (existingSubtask.projectId !== req.params.projectId) {
+        return res.status(403).json({ error: "Subtask does not belong to this project" });
+      }
+
+      const updateSchema = insertGanttSubtaskSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const updatedSubtask = await storage.updateGanttSubtask(req.params.id, validationResult.data);
+      if (!updatedSubtask) {
+        return res.status(404).json({ error: "Subtask not found" });
+      }
+
+      res.json(updatedSubtask);
+    } catch (error) {
+      console.error("Error updating gantt subtask:", error);
+      res.status(500).json({ error: "Failed to update gantt subtask" });
+    }
+  });
+
+  // Delete a subtask (project-scoped)
+  app.delete("/api/projects/:projectId/gantt/subtasks/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      // Verify subtask belongs to project
+      const existingSubtask = await storage.getGanttSubtask(req.params.id);
+      if (!existingSubtask) {
+        return res.status(404).json({ error: "Subtask not found" });
+      }
+      if (existingSubtask.projectId !== req.params.projectId) {
+        return res.status(403).json({ error: "Subtask does not belong to this project" });
+      }
+
+      const success = await storage.deleteGanttSubtask(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Subtask not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting gantt subtask:", error);
+      res.status(500).json({ error: "Failed to delete gantt subtask" });
     }
   });
 
