@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import type { ScheduleItem } from "@shared/schema";
 
 type ZoomLevel = 'day' | 'week' | 'month';
@@ -34,6 +35,7 @@ interface GanttProps {
 export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
+  const { getStatusInfo } = useScheduleItemStatusOptions();
   const timelineRef = useRef<HTMLDivElement>(null);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('day');
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
@@ -206,19 +208,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     };
   };
 
-  // Get bar color based on status or custom color
+  // Get bar color - using neutral color, status colors shown in badges
   const getBarColor = (item: ScheduleItem) => {
-    // Use custom color if set
-    if (item.color) return item.color;
-    
     // Check if overdue
     const isOverdue = new Date(item.endDate) < new Date() && item.status !== 'completed';
     if (isOverdue) return '#ef4444'; // red for overdue
     
-    // Status colors
-    if (item.status === 'completed') return '#22c55e'; // green
-    if (item.status === 'in_progress') return '#eab308'; // yellow
-    return '#bba7db'; // default lilac
+    // Use neutral gray color for all bars
+    return '#9ca3af'; // neutral gray
   };
 
   // Bar click handler - open modal or start drag
@@ -515,11 +512,22 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     {childItems.length === 0 && <div className="w-6" />}
                     <span className="font-medium text-sm truncate flex-1">{parentItem.name}</span>
                     <div className="flex items-center gap-1 ml-2">
-                      {visibleColumns.status && parentItem.status && (
-                        <Badge variant="secondary" className="text-xs px-1.5 h-5">
-                          {parentItem.status}
-                        </Badge>
-                      )}
+                      {visibleColumns.status && parentItem.status && (() => {
+                        const statusInfo = getStatusInfo(parentItem.status);
+                        return (
+                          <Badge 
+                            variant="outline" 
+                            className="text-xs px-1.5 h-5 border-2"
+                            style={{
+                              backgroundColor: `${statusInfo.color}15`,
+                              borderColor: statusInfo.color,
+                              color: statusInfo.color
+                            }}
+                          >
+                            {statusInfo.name}
+                          </Badge>
+                        );
+                      })()}
                       {visibleColumns.completion && (
                         <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
                       )}
@@ -580,11 +588,22 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       >
                         <span className="text-sm text-muted-foreground truncate flex-1">{childItem.name}</span>
                         <div className="flex items-center gap-1 ml-2">
-                          {visibleColumns.status && childItem.status && (
-                            <Badge variant="outline" className="text-xs px-1.5 h-5">
-                              {childItem.status}
-                            </Badge>
-                          )}
+                          {visibleColumns.status && childItem.status && (() => {
+                            const statusInfo = getStatusInfo(childItem.status);
+                            return (
+                              <Badge 
+                                variant="outline" 
+                                className="text-xs px-1.5 h-5 border-2"
+                                style={{
+                                  backgroundColor: `${statusInfo.color}15`,
+                                  borderColor: statusInfo.color,
+                                  color: statusInfo.color
+                                }}
+                              >
+                                {statusInfo.name}
+                              </Badge>
+                            );
+                          })()}
                           {visibleColumns.completion && (
                             <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
                           )}
