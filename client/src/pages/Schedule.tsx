@@ -97,10 +97,10 @@ export default function Schedule() {
     enabled: !!projectId,
   });
 
-  // Fetch schedule items
+  // Fetch schedule items using unified endpoint (all three views use the same data)
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
-    queryKey: ["/api/schedules", schedule?.id, "items"],
-    enabled: !!schedule?.id,
+    queryKey: [`/api/projects/${projectId}/schedule-items`],
+    enabled: !!projectId,
   });
 
   // Fetch contacts for assignee selection
@@ -184,7 +184,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", schedule?.id, "items"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
       setShowItemDialog(false);
       setEditingItem(null);
       resetForm();
@@ -216,7 +216,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", schedule?.id, "items"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
       setShowItemDialog(false);
       setEditingItem(null);
       resetForm();
