@@ -3163,37 +3163,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Login
   app.post('/api/auth/login', async (req, res) => {
     try {
+      console.log('[LOGIN] Request received for email:', req.body.email);
       const { email, password } = req.body;
       
       if (!email || !password) {
+        console.log('[LOGIN] Missing email or password');
         return res.status(400).json({ message: "Email and password are required" });
       }
       
       // Get user
       const user = await storage.getUserByEmail(email);
       if (!user || !user.password) {
+        console.log('[LOGIN] User not found or no password:', email);
         return res.status(401).json({ message: "Invalid credentials" });
       }
       
       // Verify password
       const isValid = await bcrypt.compare(password, user.password);
       if (!isValid) {
+        console.log('[LOGIN] Invalid password for:', email);
         return res.status(401).json({ message: "Invalid credentials" });
       }
       
+      console.log('[LOGIN] Credentials valid, setting userId in session:', user.id);
       // Create session and explicitly save it
       (req.session as any).userId = user.id;
       
       // Force save session before responding
       req.session.save((err) => {
         if (err) {
-          console.error("Session save error:", err);
+          console.error("[LOGIN] Session save error:", err);
           return res.status(500).json({ message: "Failed to save session" });
         }
+        console.log('[LOGIN] Session saved successfully. SessionID:', req.sessionID);
         res.json({ user: toSafeUser(user) });
       });
     } catch (error) {
-      console.error("Login error:", error);
+      console.error("[LOGIN] Unexpected error:", error);
       res.status(500).json({ message: "Failed to login" });
     }
   });
@@ -3212,19 +3218,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current authenticated user
   app.get('/api/auth/user', async (req: any, res) => {
     try {
+      console.log('[AUTH] GET /auth/user - SessionID:', req.sessionID, 'Has userId:', !!(req.session as any)?.userId);
       const userId = (req.session as any)?.userId;
       if (!userId) {
+        console.log('[AUTH] No userId in session, returning 401');
         return res.status(401).json({ message: "Unauthorized" });
       }
       
+      console.log('[AUTH] Found userId in session:', userId);
       const user = await storage.getUser(userId);
       if (!user) {
+        console.log('[AUTH] User not found in database for userId:', userId);
         return res.status(404).json({ message: "User not found" });
       }
       
+      console.log('[AUTH] Returning user data for:', user.email);
       res.json(toSafeUser(user));
     } catch (error) {
-      console.error("Error fetching user:", error);
+      console.error("[AUTH] Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });

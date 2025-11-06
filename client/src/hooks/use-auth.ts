@@ -15,9 +15,17 @@ export function useAuth() {
 
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      console.log('Login mutation called with email:', email);
       const response = await apiRequest('/api/auth/login', 'POST', { email, password });
-      // Force refetch the user data immediately after successful login
-      await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
+      console.log('Login response received:', response);
+      
+      // Set the user data directly in the cache instead of refetching
+      // This avoids race conditions with session cookie propagation
+      if (response.user) {
+        queryClient.setQueryData(['/api/auth/user'], response.user);
+        console.log('User data set in cache:', response.user.email);
+      }
+      
       return response;
     },
   });
@@ -40,8 +48,13 @@ export function useAuth() {
         name, 
         companyName 
       });
-      // Force refetch the user data immediately after successful registration
-      await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
+      
+      // Set the user data directly in the cache instead of refetching
+      // This avoids race conditions with session cookie propagation
+      if (response.user) {
+        queryClient.setQueryData(['/api/auth/user'], response.user);
+      }
+      
       return response;
     },
   });
