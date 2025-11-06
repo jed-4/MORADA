@@ -11827,7 +11827,7 @@ export class DbStorage implements IStorage {
         // Build the where conditions
         const conditions = [
           eq(schema.messages.channelId, channelId),
-          isNull(schema.messages.deletedAt)
+          eq(schema.messages.isDeleted, false)
         ];
 
         // If there's a lastReadAt, only count messages after that time

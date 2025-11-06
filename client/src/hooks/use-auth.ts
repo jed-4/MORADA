@@ -15,15 +15,12 @@ export function useAuth() {
 
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      console.log('Login mutation called with email:', email);
       const response = await apiRequest('/api/auth/login', 'POST', { email, password });
-      console.log('Login response received:', response);
       
       // Set the user data directly in the cache instead of refetching
       // This avoids race conditions with session cookie propagation
       if (response.user) {
         queryClient.setQueryData(['/api/auth/user'], response.user);
-        console.log('User data set in cache:', response.user.email);
       }
       
       return response;
