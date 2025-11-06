@@ -227,6 +227,11 @@ function UnauthenticatedRoutes() {
 function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
   
+  // Debug logging
+  useEffect(() => {
+    console.log('AuthWrapper state:', { isLoading, isAuthenticated, user: user?.email });
+  }, [isLoading, isAuthenticated, user]);
+  
   // Sidebar width state - must be declared before any conditional returns
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('sidebar-width');
