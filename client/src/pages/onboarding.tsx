@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Building2 } from "lucide-react";
+import { Building2, LogOut } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 const companyFormSchema = z.object({
   name: z.string().min(1, "Company name is required"),
@@ -24,6 +25,23 @@ type CompanyFormValues = z.infer<typeof companyFormSchema>;
 
 export default function OnboardingPage() {
   const { toast } = useToast();
+  const { logout } = useAuth();
+  
+  // On mount, clear cache and refetch user data to ensure we have latest from server
+  useEffect(() => {
+    const refreshUserData = async () => {
+      try {
+        // Clear the cached user data
+        queryClient.removeQueries({ queryKey: ['/api/auth/user'] });
+        // Refetch fresh data from server
+        await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
+      } catch (error) {
+        console.error('Failed to refresh user data:', error);
+      }
+    };
+    
+    refreshUserData();
+  }, []);
   
   const form = useForm<CompanyFormValues>({
     resolver: zodResolver(companyFormSchema),
@@ -66,6 +84,20 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
+        {/* Logout button in top right */}
+        <div className="flex justify-end mb-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => logout()}
+            data-testid="button-logout"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
+        </div>
+        
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Building2 className="h-10 w-10 text-primary" data-testid="logo-icon-onboarding" />
