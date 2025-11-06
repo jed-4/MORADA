@@ -16,11 +16,9 @@ export function useAuth() {
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       const response = await apiRequest('/api/auth/login', 'POST', { email, password });
-      return response;
-    },
-    onSuccess: async () => {
-      // Force refetch the user data after successful login
+      // Force refetch the user data immediately after successful login
       await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
+      return response;
     },
   });
 
@@ -42,11 +40,9 @@ export function useAuth() {
         name, 
         companyName 
       });
-      return response;
-    },
-    onSuccess: async () => {
-      // Force refetch the user data after successful registration
+      // Force refetch the user data immediately after successful registration
       await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
+      return response;
     },
   });
 
