@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -21,7 +20,6 @@ const signupSchema = z.object({
 type SignupForm = z.infer<typeof signupSchema>;
 
 export default function Signup() {
-  const [, navigate] = useLocation();
   const { register, isRegistering } = useAuth();
   const { toast } = useToast();
 
@@ -42,7 +40,8 @@ export default function Signup() {
         title: "Account created!",
         description: "Welcome to BuildPro. Your company has been set up.",
       });
-      navigate("/");
+      // Don't navigate - let React re-render with auth state
+      // The App.tsx AuthWrapper will automatically show the correct page
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -159,13 +158,13 @@ export default function Signup() {
 
           <div className="text-center text-sm">
             <span className="text-muted-foreground">Already have an account? </span>
-            <button
+            <a
+              href="/login"
               className="text-primary font-semibold hover:underline"
-              onClick={() => navigate("/login")}
               data-testid="link-login"
             >
               Log in
-            </button>
+            </a>
           </div>
         </CardContent>
       </Card>
