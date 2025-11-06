@@ -3143,6 +3143,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: company.id,
       });
       
+      // Step 4: Fetch updated user with companyId
+      const updatedUser = await storage.getUser(user.id);
+      if (!updatedUser) {
+        return res.status(500).json({ message: "Failed to retrieve updated user" });
+      }
+      
       // Create session and explicitly save it
       (req.session as any).userId = user.id;
       
@@ -3152,7 +3158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error("Session save error:", err);
           return res.status(500).json({ message: "Failed to save session" });
         }
-        res.status(201).json({ user: toSafeUser(user) });
+        res.status(201).json({ user: toSafeUser(updatedUser) });
       });
     } catch (error) {
       console.error("Registration error:", error);
