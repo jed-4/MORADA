@@ -19,13 +19,19 @@ export function useAuth() {
       return response;
     },
     onSuccess: (response) => {
+      console.log('Login successful, updating cache...', response);
       // Update cache with user data from response
       if (response.user) {
         queryClient.setQueryData(['/api/auth/user'], response.user);
+        console.log('Cache updated with user:', response.user);
       } else {
         // Fallback: force refetch if no user in response
+        console.log('No user in response, forcing refetch...');
         queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       }
+    },
+    onError: (error) => {
+      console.error('Login error:', error);
     },
   });
 

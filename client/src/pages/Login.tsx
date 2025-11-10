@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -30,24 +30,29 @@ export default function Login() {
   });
 
   const onSubmit = (data: LoginForm) => {
-    // Call the mutation directly - don't await
-    loginMutation.mutate(data, {
-      onSuccess: () => {
-        toast({
-          title: "Welcome back!",
-          description: "You've successfully logged in to BuildPro.",
-        });
-        // AuthWrapper will automatically redirect to dashboard
-      },
-      onError: (error: any) => {
-        toast({
-          variant: "destructive",
-          title: "Login failed",
-          description: error.message || "Invalid email or password",
-        });
-      },
-    });
+    // Call the mutation - let useAuth handle cache updates
+    loginMutation.mutate(data);
   };
+
+  // Show toasts based on mutation state
+  React.useEffect(() => {
+    if (loginMutation.isSuccess) {
+      toast({
+        title: "Welcome back!",
+        description: "You've successfully logged in to BuildPro.",
+      });
+    }
+  }, [loginMutation.isSuccess, toast]);
+
+  React.useEffect(() => {
+    if (loginMutation.isError) {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: (loginMutation.error as any)?.message || "Invalid email or password",
+      });
+    }
+  }, [loginMutation.isError, loginMutation.error, toast]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-6">
