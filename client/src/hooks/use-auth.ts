@@ -8,7 +8,7 @@ export function useAuth() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
     staleTime: Infinity, // Never consider stale
-    refetchOnMount: false,
+    refetchOnMount: true, // Always check auth on mount to handle page refreshes
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
