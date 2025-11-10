@@ -2,66 +2,71 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { Building2, LogIn } from "lucide-react";
 
-const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(1, "Password is required"),
-});
-
-type LoginForm = z.infer<typeof loginSchema>;
-
 export default function Login() {
-  const { loginMutation } = useAuth();
   const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [hasSubmitted, setHasSubmitted] = React.useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    console.log('=== FORM SUBMITTED ===');
+    console.log('Email:', email);
+    
+    if (!email || !password) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter both email and password",
+      });
+      return;
+    }
 
-  const form = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-  });
+    setIsLoading(true);
+    
+    try {
+      console.log('Sending POST to /api/auth/login...');
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include', // Important for cookies
+      });
 
-  const onSubmit = (data: LoginForm) => {
-    console.log('=== LOGIN FORM SUBMITTED ===');
-    console.log('Email:', data.email);
-    console.log('Calling loginMutation.mutate...');
-    setHasSubmitted(true);
-    // Call the mutation - let useAuth handle cache updates
-    loginMutation.mutate(data);
-    console.log('loginMutation.mutate called');
-  };
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
 
-  // Show toasts based on mutation state - only after mutation has been called
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
 
-  React.useEffect(() => {
-    if (hasSubmitted && loginMutation.isSuccess) {
       toast({
         title: "Welcome back!",
         description: "You've successfully logged in to BuildPro.",
       });
-    }
-  }, [hasSubmitted, loginMutation.isSuccess, toast]);
 
-  React.useEffect(() => {
-    if (hasSubmitted && loginMutation.isError) {
+      console.log('Login successful, redirecting to dashboard...');
+      // Force hard redirect to dashboard
+      window.location.href = '/dashboard';
+      
+    } catch (error: any) {
+      console.error('Login error:', error);
       toast({
         variant: "destructive",
         title: "Login failed",
-        description: (loginMutation.error as any)?.message || "Invalid email or password",
+        description: error.message || "Invalid email or password",
       });
-      setHasSubmitted(false); // Reset so user can try again
+    } finally {
+      setIsLoading(false);
     }
-  }, [hasSubmitted, loginMutation.isError, loginMutation.error, toast]);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-6">
@@ -78,61 +83,51 @@ export default function Login() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        type="email"
-                        placeholder="you@example.com"
-                        data-testid="input-email"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                data-testid="input-email"
+                required
               />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="password"
-                        placeholder="Enter your password"
-                        data-testid="input-password"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium">
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                data-testid="input-password"
+                required
               />
-              <Button 
-                type="submit" 
-                className="w-full"
-                disabled={loginMutation.isPending}
-                data-testid="button-login"
-              >
-                {loginMutation.isPending ? (
-                  "Logging in..."
-                ) : (
-                  <>
-                    <LogIn className="h-4 w-4 mr-2" />
-                    Log In
-                  </>
-                )}
-              </Button>
-            </form>
-          </Form>
+            </div>
+            <Button 
+              type="submit" 
+              className="w-full"
+              disabled={isLoading}
+              data-testid="button-login"
+            >
+              {isLoading ? (
+                "Logging in..."
+              ) : (
+                <>
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Log In
+                </>
+              )}
+            </Button>
+          </form>
 
           <div className="text-center text-sm">
             <span className="text-muted-foreground">Don't have an account? </span>
