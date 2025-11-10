@@ -36,8 +36,8 @@ export default function Login() {
         title: "Welcome back!",
         description: "You've successfully logged in to BuildPro.",
       });
-      // Force a full page reload to clear any cached state
-      window.location.href = '/';
+      // React Query will update and AuthWrapper will automatically show dashboard
+      // No manual redirect needed
     } catch (error: any) {
       toast({
         variant: "destructive",
