@@ -1,10 +1,20 @@
 import { useLocation } from "wouter";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Building2, CheckCircle2, Calendar, FileText, DollarSign, Users, ArrowRight } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function LandingPage() {
   const [, navigate] = useLocation();
+  const { isAuthenticated, user } = useAuth();
+
+  // If user is authenticated, redirect to dashboard
+  useEffect(() => {
+    if (isAuthenticated && user && user.companyId) {
+      window.location.href = '/';
+    }
+  }, [isAuthenticated, user]);
 
   return (
     <div className="min-h-screen bg-background">
