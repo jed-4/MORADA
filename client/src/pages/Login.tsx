@@ -18,7 +18,7 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function Login() {
-  const { login, isLoggingIn } = useAuth();
+  const { loginMutation } = useAuth();
   const { toast } = useToast();
 
   const form = useForm<LoginForm>({
@@ -29,22 +29,24 @@ export default function Login() {
     },
   });
 
-  const onSubmit = async (data: LoginForm) => {
-    try {
-      await login(data);
-      toast({
-        title: "Welcome back!",
-        description: "You've successfully logged in to BuildPro.",
-      });
-      // React Query will update and AuthWrapper will automatically show dashboard
-      // No manual redirect needed
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: error.message || "Invalid email or password",
-      });
-    }
+  const onSubmit = (data: LoginForm) => {
+    // Call the mutation directly - don't await
+    loginMutation.mutate(data, {
+      onSuccess: () => {
+        toast({
+          title: "Welcome back!",
+          description: "You've successfully logged in to BuildPro.",
+        });
+        // AuthWrapper will automatically redirect to dashboard
+      },
+      onError: (error: any) => {
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: error.message || "Invalid email or password",
+        });
+      },
+    });
   };
 
   return (
@@ -102,11 +104,11 @@ export default function Login() {
               />
               <Button 
                 type="submit" 
-                className="w-full" 
-                disabled={isLoggingIn}
+                className="w-full"
+                disabled={loginMutation.isPending}
                 data-testid="button-login"
               >
-                {isLoggingIn ? (
+                {loginMutation.isPending ? (
                   "Logging in..."
                 ) : (
                   <>
