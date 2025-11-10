@@ -299,6 +299,23 @@ function AuthWrapper() {
           <SocketProvider>
             <SidebarProvider style={style as React.CSSProperties}>
             <div className="flex flex-col h-screen w-full">
+              {/* TEMPORARY DEBUG BANNER */}
+              <div style={{ 
+                position: 'fixed', 
+                top: 0, 
+                left: 0, 
+                right: 0, 
+                backgroundColor: 'green', 
+                color: 'white', 
+                padding: '20px', 
+                textAlign: 'center', 
+                fontSize: '24px', 
+                fontWeight: 'bold',
+                zIndex: 999999 
+              }}>
+                ✅ DASHBOARD IS RENDERING - YOU ARE LOGGED IN ✅
+              </div>
+              
               {/* Header spans full width at the top */}
               <Header />
               
