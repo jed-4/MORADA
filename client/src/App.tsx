@@ -226,6 +226,7 @@ function UnauthenticatedRoutes() {
 
 function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
+  const [location, navigate] = useLocation();
   
   // Sidebar width state - must be declared before any conditional returns
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -236,6 +237,17 @@ function AuthWrapper() {
   useEffect(() => {
     localStorage.setItem('sidebar-width', sidebarWidth);
   }, [sidebarWidth]);
+
+  // Redirect authenticated users away from auth pages to dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user) {
+      const authPages = ['/login', '/signup'];
+      if (authPages.includes(location)) {
+        // Navigate to dashboard
+        navigate('/');
+      }
+    }
+  }, [isAuthenticated, isLoading, location, navigate, user]);
 
   // Show loading while checking auth
   if (isLoading) {
