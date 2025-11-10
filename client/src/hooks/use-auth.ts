@@ -16,14 +16,16 @@ export function useAuth() {
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       const response = await apiRequest('/api/auth/login', 'POST', { email, password });
-      
-      // Set the user data directly in the cache instead of refetching
-      // This avoids race conditions with session cookie propagation
+      return response;
+    },
+    onSuccess: (response) => {
+      // Update cache with user data from response
       if (response.user) {
         queryClient.setQueryData(['/api/auth/user'], response.user);
+      } else {
+        // Fallback: force refetch if no user in response
+        queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       }
-      
-      return response;
     },
   });
 
@@ -45,14 +47,16 @@ export function useAuth() {
         name, 
         companyName 
       });
-      
-      // Set the user data directly in the cache instead of refetching
-      // This avoids race conditions with session cookie propagation
+      return response;
+    },
+    onSuccess: (response) => {
+      // Update cache with user data from response
       if (response.user) {
         queryClient.setQueryData(['/api/auth/user'], response.user);
+      } else {
+        // Fallback: force refetch if no user in response
+        queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       }
-      
-      return response;
     },
   });
 
