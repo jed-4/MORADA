@@ -116,9 +116,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       httpOnly: true,
-      // Replit deployments always use HTTPS
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      // Replit uses HTTPS in both dev and production, required for sameSite: 'none'
+      secure: true,
+      // sameSite: 'none' is required for iframe/cross-origin support in Replit
+      sameSite: 'none',
       // Don't set domain - let it default to the current domain
     },
     // Force session to save on every request when modified
