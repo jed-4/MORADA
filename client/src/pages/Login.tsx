@@ -36,8 +36,8 @@ export default function Login() {
         title: "Welcome back!",
         description: "You've successfully logged in to BuildPro.",
       });
-      // Don't navigate - let React re-render with auth state
-      // The App.tsx AuthWrapper will automatically show the correct page
+      // Force a full page reload to clear any cached state
+      window.location.href = '/';
     } catch (error: any) {
       toast({
         variant: "destructive",
