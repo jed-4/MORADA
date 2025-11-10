@@ -52,9 +52,9 @@ export default function Login() {
         description: "You've successfully logged in to BuildPro.",
       });
 
-      console.log('Login successful, redirecting to dashboard...');
-      // Force hard redirect to dashboard
-      window.location.href = '/dashboard';
+      console.log('Login successful, redirecting to app...');
+      // Force hard redirect to app (root route is Dashboard)
+      window.location.href = '/';
       
     } catch (error: any) {
       console.error('Login error:', error);
