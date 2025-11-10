@@ -21,6 +21,8 @@ export default function Login() {
   const { loginMutation } = useAuth();
   const { toast } = useToast();
 
+  const [hasSubmitted, setHasSubmitted] = React.useState(false);
+
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -33,30 +35,33 @@ export default function Login() {
     console.log('=== LOGIN FORM SUBMITTED ===');
     console.log('Email:', data.email);
     console.log('Calling loginMutation.mutate...');
+    setHasSubmitted(true);
     // Call the mutation - let useAuth handle cache updates
     loginMutation.mutate(data);
     console.log('loginMutation.mutate called');
   };
 
-  // Show toasts based on mutation state
+  // Show toasts based on mutation state - only after mutation has been called
+
   React.useEffect(() => {
-    if (loginMutation.isSuccess) {
+    if (hasSubmitted && loginMutation.isSuccess) {
       toast({
         title: "Welcome back!",
         description: "You've successfully logged in to BuildPro.",
       });
     }
-  }, [loginMutation.isSuccess, toast]);
+  }, [hasSubmitted, loginMutation.isSuccess, toast]);
 
   React.useEffect(() => {
-    if (loginMutation.isError) {
+    if (hasSubmitted && loginMutation.isError) {
       toast({
         variant: "destructive",
         title: "Login failed",
         description: (loginMutation.error as any)?.message || "Invalid email or password",
       });
+      setHasSubmitted(false); // Reset so user can try again
     }
-  }, [loginMutation.isError, loginMutation.error, toast]);
+  }, [hasSubmitted, loginMutation.isError, loginMutation.error, toast]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-6">
