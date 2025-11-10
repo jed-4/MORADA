@@ -30,8 +30,12 @@ export default function Login() {
   });
 
   const onSubmit = (data: LoginForm) => {
+    console.log('=== LOGIN FORM SUBMITTED ===');
+    console.log('Email:', data.email);
+    console.log('Calling loginMutation.mutate...');
     // Call the mutation - let useAuth handle cache updates
     loginMutation.mutate(data);
+    console.log('loginMutation.mutate called');
   };
 
   // Show toasts based on mutation state
