@@ -238,12 +238,23 @@ function AuthWrapper() {
     localStorage.setItem('sidebar-width', sidebarWidth);
   }, [sidebarWidth]);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('AuthWrapper State:', { 
+      isLoading, 
+      isAuthenticated, 
+      hasUser: !!user,
+      hasCompany: user?.companyId,
+      location 
+    });
+  }, [isLoading, isAuthenticated, user, location]);
+
   // Redirect authenticated users away from auth pages to dashboard
   useEffect(() => {
     if (!isLoading && isAuthenticated && user) {
       const authPages = ['/login', '/signup'];
       if (authPages.includes(location)) {
-        // Navigate to dashboard
+        console.log('Redirecting from auth page to dashboard');
         navigate('/');
       }
     }
@@ -263,13 +274,17 @@ function AuthWrapper() {
 
   // Show login/signup/landing pages if not authenticated
   if (!isAuthenticated) {
+    console.log('Showing unauthenticated routes');
     return <UnauthenticatedRoutes />;
   }
 
   // Show onboarding if user doesn't have a company
   if (user && !user.companyId) {
+    console.log('Showing onboarding page');
     return <OnboardingPage />;
   }
+
+  console.log('Showing dashboard');
 
   // Show main app if authenticated and has company
   const style = {
