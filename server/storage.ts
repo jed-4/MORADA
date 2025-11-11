@@ -5143,8 +5143,34 @@ export class DbStorage implements IStorage {
     return user;
   }
 
-  // Required for Replit Auth - upsert user based on Replit ID
+  // Required for Replit Auth - upsert user based on Replit ID or email
   async upsertUser(userData: import("@shared/schema").UpsertUser): Promise<User> {
+    // Handle migration from old auth: if email exists, update that user's ID
+    if (userData.email) {
+      const existingUser = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.email, userData.email))
+        .limit(1);
+      
+      if (existingUser.length > 0 && existingUser[0].id !== userData.id) {
+        // Email exists with different ID - update the existing user with new Replit ID
+        const [user] = await db
+          .update(schema.users)
+          .set({
+            id: userData.id,
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            profileImageUrl: userData.profileImageUrl,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.users.email, userData.email))
+          .returning();
+        return user;
+      }
+    }
+    
+    // Standard upsert by ID for Replit Auth users
     const [user] = await db
       .insert(schema.users)
       .values(userData)
