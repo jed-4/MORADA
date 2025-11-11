@@ -162,14 +162,11 @@ export async function setupAuth(app: Express) {
 export const ensureLegacySessionFields: RequestHandler = (req, res, next) => {
   const user = req.user as any;
   
-  console.log('[Bridge] Path:', req.path, 'Authenticated:', req.isAuthenticated(), 'Has dbUser:', !!user?.dbUser);
-  
   if (req.isAuthenticated() && user?.dbUser) {
     // Populate legacy session fields for backwards compatibility
     (req.session as any).userId = user.dbUser.id;
     (req.session as any).companyId = user.dbUser.companyId;
     (req.session as any).roleId = user.dbUser.roleId;
-    console.log('[Bridge] Set session:', { userId: user.dbUser.id, companyId: user.dbUser.companyId });
   }
   
   next();
