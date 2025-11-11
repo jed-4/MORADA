@@ -7,7 +7,6 @@ export function useAuth() {
   const { data: user, isLoading, error } = useQuery<User | null>({
     queryKey: ['/api/auth/user'],
     queryFn: async ({ queryKey }) => {
-      console.log('[useAuth] queryFn called');
       try {
         const res = await fetch('/api/auth/user', {
           credentials: 'include',
@@ -17,29 +16,22 @@ export function useAuth() {
           },
         });
         
-        console.log('[useAuth] Response status:', res.status);
-        
         if (res.status === 401) {
-          console.log('[useAuth] 401 - returning null');
           return null;
         }
         
         if (res.status === 304) {
           const cachedData = queryClient.getQueryData<User | null>(queryKey);
-          console.log('[useAuth] 304 - returning cached:', cachedData);
           return cachedData ?? null;
         }
         
         if (!res.ok) {
-          console.error('[useAuth] Request failed:', res.status);
           throw new Error(`Auth check failed: ${res.status}`);
         }
         
-        const userData = await res.json();
-        console.log('[useAuth] Success - user data:', userData);
-        return userData;
+        return await res.json();
       } catch (error) {
-        console.error('[useAuth] Error in queryFn:', error);
+        console.error('Auth check error:', error);
         return null;
       }
     },
@@ -50,8 +42,6 @@ export function useAuth() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
-
-  console.log('[useAuth] Hook state:', { hasData: !!user, isLoading, hasError: !!error });
 
   const logout = async () => {
     try {

@@ -229,25 +229,6 @@ function AuthWrapper() {
     localStorage.setItem('sidebar-width', sidebarWidth);
   }, [sidebarWidth]);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('AuthWrapper State:', { 
-      isLoading, 
-      isAuthenticated, 
-      hasUser: !!user,
-      hasCompany: user?.companyId,
-      location 
-    });
-  }, [isLoading, isAuthenticated, user, location]);
-
-  // Redirect authenticated users from landing page to dashboard
-  useEffect(() => {
-    if (!isLoading && isAuthenticated && user && location === '/') {
-      console.log('Redirecting authenticated user to dashboard');
-      // Don't redirect to avoid loop, let Router handle it
-    }
-  }, [isAuthenticated, isLoading, location, navigate, user]);
-
   // Show loading while checking auth
   if (isLoading) {
     return (
@@ -262,17 +243,13 @@ function AuthWrapper() {
 
   // Show login/signup/landing pages if not authenticated
   if (!isAuthenticated) {
-    console.log('Showing unauthenticated routes');
     return <UnauthenticatedRoutes />;
   }
 
   // Show onboarding if user doesn't have a company
   if (user && !user.companyId) {
-    console.log('Showing onboarding page');
     return <OnboardingPage />;
   }
-
-  console.log('Showing dashboard');
 
   // Show main app if authenticated and has company
   const style = {
@@ -287,23 +264,6 @@ function AuthWrapper() {
           <SocketProvider>
             <SidebarProvider style={style as React.CSSProperties}>
             <div className="flex flex-col h-screen w-full">
-              {/* TEMPORARY DEBUG BANNER */}
-              <div style={{ 
-                position: 'fixed', 
-                top: 0, 
-                left: 0, 
-                right: 0, 
-                backgroundColor: 'green', 
-                color: 'white', 
-                padding: '20px', 
-                textAlign: 'center', 
-                fontSize: '24px', 
-                fontWeight: 'bold',
-                zIndex: 999999 
-              }}>
-                ✅ DASHBOARD IS RENDERING - YOU ARE LOGGED IN ✅
-              </div>
-              
               {/* Header spans full width at the top */}
               <Header />
               
