@@ -157,6 +157,24 @@ export async function setupAuth(app: Express) {
   });
 }
 
+// Compatibility bridge: sync Passport user data to legacy session fields
+// This allows old routes that check req.session.userId to work with new Replit Auth
+export const ensureLegacySessionFields: RequestHandler = (req, res, next) => {
+  const user = req.user as any;
+  
+  console.log('[Bridge] Path:', req.path, 'Authenticated:', req.isAuthenticated(), 'Has dbUser:', !!user?.dbUser);
+  
+  if (req.isAuthenticated() && user?.dbUser) {
+    // Populate legacy session fields for backwards compatibility
+    (req.session as any).userId = user.dbUser.id;
+    (req.session as any).companyId = user.dbUser.companyId;
+    (req.session as any).roleId = user.dbUser.roleId;
+    console.log('[Bridge] Set session:', { userId: user.dbUser.id, companyId: user.dbUser.companyId });
+  }
+  
+  next();
+};
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 

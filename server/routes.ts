@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes } from "crypto";
-import { setupAuth, isAuthenticated, sessionMiddleware } from "./replitAuth";
+import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./replitAuth";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -101,6 +101,10 @@ import { setupMessagingSocket } from "./messaging/socket";
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
   await setupAuth(app);
+  
+  // Compatibility bridge: sync Passport user to legacy session fields
+  // This allows old routes checking req.session.userId to work with Replit Auth
+  app.use('/api', ensureLegacySessionFields);
   
   // put application routes here
   // prefix all routes with /api
