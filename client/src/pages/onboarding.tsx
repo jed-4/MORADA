@@ -27,22 +27,6 @@ export default function OnboardingPage() {
   const { toast } = useToast();
   const { logout } = useAuth();
   
-  // On mount, clear cache and refetch user data to ensure we have latest from server
-  useEffect(() => {
-    const refreshUserData = async () => {
-      try {
-        // Clear the cached user data
-        queryClient.removeQueries({ queryKey: ['/api/auth/user'] });
-        // Refetch fresh data from server
-        await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
-      } catch (error) {
-        console.error('Failed to refresh user data:', error);
-      }
-    };
-    
-    refreshUserData();
-  }, []);
-  
   const form = useForm<CompanyFormValues>({
     resolver: zodResolver(companyFormSchema),
     defaultValues: {

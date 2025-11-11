@@ -5171,14 +5171,18 @@ export class DbStorage implements IStorage {
       }
     }
     
-    // Standard upsert by ID for new Replit Auth users
+    // Standard upsert by ID - only update auth fields, preserve companyId/roleId/etc
     const [user] = await db
       .insert(schema.users)
       .values(userData)
       .onConflictDoUpdate({
         target: schema.users.id,
         set: {
-          ...userData,
+          // Only update auth-specific fields, leave companyId/roleId intact
+          email: userData.email,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
           updatedAt: new Date(),
         },
       })
