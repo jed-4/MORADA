@@ -6,15 +6,24 @@ import type { User } from "@shared/schema";
 export function useAuth() {
   const { data: user, isLoading, error } = useQuery<User | null>({
     queryKey: ['/api/auth/user'],
-    queryFn: async () => {
+    queryFn: async ({ queryKey }) => {
       try {
         const res = await fetch('/api/auth/user', {
           credentials: 'include',
-          cache: 'no-store', // Prevent 304 caching issues
+          cache: 'no-store', // Prevent 304 responses that cause loop
+          headers: {
+            'Cache-Control': 'no-cache',
+          },
         });
         
         if (res.status === 401) {
           return null;
+        }
+        
+        // Handle 304 Not Modified - treat as success with cached data
+        if (res.status === 304) {
+          const cachedData = queryClient.getQueryData<User | null>(queryKey);
+          return cachedData ?? null;
         }
         
         if (!res.ok) {
@@ -28,8 +37,8 @@ export function useAuth() {
       }
     },
     retry: false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: Infinity, // Never refetch automatically
+    gcTime: Infinity, // Keep in cache indefinitely  
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
