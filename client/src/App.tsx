@@ -62,8 +62,6 @@ import UserProfileView from "@/pages/UserProfileView";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
-import Login from "@/pages/Login";
-import Signup from "@/pages/Signup";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
@@ -213,14 +211,7 @@ function Router() {
 }
 
 function UnauthenticatedRoutes() {
-  const [location] = useLocation();
-  
-  if (location === '/login') {
-    return <Login />;
-  }
-  if (location === '/signup') {
-    return <Signup />;
-  }
+  // Replit Auth handles login/signup via /api/login
   return <LandingPage />;
 }
 
@@ -249,14 +240,11 @@ function AuthWrapper() {
     });
   }, [isLoading, isAuthenticated, user, location]);
 
-  // Redirect authenticated users away from auth pages to dashboard
+  // Redirect authenticated users from landing page to dashboard
   useEffect(() => {
-    if (!isLoading && isAuthenticated && user) {
-      const authPages = ['/login', '/signup'];
-      if (authPages.includes(location)) {
-        console.log('Redirecting from auth page to dashboard');
-        navigate('/');
-      }
+    if (!isLoading && isAuthenticated && user && location === '/') {
+      console.log('Redirecting authenticated user to dashboard');
+      // Don't redirect to avoid loop, let Router handle it
     }
   }, [isAuthenticated, isLoading, location, navigate, user]);
 

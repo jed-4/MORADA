@@ -1,12 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import session from "express-session";
-import pgSession from "connect-pg-simple";
 import { db, pool } from "./db";
-import bcrypt from "bcrypt";
 import { google } from "googleapis";
 import { randomBytes } from "crypto";
+import { setupAuth, isAuthenticated, sessionMiddleware } from "./replitAuth";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -101,32 +99,8 @@ import multer from "multer";
 import { setupMessagingSocket } from "./messaging/socket";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup session middleware with PostgreSQL session store
-  const PgSession = pgSession(session);
-  const sessionMiddleware = session({
-    store: new PgSession({
-      pool: pool,
-      createTableIfMissing: true,
-      // Prune expired sessions every hour
-      pruneSessionInterval: 60 * 60,
-    }),
-    secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      httpOnly: true,
-      // Replit uses HTTPS in both dev and production, required for sameSite: 'none'
-      secure: true,
-      // sameSite: 'none' is required for iframe/cross-origin support in Replit
-      sameSite: 'none',
-      // Don't set domain - let it default to the current domain
-    },
-    // Force session to save on every request when modified
-    rolling: true,
-  });
-  
-  app.use(sessionMiddleware);
+  // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
+  await setupAuth(app);
   
   // put application routes here
   // prefix all routes with /api
@@ -3216,19 +3190,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   
-  // Get current authenticated user
-  app.get('/api/auth/user', async (req: any, res) => {
+  // Get current authenticated user - Replit Auth
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req.session as any)?.userId;
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const user = await storage.getUser(userId);
+      // User is already hydrated in session during deserialize
+      const user = req.user.dbUser;
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
       res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching user:", error);

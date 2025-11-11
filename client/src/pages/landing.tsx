@@ -16,18 +16,11 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-3">
             <Button 
-              onClick={() => navigate('/login')}
-              variant="ghost"
+              onClick={() => window.location.href = '/api/login'}
+              variant="default"
               data-testid="button-login-header"
             >
               Log In
-            </Button>
-            <Button 
-              onClick={() => navigate('/signup')}
-              variant="default"
-              data-testid="button-signup-header"
-            >
-              Sign Up
             </Button>
           </div>
         </header>
@@ -43,22 +36,13 @@ export default function LandingPage() {
             </p>
             <div className="mt-10 flex items-center justify-center gap-4">
               <Button 
-                onClick={() => navigate('/signup')}
+                onClick={() => window.location.href = '/api/login'}
                 size="lg"
                 className="gap-2 text-base"
-                data-testid="button-signup-hero"
+                data-testid="button-get-started"
               >
-                Get Started Free
+                Get Started
                 <ArrowRight className="h-5 w-5" />
-              </Button>
-              <Button 
-                onClick={() => navigate('/login')}
-                size="lg"
-                variant="outline"
-                className="text-base"
-                data-testid="button-login-hero"
-              >
-                Log In
               </Button>
             </div>
           </div>
@@ -117,12 +101,12 @@ export default function LandingPage() {
                   Create your free account and start managing projects today. No credit card required.
                 </p>
                 <Button 
-                  onClick={() => navigate('/signup')}
+                  onClick={() => window.location.href = '/api/login'}
                   size="lg"
                   className="mt-8 gap-2 text-base"
-                  data-testid="button-signup-cta"
+                  data-testid="button-get-started-cta"
                 >
-                  Sign Up Free
+                  Get Started
                   <ArrowRight className="h-5 w-5" />
                 </Button>
               </CardContent>

@@ -1,5 +1,6 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest, getQueryFn } from "@/lib/queryClient";
+// Replit Auth integration - see blueprint:javascript_log_in_with_replit
+import { useQuery } from "@tanstack/react-query";
+import { getQueryFn } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 
 export function useAuth() {
@@ -8,72 +9,9 @@ export function useAuth() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
     staleTime: Infinity, // Never consider stale
-    refetchOnMount: true, // Always check auth on mount to handle page refreshes
+    refetchOnMount: true, // Always check auth on mount
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-  });
-
-  const loginMutation = useMutation({
-    mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const response = await apiRequest('/api/auth/login', 'POST', { email, password });
-      return response;
-    },
-    onSuccess: (response) => {
-      console.log('Login successful, updating cache...', response);
-      // Update cache with user data from response
-      if (response.user) {
-        queryClient.setQueryData(['/api/auth/user'], response.user);
-        console.log('Cache updated with user:', response.user);
-      } else {
-        // Fallback: force refetch if no user in response
-        console.log('No user in response, forcing refetch...');
-        queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-      }
-    },
-    onError: (error) => {
-      console.error('Login error:', error);
-    },
-  });
-
-  const registerMutation = useMutation({
-    mutationFn: async ({ 
-      email, 
-      password, 
-      name,
-      companyName 
-    }: { 
-      email: string; 
-      password: string; 
-      name: string;
-      companyName: string;
-    }) => {
-      const response = await apiRequest('/api/auth/register', 'POST', { 
-        email, 
-        password, 
-        name, 
-        companyName 
-      });
-      return response;
-    },
-    onSuccess: (response) => {
-      // Update cache with user data from response
-      if (response.user) {
-        queryClient.setQueryData(['/api/auth/user'], response.user);
-      } else {
-        // Fallback: force refetch if no user in response
-        queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-      }
-    },
-  });
-
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest('/api/auth/logout', 'POST');
-    },
-    onSuccess: () => {
-      queryClient.setQueryData(['/api/auth/user'], null);
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-    },
   });
 
   return {
@@ -81,12 +19,5 @@ export function useAuth() {
     isLoading,
     isAuthenticated: !!user,
     error,
-    login: loginMutation.mutateAsync,
-    register: registerMutation.mutateAsync,
-    logout: logoutMutation.mutate,
-    loginMutation,
-    registerMutation,
-    isLoggingIn: loginMutation.isPending,
-    isRegistering: registerMutation.isPending,
   };
 }
