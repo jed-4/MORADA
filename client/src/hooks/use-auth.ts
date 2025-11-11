@@ -1,23 +1,65 @@
 // Replit Auth integration - see blueprint:javascript_log_in_with_replit
 import { useQuery } from "@tanstack/react-query";
-import { getQueryFn } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 
 export function useAuth() {
   const { data: user, isLoading, error } = useQuery<User | null>({
     queryKey: ['/api/auth/user'],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryFn: async () => {
+      try {
+        const res = await fetch('/api/auth/user', {
+          credentials: 'include',
+          cache: 'no-store', // Prevent 304 caching issues
+        });
+        
+        if (res.status === 401) {
+          return null;
+        }
+        
+        if (!res.ok) {
+          throw new Error(`Auth check failed: ${res.status}`);
+        }
+        
+        return await res.json();
+      } catch (error) {
+        console.error('Auth check error:', error);
+        return null;
+      }
+    },
     retry: false,
-    staleTime: Infinity, // Never consider stale
-    refetchOnMount: true, // Always check auth on mount
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  const logout = async () => {
+    try {
+      await fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      // Clear auth cache
+      queryClient.setQueryData(['/api/auth/user'], null);
+      
+      // Redirect to landing page
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still clear cache and redirect even if logout fails
+      queryClient.setQueryData(['/api/auth/user'], null);
+      window.location.href = '/';
+    }
+  };
 
   return {
     user: user ?? null,
     isLoading,
     isAuthenticated: !!user,
     error,
+    logout,
   };
 }
