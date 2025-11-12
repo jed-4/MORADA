@@ -83,6 +83,14 @@ export async function setupAuth(app: Express) {
   // Detect production for logging
   const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
   const isProduction = domains.length > 0 && domains.every(d => d.trim().endsWith('.replit.app'));
+  
+  // Log critical OAuth configuration at startup
+  console.log('[Replit Auth Setup]', {
+    replId: process.env.REPL_ID,
+    domains: process.env.REPLIT_DOMAINS,
+    isProduction,
+    issuer: process.env.ISSUER_URL || 'https://replit.com/oidc'
+  });
 
   const verify: VerifyFunction = async (
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
