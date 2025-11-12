@@ -105,6 +105,10 @@ export async function setupAuth(app: Express) {
     // Hydrate session with full user record (includes companyId, roleId, etc.)
     sessionData.dbUser = user;
     
+    // CRITICAL: Store database user ID, not Replit claims.sub
+    // This ensures deserializeUser can find the user in our database
+    sessionData.userId = user.id;
+    
     verified(null, sessionData);
   };
 
@@ -135,8 +139,9 @@ export async function setupAuth(app: Express) {
     try {
       const data = sessionData as any;
       // Refresh user data from database to get latest companyId, roleId, etc.
-      if (data.claims?.sub) {
-        const user = await storage.getUser(data.claims.sub);
+      // Use the stored database user ID, not the Replit claims.sub
+      if (data.userId) {
+        const user = await storage.getUser(data.userId);
         if (user) {
           data.dbUser = user;
           // Log critical fields for production debugging
@@ -145,7 +150,15 @@ export async function setupAuth(app: Express) {
             console.warn(`⚠️  [Passport Deserialize] User ${user.id} has NO companyId!`);
           }
         } else {
-          console.warn(`⚠️  [Passport Deserialize] No user found for claims.sub=${data.claims.sub}`);
+          console.warn(`⚠️  [Passport Deserialize] No user found for userId=${data.userId}`);
+        }
+      } else if (data.claims?.sub) {
+        // Fallback for old sessions - try using claims.sub (Replit user ID)
+        console.warn(`⚠️  [Passport Deserialize] Legacy session detected - using claims.sub=${data.claims.sub}`);
+        const user = await storage.getUser(data.claims.sub);
+        if (user) {
+          data.dbUser = user;
+          data.userId = user.id; // Upgrade session
         }
       }
       cb(null, data);
