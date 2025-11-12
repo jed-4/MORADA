@@ -29,7 +29,14 @@ export function useAuth() {
           throw new Error(`Auth check failed: ${res.status}`);
         }
         
-        return await res.json();
+        const userData = await res.json();
+        console.log('🔍 [Frontend] Received user data:', {
+          id: userData?.id,
+          companyId: userData?.companyId,
+          roleId: userData?.roleId,
+          email: userData?.email,
+        });
+        return userData;
       } catch (error) {
         console.error('Auth check error:', error);
         return null;
