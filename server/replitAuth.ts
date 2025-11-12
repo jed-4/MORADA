@@ -139,10 +139,18 @@ export async function setupAuth(app: Express) {
         const user = await storage.getUser(data.claims.sub);
         if (user) {
           data.dbUser = user;
+          // Log critical fields for production debugging
+          console.log(`[Passport Deserialize] User ${user.id}: companyId=${user.companyId}, roleId=${user.roleId}`);
+          if (!user.companyId) {
+            console.warn(`⚠️  [Passport Deserialize] User ${user.id} has NO companyId!`);
+          }
+        } else {
+          console.warn(`⚠️  [Passport Deserialize] No user found for claims.sub=${data.claims.sub}`);
         }
       }
       cb(null, data);
     } catch (error) {
+      console.error('[Passport Deserialize] Error:', error);
       cb(error);
     }
   });
