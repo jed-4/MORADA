@@ -36,11 +36,11 @@ export function useAuth() {
       }
     },
     retry: false,
-    staleTime: Infinity,
+    staleTime: 0, // Always fetch fresh data to catch auth state changes immediately
     gcTime: Infinity,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnMount: true, // Always check for fresh data on component mount
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnReconnect: true, // Refetch when connection restored
   });
 
   const logout = async () => {
