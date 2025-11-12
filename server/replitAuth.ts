@@ -28,6 +28,11 @@ export const sessionMiddleware = (() => {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  
+  // Detect production deployment: only .replit.app domains (not .replit.dev) are production
+  const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
+  const isProduction = domains.length > 0 && domains.every(d => d.trim().endsWith('.replit.app'));
+  
   return session({
     secret: process.env.SESSION_SECRET!,
     store: sessionStore,
@@ -35,8 +40,9 @@ export const sessionMiddleware = (() => {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true, // Required for sameSite: "none"
-      sameSite: "none", // Required for Replit iframe
+      secure: true,
+      // Use 'lax' for production (no iframe), 'none' for development (iframe embed)
+      sameSite: isProduction ? "lax" : "none",
       maxAge: sessionTtl,
     },
   });
@@ -73,6 +79,10 @@ export async function setupAuth(app: Express) {
   app.use(passport.session());
 
   const config = await getOidcConfig();
+  
+  // Detect production for logging
+  const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
+  const isProduction = domains.length > 0 && domains.every(d => d.trim().endsWith('.replit.app'));
 
   const verify: VerifyFunction = async (
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
@@ -130,8 +140,13 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/login", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
+    const hostname = req.hostname;
+    const protocol = req.protocol;
+    const callbackUrl = `${protocol}://${hostname}/api/callback`;
+    console.log(`[OAuth Login] hostname: ${hostname}, protocol: ${protocol}, callback: ${callbackUrl}, cookie sameSite: ${isProduction ? 'lax' : 'none'}`);
+    
+    ensureStrategy(hostname);
+    passport.authenticate(`replitauth:${hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
     })(req, res, next);
