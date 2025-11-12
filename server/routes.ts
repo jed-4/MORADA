@@ -3199,15 +3199,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // User is already hydrated in session during deserialize
       const user = req.user.dbUser;
-      console.log(`[GET /api/auth/user] dbUser exists: ${!!user}, companyId: ${user?.companyId}, roleId: ${user?.roleId}`);
+      
+      console.log('🔍 [GET /api/auth/user] SESSION CHECK');
+      console.log('   → Session ID:', req.sessionID);
+      console.log('   → dbUser exists:', !!user);
+      console.log('   → User ID:', user?.id);
+      console.log('   → Company ID:', user?.companyId);
+      console.log('   → Role ID:', user?.roleId);
       
       if (!user) {
-        console.error('[GET /api/auth/user] No dbUser found in session!');
+        console.error('❌ [GET /api/auth/user] No dbUser found in session!');
         return res.status(404).json({ message: "User not found" });
       }
       
       const safeUser = toSafeUser(user);
-      console.log(`[GET /api/auth/user] Returning user with companyId: ${safeUser.companyId}`);
+      console.log('✅ [GET /api/auth/user] Returning user with companyId:', safeUser.companyId);
       res.json(safeUser);
     } catch (error) {
       console.error("Error fetching user:", error);

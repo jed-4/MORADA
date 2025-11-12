@@ -40,9 +40,9 @@ export const sessionMiddleware = (() => {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
-      // Use 'lax' for production (no iframe), 'none' for development (iframe embed)
-      sameSite: isProduction ? "lax" : "none",
+      secure: isProduction, // HTTPS required in production, HTTP allowed in dev
+      // CRITICAL: Use 'none' for Replit iframe (both dev and production)
+      sameSite: "none",
       maxAge: sessionTtl,
     },
   });
@@ -186,7 +186,21 @@ export async function setupAuth(app: Express) {
     passport.authenticate(`replitauth:${req.hostname}`, {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
-    })(req, res, next);
+    })(req, res, (err?: any) => {
+      if (err) {
+        console.error('[OAuth Callback] Authentication failed:', err);
+        return next(err);
+      }
+      
+      const user = (req.user as any)?.dbUser;
+      console.log('✅ [OAuth Callback] LOGIN SUCCESS');
+      console.log('   → Session ID:', req.sessionID);
+      console.log('   → User ID:', user?.id);
+      console.log('   → Company ID:', user?.companyId);
+      console.log('   → Role ID:', user?.roleId);
+      
+      next();
+    });
   });
 
   app.get("/api/logout", (req, res) => {

@@ -45,16 +45,11 @@ export function useAuth() {
 
   const logout = async () => {
     try {
-      await fetch('/api/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      
-      // Clear auth cache
+      // Clear auth cache first
       queryClient.setQueryData(['/api/auth/user'], null);
       
-      // Redirect to landing page
-      window.location.href = '/';
+      // Redirect to Replit Auth logout (GET endpoint)
+      window.location.href = '/api/logout';
     } catch (error) {
       console.error('Logout error:', error);
       // Still clear cache and redirect even if logout fails
