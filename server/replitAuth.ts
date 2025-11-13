@@ -179,7 +179,6 @@ export async function setupAuth(app: Express) {
   app.get("/api/callback", (req, res, next) => {
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
     })(req, res, (err?: any) => {
       if (err) {
@@ -188,13 +187,32 @@ export async function setupAuth(app: Express) {
       }
       
       const user = (req.user as any)?.dbUser;
+      
+      // FORCE session fields to be set explicitly
+      (req.session as any).userId = user?.id;
+      (req.session as any).companyId = user?.companyId;
+      (req.session as any).roleId = user?.roleId;
+      
       console.log('✅ [OAuth Callback] LOGIN SUCCESS');
       console.log('   → Session ID:', req.sessionID);
       console.log('   → User ID:', user?.id);
       console.log('   → Company ID:', user?.companyId);
       console.log('   → Role ID:', user?.roleId);
+      console.log('   → SESSION SET:', {
+        userId: (req.session as any).userId,
+        companyId: (req.session as any).companyId,
+        roleId: (req.session as any).roleId,
+      });
       
-      next();
+      // Save session explicitly before redirect
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('[OAuth Callback] Session save failed:', saveErr);
+          return res.redirect('/api/login');
+        }
+        console.log('✅ [OAuth Callback] Session saved, redirecting to /');
+        res.redirect('/');
+      });
     });
   });
 
