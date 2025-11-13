@@ -3200,20 +3200,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // User is already hydrated in session during deserialize
       const user = req.user.dbUser;
       
-      console.log('🔍 [GET /api/auth/user] SESSION CHECK');
-      console.log('   → Session ID:', req.sessionID);
-      console.log('   → dbUser exists:', !!user);
-      console.log('   → User ID:', user?.id);
-      console.log('   → Company ID:', user?.companyId);
-      console.log('   → Role ID:', user?.roleId);
-      
       if (!user) {
         console.error('❌ [GET /api/auth/user] No dbUser found in session!');
         return res.status(404).json({ message: "User not found" });
       }
       
       const safeUser = toSafeUser(user);
-      console.log('✅ [GET /api/auth/user] Returning user with companyId:', safeUser.companyId);
       res.json(safeUser);
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -3221,27 +3213,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // DEBUG ENDPOINT - Remove after debugging production issue
-  app.get('/api/debug/session', isAuthenticated, async (req: any, res) => {
-    try {
-      const sessionSnapshot = {
-        hasUser: !!req.user,
-        hasDbUser: !!req.user?.dbUser,
-        userId: req.user?.dbUser?.id,
-        companyId: req.user?.dbUser?.companyId,
-        roleId: req.user?.dbUser?.roleId,
-        email: req.user?.dbUser?.email,
-        sessionUserId: (req.session as any)?.userId,
-        sessionCompanyId: (req.session as any)?.companyId,
-      };
-      console.log('[DEBUG /api/debug/session]', sessionSnapshot);
-      res.json(sessionSnapshot);
-    } catch (error) {
-      console.error('[DEBUG /api/debug/session] Error:', error);
-      res.status(500).json({ error: 'Debug failed' });
-    }
-  });
-
   // ============================================================
   // GOOGLE CALENDAR OAUTH ROUTES
   // ============================================================

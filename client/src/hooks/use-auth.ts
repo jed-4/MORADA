@@ -30,12 +30,6 @@ export function useAuth() {
         }
         
         const userData = await res.json();
-        console.log('🔍 [Frontend] Received user data:', {
-          id: userData?.id,
-          companyId: userData?.companyId,
-          roleId: userData?.roleId,
-          email: userData?.email,
-        });
         return userData;
       } catch (error) {
         console.error('Auth check error:', error);
