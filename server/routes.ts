@@ -3206,6 +3206,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const safeUser = toSafeUser(user);
+      console.log('✅ [GET /api/auth/user] Returning user:', {
+        id: safeUser.id,
+        email: safeUser.email,
+        companyId: safeUser.companyId,
+        roleId: safeUser.roleId,
+      });
       res.json(safeUser);
     } catch (error) {
       console.error("Error fetching user:", error);
