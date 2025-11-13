@@ -29,22 +29,18 @@ export const sessionMiddleware = (() => {
     tableName: "sessions",
   });
   
-  // Detect production deployment: only .replit.app domains (not .replit.dev) are production
-  const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
-  const isProduction = domains.length > 0 && domains.every(d => d.trim().endsWith('.replit.app'));
-  
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET || 'buildpro-secret-key-2025',
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProduction, // HTTPS required in production, HTTP allowed in dev
-      // CRITICAL: Use 'none' for Replit iframe (both dev and production)
-      sameSite: "none",
-      maxAge: sessionTtl,
-    },
+      secure: false,
+      sameSite: 'none',
+      maxAge: 24 * 60 * 60 * 1000,
+      domain: '.replit.app'
+    }
   });
 })();
 
