@@ -241,6 +241,17 @@ function AuthWrapper() {
     );
   }
 
+  // DEBUG: Show what we're receiving from backend
+  const DEBUG_MODE = true;
+  const debugInfo = {
+    isAuthenticated,
+    hasUser: !!user,
+    userId: user?.id,
+    email: user?.email,
+    companyId: user?.companyId,
+    hasCompanyId: !!user?.companyId,
+  };
+
   // Show login/signup/landing pages if not authenticated
   if (!isAuthenticated) {
     return <UnauthenticatedRoutes />;
@@ -248,7 +259,28 @@ function AuthWrapper() {
 
   // Show onboarding if user doesn't have a company
   if (user && !user.companyId) {
-    return <OnboardingPage />;
+    return (
+      <>
+        {DEBUG_MODE && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            background: 'red',
+            color: 'white',
+            padding: '20px',
+            zIndex: 9999,
+            fontFamily: 'monospace',
+            fontSize: '14px'
+          }}>
+            <h2 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>🔴 PRODUCTION DEBUG - SHOWING SETUP PAGE</h2>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
+        <OnboardingPage />
+      </>
+    );
   }
 
   // Show main app if authenticated and has company
@@ -264,6 +296,22 @@ function AuthWrapper() {
           <SocketProvider>
             <SidebarProvider style={style as React.CSSProperties}>
             <div className="flex flex-col h-screen w-full">
+              {DEBUG_MODE && (
+                <div style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  background: 'green',
+                  color: 'white',
+                  padding: '10px 20px',
+                  zIndex: 9999,
+                  fontFamily: 'monospace',
+                  fontSize: '12px'
+                }}>
+                  <strong>✅ SHOWING DASHBOARD</strong> | User: {debugInfo.email} | CompanyId: {debugInfo.companyId}
+                </div>
+              )}
               {/* Header spans full width at the top */}
               <Header />
               
