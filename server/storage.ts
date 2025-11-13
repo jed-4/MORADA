@@ -5145,6 +5145,13 @@ export class DbStorage implements IStorage {
 
   // Required for Replit Auth - upsert user based on Replit ID or email
   async upsertUser(userData: import("@shared/schema").UpsertUser): Promise<User> {
+    console.log('🔍 [upsertUser] Input:', {
+      id: userData.id,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName
+    });
+    
     // Handle migration from old auth: if email exists with different ID, update existing user
     if (userData.email) {
       const existingUser = await db
@@ -5153,9 +5160,18 @@ export class DbStorage implements IStorage {
         .where(eq(schema.users.email, userData.email))
         .limit(1);
       
+      console.log('🔍 [upsertUser] Existing user lookup:', {
+        email: userData.email,
+        found: existingUser.length > 0,
+        existingId: existingUser[0]?.id,
+        incomingId: userData.id,
+        idsMatch: existingUser[0]?.id === userData.id
+      });
+      
       if (existingUser.length > 0 && existingUser[0].id !== userData.id) {
         // Email exists with different ID - keep the EXISTING ID (don't break foreign keys!)
         // Just update profile info and clear password (they're using Replit Auth now)
+        console.log('✅ [upsertUser] Updating existing user by email');
         const [user] = await db
           .update(schema.users)
           .set({
@@ -5167,11 +5183,13 @@ export class DbStorage implements IStorage {
           })
           .where(eq(schema.users.email, userData.email))
           .returning();
+        console.log('✅ [upsertUser] Returned user:', { id: user.id, email: user.email, companyId: user.companyId });
         return user;
       }
     }
     
     // Standard upsert by ID - only update auth fields, preserve companyId/roleId/etc
+    console.log('📝 [upsertUser] No existing user by email, doing standard upsert by ID');
     const [user] = await db
       .insert(schema.users)
       .values(userData)
@@ -5187,6 +5205,7 @@ export class DbStorage implements IStorage {
         },
       })
       .returning();
+    console.log('📝 [upsertUser] Upserted user:', { id: user.id, email: user.email, companyId: user.companyId, isNew: !user.companyId });
     return user;
   }
 
