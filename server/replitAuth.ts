@@ -36,10 +36,9 @@ export const sessionMiddleware = (() => {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false,
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000,
-      domain: '.replit.app'
+      secure: true,  // REQUIRED with sameSite: 'none' - browsers reject otherwise
+      sameSite: 'none',  // Required for Replit iframe
+      maxAge: 24 * 60 * 60 * 1000
     }
   });
 })();
