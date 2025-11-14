@@ -242,7 +242,7 @@ function AuthWrapper() {
   }
 
   // DEBUG: Show what we're receiving from backend
-  const DEBUG_MODE = true;
+  const DEBUG_MODE = false;
   const debugInfo = {
     isAuthenticated,
     hasUser: !!user,
