@@ -1,0 +1,113 @@
+2025-11-15 09:17:09.93
+b903476e
+System
+forwarding local port 5000 to external port 80 (mapped as 1104)
+
+2025-11-15 09:17:09.93
+b903476e
+System
+metasidecar: loaded enterprise status from environment is_enterprise=false
+2025-11-15 09:17:13.29
+b903476e
+User
+> NODE_ENV=production node dist/index.js
+2025-11-15 09:17:13.29
+b903476e
+User
+> rest-express@1.0.0 start
+2025-11-15 09:17:24.38
+b903476e
+User
+issuer: 'https://replit.com/oidc'
+2025-11-15 09:17:24.38
+b903476e
+User
+isProduction: true,
+2025-11-15 09:17:24.38
+b903476e
+User
+}
+2025-11-15 09:17:24.38
+b903476e
+User
+domains: 'buildpro4.replit.app',
+2025-11-15 09:17:24.38
+b903476e
+User
+[Replit Auth Setup] {
+2025-11-15 09:17:24.38
+b903476e
+User
+replId: 'b903476e-2c94-4f84-86b7-1a99b4bf11a2',
+2025-11-15 09:17:24.51
+b903476e
+User
+10:17:24 PM [express] serving on port 5000
+2025-11-15 09:18:20.98
+b903476e
+User
+[Passport Deserialize] User 44689844: companyId=null, roleId=null
+2025-11-15 09:18:20.98
+b903476e
+User
+⚠️ [Passport Deserialize] User 44689844 has NO companyId!
+2025-11-15 09:18:21.35
+b903476e
+User
+[Passport Deserialize] User 44689844: companyId=null, roleId=null
+2025-11-15 09:18:21.35
+b903476e
+User
+⚠️ [Passport Deserialize] User 44689844 has NO companyId!
+2025-11-15 09:18:21.52
+b903476e
+User
+⚠️ [Passport Deserialize] User 44689844 has NO companyId!
+2025-11-15 09:18:21.52
+b903476e
+User
+[Passport Deserialize] User 44689844: companyId=null, roleId=null
+2025-11-15 09:18:23.80
+b903476e
+User
+[Passport Deserialize] User 44689844: companyId=null, roleId=null
+2025-11-15 09:18:23.80
+b903476e
+User
+⚠️ [Passport Deserialize] User 44689844 has NO companyId!
+2025-11-15 09:18:23.80
+b903476e
+User
+companyId: null,
+2025-11-15 09:18:23.80
+b903476e
+User
+roleId: null
+2025-11-15 09:18:23.80
+b903476e
+User
+id: '44689844',
+2025-11-15 09:18:23.80
+b903476e
+User
+✅ [GET /api/auth/user] Returning user: {
+2025-11-15 09:18:23.80
+b903476e
+User
+}
+2025-11-15 09:18:23.80
+b903476e
+User
+email: 'jed@lighthouseprojects.com.au',
+2025-11-15 09:18:23.83
+b903476e
+User
+10:18:23 PM [express] GET /api/auth/user 200 in 73ms :: {"id":"44689844","email":"jed@lighthouseproje…
+2025-11-15 09:18:23.88
+b903476e
+User
+[Passport Deserialize] User 44689844: companyId=null, roleId=null
+2025-11-15 09:18:23.88
+b903476e
+User
+⚠️ [Passport Deserialize] User 44689844 has NO companyId!
