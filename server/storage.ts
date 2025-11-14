@@ -5172,7 +5172,7 @@ export class DbStorage implements IStorage {
         // Email exists with different ID - keep the EXISTING ID (don't break foreign keys!)
         // Just update profile info and clear password (they're using Replit Auth now)
         console.log('✅ [upsertUser] Updating existing user by email');
-        const [user] = await db
+        const [updatedUser] = await db
           .update(schema.users)
           .set({
             firstName: userData.firstName,
@@ -5183,14 +5183,18 @@ export class DbStorage implements IStorage {
           })
           .where(eq(schema.users.email, userData.email))
           .returning();
-        console.log('✅ [upsertUser] Returned user:', { id: user.id, email: user.email, companyId: user.companyId });
-        return user;
+        
+        // Fetch full user with role/company to populate companyId
+        const userWithRole = await this.getUserWithRole(updatedUser.id);
+        const fullUser = userWithRole as User;
+        console.log('✅ [upsertUser] Returned user:', { id: fullUser.id, email: fullUser.email, companyId: fullUser.companyId });
+        return fullUser;
       }
     }
     
     // Standard upsert by ID - only update auth fields, preserve companyId/roleId/etc
     console.log('📝 [upsertUser] No existing user by email, doing standard upsert by ID');
-    const [user] = await db
+    const [upsertedUser] = await db
       .insert(schema.users)
       .values(userData)
       .onConflictDoUpdate({
@@ -5205,8 +5209,12 @@ export class DbStorage implements IStorage {
         },
       })
       .returning();
-    console.log('📝 [upsertUser] Upserted user:', { id: user.id, email: user.email, companyId: user.companyId, isNew: !user.companyId });
-    return user;
+    
+    // Fetch full user with role/company to populate companyId
+    const userWithRole = await this.getUserWithRole(upsertedUser.id);
+    const fullUser = userWithRole as User;
+    console.log('📝 [upsertUser] Upserted user:', { id: fullUser.id, email: fullUser.email, companyId: fullUser.companyId, isNew: !fullUser.companyId });
+    return fullUser;
   }
 
   async updateUser(id: string, userData: Partial<InsertUser>): Promise<User | undefined> {

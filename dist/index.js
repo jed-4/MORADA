@@ -3895,7 +3895,7 @@ var init_storage = __esm({
           });
           if (existingUser.length > 0 && existingUser[0].id !== userData.id) {
             console.log("\u2705 [upsertUser] Updating existing user by email");
-            const [user2] = await db.update(users).set({
+            const [updatedUser] = await db.update(users).set({
               firstName: userData.firstName,
               lastName: userData.lastName,
               profileImageUrl: userData.profileImageUrl,
@@ -3903,12 +3903,14 @@ var init_storage = __esm({
               // Clear password since using Replit Auth
               updatedAt: /* @__PURE__ */ new Date()
             }).where(eq2(users.email, userData.email)).returning();
-            console.log("\u2705 [upsertUser] Returned user:", { id: user2.id, email: user2.email, companyId: user2.companyId });
-            return user2;
+            const userWithRole2 = await this.getUserWithRole(updatedUser.id);
+            const fullUser2 = userWithRole2;
+            console.log("\u2705 [upsertUser] Returned user:", { id: fullUser2.id, email: fullUser2.email, companyId: fullUser2.companyId });
+            return fullUser2;
           }
         }
         console.log("\u{1F4DD} [upsertUser] No existing user by email, doing standard upsert by ID");
-        const [user] = await db.insert(users).values(userData).onConflictDoUpdate({
+        const [upsertedUser] = await db.insert(users).values(userData).onConflictDoUpdate({
           target: users.id,
           set: {
             // Only update auth-specific fields, leave companyId/roleId intact
@@ -3919,8 +3921,10 @@ var init_storage = __esm({
             updatedAt: /* @__PURE__ */ new Date()
           }
         }).returning();
-        console.log("\u{1F4DD} [upsertUser] Upserted user:", { id: user.id, email: user.email, companyId: user.companyId, isNew: !user.companyId });
-        return user;
+        const userWithRole = await this.getUserWithRole(upsertedUser.id);
+        const fullUser = userWithRole;
+        console.log("\u{1F4DD} [upsertUser] Upserted user:", { id: fullUser.id, email: fullUser.email, companyId: fullUser.companyId, isNew: !fullUser.companyId });
+        return fullUser;
       }
       async updateUser(id, userData) {
         const [user] = await db.update(users).set({
