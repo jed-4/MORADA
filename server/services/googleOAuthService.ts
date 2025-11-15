@@ -38,8 +38,8 @@ export class GoogleOAuthService {
   }
   
   generateAuthUrl(userId: string): string {
-    const state = this.generateState(userId);
     const codeVerifier = this.generateCodeVerifier();
+    const state = this.generateState(userId, codeVerifier);
     
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -53,9 +53,9 @@ export class GoogleOAuthService {
     return authUrl;
   }
   
-  private generateState(userId: string): string {
+  private generateState(userId: string, codeVerifier: string): string {
     const nonce = randomBytes(16).toString('hex');
-    return Buffer.from(JSON.stringify({ userId, nonce, timestamp: Date.now() })).toString('base64');
+    return Buffer.from(JSON.stringify({ userId, nonce, timestamp: Date.now(), codeVerifier })).toString('base64');
   }
   
   private generateCodeVerifier(): string {
@@ -66,12 +66,12 @@ export class GoogleOAuthService {
     return createHash('sha256').update(verifier).digest('base64url');
   }
   
-  parseState(state: string): { userId: string; nonce: string; timestamp: number } {
+  parseState(state: string): { userId: string; nonce: string; timestamp: number; codeVerifier: string } {
     try {
       const decoded = Buffer.from(state, 'base64').toString('utf8');
       const parsed = JSON.parse(decoded);
       
-      if (!parsed.userId || !parsed.nonce || !parsed.timestamp) {
+      if (!parsed.userId || !parsed.nonce || !parsed.timestamp || !parsed.codeVerifier) {
         throw new Error('Invalid state format');
       }
       
@@ -87,9 +87,12 @@ export class GoogleOAuthService {
   }
   
   async handleCallback(code: string, state: string): Promise<User> {
-    const { userId } = this.parseState(state);
+    const { userId, codeVerifier } = this.parseState(state);
     
-    const { tokens } = await this.oauth2Client.getToken(code);
+    const { tokens } = await this.oauth2Client.getToken({
+      code,
+      codeVerifier,
+    });
     
     if (!tokens.access_token || !tokens.refresh_token) {
       throw new Error('Missing tokens from Google OAuth response');
