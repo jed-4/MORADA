@@ -101,6 +101,32 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
   const colorPickerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showOnlineConfirmDialog, setShowOnlineConfirmDialog] = useState(false);
+  
+  // Column width state for resizable columns
+  const [columnWidths, setColumnWidths] = useState({
+    taskName: 140,
+    status: 70,
+    notes: 32,
+    completion: 40,
+    assignee: 32,
+    menu: 32,
+  });
+  
+  // Calculate total panel width based on visible columns
+  const totalPanelWidth = useMemo(() => {
+    let width = columnWidths.taskName + columnWidths.menu + 16; // padding
+    if (visibleColumns.status) width += columnWidths.status;
+    if (visibleColumns.notes) width += columnWidths.notes;
+    if (visibleColumns.completion) width += columnWidths.completion;
+    if (visibleColumns.assignee) width += columnWidths.assignee;
+    return width;
+  }, [columnWidths, visibleColumns]);
+  
+  const [resizingColumn, setResizingColumn] = useState<{
+    column: keyof typeof columnWidths;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   // Fetch project data
   const { data: project } = useQuery({
@@ -509,6 +535,50 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [dragging, pixelsPerDay, updateItemMutation]);
+
+  // Column resize handlers
+  const handleColumnDividerMouseDown = (
+    e: React.MouseEvent,
+    column: keyof typeof columnWidths
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setResizingColumn({
+      column,
+      startX: e.clientX,
+      startWidth: columnWidths[column],
+    });
+  };
+
+  // Column resize effect
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingColumn) return;
+      
+      const deltaX = e.clientX - resizingColumn.startX;
+      const newWidth = Math.max(32, resizingColumn.startWidth + deltaX); // Min width 32px
+      
+      setColumnWidths(prev => ({
+        ...prev,
+        [resizingColumn.column]: newWidth,
+      }));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn]);
 
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
@@ -923,16 +993,71 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Task Names Column (Fixed) */}
-        <div className="w-80 border-r flex flex-col bg-card">
+        {/* Task Names Column (Resizable) */}
+        <div style={{ width: totalPanelWidth }} className="border-r flex flex-col bg-card flex-shrink-0">
           {/* Header row - matches timeline header height */}
-          <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground">
-            <div className="flex-1 pl-2">Task Name</div>
-            {visibleColumns.status && <div className="w-20 text-center">Status</div>}
-            {visibleColumns.notes && <div className="w-8 text-center">Notes</div>}
-            {visibleColumns.completion && <div className="w-12 text-center">%</div>}
-            {visibleColumns.assignee && <div className="w-8 text-center">User</div>}
-            <div className="w-8"></div>
+          <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
+            <div style={{ width: columnWidths.taskName }} className="pl-2 flex-shrink-0">Task Name</div>
+            
+            {(() => {
+              let cumulativeOffset = columnWidths.taskName + 8; // Start after task name + padding
+              return (
+                <>
+                  {visibleColumns.status && (
+                    <>
+                      <div
+                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                        style={{ left: cumulativeOffset }}
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'status')}
+                        data-testid="divider-status"
+                      />
+                      <div style={{ width: columnWidths.status }} className="text-center flex-shrink-0">Status</div>
+                      {(() => { cumulativeOffset += columnWidths.status; return null; })()}
+                    </>
+                  )}
+                  
+                  {visibleColumns.notes && (
+                    <>
+                      <div
+                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                        style={{ left: cumulativeOffset }}
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'notes')}
+                        data-testid="divider-notes"
+                      />
+                      <div style={{ width: columnWidths.notes }} className="text-center flex-shrink-0">Notes</div>
+                      {(() => { cumulativeOffset += columnWidths.notes; return null; })()}
+                    </>
+                  )}
+                  
+                  {visibleColumns.completion && (
+                    <>
+                      <div
+                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                        style={{ left: cumulativeOffset }}
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'completion')}
+                        data-testid="divider-completion"
+                      />
+                      <div style={{ width: columnWidths.completion }} className="text-center flex-shrink-0">%</div>
+                      {(() => { cumulativeOffset += columnWidths.completion; return null; })()}
+                    </>
+                  )}
+                  
+                  {visibleColumns.assignee && (
+                    <>
+                      <div
+                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                        style={{ left: cumulativeOffset }}
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'assignee')}
+                        data-testid="divider-assignee"
+                      />
+                      <div style={{ width: columnWidths.assignee }} className="text-center flex-shrink-0">User</div>
+                    </>
+                  )}
+                  
+                  <div style={{ width: columnWidths.menu }} className="flex-shrink-0"></div>
+                </>
+              );
+            })()}
           </div>
           
           {/* Task rows */}
@@ -949,7 +1074,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
-                    <div className="flex-1 flex items-center min-w-0">
+                    <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 flex-shrink-0">
                       {childItems.length > 0 && (
                         <button
                           onClick={() => toggleCollapse(parentItem.id)}
@@ -969,7 +1094,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                     {/* Status column */}
                     {visibleColumns.status && (
-                      <div className="w-20 flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0">
                         {parentItem.status && (() => {
                           const statusInfo = getStatusInfo(parentItem.status);
                           return (
@@ -989,7 +1114,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                     {/* Notes column */}
                     {visibleColumns.notes && (
-                      <div className="w-8 flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0">
                         <ActivityNotesPopover 
                           scheduleItemId={parentItem.id} 
                           externalNoteCount={noteCounts[parentItem.id] || 0}
@@ -999,14 +1124,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                     {/* Completion column */}
                     {visibleColumns.completion && (
-                      <div className="w-12 flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0">
                         <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
                       </div>
                     )}
 
                     {/* Assignee column */}
                     {visibleColumns.assignee && (
-                      <div className="w-8 flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0">
                         {parentItem.assignedToName && (
                           <Avatar className="w-5 h-5">
                             <AvatarFallback className="text-[10px]">
@@ -1018,7 +1143,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     )}
 
                     {/* Menu column */}
-                    <div className="w-8 flex items-center justify-center flex-shrink-0">
+                    <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -1096,13 +1221,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
-                        <div className="flex-1 flex items-center min-w-0 pl-8">
+                        <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 pl-8 flex-shrink-0">
                           <span className="text-sm text-muted-foreground truncate">{childItem.name}</span>
                         </div>
 
                         {/* Status column */}
                         {visibleColumns.status && (
-                          <div className="w-20 flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0">
                             {childItem.status && (() => {
                               const statusInfo = getStatusInfo(childItem.status);
                               return (
@@ -1122,7 +1247,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                         {/* Notes column */}
                         {visibleColumns.notes && (
-                          <div className="w-8 flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0">
                             <ActivityNotesPopover 
                               scheduleItemId={childItem.id} 
                               externalNoteCount={noteCounts[childItem.id] || 0}
@@ -1132,14 +1257,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                         {/* Completion column */}
                         {visibleColumns.completion && (
-                          <div className="w-12 flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0">
                             <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
                           </div>
                         )}
 
                         {/* Assignee column */}
                         {visibleColumns.assignee && (
-                          <div className="w-8 flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0">
                             {childItem.assignedToName && (
                               <Avatar className="w-5 h-5">
                                 <AvatarFallback className="text-[10px]">
@@ -1151,7 +1276,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         )}
 
                         {/* Menu column */}
-                        <div className="w-8 flex items-center justify-center flex-shrink-0">
+                        <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
