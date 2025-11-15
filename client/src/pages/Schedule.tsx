@@ -785,7 +785,7 @@ export default function Schedule() {
 
             {/* Assignee Filter */}
             <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-assignee">
+              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-assignee">
                 <span>Assignee</span>
               </SelectTrigger>
               <SelectContent>
@@ -800,7 +800,7 @@ export default function Schedule() {
 
             {/* Status Filter */}
             <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-status">
+              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-status">
                 <span>Status</span>
               </SelectTrigger>
               <SelectContent>
@@ -815,7 +815,7 @@ export default function Schedule() {
 
             {/* Type Filter */}
             <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-type">
+              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-type">
                 <span>Type</span>
               </SelectTrigger>
               <SelectContent>
@@ -830,7 +830,7 @@ export default function Schedule() {
 
             {/* Date Range Filter */}
             <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-date-range">
+              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-date-range">
                 <span>Date</span>
               </SelectTrigger>
               <SelectContent>
