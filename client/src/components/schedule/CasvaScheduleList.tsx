@@ -105,12 +105,12 @@ export function CasvaScheduleList({
       <ScrollArea style={{ maxHeight }} className="w-full">
         <Table>
           <TableHeader className="sticky top-0 bg-muted/50 z-10">
-            <TableRow className="hover:bg-transparent border-b-2 h-10">
-              <TableHead className="font-semibold h-10 py-2">Item</TableHead>
-              <TableHead className="font-semibold w-48 h-10 py-2">Assignee & Role</TableHead>
-              <TableHead className="font-semibold w-40 h-10 py-2">Due Date & Duration</TableHead>
-              <TableHead className="font-semibold w-32 h-10 py-2">Status</TableHead>
-              <TableHead className="w-12 h-10 py-2"></TableHead>
+            <TableRow className="hover:bg-transparent border-b-2 h-[60px]">
+              <TableHead className="font-semibold h-[60px] py-2">Item</TableHead>
+              <TableHead className="font-semibold w-48 h-[60px] py-2">Assignee & Role</TableHead>
+              <TableHead className="font-semibold w-40 h-[60px] py-2">Due Date & Duration</TableHead>
+              <TableHead className="font-semibold w-32 h-[60px] py-2">Status</TableHead>
+              <TableHead className="w-12 h-[60px] py-2"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
