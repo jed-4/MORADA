@@ -817,6 +817,31 @@ export default function Schedule() {
           )}
         </div>
 
+        {/* Row 4 - View-Specific Column Headers (40px) - ALWAYS PRESENT */}
+        <div className="h-10 bg-white flex items-center border-b border-border">
+          {activeView === 'gantt' && (
+            <div className="flex items-center w-full px-2 text-xs font-medium text-muted-foreground">
+              <div style={{ width: '200px' }} className="px-1 flex-shrink-0">Task Name</div>
+              <div style={{ width: '100px' }} className="px-1 flex-shrink-0 text-center">Status</div>
+              <div style={{ width: '80px' }} className="px-1 flex-shrink-0 text-center">Notes</div>
+              <div style={{ width: '80px' }} className="px-1 flex-shrink-0 text-center">Completion</div>
+              <div style={{ width: '80px' }} className="px-1 flex-shrink-0 text-center">Assignee</div>
+            </div>
+          )}
+          {activeView === 'list' && (
+            <div className="flex items-center w-full px-2 text-xs font-medium text-muted-foreground">
+              <div className="flex-1 px-1">Item</div>
+              <div style={{ width: '120px' }} className="px-1 text-center">Status</div>
+              <div style={{ width: '120px' }} className="px-1 text-center">Start Date</div>
+              <div style={{ width: '120px' }} className="px-1 text-center">End Date</div>
+              <div style={{ width: '100px' }} className="px-1 text-center">Assignee</div>
+            </div>
+          )}
+          {activeView === 'calendar' && (
+            <div className="w-full px-2"></div>
+          )}
+        </div>
+
         {/* Content - conditional rendering based on activeView */}
         {activeView === "list" && (
           <div className="flex-1 overflow-auto p-4">
