@@ -94,6 +94,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     assignee: true,
     status: true,
     completion: false,
+    notes: true,
   });
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -867,11 +868,34 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     />
                     <span className="text-sm">Completion %</span>
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.notes}
+                      onChange={(e) => setVisibleColumns({ ...visibleColumns, notes: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Notes</span>
+                  </label>
                 </div>
               </div>
             </div>
           </PopoverContent>
         </Popover>
+        
+        {/* Today Button */}
+        <button
+          onClick={() => {
+            if (timelineRef.current) {
+              const todayPos = getPosition(new Date());
+              timelineRef.current.scrollLeft = todayPos - timelineRef.current.clientWidth / 2;
+            }
+          }}
+          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+          data-testid="button-scroll-to-today"
+        >
+          Today
+        </button>
       </div>
 
       {/* Online Confirmation Dialog */}
@@ -901,11 +925,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       <div className="flex-1 flex overflow-hidden">
         {/* Task Names Column (Fixed) */}
         <div className="w-80 border-r flex flex-col bg-card">
-          {/* Header row - increased height for double timeline header */}
-          <div className="h-16 border-b flex items-center px-2 text-xs font-medium text-muted-foreground">
+          {/* Header row - matches timeline header height */}
+          <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground">
             <div className="flex-1 pl-2">Task Name</div>
             {visibleColumns.status && <div className="w-20 text-center">Status</div>}
-            <div className="w-8 text-center">Notes</div>
+            {visibleColumns.notes && <div className="w-8 text-center">Notes</div>}
             {visibleColumns.completion && <div className="w-12 text-center">%</div>}
             {visibleColumns.assignee && <div className="w-8 text-center">User</div>}
             <div className="w-8"></div>
@@ -919,9 +943,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
               return (
                 <div key={parentItem.id}>
-                  {/* Parent item row - 40px height, no border */}
+                  {/* Parent item row - compact height with border */}
                   <div
-                    className={`h-10 flex items-center px-2 hover-elevate active-elevate-2 cursor-pointer group`}
+                    className={`h-8 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer group`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
@@ -964,12 +988,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     )}
 
                     {/* Notes column */}
-                    <div className="w-8 flex items-center justify-center flex-shrink-0">
-                      <ActivityNotesPopover 
-                        scheduleItemId={parentItem.id} 
-                        externalNoteCount={noteCounts[parentItem.id] || 0}
-                      />
-                    </div>
+                    {visibleColumns.notes && (
+                      <div className="w-8 flex items-center justify-center flex-shrink-0">
+                        <ActivityNotesPopover 
+                          scheduleItemId={parentItem.id} 
+                          externalNoteCount={noteCounts[parentItem.id] || 0}
+                        />
+                      </div>
+                    )}
 
                     {/* Completion column */}
                     {visibleColumns.completion && (
@@ -1066,7 +1092,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     return (
                       <div
                         key={childItem.id}
-                        className={`h-10 flex items-center px-2 hover-elevate active-elevate-2 cursor-pointer`}
+                        className={`h-8 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer`}
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
@@ -1095,12 +1121,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         )}
 
                         {/* Notes column */}
-                        <div className="w-8 flex items-center justify-center flex-shrink-0">
-                          <ActivityNotesPopover 
-                            scheduleItemId={childItem.id} 
-                            externalNoteCount={noteCounts[childItem.id] || 0}
-                          />
-                        </div>
+                        {visibleColumns.notes && (
+                          <div className="w-8 flex items-center justify-center flex-shrink-0">
+                            <ActivityNotesPopover 
+                              scheduleItemId={childItem.id} 
+                              externalNoteCount={noteCounts[childItem.id] || 0}
+                            />
+                          </div>
+                        )}
 
                         {/* Completion column */}
                         {visibleColumns.completion && (
@@ -1207,13 +1235,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           <div style={{ width: `${timelineWidth}px`, position: 'relative' }}>
             {/* Timeline Header - ClickUp Style Double Header */}
             {groupedTimelineHeaders ? (
-              <div className="h-16 border-b bg-card sticky top-0 z-10 flex flex-col">
+              <div className="h-12 border-b bg-card sticky top-0 z-10 flex flex-col">
                 {/* Top Row: Week Numbers */}
-                <div className="h-8 flex border-b">
+                <div className="h-6 flex border-b">
                   {groupedTimelineHeaders.map((week, idx) => (
                     <div
                       key={idx}
-                      className="border-r text-xs text-center font-semibold flex items-center justify-center text-muted-foreground"
+                      className="border-r text-xs text-center font-semibold flex items-center justify-center text-muted-foreground whitespace-nowrap overflow-hidden px-0.5"
                       style={{ width: `${week.widthPx}px` }}
                     >
                       {week.weekLabel}
@@ -1221,14 +1249,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   ))}
                 </div>
                 {/* Bottom Row: Day + Date */}
-                <div className="h-8 flex">
+                <div className="h-6 flex">
                   {groupedTimelineHeaders.flatMap(week =>
                     week.days.map((day, dayIdx) => {
                       const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                       return (
                         <div
                           key={`${week.weekLabel}-${dayIdx}`}
-                          className={`border-r text-xs text-center flex items-center justify-center ${
+                          className={`border-r text-xs text-center flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${
                             day.isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''
                           } ${isToday ? 'text-[#bba7db] font-semibold' : 'text-foreground'}`}
                           style={{ width: `${day.widthPx}px` }}
@@ -1242,17 +1270,16 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               </div>
             ) : (
               /* Fallback for week/month zoom levels */
-              <div className="h-12 border-b bg-card sticky top-0 z-10 flex">
+              <div className="h-8 border-b bg-card sticky top-0 z-10 flex">
                 {timelineHeaders.map((header, idx) => {
                   const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                   return (
                     <div
                       key={idx}
-                      className={`border-r text-xs text-center py-2 flex flex-col justify-center ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
+                      className={`border-r text-xs text-center py-1 flex items-center justify-center whitespace-nowrap overflow-hidden px-0.5 ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
                       style={{ width: `${header.width}px` }}
                     >
-                      <div>{header.dateLabel}</div>
-                      {header.dayLabel && <div className="text-[10px] text-muted-foreground">{header.dayLabel}</div>}
+                      {header.dateLabel} {header.dayLabel && `${header.dayLabel}`}
                     </div>
                   );
                 })}
@@ -1323,9 +1350,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 return (
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
-                    <div className={`h-10 relative group`}>
+                    <div className={`h-8 relative group`}>
                       <div
-                        className="absolute top-2 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
+                        className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
                         style={{
                           left: `${parentStart}px`,
                           width: `${parentWidth}px`,
@@ -1400,9 +1427,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       const childNameFits = childTextWidth <= childWidth;
 
                       return (
-                        <div key={childItem.id} className={`h-10 relative group`}>
+                        <div key={childItem.id} className={`h-8 relative group`}>
                           <div
-                            className="absolute top-2 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
+                            className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
                             style={{
                               left: `${childStart}px`,
                               width: `${childWidth}px`,
