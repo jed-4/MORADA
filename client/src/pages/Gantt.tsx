@@ -88,7 +88,7 @@ function SortableColumnItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 h-8 px-2 rounded-md hover:bg-accent"
+      className="flex items-center gap-2 h-10 px-2 rounded-md hover:bg-accent"
     >
       <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
         <GripVertical className="w-4 h-4 text-muted-foreground" />
@@ -811,274 +811,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* JED'S 3-ROW BUILDER STYLE HEADER */}
-      
-      {/* Row 1 - Project Controls (40px) */}
-      <div className="h-10 bg-white border-b flex items-center justify-between px-2 gap-4">
-        {/* Left: Project Name + Online/Offline Toggle */}
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold">{project?.name ? `${project.name} Schedule` : 'Loading...'}</h2>
-          <button
-            onClick={() => {
-              if (schedule?.status === "offline") {
-                setShowOnlineConfirmDialog(true);
-              } else {
-                updateStatusMutation.mutate("offline");
-              }
-            }}
-            className="flex items-center gap-1 hover-elevate active-elevate-2 px-1.5 py-0.5 rounded-md transition-all"
-            data-testid="button-toggle-online"
-          >
-            {schedule?.status === "online" ? (
-              <>
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-xs text-muted-foreground">Online</span>
-              </>
-            ) : (
-              <>
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-xs text-muted-foreground">Offline</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Right: Action Buttons */}
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
-            onClick={() => {
-              setEditingItemContext(null);
-              setShowItemDialog(true);
-            }}
-            disabled={schedule?.status === "locked"}
-            data-testid="button-add-item"
-          >
-            <Plus className="w-3 h-3 inline mr-0.5" />
-            Add Item
-          </button>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            data-testid="button-export-pdf"
-          >
-            <Download className="w-3 h-3" />
-          </button>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            data-testid="button-settings"
-          >
-            <Settings className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* Row 2 - Views & Timeline Scale (36px) */}
-      <div className="h-9 bg-white border-b flex items-center justify-between px-2">
-        {/* Left: View Buttons */}
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => setActiveView('gantt')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-view-gantt"
-          >
-            <GanttChart className="w-3 h-3 inline mr-0.5" />
-            Gantt
-          </button>
-          <button
-            onClick={() => setActiveView('calendar')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-view-calendar"
-          >
-            <Calendar className="w-3 h-3 inline mr-0.5" />
-            Calendar
-          </button>
-          <button
-            onClick={() => setActiveView('list')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-view-list"
-          >
-            <ListIcon className="w-3 h-3 inline mr-0.5" />
-            List
-          </button>
-        </div>
-
-        {/* Right: Timeline Scale Buttons */}
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => setZoomLevel('day')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-zoom-day"
-          >
-            Day
-          </button>
-          <button
-            onClick={() => setZoomLevel('week')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-zoom-week"
-          >
-            Week
-          </button>
-          <button
-            onClick={() => setZoomLevel('month')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-zoom-month"
-          >
-            Month
-          </button>
-        </div>
-      </div>
-
-      {/* Row 3 - Search, Filters & Columns (32px) */}
-      <div className="h-8 bg-white border-b flex items-center justify-between px-2 gap-1.5">
-        {/* Left: Search + Filter Dropdowns */}
-        <div className="flex items-center gap-1.5 flex-1">
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
-              data-testid="input-search-items"
-            />
-          </div>
-
-          {/* Assignee Filter */}
-          <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-            <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-assignee">
-              <span>Assignee</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
-              {contacts.map((contact) => (
-                <SelectItem key={contact.id} value={contact.id}>
-                  {contact.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Status Filter */}
-          <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-            <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-status">
-              <span>Status</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="not_started">Not Started</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="on_hold">On Hold</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Type Filter */}
-          <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-            <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-type">
-              <span>Type</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="task">Task</SelectItem>
-              <SelectItem value="milestone">Milestone</SelectItem>
-              <SelectItem value="inspection">Inspection</SelectItem>
-              <SelectItem value="delivery">Delivery</SelectItem>
-              <SelectItem value="meeting">Meeting</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Date Range Filter */}
-          <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-            <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-date-range">
-              <span>Date</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Dates</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="this_week">This Week</SelectItem>
-              <SelectItem value="this_month">This Month</SelectItem>
-              <SelectItem value="overdue">Overdue</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Today Button */}
-        <button
-          onClick={() => {
-            if (timelineRef.current) {
-              const todayPos = getPosition(new Date());
-              timelineRef.current.scrollLeft = todayPos - timelineRef.current.clientWidth / 2;
-            }
-          }}
-          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-          data-testid="button-scroll-to-today"
-        >
-          Today
-        </button>
-
-        {/* Right: Columns Dropdown */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button 
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              data-testid="button-column-config"
-            >
-              Columns
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64" align="end">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
-              <SortableContext items={columnOrder} strategy={verticalListSortingStrategy}>
-                <div className="space-y-1">
-                  {columnOrder.map((columnId) => {
-                    const labels: Record<string, string> = {
-                      status: 'Status',
-                      notes: 'Notes',
-                      completion: 'Completion %',
-                      assignee: 'Assignee'
-                    };
-                    
-                    return (
-                      <SortableColumnItem 
-                        key={columnId} 
-                        id={columnId} 
-                        label={labels[columnId]}
-                        checked={visibleColumns[columnId as keyof typeof visibleColumns]}
-                        onChange={(checked) => setVisibleColumns({ ...visibleColumns, [columnId]: checked })}
-                      />
-                    );
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {/* Online Confirmation Dialog */}
-      <AlertDialog open={showOnlineConfirmDialog} onOpenChange={setShowOnlineConfirmDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Set Schedule Online?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will make the schedule visible to all team members. Are you sure you want to proceed?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                updateStatusMutation.mutate("online");
-                setShowOnlineConfirmDialog(false);
-              }}
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
         {/* Task Names Column (Resizable Panel) */}
@@ -1089,7 +821,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           {/* Content wrapper with actual column widths */}
           <div style={{ width: totalPanelWidth }} className="flex flex-col">
             {/* Header row - matches timeline header height */}
-            <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
+            <div className="h-12 flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {
@@ -1161,9 +893,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
               return (
                 <div key={parentItem.id}>
-                  {/* Parent item row - compact height with border */}
+                  {/* Parent item row - 40px height, no border */}
                   <div
-                    className={`h-8 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer group`}
+                    className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer group`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
@@ -1310,7 +1042,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     return (
                       <div
                         key={childItem.id}
-                        className={`h-8 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer`}
+                        className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer`}
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
@@ -1468,9 +1200,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           <div style={{ width: `${timelineWidth}px`, position: 'relative' }}>
             {/* Timeline Header - ClickUp Style Double Header */}
             {groupedTimelineHeaders ? (
-              <div className="h-12 border-b bg-card sticky top-0 z-10 flex flex-col">
+              <div className="h-12 bg-card sticky top-0 z-10 flex flex-col">
                 {/* Top Row: Week Numbers */}
-                <div className="h-6 flex border-b">
+                <div className="h-6 flex">
                   {groupedTimelineHeaders.map((week, idx) => (
                     <div
                       key={idx}
@@ -1503,7 +1235,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               </div>
             ) : (
               /* Fallback for week/month zoom levels */
-              <div className="h-8 border-b bg-card sticky top-0 z-10 flex">
+              <div className="h-10 bg-card sticky top-0 z-10 flex">
                 {timelineHeaders.map((header, idx) => {
                   const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                   return (
@@ -1583,7 +1315,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 return (
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
-                    <div className={`h-8 relative group`}>
+                    <div className={`h-10 relative group`}>
                       <div
                         className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
                         style={{
@@ -1660,7 +1392,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       const childNameFits = childTextWidth <= childWidth;
 
                       return (
-                        <div key={childItem.id} className={`h-8 relative group`}>
+                        <div key={childItem.id} className={`h-10 relative group`}>
                           <div
                             className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
                             style={{

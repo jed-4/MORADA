@@ -9,6 +9,7 @@ import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import "./schedule-calendar.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,7 @@ import {
 import {
   Plus,
   Calendar as CalendarIcon,
-  List,
+  List as ListIcon,
   GanttChart,
   MoreVertical,
   Lock,
@@ -55,6 +56,7 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
+  Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -74,9 +76,11 @@ export default function Schedule() {
   const projectId = params.projectId || currentProject?.id;
 
   const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("gantt");
+  const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
@@ -560,24 +564,11 @@ export default function Schedule() {
     }
   };
 
-  // Calendar event style getter
+  // Calendar event style getter - lilac events
   const eventStyleGetter = (event: any) => {
-    const item = event.resource as ScheduleItem;
-    let backgroundColor = "#6366f1"; // default blue
-    
-    // Color by type
-    if (item.type === "inspection") backgroundColor = "#ef4444";
-    else if (item.type === "milestone") backgroundColor = "#8b5cf6";
-    else if (item.type === "delivery") backgroundColor = "#f59e0b";
-    else if (item.type === "meeting") backgroundColor = "#10b981";
-    
-    // Adjust for status
-    if (item.status === "completed") backgroundColor = "#9ca3af";
-    else if (item.status === "on_hold") backgroundColor = "#6b7280";
-    
     return {
       style: {
-        backgroundColor,
+        backgroundColor: "#bba7db",
         borderRadius: "4px",
         opacity: 0.9,
         color: "white",
@@ -585,6 +576,20 @@ export default function Schedule() {
         display: "block",
       },
     };
+  };
+
+  // Day prop getter - add class to weekends for styling
+  const dayPropGetter = (date: Date) => {
+    const day = date.getDay();
+    if (day === 0 || day === 6) {
+      return {
+        className: "rbc-weekend-day",
+        style: {
+          backgroundColor: "#f3f4f6",
+        },
+      };
+    }
+    return {};
   };
 
   return (
@@ -601,7 +606,217 @@ export default function Schedule() {
         setEditingItem,
       }}
     >
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full bg-background">
+        {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
+        
+        {/* Row 1 - Project Controls (40px) */}
+        <div className="h-10 bg-white flex items-center justify-between px-2 gap-4">
+          {/* Left: Project Name + Online/Offline Toggle */}
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold">{currentProject?.name ? `${currentProject.name} Schedule` : 'Loading...'}</h2>
+            <button
+              onClick={() => {
+                if (schedule?.status === "offline") {
+                  updateStatusMutation.mutate("online");
+                } else {
+                  updateStatusMutation.mutate("offline");
+                }
+              }}
+              className="flex items-center gap-1 hover-elevate active-elevate-2 px-1.5 py-0.5 rounded-md transition-all"
+              data-testid="button-toggle-online"
+            >
+              {schedule?.status === "online" ? (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-green-500" />
+                  <span className="text-xs text-muted-foreground">Online</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="text-xs text-muted-foreground">Offline</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Right: Action Buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+              onClick={() => setShowItemDialog(true)}
+              disabled={schedule?.status === "locked"}
+              data-testid="button-add-item"
+            >
+              <Plus className="w-3 h-3 inline mr-0.5" />
+              Add Item
+            </button>
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-export-pdf"
+            >
+              <Download className="w-3 h-3" />
+            </button>
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-settings"
+            >
+              <Settings className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2 - Views & Timeline Scale (40px) */}
+        <div className="h-10 bg-white flex items-center justify-between px-2">
+          {/* Left: View Buttons */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setActiveView('gantt')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-view-gantt"
+            >
+              <GanttChart className="w-3 h-3 inline mr-0.5" />
+              Gantt
+            </button>
+            <button
+              onClick={() => setActiveView('calendar')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-view-calendar"
+            >
+              <CalendarIcon className="w-3 h-3 inline mr-0.5" />
+              Calendar
+            </button>
+            <button
+              onClick={() => setActiveView('list')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-view-list"
+            >
+              <ListIcon className="w-3 h-3 inline mr-0.5" />
+              List
+            </button>
+          </div>
+
+          {/* Right: Timeline Scale Buttons */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setZoomLevel('day')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-zoom-day"
+            >
+              Day
+            </button>
+            <button
+              onClick={() => setZoomLevel('week')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-zoom-week"
+            >
+              Week
+            </button>
+            <button
+              onClick={() => setZoomLevel('month')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-zoom-month"
+            >
+              Month
+            </button>
+          </div>
+        </div>
+
+        {/* Row 3 - Search, Filters & Columns (40px) */}
+        <div className="h-10 bg-white flex items-center justify-between px-2 gap-1.5">
+          {/* Left: Search + Filter Dropdowns */}
+          <div className="flex items-center gap-1.5 flex-1">
+            <div className="relative w-48">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-7 pr-2 py-0 h-6 text-xs border"
+                data-testid="input-search-items"
+              />
+            </div>
+
+            {/* Assignee Filter */}
+            <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
+              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-assignee">
+                <span>Assignee</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Assignees</SelectItem>
+                {contacts.map((contact) => (
+                  <SelectItem key={contact.id} value={contact.id}>
+                    {contact.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Status Filter */}
+            <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-status">
+                <span>Status</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="not_started">Not Started</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="on_hold">On Hold</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Type Filter */}
+            <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-type">
+                <span>Type</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="task">Task</SelectItem>
+                <SelectItem value="milestone">Milestone</SelectItem>
+                <SelectItem value="inspection">Inspection</SelectItem>
+                <SelectItem value="delivery">Delivery</SelectItem>
+                <SelectItem value="meeting">Meeting</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Date Range Filter */}
+            <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
+              <SelectTrigger className="h-6 w-auto px-2 text-xs border [&>svg]:hidden" data-testid="select-filter-date-range">
+                <span>Date</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Dates</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="this_week">This Week</SelectItem>
+                <SelectItem value="this_month">This Month</SelectItem>
+                <SelectItem value="overdue">Overdue</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Today Button - only show for Gantt/Calendar */}
+          {(activeView === 'gantt' || activeView === 'calendar') && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+              data-testid="button-scroll-to-today"
+            >
+              Today
+            </button>
+          )}
+
+          {/* Columns Button - only show for Gantt/List */}
+          {(activeView === 'gantt' || activeView === 'list') && (
+            <button 
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+              data-testid="button-column-config"
+            >
+              Columns
+            </button>
+          )}
+        </div>
+
         {/* Content - conditional rendering based on activeView */}
         {activeView === "list" && (
           <div className="flex-1 overflow-auto p-4">
@@ -651,6 +866,7 @@ export default function Schedule() {
                 endAccessor="end"
                 style={{ height: '100%' }}
                 eventPropGetter={eventStyleGetter}
+                dayPropGetter={dayPropGetter}
                 onSelectEvent={(event) => {
                   if (schedule?.status !== "locked") {
                     setEditingItem(event.resource as ScheduleItem);

@@ -1,0 +1,106 @@
+/* Custom styling for react-big-calendar to match unified schedule aesthetic */
+
+/* 40px row heights for time slots */
+.rbc-time-slot {
+  min-height: 40px !important;
+}
+
+.rbc-time-content > * + * > * {
+  min-height: 40px !important;
+}
+
+.rbc-timeslot-group {
+  min-height: 80px !important;
+}
+
+/* Grey weekends - use class-based selector for all views */
+.rbc-weekend-day {
+  background-color: #f3f4f6 !important;
+}
+
+/* Lilac today vertical line */
+.rbc-today {
+  position: relative;
+}
+
+.rbc-today::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #bba7db;
+  z-index: 3;
+}
+
+/* Lilac events with minimal margins */
+.rbc-event {
+  background-color: #bba7db !important;
+  border: none !important;
+  padding: 2px 4px !important;
+  margin: 0 !important;
+}
+
+.rbc-event:hover {
+  background-color: #a78ccb !important;
+}
+
+.rbc-event-label {
+  font-size: 11px !important;
+}
+
+.rbc-event-content {
+  font-size: 12px !important;
+}
+
+/* Remove borders for cleaner look */
+.rbc-time-content {
+  border-top: none !important;
+}
+
+.rbc-time-header-content {
+  border-left: none !important;
+}
+
+/* No border lines */
+.rbc-day-slot .rbc-time-slot {
+  border-top: 1px solid #f3f4f6 !important;
+}
+
+.rbc-time-header-cell {
+  min-height: 40px !important;
+}
+
+/* Month view styling */
+.rbc-month-row {
+  min-height: 80px !important;
+}
+
+.rbc-month-view .rbc-event {
+  background-color: #bba7db !important;
+}
+
+/* Header styling - 40px */
+.rbc-header {
+  height: 40px !important;
+  padding: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+/* Row hover states */
+.rbc-time-slot:hover {
+  background-color: #f9fafb !important;
+}
+
+/* Agenda view styling */
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  padding: 8px !important;
+  height: 40px !important;
+}
+
+.rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  padding: 8px !important;
+  height: 40px !important;
+}
