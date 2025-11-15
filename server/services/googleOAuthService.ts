@@ -41,6 +41,10 @@ export class GoogleOAuthService {
     const codeVerifier = this.generateCodeVerifier();
     const state = this.generateState(userId, codeVerifier);
     
+    console.log('🔍 [OAuth] Generating auth URL for user:', userId);
+    console.log('🔍 [OAuth] Client ID:', process.env.GOOGLE_OAUTH_CLIENT_ID?.substring(0, 20) + '...');
+    console.log('🔍 [OAuth] Redirect URI:', this.getRedirectUri());
+    
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
@@ -49,6 +53,8 @@ export class GoogleOAuthService {
       code_challenge: this.generateCodeChallenge(codeVerifier),
       code_challenge_method: 'S256',
     });
+    
+    console.log('🔍 [OAuth] Generated auth URL:', authUrl.substring(0, 150) + '...');
     
     return authUrl;
   }
