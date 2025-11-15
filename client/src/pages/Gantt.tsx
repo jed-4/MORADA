@@ -821,7 +821,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           {/* Content wrapper with actual column widths */}
           <div style={{ width: totalPanelWidth }} className="flex flex-col">
             {/* Header row - matches timeline header height (60px) */}
-            <div className="h-[60px] flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
+            <div className="h-[60px] flex items-center px-2 text-xs font-medium text-muted-foreground relative border-b-2 border-border">
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {
