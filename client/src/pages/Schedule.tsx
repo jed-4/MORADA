@@ -1218,7 +1218,6 @@ export default function Schedule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
     </ScheduleViewProvider>
   );
 }
