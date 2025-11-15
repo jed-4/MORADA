@@ -893,9 +893,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
               return (
                 <div key={parentItem.id}>
-                  {/* Parent item row - 40px height, no border */}
+                  {/* Parent item row - 40px height */}
                   <div
-                    className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer group`}
+                    className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer group border-b border-border`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
@@ -1042,7 +1042,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     return (
                       <div
                         key={childItem.id}
-                        className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer`}
+                        className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer border-b border-border`}
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
