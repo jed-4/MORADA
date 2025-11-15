@@ -347,11 +347,10 @@ export default function UserProfile() {
                       <Button
                         onClick={handleConnectGoogleCalendar}
                         className="gap-2"
-                        disabled={connectGoogleCalendarMutation.isPending}
                         data-testid="button-connect-google-calendar"
                       >
                         <SiGoogle className="h-4 w-4" />
-                        {connectGoogleCalendarMutation.isPending ? "Connecting..." : "Connect Google Calendar"}
+                        Connect Google Calendar
                       </Button>
                     </div>
                   </div>
