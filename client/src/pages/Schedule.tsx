@@ -602,222 +602,9 @@ export default function Schedule() {
       }}
     >
       <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-                {schedule?.name || "Project Schedule"}
-              </h1>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge variant={getStatusColor(schedule?.status || "offline")} data-testid={`badge-status-${schedule?.status}`}>
-                  {getStatusIcon(schedule?.status || "offline")}
-                  <span className="ml-1 capitalize">{schedule?.status || "Offline"}</span>
-                </Badge>
-                {schedule?.status === "locked" && schedule?.lockedBy && (
-                  <span className="text-sm text-muted-foreground">
-                    {schedule.lockedByName ? `Locked by ${schedule.lockedByName}` : "Locked"}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowFilters(!showFilters)}
-              data-testid="button-toggle-filters"
-            >
-              <Filter className="w-4 h-4" />
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" data-testid="button-status-menu">
-                  <Settings className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Schedule Status</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => updateStatusMutation.mutate("offline")}
-                  disabled={schedule?.status === "offline"}
-                  data-testid="menu-item-status-offline"
-                >
-                  <EyeOff className="w-4 h-4 mr-2" />
-                  Set Offline
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => updateStatusMutation.mutate("online")}
-                  disabled={schedule?.status === "online"}
-                  data-testid="menu-item-status-online"
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  Set Online
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => updateStatusMutation.mutate("locked")}
-                  disabled={schedule?.status === "locked"}
-                  data-testid="menu-item-status-locked"
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Lock Schedule
-                </DropdownMenuItem>
-                {schedule?.status === "locked" && (
-                  <DropdownMenuItem
-                    onClick={() => updateStatusMutation.mutate("online")}
-                    data-testid="menu-item-unlock"
-                  >
-                    <Unlock className="w-4 h-4 mr-2" />
-                    Unlock Schedule
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={() => setShowLoadTemplateDialog(true)}
-                  data-testid="menu-item-templates"
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Load from Template
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => setShowSaveTemplateDialog(true)}
-                  disabled={scheduleItems.length === 0}
-                  data-testid="menu-item-save-template"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Save as Template
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Button
-              onClick={() => {
-                setEditingItem(null);
-                setShowItemDialog(true);
-              }}
-              disabled={schedule?.status === "locked"}
-              data-testid="button-add-item"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Item
-            </Button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        {showFilters && (
-          <div className="border-t bg-muted/30 p-4">
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <Label className="text-xs">Status</Label>
-                <Select
-                  value={filters.status}
-                  onValueChange={(value) => setFilters({ ...filters, status: value })}
-                >
-                  <SelectTrigger data-testid="select-filter-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="not_started">Not Started</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="on_hold">On Hold</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1">
-                <Label className="text-xs">Assignee</Label>
-                <Select
-                  value={filters.assignee}
-                  onValueChange={(value) => setFilters({ ...filters, assignee: value })}
-                >
-                  <SelectTrigger data-testid="select-filter-assignee">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Assignees</SelectItem>
-                    {contacts.map((contact) => (
-                      <SelectItem key={contact.id} value={contact.id}>
-                        {contact.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1">
-                <Label className="text-xs">Type</Label>
-                <Select
-                  value={filters.type}
-                  onValueChange={(value) => setFilters({ ...filters, type: value })}
-                >
-                  <SelectTrigger data-testid="select-filter-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="task">Task</SelectItem>
-                    <SelectItem value="milestone">Milestone</SelectItem>
-                    <SelectItem value="inspection">Inspection</SelectItem>
-                    <SelectItem value="delivery">Delivery</SelectItem>
-                    <SelectItem value="meeting">Meeting</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1">
-                <Label className="text-xs">Date Range</Label>
-                <Select
-                  value={filters.dateRange}
-                  onValueChange={(value) => setFilters({ ...filters, dateRange: value })}
-                >
-                  <SelectTrigger data-testid="select-filter-date-range">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Dates</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="this_week">This Week</SelectItem>
-                    <SelectItem value="this_month">This Month</SelectItem>
-                    <SelectItem value="overdue">Overdue</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* View Tabs */}
-        <Tabs value={activeView} onValueChange={(v) => setActiveView(v as typeof activeView)} className="px-4">
-          <TabsList>
-            <TabsTrigger value="gantt" data-testid="tab-gantt">
-              <GanttChart className="w-4 h-4 mr-2" />
-              Gantt
-            </TabsTrigger>
-            <TabsTrigger value="calendar" data-testid="tab-calendar">
-              <CalendarIcon className="w-4 h-4 mr-2" />
-              Calendar
-            </TabsTrigger>
-            <TabsTrigger value="list" data-testid="tab-list">
-              <List className="w-4 h-4 mr-2" />
-              List
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-auto">
-        <Tabs value={activeView} className="h-full">
-          <TabsContent value="list" className="h-full m-0 p-4">
+        {/* Content - conditional rendering based on activeView */}
+        {activeView === "list" && (
+          <div className="flex-1 overflow-auto p-4">
             {filteredItems.length === 0 ? (
               <Card className="p-12 text-center">
                 <CardTitle className="mb-2">No Schedule Items</CardTitle>
@@ -843,19 +630,20 @@ export default function Schedule() {
                 }}
               />
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="gantt" className="h-full m-0">
-            <Gantt
-              onEditItem={(item) => {
-                setEditingItem(item);
-                setShowItemDialog(true);
-              }}
-            />
-          </TabsContent>
+        {activeView === "gantt" && (
+          <Gantt
+            onEditItem={(item) => {
+              setEditingItem(item);
+              setShowItemDialog(true);
+            }}
+          />
+        )}
 
-          <TabsContent value="calendar" className="h-full m-0">
-            <div className="h-full p-4" style={{ minHeight: '600px' }}>
+        {activeView === "calendar" && (
+          <div className="h-full p-4" style={{ minHeight: '600px' }}>
               <BigCalendar
                 localizer={localizer}
                 events={calendarEvents}
@@ -874,9 +662,8 @@ export default function Schedule() {
                 popup
                 data-testid="calendar-view"
               />
-            </div>
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </div>
 
       {/* Create/Edit Item Dialog */}
