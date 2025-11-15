@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical } from "lucide-react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useScheduleView } from "@/contexts/ScheduleViewContext";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
@@ -96,6 +99,30 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     completion: false,
     notes: true,
   });
+  
+  // Column order for reordering
+  const [columnOrder, setColumnOrder] = useState<string[]>(['status', 'notes', 'completion', 'assignee']);
+  
+  // Drag-drop sensors for column reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+  
+  const handleColumnDragEnd = (event: DragEndEvent) => {
+    const {active, over} = event;
+    
+    if (over && active.id !== over.id) {
+      setColumnOrder((items) => {
+        const oldIndex = items.indexOf(active.id as string);
+        const newIndex = items.indexOf(over.id as string);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+  
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
@@ -123,7 +150,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   }, [columnWidths, visibleColumns]);
   
   // Left panel width state (user-controlled, separate from totalPanelWidth)
-  const [leftPanelWidth, setLeftPanelWidth] = useState(400);
+  // Initialize to undefined so it auto-sizes to totalPanelWidth on first render
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number | undefined>(undefined);
   
   // Resizing states
   const [resizingColumn, setResizingColumn] = useState<{
@@ -955,50 +983,57 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               Columns
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-80" align="end">
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-3">Show in left panel</h4>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns.status}
-                      onChange={(e) => setVisibleColumns({ ...visibleColumns, status: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Status</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns.assignee}
-                      onChange={(e) => setVisibleColumns({ ...visibleColumns, assignee: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Assignee</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns.completion}
-                      onChange={(e) => setVisibleColumns({ ...visibleColumns, completion: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Completion %</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns.notes}
-                      onChange={(e) => setVisibleColumns({ ...visibleColumns, notes: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Notes</span>
-                  </label>
+          <PopoverContent className="w-64" align="end">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
+              <SortableContext items={columnOrder} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1">
+                  {columnOrder.map((columnId) => {
+                    const SortableItem = ({ id, label }: { id: string; label: string }) => {
+                      const {
+                        attributes,
+                        listeners,
+                        setNodeRef,
+                        transform,
+                        transition,
+                      } = useSortable({ id });
+                      
+                      const style = {
+                        transform: CSS.Transform.toString(transform),
+                        transition,
+                      };
+                      
+                      return (
+                        <div
+                          ref={setNodeRef}
+                          style={style}
+                          className="flex items-center gap-2 h-8 px-2 rounded-md hover:bg-accent"
+                        >
+                          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+                            <GripVertical className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={visibleColumns[id as keyof typeof visibleColumns]}
+                            onChange={(e) => setVisibleColumns({ ...visibleColumns, [id]: e.target.checked })}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm flex-1">{label}</span>
+                        </div>
+                      );
+                    };
+                    
+                    const labels: Record<string, string> = {
+                      status: 'Status',
+                      notes: 'Notes',
+                      completion: 'Completion %',
+                      assignee: 'Assignee'
+                    };
+                    
+                    return <SortableItem key={columnId} id={columnId} label={labels[columnId]} />;
+                  })}
                 </div>
-              </div>
-            </div>
+              </SortableContext>
+            </DndContext>
           </PopoverContent>
         </Popover>
       </div>
@@ -1030,7 +1065,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       <div className="flex-1 flex overflow-hidden">
         {/* Task Names Column (Resizable Panel) */}
         <div 
-          style={{ width: leftPanelWidth }} 
+          style={{ width: leftPanelWidth ?? totalPanelWidth }} 
           className="border-r flex flex-col bg-card flex-shrink-0 overflow-x-auto relative"
         >
           {/* Content wrapper with actual column widths */}
@@ -1048,8 +1083,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       <div
                         className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
                         style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'status')}
-                        data-testid="divider-status"
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'taskName')}
+                        data-testid="divider-taskName"
                       />
                       <div style={{ width: columnWidths.status }} className="text-center flex-shrink-0">Status</div>
                       {(() => { cumulativeOffset += columnWidths.status; return null; })()}
@@ -1061,8 +1096,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       <div
                         className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
                         style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'notes')}
-                        data-testid="divider-notes"
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'status')}
+                        data-testid="divider-status"
                       />
                       <div style={{ width: columnWidths.notes }} className="text-center flex-shrink-0">Notes</div>
                       {(() => { cumulativeOffset += columnWidths.notes; return null; })()}
@@ -1074,8 +1109,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       <div
                         className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
                         style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'completion')}
-                        data-testid="divider-completion"
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'notes')}
+                        data-testid="divider-notes"
                       />
                       <div style={{ width: columnWidths.completion }} className="text-center flex-shrink-0">%</div>
                       {(() => { cumulativeOffset += columnWidths.completion; return null; })()}
@@ -1087,8 +1122,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       <div
                         className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
                         style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'assignee')}
-                        data-testid="divider-assignee"
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'completion')}
+                        data-testid="divider-completion"
                       />
                       <div style={{ width: columnWidths.assignee }} className="text-center flex-shrink-0">Assignee</div>
                     </>
@@ -1399,7 +1434,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               e.stopPropagation();
               setResizingPanel({
                 startX: e.clientX,
-                startWidth: leftPanelWidth,
+                startWidth: leftPanelWidth ?? totalPanelWidth,
               });
             }}
             data-testid="divider-panel"
