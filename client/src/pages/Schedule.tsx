@@ -952,7 +952,10 @@ export default function Schedule() {
         )}
 
         {activeView === "calendar" && (
-          <div className="h-full p-4" style={{ minHeight: '600px' }}>
+          <div className="h-full flex flex-col">
+            {/* Calendar View-Specific Header Spacer (60px to match Gantt) */}
+            <div className="h-[60px] bg-card border-b border-border"></div>
+            <div className="flex-1 p-4" style={{ minHeight: '600px' }}>
               <BigCalendar
                 localizer={localizer}
                 events={calendarEvents}
@@ -976,6 +979,7 @@ export default function Schedule() {
                 toolbar={false}
                 data-testid="calendar-view"
               />
+            </div>
           </div>
         )}
       </div>
