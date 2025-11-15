@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2 } from "lucide-react";
-import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval } from "date-fns";
+import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
   Dialog,
@@ -248,6 +248,58 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         };
       });
     }
+  }, [timelineStart, timelineEnd, zoomLevel]);
+
+  // Create week-grouped headers for double-row display (ClickUp style)
+  const groupedTimelineHeaders = useMemo(() => {
+    if (zoomLevel !== 'day') return null; // Only for day view
+    
+    const days = eachDayOfInterval({ start: timelineStart, end: timelineEnd });
+    const weeks: Array<{
+      weekLabel: string;
+      widthPx: number;
+      days: Array<{ date: Date; label: string; widthPx: number; isWeekend: boolean }>;
+    }> = [];
+    
+    let currentWeekStart = startOfWeek(days[0], { weekStartsOn: 1 }); // Monday
+    let currentWeekDays: Array<{ date: Date; label: string; widthPx: number; isWeekend: boolean }> = [];
+    
+    days.forEach((day, idx) => {
+      const weekStart = startOfWeek(day, { weekStartsOn: 1 });
+      const dayOfWeek = getDay(day);
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+      
+      // If we've moved to a new week, save the previous week
+      if (weekStart.getTime() !== currentWeekStart.getTime() && currentWeekDays.length > 0) {
+        const weekNumber = getISOWeek(currentWeekStart);
+        weeks.push({
+          weekLabel: `Week ${weekNumber}`,
+          widthPx: currentWeekDays.length * 40,
+          days: currentWeekDays,
+        });
+        currentWeekDays = [];
+        currentWeekStart = weekStart;
+      }
+      
+      currentWeekDays.push({
+        date: day,
+        label: `${format(day, 'EEE')} ${format(day, 'd')}`,
+        widthPx: 40,
+        isWeekend,
+      });
+    });
+    
+    // Add the last week
+    if (currentWeekDays.length > 0) {
+      const weekNumber = getISOWeek(currentWeekStart);
+      weeks.push({
+        weekLabel: `Week ${weekNumber}`,
+        widthPx: currentWeekDays.length * 40,
+        days: currentWeekDays,
+      });
+    }
+    
+    return weeks;
   }, [timelineStart, timelineEnd, zoomLevel]);
 
   // Calculate pixels per day based on zoom level
@@ -655,8 +707,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       <div className="flex-1 flex overflow-hidden">
         {/* Task Names Column (Fixed) */}
         <div className="w-80 border-r flex flex-col bg-card">
-          {/* Header row */}
-          <div className="h-12 border-b flex items-center px-2 text-xs font-medium text-muted-foreground">
+          {/* Header row - increased height for double timeline header */}
+          <div className="h-16 border-b flex items-center px-2 text-xs font-medium text-muted-foreground">
             <div className="flex-1 pl-2">Task Name</div>
             {visibleColumns.status && <div className="w-20 text-center">Status</div>}
             <div className="w-8 text-center">Notes</div>
@@ -673,9 +725,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
               return (
                 <div key={parentItem.id}>
-                  {/* Parent item row */}
+                  {/* Parent item row - 40px height, no border */}
                   <div
-                    className={`h-10 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer group ${parentIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
+                    className={`h-10 flex items-center px-2 hover-elevate active-elevate-2 cursor-pointer group`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
@@ -820,7 +872,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     return (
                       <div
                         key={childItem.id}
-                        className={`h-10 flex items-center px-2 border-b hover-elevate active-elevate-2 cursor-pointer ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}
+                        className={`h-10 flex items-center px-2 hover-elevate active-elevate-2 cursor-pointer`}
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
@@ -959,42 +1011,102 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           style={{ scrollbarGutter: 'stable' }}
         >
           <div style={{ width: `${timelineWidth}px`, position: 'relative' }}>
-            {/* Timeline Header */}
-            <div className="h-12 border-b bg-card sticky top-0 z-10 flex" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              {timelineHeaders.map((header, idx) => {
-                const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
-                return (
-                  <div
-                    key={idx}
-                    className={`border-r text-xs text-center py-2 flex flex-col justify-center ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
-                    style={{ width: `${header.width}px` }}
-                  >
-                    <div>{header.dateLabel}</div>
-                    {header.dayLabel && <div className="text-[10px] text-muted-foreground">{header.dayLabel}</div>}
-                  </div>
-                );
-              })}
-            </div>
+            {/* Timeline Header - ClickUp Style Double Header */}
+            {groupedTimelineHeaders ? (
+              <div className="h-16 border-b bg-card sticky top-0 z-10 flex flex-col">
+                {/* Top Row: Week Numbers */}
+                <div className="h-8 flex border-b">
+                  {groupedTimelineHeaders.map((week, idx) => (
+                    <div
+                      key={idx}
+                      className="border-r text-xs text-center font-semibold flex items-center justify-center text-muted-foreground"
+                      style={{ width: `${week.widthPx}px` }}
+                    >
+                      {week.weekLabel}
+                    </div>
+                  ))}
+                </div>
+                {/* Bottom Row: Day + Date */}
+                <div className="h-8 flex">
+                  {groupedTimelineHeaders.flatMap(week =>
+                    week.days.map((day, dayIdx) => {
+                      const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                      return (
+                        <div
+                          key={`${week.weekLabel}-${dayIdx}`}
+                          className={`border-r text-xs text-center flex items-center justify-center ${
+                            day.isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''
+                          } ${isToday ? 'text-[#bba7db] font-semibold' : 'text-foreground'}`}
+                          style={{ width: `${day.widthPx}px` }}
+                        >
+                          {day.label}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Fallback for week/month zoom levels */
+              <div className="h-12 border-b bg-card sticky top-0 z-10 flex">
+                {timelineHeaders.map((header, idx) => {
+                  const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                  return (
+                    <div
+                      key={idx}
+                      className={`border-r text-xs text-center py-2 flex flex-col justify-center ${isToday ? 'bg-[#bba7db]/20 text-[#bba7db]' : ''}`}
+                      style={{ width: `${header.width}px` }}
+                    >
+                      <div>{header.dateLabel}</div>
+                      {header.dayLabel && <div className="text-[10px] text-muted-foreground">{header.dayLabel}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Timeline Bars */}
             <div className="relative">
+              {/* Weekend column backgrounds */}
+              {groupedTimelineHeaders && (
+                <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
+                  {groupedTimelineHeaders.flatMap(week =>
+                    week.days.map((day, dayIdx) => {
+                      if (!day.isWeekend) return null;
+                      const previousDays = groupedTimelineHeaders
+                        .slice(0, groupedTimelineHeaders.indexOf(week))
+                        .reduce((sum, w) => sum + w.days.length, 0) + dayIdx;
+                      return (
+                        <div
+                          key={`weekend-${week.weekLabel}-${dayIdx}`}
+                          className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/50"
+                          style={{
+                            left: `${previousDays * 40}px`,
+                            width: '40px',
+                          }}
+                        />
+                      );
+                    })
+                  ).filter(Boolean)}
+                </div>
+              )}
+
               {/* Vertical grid lines */}
               <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
                 {timelineHeaders.map((header, idx) => (
                   <div
                     key={idx}
-                    className="absolute top-0 bottom-0 border-r border-border"
+                    className="absolute top-0 bottom-0 border-r border-border/30"
                     style={{ left: `${timelineHeaders.slice(0, idx + 1).reduce((sum, h) => sum + h.width, 0)}px` }}
                   />
                 ))}
               </div>
 
-              {/* Today column background */}
+              {/* Today line - lilac color */}
               <div
-                className="absolute top-0 bottom-0 bg-[#bba7db]/10 pointer-events-none z-0"
+                className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
                 style={{ 
-                  left: `${Math.max(0, todayPosition - pixelsPerDay / 2)}px`,
-                  width: `${pixelsPerDay}px`
+                  left: `${todayPosition}px`,
                 }}
               />
               
@@ -1017,9 +1129,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 return (
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
-                    <div className={`h-10 border-b relative group ${parentIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
+                    <div className={`h-10 relative group`}>
                       <div
-                        className="absolute top-2 h-6 rounded flex items-center px-2 cursor-move shadow-sm hover:shadow-lg transition-all z-10 group/bar"
+                        className="absolute top-2 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
                         style={{
                           left: `${parentStart}px`,
                           width: `${parentWidth}px`,
@@ -1094,9 +1206,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       const childNameFits = childTextWidth <= childWidth;
 
                       return (
-                        <div key={childItem.id} className={`h-10 border-b relative group ${rowIdx % 2 === 0 ? 'bg-muted/30' : ''}`}>
+                        <div key={childItem.id} className={`h-10 relative group`}>
                           <div
-                            className="absolute top-2 h-6 rounded flex items-center px-2 cursor-move shadow-sm hover:shadow-lg transition-all z-10 group/bar"
+                            className="absolute top-2 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
                             style={{
                               left: `${childStart}px`,
                               width: `${childWidth}px`,
