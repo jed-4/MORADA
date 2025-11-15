@@ -702,46 +702,46 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       {/* Row 2 - Views & Timeline Scale (36px) */}
       <div className="h-9 bg-white border-b flex items-center justify-between px-2">
         {/* Left: View Buttons */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('gantt')}
-            className={`h-7 px-3 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-7 px-2 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-gantt"
           >
-            <GanttChart className="w-3.5 h-3.5 mr-1.5" />
+            <GanttChart className="w-3 h-3 mr-1" />
             Gantt
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('calendar')}
-            className={`h-7 px-3 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-7 px-2 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-calendar"
           >
-            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+            <Calendar className="w-3 h-3 mr-1" />
             Calendar
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('list')}
-            className={`h-7 px-3 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-7 px-2 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-list"
           >
-            <ListIcon className="w-3.5 h-3.5 mr-1.5" />
+            <ListIcon className="w-3 h-3 mr-1" />
             List
           </Button>
         </div>
 
         {/* Right: Timeline Scale Buttons */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('day')}
-            className={`h-7 px-3 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-7 px-2 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-day"
           >
             Day
@@ -750,7 +750,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('week')}
-            className={`h-7 px-3 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-7 px-2 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-week"
           >
             Week
@@ -759,7 +759,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('month')}
-            className={`h-7 px-3 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-7 px-2 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-month"
           >
             Month
