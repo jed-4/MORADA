@@ -1202,7 +1202,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             {groupedTimelineHeaders ? (
               <div className="h-12 bg-card sticky top-0 z-10 flex flex-col">
                 {/* Top Row: Week Numbers */}
-                <div className="h-6 flex">
+                <div className="h-6 flex border-b border-border">
                   {groupedTimelineHeaders.map((week, idx) => (
                     <div
                       key={idx}
@@ -1214,7 +1214,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   ))}
                 </div>
                 {/* Bottom Row: Day + Date */}
-                <div className="h-6 flex">
+                <div className="h-6 flex border-b border-border">
                   {groupedTimelineHeaders.flatMap(week =>
                     week.days.map((day, dayIdx) => {
                       const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
@@ -1235,7 +1235,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               </div>
             ) : (
               /* Fallback for week/month zoom levels */
-              <div className="h-10 bg-card sticky top-0 z-10 flex">
+              <div className="h-10 bg-card sticky top-0 z-10 flex border-b border-border">
                 {timelineHeaders.map((header, idx) => {
                   const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                   return (
