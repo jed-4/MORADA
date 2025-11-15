@@ -12,7 +12,7 @@ Shared across all views (Gantt, Calendar, List)
 
 #### Row 1 - Project Controls (36px)
 ```tsx
-className="h-9 bg-white flex items-center justify-between px-2 gap-4"
+className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0"
 ```
 - **Height:** `h-9` (36px)
 - **Padding:** `px-2` (8px horizontal)
@@ -20,20 +20,22 @@ className="h-9 bg-white flex items-center justify-between px-2 gap-4"
 - **Alignment:** `flex items-center justify-between`
 - **Spacing:** `gap-4` (16px) between major sections
 - **Border:** No border
+- **Flex:** `flex-shrink-0` (CRITICAL - prevents compression across different view containers)
 
 #### Row 2 - Views & Timeline Scale (36px)
 ```tsx
-className="h-9 bg-white flex items-center justify-between px-2 border-b border-border"
+className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0"
 ```
 - **Height:** `h-9` (36px)
 - **Padding:** `px-2` (8px horizontal)
 - **Background:** `bg-white`
 - **Alignment:** `flex items-center justify-between`
 - **Border:** `border-b border-border` (1px bottom)
+- **Flex:** `flex-shrink-0` (CRITICAL - prevents compression across different view containers)
 
 #### Row 3 - Search, Filters & Columns (36px)
 ```tsx
-className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border"
+className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0"
 ```
 - **Height:** `h-9` (36px)
 - **Padding:** `px-2` (8px horizontal)
@@ -41,6 +43,7 @@ className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b 
 - **Alignment:** `flex items-center justify-between`
 - **Spacing:** `gap-1.5` (6px) for action grouping
 - **Border:** `border-b border-border` (1px bottom)
+- **Flex:** `flex-shrink-0` (CRITICAL - prevents compression across different view containers)
 
 ### View-Specific Header (60px)
 Below the unified 3-row header, each view has its own header:
@@ -185,17 +188,20 @@ font-medium    → 500  (labels)
 
 ### Consistency Principles
 1. **All h-6 elements** must have `py-0` to ensure consistent vertical centering
-2. **All rows** must be `h-9` with `px-2` horizontal padding
+2. **All rows** must be `h-9` with `px-2` horizontal padding and `flex-shrink-0`
 3. **All chips/buttons** must be `h-6` with `px-2` horizontal padding
 4. **Spacing** must follow the gap hierarchy (0.5, 1, 1.5, 3, 4)
 5. **Active states** must use `#bba7db` purple
 6. **Inactive states** must use elevation utilities
+7. **CRITICAL:** All header rows MUST include `flex-shrink-0` to prevent flexbox compression
 
 ### Critical Implementation Notes
 - **Never** mix `py-*` values on h-6 elements (always use `py-0`)
 - **Never** add custom heights to elements within the h-9 rows
 - **Always** use the standardized gap values from the hierarchy
 - **Always** use `border-b-2` on view-specific headers (not `border-b`)
+- **ALWAYS** include `flex-shrink-0` on all header rows to prevent compression
+- **Never** add top padding to view content wrappers (use `px-*` and `pb-*` only)
 
 ## Examples
 
