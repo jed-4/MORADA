@@ -977,3 +977,92 @@ input[type="number"] {
     border-left-width: 4px; /* Thicker borders for better visibility */
   }
 }
+
+/* BigCalendar Minimization Styles */
+.rbc-calendar {
+  font-size: 12px;
+}
+
+.rbc-header {
+  padding: 4px 2px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  height: 24px !important;
+  line-height: 16px !important;
+}
+
+.rbc-date-cell {
+  padding: 2px 4px !important;
+  font-size: 11px !important;
+}
+
+.rbc-month-view .rbc-day-bg + .rbc-day-bg {
+  border-left: 1px solid hsl(var(--border));
+}
+
+.rbc-month-row {
+  min-height: 60px !important;
+  overflow: visible;
+}
+
+.rbc-event {
+  padding: 1px 3px !important;
+  font-size: 10px !important;
+  line-height: 1.2 !important;
+}
+
+.rbc-event-label {
+  font-size: 9px !important;
+}
+
+.rbc-event-content {
+  font-size: 10px !important;
+}
+
+.rbc-month-view {
+  border: 1px solid hsl(var(--border));
+}
+
+.rbc-time-view {
+  border: 1px solid hsl(var(--border));
+}
+
+.rbc-time-header-content {
+  border-left: 1px solid hsl(var(--border));
+}
+
+.rbc-time-content {
+  border-top: 1px solid hsl(var(--border));
+}
+
+.rbc-day-slot .rbc-time-slot {
+  border-top: 1px solid hsl(var(--border));
+  min-height: 20px;
+}
+
+.rbc-timeslot-group {
+  min-height: 40px !important;
+}
+
+.rbc-time-header-cell {
+  padding: 4px !important;
+  font-size: 11px !important;
+}
+
+.rbc-agenda-view table.rbc-agenda-table {
+  font-size: 11px !important;
+}
+
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  padding: 4px 6px !important;
+}
+
+.rbc-agenda-date-cell,
+.rbc-agenda-time-cell {
+  white-space: nowrap;
+  font-size: 11px !important;
+}
+
+.rbc-agenda-event-cell {
+  font-size: 11px !important;
+}

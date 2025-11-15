@@ -8,8 +8,11 @@ import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
+import "moment/locale/en-gb";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "./schedule-calendar.css";
+
+moment.locale("en-gb");
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -958,9 +961,7 @@ export default function Schedule() {
 
         {activeView === "calendar" && (
           <div className="h-full flex flex-col">
-            {/* Calendar View-Specific Header Spacer (60px to match Gantt) */}
-            <div className="h-[60px] bg-card border-b-2 border-border"></div>
-            <div className="flex-1 p-4" style={{ minHeight: '600px' }}>
+            <div className="flex-1 p-1" style={{ minHeight: '600px' }}>
               <BigCalendar
                 localizer={localizer}
                 events={calendarEvents}
@@ -982,6 +983,7 @@ export default function Schedule() {
                 onNavigate={(date) => setCalendarDate(date)}
                 popup
                 toolbar={false}
+                culture="en-GB"
                 data-testid="calendar-view"
               />
             </div>
