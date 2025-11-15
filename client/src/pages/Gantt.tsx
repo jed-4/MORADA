@@ -122,8 +122,17 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     return width;
   }, [columnWidths, visibleColumns]);
   
+  // Left panel width state (user-controlled, separate from totalPanelWidth)
+  const [leftPanelWidth, setLeftPanelWidth] = useState(400);
+  
+  // Resizing states
   const [resizingColumn, setResizingColumn] = useState<{
     column: keyof typeof columnWidths;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  
+  const [resizingPanel, setResizingPanel] = useState<{
     startX: number;
     startWidth: number;
   } | null>(null);
