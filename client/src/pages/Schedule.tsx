@@ -4,6 +4,7 @@ import { useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
@@ -587,7 +588,20 @@ export default function Schedule() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <ScheduleViewProvider
+      value={{
+        schedule,
+        activeView,
+        setActiveView,
+        filters,
+        setFilters,
+        contacts,
+        updateStatusMutation,
+        setShowItemDialog,
+        setEditingItem,
+      }}
+    >
+      <div className="flex flex-col h-full">
       {/* Header */}
       <div className="border-b bg-card">
         <div className="flex items-center justify-between p-4">
@@ -1418,5 +1432,6 @@ export default function Schedule() {
         </DialogContent>
       </Dialog>
     </div>
+    </ScheduleViewProvider>
   );
 }
