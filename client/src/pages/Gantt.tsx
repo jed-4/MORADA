@@ -777,15 +777,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-7 text-xs"
+              className="pl-8 h-7 text-xs border"
               data-testid="input-search-items"
             />
           </div>
 
           {/* Assignee Filter */}
           <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-assignee">
-              <SelectValue placeholder="Assignee" />
+            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-assignee">
+              <span>Assignee</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Assignees</SelectItem>
@@ -799,8 +799,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
           {/* Status Filter */}
           <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-status">
-              <SelectValue placeholder="Status" />
+            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-status">
+              <span>Status</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
@@ -814,8 +814,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
           {/* Type Filter */}
           <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-type">
-              <SelectValue placeholder="Type" />
+            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-type">
+              <span>Type</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
@@ -829,8 +829,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
           {/* Date Range Filter */}
           <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-date-range">
-              <SelectValue placeholder="Date" />
+            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-date-range">
+              <span>Date</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Dates</SelectItem>
@@ -848,7 +848,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             <Button 
               variant="outline" 
               size="sm" 
-              className="h-7 text-xs"
+              className="h-7 text-xs border"
               data-testid="button-column-config"
             >
               <Columns className="w-3.5 h-3.5 mr-1.5" />
