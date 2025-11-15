@@ -820,8 +820,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         >
           {/* Content wrapper with actual column widths */}
           <div style={{ width: totalPanelWidth }} className="flex flex-col">
-            {/* Header row - matches timeline header height */}
-            <div className="h-12 flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
+            {/* Header row - matches timeline header height (60px) */}
+            <div className="h-[60px] flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {
@@ -1198,11 +1198,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           style={{ scrollbarGutter: 'stable' }}
         >
           <div style={{ width: `${timelineWidth}px`, position: 'relative' }}>
-            {/* Timeline Header - ClickUp Style Double Header */}
+            {/* Timeline Header - ClickUp Style Double Header (60px) */}
             {groupedTimelineHeaders ? (
-              <div className="h-12 bg-card sticky top-0 z-10 flex flex-col">
+              <div className="h-[60px] bg-card sticky top-0 z-10 flex flex-col">
                 {/* Top Row: Week Numbers */}
-                <div className="h-6 flex border-b border-border">
+                <div className="h-[30px] flex border-b border-border">
                   {groupedTimelineHeaders.map((week, idx) => (
                     <div
                       key={idx}
@@ -1214,7 +1214,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   ))}
                 </div>
                 {/* Bottom Row: Day + Date */}
-                <div className="h-6 flex border-b border-border">
+                <div className="h-[30px] flex border-b border-border">
                   {groupedTimelineHeaders.flatMap(week =>
                     week.days.map((day, dayIdx) => {
                       const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
@@ -1234,8 +1234,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 </div>
               </div>
             ) : (
-              /* Fallback for week/month zoom levels */
-              <div className="h-10 bg-card sticky top-0 z-10 flex border-b border-border">
+              /* Fallback for week/month zoom levels (60px) */
+              <div className="h-[60px] bg-card sticky top-0 z-10 flex border-b border-border">
                 {timelineHeaders.map((header, idx) => {
                   const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                   return (
