@@ -114,6 +114,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     setActiveView,
     filters,
     setFilters,
+    searchQuery,
+    setSearchQuery,
     contacts,
     updateStatusMutation,
     setShowItemDialog,
@@ -136,7 +138,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
@@ -820,8 +821,24 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         >
           {/* Content wrapper with actual column widths */}
           <div style={{ width: totalPanelWidth }} className="flex flex-col">
-            {/* Header row - matches timeline header height (60px) */}
-            <div className="h-[60px] flex items-center px-2 text-xs font-medium text-muted-foreground relative border-b-2 border-border">
+            {/* Double-row header to match timeline (60px total) */}
+            
+            {/* Top row - Search bar (30px) */}
+            <div className="h-[30px] flex items-center px-2 border-b border-border">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search tasks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-7 pr-2 py-0 h-6 text-xs border"
+                  data-testid="input-search-gantt-tasks"
+                />
+              </div>
+            </div>
+            
+            {/* Bottom row - Column names (30px) */}
+            <div className="h-[30px] flex items-center px-2 text-xs font-medium text-muted-foreground relative border-b border-border">
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {

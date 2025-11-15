@@ -15,6 +15,8 @@ interface ScheduleViewContextType {
   setActiveView: (view: "list" | "gantt" | "calendar") => void;
   filters: ScheduleFilters;
   setFilters: (filters: ScheduleFilters) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
   contacts: Contact[];
   updateStatusMutation: UseMutationResult<void, Error, "offline" | "online" | "locked", unknown>;
   setShowItemDialog: (show: boolean) => void;

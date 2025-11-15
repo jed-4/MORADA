@@ -604,6 +604,8 @@ export default function Schedule() {
         setActiveView,
         filters,
         setFilters,
+        searchQuery,
+        setSearchQuery,
         contacts,
         updateStatusMutation,
         setShowItemDialog,
@@ -772,16 +774,19 @@ export default function Schedule() {
         <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
           {/* Left: Search + Filter Dropdowns */}
           <div className="flex items-center gap-1.5 flex-1">
-            <div className="relative w-48">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 pr-2 py-0 h-6 text-xs border"
-                data-testid="input-search-items"
-              />
-            </div>
+            {/* Search bar - hidden in Gantt view (it's in the Gantt left panel) */}
+            {activeView !== 'gantt' && (
+              <div className="relative w-48">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-7 pr-2 py-0 h-6 text-xs border"
+                  data-testid="input-search-items"
+                />
+              </div>
+            )}
 
             {/* Assignee Filter */}
             <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
