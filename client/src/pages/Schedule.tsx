@@ -57,6 +57,8 @@ import {
   ChevronUp,
   Trash2,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -77,6 +79,8 @@ export default function Schedule() {
 
   const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("gantt");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
+  const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
+  const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -695,29 +699,72 @@ export default function Schedule() {
             </button>
           </div>
 
-          {/* Right: Timeline Scale Buttons */}
+          {/* Right: Timeline Scale Buttons (Gantt zoom) OR Calendar View Buttons */}
           <div className="flex items-center gap-0.5">
             <button
-              onClick={() => setZoomLevel('day')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              onClick={() => {
+                if (activeView === 'calendar') {
+                  setCalendarView('day');
+                } else {
+                  setZoomLevel('day');
+                }
+              }}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                (activeView === 'calendar' && calendarView === 'day') || (activeView !== 'calendar' && zoomLevel === 'day')
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                  : 'hover-elevate'
+              } active-elevate-2`}
               data-testid="button-zoom-day"
             >
               Day
             </button>
             <button
-              onClick={() => setZoomLevel('week')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              onClick={() => {
+                if (activeView === 'calendar') {
+                  setCalendarView('week');
+                } else {
+                  setZoomLevel('week');
+                }
+              }}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                (activeView === 'calendar' && calendarView === 'week') || (activeView !== 'calendar' && zoomLevel === 'week')
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                  : 'hover-elevate'
+              } active-elevate-2`}
               data-testid="button-zoom-week"
             >
               Week
             </button>
             <button
-              onClick={() => setZoomLevel('month')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+              onClick={() => {
+                if (activeView === 'calendar') {
+                  setCalendarView('month');
+                } else {
+                  setZoomLevel('month');
+                }
+              }}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                (activeView === 'calendar' && calendarView === 'month') || (activeView !== 'calendar' && zoomLevel === 'month')
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                  : 'hover-elevate'
+              } active-elevate-2`}
               data-testid="button-zoom-month"
             >
               Month
             </button>
+            {activeView === 'calendar' && (
+              <button
+                onClick={() => setCalendarView('agenda')}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  calendarView === 'agenda'
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-zoom-agenda"
+              >
+                Agenda
+              </button>
+            )}
           </div>
         </div>
 
@@ -796,8 +843,55 @@ export default function Schedule() {
             </Select>
           </div>
 
-          {/* Today Button - only show for Gantt/Calendar */}
-          {(activeView === 'gantt' || activeView === 'calendar') && (
+          {/* Center: Calendar Navigation - only show for Calendar */}
+          {activeView === 'calendar' && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarDate);
+                  if (calendarView === 'day') {
+                    newDate.setDate(newDate.getDate() - 1);
+                  } else if (calendarView === 'week') {
+                    newDate.setDate(newDate.getDate() - 7);
+                  } else if (calendarView === 'month') {
+                    newDate.setMonth(newDate.getMonth() - 1);
+                  }
+                  setCalendarDate(newDate);
+                }}
+                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+                data-testid="button-calendar-prev"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setCalendarDate(new Date())}
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+                data-testid="button-scroll-to-today"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarDate);
+                  if (calendarView === 'day') {
+                    newDate.setDate(newDate.getDate() + 1);
+                  } else if (calendarView === 'week') {
+                    newDate.setDate(newDate.getDate() + 7);
+                  } else if (calendarView === 'month') {
+                    newDate.setMonth(newDate.getMonth() + 1);
+                  }
+                  setCalendarDate(newDate);
+                }}
+                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+                data-testid="button-calendar-next"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Today Button - only show for Gantt */}
+          {activeView === 'gantt' && (
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
               data-testid="button-scroll-to-today"
@@ -874,8 +968,12 @@ export default function Schedule() {
                   }
                 }}
                 views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
-                defaultView={Views.MONTH}
+                view={calendarView}
+                onView={(view) => setCalendarView(view as "month" | "week" | "day" | "agenda")}
+                date={calendarDate}
+                onNavigate={(date) => setCalendarDate(date)}
                 popup
+                toolbar={false}
                 data-testid="calendar-view"
               />
           </div>
