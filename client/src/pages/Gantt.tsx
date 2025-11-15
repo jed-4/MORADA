@@ -669,7 +669,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         <div className="flex items-center gap-1.5">
           <Button
             size="sm"
-            className="h-7 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border border-[#bba7db]/20"
+            className="h-6 px-1.5 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border border-[#bba7db]/20"
             onClick={() => {
               setEditingItemContext(null);
               setShowItemDialog(true);
@@ -677,24 +677,24 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             disabled={schedule?.status === "locked"}
             data-testid="button-add-item"
           >
-            <Plus className="w-3 h-3 mr-1" />
+            <Plus className="w-3 h-3 mr-0.5" />
             Add Item
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-muted"
+            className="h-6 w-6 hover:bg-muted"
             data-testid="button-export-pdf"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3 h-3" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-muted"
+            className="h-6 w-6 hover:bg-muted"
             data-testid="button-settings"
           >
-            <Settings className="w-3.5 h-3.5" />
+            <Settings className="w-3 h-3" />
           </Button>
         </div>
       </div>
@@ -707,7 +707,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('gantt')}
-            className={`h-6 px-1.5 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-5 px-1 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-gantt"
           >
             <GanttChart className="w-3 h-3 mr-0.5" />
@@ -717,7 +717,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('calendar')}
-            className={`h-6 px-1.5 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-5 px-1 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-calendar"
           >
             <Calendar className="w-3 h-3 mr-0.5" />
@@ -727,7 +727,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('list')}
-            className={`h-6 px-1.5 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-5 px-1 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-list"
           >
             <ListIcon className="w-3 h-3 mr-0.5" />
@@ -741,7 +741,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('day')}
-            className={`h-6 px-1.5 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-5 px-1 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-day"
           >
             Day
@@ -750,7 +750,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('week')}
-            className={`h-6 px-1.5 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-5 px-1 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-week"
           >
             Week
@@ -759,7 +759,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('month')}
-            className={`h-6 px-1.5 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-5 px-1 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-month"
           >
             Month
@@ -845,15 +845,12 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         {/* Right: Columns Dropdown */}
         <Popover>
           <PopoverTrigger asChild>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="h-6 px-1.5 text-xs border"
+            <button 
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
               data-testid="button-column-config"
             >
-              <Columns className="w-3 h-3 mr-1" />
               Columns
-            </Button>
+            </button>
           </PopoverTrigger>
           <PopoverContent className="w-80" align="end">
             <div className="space-y-4">
