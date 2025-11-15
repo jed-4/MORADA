@@ -375,29 +375,30 @@ export default function Tasks() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-              Tasks
-            </h1>
-            <Badge variant="secondary" data-testid="text-task-count">
-              {currentProject.name}
-            </Badge>
-          </div>
-          <div className="flex items-center space-x-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-card-display-settings"
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Card Display
-                </Button>
-              </DropdownMenuTrigger>
+      {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
+      
+      {/* Row 1 - Project Controls (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Project Name + Task Count */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">{currentProject.name} Tasks</h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-task-count">
+            {effectivelyFilteredTasks.length} tasks
+          </Badge>
+        </div>
+
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-card-display-settings"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Display</span>
+              </button>
+            </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <div className="px-2 py-1.5 text-sm font-semibold">Show on cards</div>
                 <DropdownMenuItem 
@@ -506,143 +507,124 @@ export default function Tasks() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowViewSettings(true)}
-              data-testid="button-view-settings"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              View Settings
-            </Button>
-            <Button 
-              size="sm" 
-              onClick={() => setShowCreateTaskDialog(true)}
-              data-testid="button-add-task"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Task
-            </Button>
-          </div>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowViewSettings(true)}
+            data-testid="button-settings"
+          >
+            <Settings className="w-3 h-3" />
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowCreateTaskDialog(true)}
+            data-testid="button-add-task"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Task</span>
+          </button>
         </div>
-        
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <div className="border-b border-border px-4">
-          <div className="flex items-center justify-between">
-            <TabsList className="flex w-auto" data-testid="tabs-task-views">
-              {allViews.map((view) => {
-                const canDelete = isCustomView(view);
-                return (
-                  <div key={view.id} className="relative group">
-                    <TabsTrigger
-                      value={view.id}
-                      className="data-[state=active]:bg-background data-[state=active]:text-foreground relative pr-8"
-                      data-testid={`tab-${view.id}`}
-                    >
-                      {view.name}
-                      {view.viewType === "list" && view.id !== "list" && (
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          NEW
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteView(view);
-                        }}
-                        data-testid={`button-delete-${view.id}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 px-3 data-[state=active]:bg-background data-[state=active]:text-foreground"
-                onClick={() => setShowCreateViewDialog(true)}
-                data-testid="button-add-view"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </TabsList>
-            
-            {/* View Management Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" data-testid="button-view-menu">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem data-testid="menu-create-view">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create New View
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="menu-manage-views">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Manage Views
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div className="border-b border-border/50 bg-muted/30 px-4 py-2">
-          <div className="flex items-center gap-2 overflow-x-auto">
-            {/* Search */}
-            <div className="relative min-w-64">
-              <Input
-                ref={searchInputRef}
-                placeholder="Search tasks... (press / to focus)"
-                value={filters.search || ""}
-                onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
-                className="h-8 text-sm"
-                data-testid="input-search-tasks"
-              />
-              {filters.search && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
-                  onClick={() => setFilters({...filters, search: undefined})}
-                  data-testid="button-clear-search"
+      {/* Row 2 - Views & Options (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
+          {allViews.map((view) => {
+            const canDelete = isCustomView(view);
+            return (
+              <div key={view.id} className="relative group">
+                <button
+                  onClick={() => setActiveTab(view.id)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                    activeTab === view.id 
+                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                      : 'hover-elevate'
+                  } active-elevate-2 flex items-center gap-1`}
+                  data-testid={`tab-${view.id}`}
                 >
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-            </div>
-
-            {/* Keyboard Shortcuts Indicator */}
-            <Badge variant="outline" className="gap-1 shrink-0">
-              <Zap className="h-3 w-3 text-casva-500" />
-              <span className="text-xs">Ctrl+N / G / D</span>
-            </Badge>
-
-            {/* Status Filter */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-sm">
-                  <Flag className="h-3 w-3 mr-1" />
-                  Status
-                  {filters.status && filters.status.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
-                      {filters.status.length}
+                  {view.name}
+                  {view.viewType === "list" && view.id !== "list" && (
+                    <Badge variant="outline" className="ml-1 text-xs px-1 py-0 h-4">
+                      NEW
                     </Badge>
                   )}
-                </Button>
-              </DropdownMenuTrigger>
+                </button>
+                {canDelete && (
+                  <button
+                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteView(view);
+                    }}
+                    data-testid={`button-delete-${view.id}`}
+                  >
+                    <X className="h-2 w-2" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowCreateViewDialog(true)}
+            data-testid="button-add-view"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+
+        {/* Right: More Options */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button 
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-view-menu"
+            >
+              <MoreHorizontal className="w-3 h-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setShowCreateViewDialog(true)} data-testid="menu-create-view">
+              <Plus className="h-4 w-4 mr-2" />
+              Create New View
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="menu-manage-views">
+              <Settings className="h-4 w-4 mr-2" />
+              Manage Views
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Row 3 - Search & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search + Filter Dropdowns */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              placeholder="Search..."
+              value={filters.search || ""}
+              onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-tasks"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Status</span>
+                {filters.status && filters.status.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {filters.status.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
               <DropdownMenuContent>
                 {(statusOptions.length > 0 ? statusOptions : [
                   { key: "todo", name: "To Do", color: null },
@@ -678,15 +660,14 @@ export default function Tasks() {
             {/* Priority Filter */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-sm">
-                  <Flag className="h-3 w-3 mr-1" />
-                  Priority
+                <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                  <span>Priority</span>
                   {filters.priority && filters.priority.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
                       {filters.priority.length}
                     </Badge>
                   )}
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 {[
@@ -715,15 +696,14 @@ export default function Tasks() {
             {/* Assignee Filter */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-sm" data-testid="button-filter-assignee">
-                  <User className="h-3 w-3 mr-1" />
-                  Assignee
+                <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-assignee">
+                  <span>Assignee</span>
                   {filters.assignee && filters.assignee.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
                       {filters.assignee.length}
                     </Badge>
                   )}
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 {filterOptions.availableAssignees.length > 0 ? (
@@ -756,15 +736,14 @@ export default function Tasks() {
             {filterOptions.availableTags.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 text-sm">
-                    <Tag className="h-3 w-3 mr-1" />
-                    Tags
+                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                    <span>Tags</span>
                     {filters.tags && filters.tags.length > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
                         {filters.tags.length}
                       </Badge>
                     )}
-                  </Button>
+                  </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   {filterOptions.availableTags.map(tag => (
@@ -791,15 +770,14 @@ export default function Tasks() {
             {filterOptions.availableLabels && filterOptions.availableLabels.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 text-sm">
-                    <Tag className="h-3 w-3 mr-1" />
-                    Labels
+                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                    <span>Labels</span>
                     {filters.labels && filters.labels.length > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-xs">
+                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
                         {filters.labels.length}
                       </Badge>
                     )}
-                  </Button>
+                  </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   {filterOptions.availableLabels.map(label => (
@@ -822,77 +800,31 @@ export default function Tasks() {
               </DropdownMenu>
             )}
 
-            {/* Group By Controls - Enhanced visibility */}
-            <>
-              <div className="border-l border-border/50 h-6" />
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium text-muted-foreground">Group by:</span>
-                <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
-                  <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-group-by">
-                    <SelectValue placeholder="Choose grouping..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      <div className="flex items-center gap-2">
-                        <Layers className="w-3 h-3" />
-                        Grouping
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="status">
-                      <div className="flex items-center gap-2">
-                        <Flag className="w-3 h-3" />
-                        By Status
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="priority">
-                      <div className="flex items-center gap-2">
-                        <Flag className="w-3 h-3" />
-                        By Priority
-                      </div>
-                    </SelectItem>
-                    {filterOptions.availableAssignees.length > 0 && (
-                      <SelectItem value="assignee">
-                        <div className="flex items-center gap-2">
-                          <User className="w-3 h-3" />
-                          By Assignee
-                        </div>
-                      </SelectItem>
-                    )}
-                    {filterOptions.availableTags.length > 0 && (
-                      <SelectItem value="tags">
-                        <div className="flex items-center gap-2">
-                          <Tag className="w-3 h-3" />
-                          By Tags
-                        </div>
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                {groupBy !== 'none' && (
-                  <Badge variant="secondary" className="text-xs">
-                    Grouped by {groupBy}
-                  </Badge>
-                )}
-              </div>
-            </>
+          </div>
 
-            {/* Clear All Filters */}
-            {(filters.search || filters.status?.length || filters.priority?.length || filters.assignee?.length || filters.tags?.length) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-sm text-muted-foreground"
-                onClick={() => setFilters({})}
-                data-testid="button-clear-all-filters"
-              >
-                Clear All
-              </Button>
-            )}
+          {/* Right: Group By Controls */}
+          <div className="flex items-center gap-1.5">
+            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
+              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-group-by">
+                <span>Group by</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="status">By Status</SelectItem>
+                <SelectItem value="priority">By Priority</SelectItem>
+                {filterOptions.availableAssignees.length > 0 && (
+                  <SelectItem value="assignee">By Assignee</SelectItem>
+                )}
+                {filterOptions.availableTags.length > 0 && (
+                  <SelectItem value="tags">By Tags</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
-        {/* Tab Content */}
+      {/* Content Area with Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <div className="flex-1 overflow-auto">
           <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
             <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} />
