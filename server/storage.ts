@@ -624,11 +624,11 @@ export interface IStorage {
   bulkUpdateScheduleItems(items: { id: string; updates: Partial<InsertScheduleItem> }[]): Promise<ScheduleItem[]>;
 
   // Schedule Templates CRUD
-  getScheduleTemplates(category?: string): Promise<ScheduleTemplate[]>;
-  getScheduleTemplate(id: string): Promise<ScheduleTemplate | undefined>;
+  getScheduleTemplates(companyId: string, category?: string): Promise<ScheduleTemplate[]>;
+  getScheduleTemplate(id: string, companyId: string): Promise<ScheduleTemplate | undefined>;
   createScheduleTemplate(template: InsertScheduleTemplate): Promise<ScheduleTemplate>;
-  updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>): Promise<ScheduleTemplate | undefined>;
-  deleteScheduleTemplate(id: string): Promise<boolean>;
+  updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>, companyId: string): Promise<ScheduleTemplate | undefined>;
+  deleteScheduleTemplate(id: string, companyId: string): Promise<boolean>;
 
   // Calendar Views CRUD
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
@@ -10593,29 +10593,43 @@ export class DbStorage implements IStorage {
   }
 
   // Schedule Templates CRUD
-  async getScheduleTemplates(category?: string): Promise<ScheduleTemplate[]> {
+  async getScheduleTemplates(companyId: string, category?: string): Promise<ScheduleTemplate[]> {
     try {
-      const query = db.select()
-        .from(schema.scheduleTemplates)
-        .where(eq(schema.scheduleTemplates.isArchived, false));
+      // Return templates from user's company OR public templates from any company
+      const conditions = [
+        eq(schema.scheduleTemplates.isArchived, false),
+        or(
+          eq(schema.scheduleTemplates.companyId, companyId),
+          eq(schema.scheduleTemplates.isPublic, true)
+        )
+      ];
       
       if (category) {
-        return await query.where(eq(schema.scheduleTemplates.category, category));
+        conditions.push(eq(schema.scheduleTemplates.category, category));
       }
-      return await query;
+      
+      return await db.select()
+        .from(schema.scheduleTemplates)
+        .where(and(...conditions));
     } catch (error) {
       console.error("Database error in getScheduleTemplates:", error);
       throw error;
     }
   }
 
-  async getScheduleTemplate(id: string): Promise<ScheduleTemplate | undefined> {
+  async getScheduleTemplate(id: string, companyId: string): Promise<ScheduleTemplate | undefined> {
     try {
       const result = await db.select()
         .from(schema.scheduleTemplates)
         .where(eq(schema.scheduleTemplates.id, id))
         .limit(1);
-      return result[0];
+      
+      const template = result[0];
+      // Only return if template belongs to company OR is public
+      if (template && (template.companyId === companyId || template.isPublic)) {
+        return template;
+      }
+      return undefined;
     } catch (error) {
       console.error("Database error in getScheduleTemplate:", error);
       throw error;
@@ -10634,11 +10648,15 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>): Promise<ScheduleTemplate | undefined> {
+  async updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>, companyId: string): Promise<ScheduleTemplate | undefined> {
     try {
+      // Only update if template belongs to company
       const result = await db.update(schema.scheduleTemplates)
         .set({ ...template, updatedAt: new Date() })
-        .where(eq(schema.scheduleTemplates.id, id))
+        .where(and(
+          eq(schema.scheduleTemplates.id, id),
+          eq(schema.scheduleTemplates.companyId, companyId)
+        ))
         .returning();
       return result[0];
     } catch (error) {
@@ -10647,10 +10665,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteScheduleTemplate(id: string): Promise<boolean> {
+  async deleteScheduleTemplate(id: string, companyId: string): Promise<boolean> {
     try {
+      // Only delete if template belongs to company
       const result = await db.delete(schema.scheduleTemplates)
-        .where(eq(schema.scheduleTemplates.id, id))
+        .where(and(
+          eq(schema.scheduleTemplates.id, id),
+          eq(schema.scheduleTemplates.companyId, companyId)
+        ))
         .returning();
       return result.length > 0;
     } catch (error) {

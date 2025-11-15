@@ -8499,13 +8499,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const category = req.query.category as string | undefined;
-      // Get templates: own company's templates + public templates
-      const allTemplates = await storage.getScheduleTemplates(category);
-      const accessibleTemplates = allTemplates.filter(template => 
-        template.companyId === user.companyId || template.isPublic
-      );
-      
-      res.json(accessibleTemplates);
+      // Storage layer now filters by companyId + public templates
+      const templates = await storage.getScheduleTemplates(user.companyId, category);
+      res.json(templates);
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch schedule templates",
@@ -8514,9 +8510,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/schedule-templates/:id", async (req, res) => {
+  app.get("/api/schedule-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const template = await storage.getScheduleTemplate(req.params.id);
+      const user = req.user as any;
+      
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      // Storage layer enforces companyId filtering
+      const template = await storage.getScheduleTemplate(req.params.id, user.companyId);
       if (!template) {
         return res.status(404).json({ error: "Schedule template not found" });
       }
@@ -8571,15 +8574,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      // Get existing template to verify ownership
-      const existingTemplate = await storage.getScheduleTemplate(req.params.id);
+      // Get existing template to verify ownership (storage layer enforces companyId)
+      const existingTemplate = await storage.getScheduleTemplate(req.params.id, user.companyId);
       if (!existingTemplate) {
         return res.status(404).json({ error: "Schedule template not found" });
-      }
-
-      // Verify template belongs to user's company
-      if (existingTemplate.companyId !== user.companyId) {
-        return res.status(403).json({ error: "Access denied - you can only modify templates from your company" });
       }
 
       // Prevent modification of public templates (they should be read-only)
@@ -8596,9 +8594,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Prevent client from changing immutable fields
-      const { companyId, createdBy, createdByName, ...safeUpdates } = validationResult.data;
+      const { companyId, createdBy, createdByName, isPublic, ...safeUpdates } = validationResult.data;
       
-      const template = await storage.updateScheduleTemplate(req.params.id, safeUpdates);
+      // Storage layer enforces companyId check in WHERE clause
+      const template = await storage.updateScheduleTemplate(req.params.id, safeUpdates, user.companyId);
       if (!template) {
         return res.status(404).json({ error: "Schedule template not found" });
       }
@@ -8619,15 +8618,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      // Get existing template to verify ownership
-      const existingTemplate = await storage.getScheduleTemplate(req.params.id);
+      // Get existing template to verify ownership (storage layer enforces companyId)
+      const existingTemplate = await storage.getScheduleTemplate(req.params.id, user.companyId);
       if (!existingTemplate) {
         return res.status(404).json({ error: "Schedule template not found" });
-      }
-
-      // Verify template belongs to user's company
-      if (existingTemplate.companyId !== user.companyId) {
-        return res.status(403).json({ error: "Access denied - you can only delete templates from your company" });
       }
 
       // Prevent deletion of public templates (they should be permanent)
@@ -8635,7 +8629,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
       }
 
-      const success = await storage.deleteScheduleTemplate(req.params.id);
+      // Storage layer enforces companyId check in WHERE clause
+      const success = await storage.deleteScheduleTemplate(req.params.id, user.companyId);
       if (!success) {
         return res.status(404).json({ error: "Schedule template not found" });
       }
@@ -8662,15 +8657,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      // Get the template
-      const template = await storage.getScheduleTemplate(req.params.id);
+      // Get the template (storage layer enforces companyId + public access)
+      const template = await storage.getScheduleTemplate(req.params.id, user.companyId);
       if (!template) {
-        return res.status(404).json({ error: "Schedule template not found" });
-      }
-
-      // Verify template access: must be public OR from same company
-      if (!template.isPublic && template.companyId !== user.companyId) {
-        return res.status(403).json({ error: "Access denied to this template" });
+        return res.status(404).json({ error: "Schedule template not found or access denied" });
       }
 
       // Get the schedule to verify it exists and belongs to user's company
