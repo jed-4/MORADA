@@ -78,6 +78,13 @@ export default function Schedule() {
   const [showFilters, setShowFilters] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const [notesExpanded, setNotesExpanded] = useState(true);
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [showLoadTemplateDialog, setShowLoadTemplateDialog] = useState(false);
+  const [templateFormData, setTemplateFormData] = useState({
+    name: "",
+    description: "",
+    category: "",
+  });
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -262,6 +269,76 @@ export default function Schedule() {
     onError: (error: Error) => {
       toast({
         title: "Failed to update item",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Fetch schedule templates
+  const { data: scheduleTemplates = [] } = useQuery({
+    queryKey: ["/api/schedule-templates"],
+  });
+
+  // Save current schedule as template
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; category: string }) => {
+      if (!schedule) throw new Error("No schedule found");
+      if (scheduleItems.length === 0) throw new Error("No schedule items to save");
+
+      // Convert schedule items to template format (without IDs, scheduleId, etc.)
+      const templateData = scheduleItems.map(item => ({
+        name: item.name,
+        description: item.description,
+        notes: item.notes,
+        type: item.type,
+        priority: item.priority,
+        duration: item.duration || 1,
+        sortOrder: item.sortOrder || 0,
+      }));
+
+      return await apiRequest("/api/schedule-templates", "POST", {
+        ...data,
+        templateData,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-templates"] });
+      setShowSaveTemplateDialog(false);
+      setTemplateFormData({ name: "", description: "", category: "" });
+      toast({
+        title: "Template saved",
+        description: "Your schedule has been saved as a template.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to save template",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Load template into current schedule
+  const loadTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      if (!schedule) throw new Error("No schedule found");
+      return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", {
+        scheduleId: schedule.id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      setShowLoadTemplateDialog(false);
+      toast({
+        title: "Template loaded",
+        description: "Schedule items have been added from the template.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to load template",
         description: error.message,
         variant: "destructive",
       });
@@ -586,11 +663,18 @@ export default function Schedule() {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem data-testid="menu-item-templates">
+                <DropdownMenuItem 
+                  onClick={() => setShowLoadTemplateDialog(true)}
+                  data-testid="menu-item-templates"
+                >
                   <Upload className="w-4 h-4 mr-2" />
                   Load from Template
                 </DropdownMenuItem>
-                <DropdownMenuItem data-testid="menu-item-save-template">
+                <DropdownMenuItem 
+                  onClick={() => setShowSaveTemplateDialog(true)}
+                  disabled={scheduleItems.length === 0}
+                  data-testid="menu-item-save-template"
+                >
                   <Download className="w-4 h-4 mr-2" />
                   Save as Template
                 </DropdownMenuItem>
@@ -1182,6 +1266,153 @@ export default function Schedule() {
               data-testid="button-save-item"
             >
               {(createItemMutation.isPending || updateItemMutation.isPending) ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Template Dialog */}
+      <Dialog open={showSaveTemplateDialog} onOpenChange={setShowSaveTemplateDialog}>
+        <DialogContent data-testid="dialog-save-template">
+          <DialogHeader>
+            <DialogTitle>Save Schedule as Template</DialogTitle>
+            <DialogDescription>
+              Save your current schedule ({scheduleItems.length} items) as a reusable template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="template-name">Template Name *</Label>
+              <Input
+                id="template-name"
+                value={templateFormData.name}
+                onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
+                placeholder="e.g., Standard Residential Build"
+                data-testid="input-template-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="template-category">Category</Label>
+              <Select
+                value={templateFormData.category}
+                onValueChange={(value) => setTemplateFormData({ ...templateFormData, category: value })}
+              >
+                <SelectTrigger id="template-category" data-testid="select-template-category">
+                  <SelectValue placeholder="Select a category (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="residential">Residential</SelectItem>
+                  <SelectItem value="commercial">Commercial</SelectItem>
+                  <SelectItem value="renovation">Renovation</SelectItem>
+                  <SelectItem value="extension">Extension</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="template-description">Description</Label>
+              <Textarea
+                id="template-description"
+                value={templateFormData.description}
+                onChange={(e) => setTemplateFormData({ ...templateFormData, description: e.target.value })}
+                placeholder="Describe when to use this template..."
+                rows={3}
+                data-testid="textarea-template-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSaveTemplateDialog(false);
+                setTemplateFormData({ name: "", description: "", category: "" });
+              }}
+              data-testid="button-cancel-save-template"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!templateFormData.name) {
+                  toast({
+                    title: "Validation Error",
+                    description: "Please enter a template name",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                saveTemplateMutation.mutate(templateFormData);
+              }}
+              disabled={saveTemplateMutation.isPending}
+              data-testid="button-save-template"
+            >
+              {saveTemplateMutation.isPending ? "Saving..." : "Save Template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Load Template Dialog */}
+      <Dialog open={showLoadTemplateDialog} onOpenChange={setShowLoadTemplateDialog}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-load-template">
+          <DialogHeader>
+            <DialogTitle>Load Schedule Template</DialogTitle>
+            <DialogDescription>
+              Choose a template to add schedule items to your current schedule.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {scheduleTemplates.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No templates available.</p>
+                <p className="text-sm mt-2">Save your first template using "Save as Template".</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {scheduleTemplates.map((template: any) => (
+                  <Card
+                    key={template.id}
+                    className="p-4 hover-elevate cursor-pointer"
+                    onClick={() => loadTemplateMutation.mutate(template.id)}
+                    data-testid={`template-card-${template.id}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium">{template.name}</h4>
+                          {template.category && (
+                            <Badge variant="outline" className="capitalize">
+                              {template.category}
+                            </Badge>
+                          )}
+                        </div>
+                        {template.description && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {template.description}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                          <span>{template.templateData?.length || 0} items</span>
+                          {template.createdByName && (
+                            <span>Created by {template.createdByName}</span>
+                          )}
+                        </div>
+                      </div>
+                      <Upload className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowLoadTemplateDialog(false)}
+              data-testid="button-cancel-load-template"
+            >
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

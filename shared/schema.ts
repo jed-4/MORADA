@@ -2258,6 +2258,7 @@ export type ActivityNote = typeof activityNotes.$inferSelect;
 // Schedule Templates (reusable schedule templates)
 export const scheduleTemplates = pgTable("schedule_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }), // Multi-tenant isolation
   name: text("name").notNull(),
   description: text("description"),
   category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
@@ -2272,6 +2273,7 @@ export const scheduleTemplates = pgTable("schedule_templates", {
 
 export const insertScheduleTemplateSchema = createInsertSchema(scheduleTemplates).omit({
   id: true,
+  companyId: true, // Set server-side only
   createdAt: true,
   updatedAt: true,
 }).extend({

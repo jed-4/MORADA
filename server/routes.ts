@@ -8490,11 +8490,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Schedule Templates routes
-  app.get("/api/schedule-templates", async (req, res) => {
+  app.get("/api/schedule-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const user = req.user as any;
+      
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
       const category = req.query.category as string | undefined;
-      const templates = await storage.getScheduleTemplates(category);
-      res.json(templates);
+      // Get templates: own company's templates + public templates
+      const allTemplates = await storage.getScheduleTemplates(category);
+      const accessibleTemplates = allTemplates.filter(template => 
+        template.companyId === user.companyId || template.isPublic
+      );
+      
+      res.json(accessibleTemplates);
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch schedule templates",
@@ -8518,8 +8529,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/schedule-templates", async (req, res) => {
+  app.post("/api/schedule-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const user = req.user as any;
+      
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
       const validationResult = insertScheduleTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -8528,7 +8545,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const template = await storage.createScheduleTemplate(validationResult.data);
+      // Add company and creator information (server-side only)
+      const templateData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+        createdBy: user.id,
+        createdByName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+      };
+      
+      const template = await storage.createScheduleTemplate(templateData);
       res.status(201).json(template);
     } catch (error: any) {
       res.status(500).json({ 
@@ -8538,8 +8563,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/schedule-templates/:id", async (req, res) => {
+  app.patch("/api/schedule-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const user = req.user as any;
+      
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      // Get existing template to verify ownership
+      const existingTemplate = await storage.getScheduleTemplate(req.params.id);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+
+      // Verify template belongs to user's company
+      if (existingTemplate.companyId !== user.companyId) {
+        return res.status(403).json({ error: "Access denied - you can only modify templates from your company" });
+      }
+
+      // Prevent modification of public templates (they should be read-only)
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
+      }
+
       const validationResult = updateScheduleTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -8548,7 +8595,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const template = await storage.updateScheduleTemplate(req.params.id, validationResult.data);
+      // Prevent client from changing immutable fields
+      const { companyId, createdBy, createdByName, ...safeUpdates } = validationResult.data;
+      
+      const template = await storage.updateScheduleTemplate(req.params.id, safeUpdates);
       if (!template) {
         return res.status(404).json({ error: "Schedule template not found" });
       }
@@ -8561,8 +8611,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/schedule-templates/:id", async (req, res) => {
+  app.delete("/api/schedule-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const user = req.user as any;
+      
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      // Get existing template to verify ownership
+      const existingTemplate = await storage.getScheduleTemplate(req.params.id);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+
+      // Verify template belongs to user's company
+      if (existingTemplate.companyId !== user.companyId) {
+        return res.status(403).json({ error: "Access denied - you can only delete templates from your company" });
+      }
+
+      // Prevent deletion of public templates (they should be permanent)
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
+      }
+
       const success = await storage.deleteScheduleTemplate(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Schedule template not found" });
@@ -8571,6 +8643,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to delete schedule template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Apply template to a schedule
+  app.post("/api/schedule-templates/:id/apply", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { scheduleId } = req.body;
+      const user = req.user as any;
+      
+      if (!scheduleId) {
+        return res.status(400).json({ error: "scheduleId is required" });
+      }
+
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      // Get the template
+      const template = await storage.getScheduleTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Schedule template not found" });
+      }
+
+      // Verify template access: must be public OR from same company
+      if (!template.isPublic && template.companyId !== user.companyId) {
+        return res.status(403).json({ error: "Access denied to this template" });
+      }
+
+      // Get the schedule to verify it exists and belongs to user's company
+      const schedule = await storage.getSchedule(scheduleId);
+      if (!schedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+
+      // Verify schedule belongs to a project in the user's company
+      const project = await storage.getProject(schedule.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.companyId !== user.companyId) {
+        return res.status(403).json({ error: "Access denied to this schedule" });
+      }
+
+      // Verify user is a member of the project
+      const isMember = await storage.isProjectMember(user.id, schedule.projectId);
+      if (!isMember) {
+        return res.status(403).json({ error: "You are not a member of this project" });
+      }
+
+      // Create schedule items from template data
+      const templateItems = template.templateData as any[];
+      const createdItems = [];
+
+      for (const templateItem of templateItems) {
+        const newItem = await storage.createScheduleItem({
+          scheduleId: scheduleId,
+          name: templateItem.name,
+          description: templateItem.description || null,
+          notes: templateItem.notes || null,
+          type: templateItem.type || "task",
+          status: "not_started", // Always start as not_started
+          priority: templateItem.priority || "medium",
+          startDate: new Date(), // Default to today, user can adjust
+          endDate: new Date(Date.now() + (templateItem.duration || 1) * 24 * 60 * 60 * 1000), // Calculate from duration
+          duration: templateItem.duration || 1,
+          progressPercent: 0,
+          sortOrder: templateItem.sortOrder || 0,
+        });
+        createdItems.push(newItem);
+      }
+
+      res.status(201).json({ 
+        message: "Template applied successfully",
+        itemsCreated: createdItems.length,
+        items: createdItems 
+      });
+    } catch (error: any) {
+      console.error("Error applying schedule template:", error);
+      res.status(500).json({ 
+        error: "Failed to apply schedule template",
         details: error.message 
       });
     }

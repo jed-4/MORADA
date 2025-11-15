@@ -3,6 +3,14 @@
 ## Overview
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. It aims to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to simplify complex construction project management, improving efficiency and profitability for builders.
 
+## Recent Changes (November 15, 2025)
+- **Schedule Templates**: Implemented save/load functionality with frontend dialogs and backend API
+  - Added `companyId` field to `scheduleTemplates` table for multi-tenant isolation
+  - Created POST `/api/schedule-templates/:id/apply` endpoint to apply templates to schedules
+  - Built Save Template and Load Template dialogs in Schedule.tsx
+  - Route-level authorization checks enforce company ownership
+  - **Future Work**: Storage layer needs hardening to enforce companyId filtering at the database query level (currently filtered at route level)
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
