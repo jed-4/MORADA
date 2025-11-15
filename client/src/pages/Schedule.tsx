@@ -614,7 +614,7 @@ export default function Schedule() {
         {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
         
         {/* Row 1 - Project Controls (36px) */}
-        <div className="h-9 bg-white flex items-center justify-between px-2 gap-4">
+        <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
           {/* Left: Project Name + Online/Offline Toggle */}
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold">{currentProject?.name ? `${currentProject.name} Schedule` : 'Loading...'}</h2>
@@ -670,7 +670,7 @@ export default function Schedule() {
         </div>
 
         {/* Row 2 - Views & Timeline Scale (36px) */}
-        <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border">
+        <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
           {/* Left: View Buttons */}
           <div className="flex items-center gap-0.5">
             <button
@@ -769,7 +769,7 @@ export default function Schedule() {
         </div>
 
         {/* Row 3 - Search, Filters & Columns (36px) */}
-        <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border">
+        <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
           {/* Left: Search + Filter Dropdowns */}
           <div className="flex items-center gap-1.5 flex-1">
             <div className="relative w-48">
