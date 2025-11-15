@@ -1074,7 +1074,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
-                    <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 flex-shrink-0">
+                    <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                       {childItems.length > 0 && (
                         <button
                           onClick={() => toggleCollapse(parentItem.id)}
@@ -1094,7 +1094,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                     {/* Status column */}
                     {visibleColumns.status && (
-                      <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                         {parentItem.status && (() => {
                           const statusInfo = getStatusInfo(parentItem.status);
                           return (
@@ -1114,7 +1114,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                     {/* Notes column */}
                     {visibleColumns.notes && (
-                      <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                         <ActivityNotesPopover 
                           scheduleItemId={parentItem.id} 
                           externalNoteCount={noteCounts[parentItem.id] || 0}
@@ -1124,14 +1124,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                     {/* Completion column */}
                     {visibleColumns.completion && (
-                      <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                         <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
                       </div>
                     )}
 
                     {/* Assignee column */}
                     {visibleColumns.assignee && (
-                      <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0">
+                      <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                         {parentItem.assignedToName && (
                           <Avatar className="w-5 h-5">
                             <AvatarFallback className="text-[10px]">
@@ -1143,7 +1143,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     )}
 
                     {/* Menu column */}
-                    <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0">
+                    <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -1221,13 +1221,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
-                        <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 pl-8 flex-shrink-0">
+                        <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 pl-8 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                           <span className="text-sm text-muted-foreground truncate">{childItem.name}</span>
                         </div>
 
                         {/* Status column */}
                         {visibleColumns.status && (
-                          <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                             {childItem.status && (() => {
                               const statusInfo = getStatusInfo(childItem.status);
                               return (
@@ -1247,7 +1247,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                         {/* Notes column */}
                         {visibleColumns.notes && (
-                          <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                             <ActivityNotesPopover 
                               scheduleItemId={childItem.id} 
                               externalNoteCount={noteCounts[childItem.id] || 0}
@@ -1257,14 +1257,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                         {/* Completion column */}
                         {visibleColumns.completion && (
-                          <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                             <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
                           </div>
                         )}
 
                         {/* Assignee column */}
                         {visibleColumns.assignee && (
-                          <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0">
+                          <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                             {childItem.assignedToName && (
                               <Avatar className="w-5 h-5">
                                 <AvatarFallback className="text-[10px]">
@@ -1276,7 +1276,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         )}
 
                         {/* Menu column */}
-                        <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0">
+                        <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
