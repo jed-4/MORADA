@@ -667,9 +667,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
-          <Button
-            size="sm"
-            className="h-6 px-1.5 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border border-[#bba7db]/20"
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
             onClick={() => {
               setEditingItemContext(null);
               setShowItemDialog(true);
@@ -677,25 +676,21 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             disabled={schedule?.status === "locked"}
             data-testid="button-add-item"
           >
-            <Plus className="w-3 h-3 mr-0.5" />
+            <Plus className="w-3 h-3 inline mr-0.5" />
             Add Item
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 hover:bg-muted"
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             data-testid="button-export-pdf"
           >
             <Download className="w-3 h-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 hover:bg-muted"
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             data-testid="button-settings"
           >
             <Settings className="w-3 h-3" />
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -703,67 +698,55 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       <div className="h-9 bg-white border-b flex items-center justify-between px-2">
         {/* Left: View Buttons */}
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
             onClick={() => setActiveView('gantt')}
-            className={`h-5 px-1 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-view-gantt"
           >
-            <GanttChart className="w-3 h-3 mr-0.5" />
+            <GanttChart className="w-3 h-3 inline mr-0.5" />
             Gantt
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+          </button>
+          <button
             onClick={() => setActiveView('calendar')}
-            className={`h-5 px-1 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-view-calendar"
           >
-            <Calendar className="w-3 h-3 mr-0.5" />
+            <Calendar className="w-3 h-3 inline mr-0.5" />
             Calendar
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+          </button>
+          <button
             onClick={() => setActiveView('list')}
-            className={`h-5 px-1 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-view-list"
           >
-            <ListIcon className="w-3 h-3 mr-0.5" />
+            <ListIcon className="w-3 h-3 inline mr-0.5" />
             List
-          </Button>
+          </button>
         </div>
 
         {/* Right: Timeline Scale Buttons */}
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
             onClick={() => setZoomLevel('day')}
-            className={`h-5 px-1 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-zoom-day"
           >
             Day
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+          </button>
+          <button
             onClick={() => setZoomLevel('week')}
-            className={`h-5 px-1 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-zoom-week"
           >
             Week
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+          </button>
+          <button
             onClick={() => setZoomLevel('month')}
-            className={`h-5 px-1 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
             data-testid="button-zoom-month"
           >
             Month
-          </Button>
+          </button>
         </div>
       </div>
 
