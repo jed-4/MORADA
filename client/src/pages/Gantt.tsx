@@ -589,6 +589,32 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     };
   }, [resizingColumn]);
 
+  // Panel resize effect
+  useEffect(() => {
+    if (!resizingPanel) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingPanel) return;
+      
+      const deltaX = e.clientX - resizingPanel.startX;
+      const newWidth = Math.max(200, resizingPanel.startWidth + deltaX); // Min width 200px
+      
+      setLeftPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setResizingPanel(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingPanel]);
+
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
       const next = new Set(prev);
@@ -1002,10 +1028,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Task Names Column (Resizable) */}
-        <div style={{ width: totalPanelWidth }} className="border-r flex flex-col bg-card flex-shrink-0">
-          {/* Header row - matches timeline header height */}
-          <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
+        {/* Task Names Column (Resizable Panel) */}
+        <div 
+          style={{ width: leftPanelWidth }} 
+          className="border-r flex flex-col bg-card flex-shrink-0 overflow-x-auto relative"
+        >
+          {/* Content wrapper with actual column widths */}
+          <div style={{ width: totalPanelWidth }} className="flex flex-col">
+            {/* Header row - matches timeline header height */}
+            <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {
@@ -1358,6 +1389,21 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               );
             })}
           </div>
+          </div>
+
+          {/* Panel resize divider */}
+          <div
+            className="absolute top-0 right-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-20 bg-border/50"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setResizingPanel({
+                startX: e.clientX,
+                startWidth: leftPanelWidth,
+              });
+            }}
+            data-testid="divider-panel"
+          />
         </div>
 
         {/* Timeline Scroll Container */}
