@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon } from "lucide-react";
+import { useScheduleView } from "@/contexts/ScheduleViewContext";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
@@ -27,6 +28,23 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
@@ -43,6 +61,18 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
   const { getStatusInfo } = useScheduleItemStatusOptions();
+  const {
+    schedule,
+    activeView,
+    setActiveView,
+    filters,
+    setFilters,
+    contacts,
+    updateStatusMutation,
+    setShowItemDialog,
+    setEditingItem: setEditingItemContext,
+  } = useScheduleView();
+  
   const timelineRef = useRef<HTMLDivElement>(null);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('day');
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
@@ -69,7 +99,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
   const colorPickerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [isOnline, setIsOnline] = useState(true);
+  const [showOnlineConfirmDialog, setShowOnlineConfirmDialog] = useState(false);
 
   // Fetch project data
   const { data: project } = useQuery({
@@ -609,13 +639,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       <div className="h-10 bg-white border-b flex items-center justify-between px-2 gap-4">
         {/* Left: Project Name + Online/Offline Toggle */}
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold">{project?.name || 'Loading...'}</h2>
+          <h2 className="text-sm font-semibold">{project?.name ? `${project.name} Schedule` : 'Loading...'}</h2>
           <button
-            onClick={() => setIsOnline(!isOnline)}
+            onClick={() => {
+              if (schedule?.status === "offline") {
+                setShowOnlineConfirmDialog(true);
+              } else {
+                updateStatusMutation.mutate("offline");
+              }
+            }}
             className="flex items-center gap-1.5 hover-elevate active-elevate-2 px-2 py-1 rounded-md transition-all"
             data-testid="button-toggle-online"
           >
-            {isOnline ? (
+            {schedule?.status === "online" ? (
               <>
                 <div className="w-2 h-2 rounded-full bg-green-500" />
                 <span className="text-xs text-muted-foreground">Online</span>
@@ -632,27 +668,30 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
             size="sm"
-            className="h-8"
+            className="h-8 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border border-[#bba7db]/20"
+            onClick={() => {
+              setEditingItemContext(null);
+              setShowItemDialog(true);
+            }}
+            disabled={schedule?.status === "locked"}
             data-testid="button-add-item"
           >
             <Plus className="w-4 h-4 mr-1" />
             Add Item
           </Button>
           <Button
-            variant="outline"
-            size="sm"
-            className="h-8"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 hover:bg-muted"
             data-testid="button-export-pdf"
           >
-            <Download className="w-4 h-4 mr-1" />
-            Export PDF
+            <Download className="w-4 h-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 hover:bg-muted"
             data-testid="button-settings"
           >
             <Settings className="w-4 h-4" />
@@ -660,9 +699,44 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         </div>
       </div>
 
-      {/* Row 2 - Timeline Scale (36px) */}
-      <div className="h-9 bg-white border-b flex items-center justify-center px-2">
-        <div className="flex items-center gap-1 border rounded-md p-0.5">
+      {/* Row 2 - Views & Timeline Scale (36px) */}
+      <div className="h-9 bg-white border-b flex items-center justify-between px-2">
+        {/* Left: View Buttons */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveView('gantt')}
+            className={`h-7 px-3 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            data-testid="button-view-gantt"
+          >
+            <GanttChart className="w-3.5 h-3.5 mr-1.5" />
+            Gantt
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveView('calendar')}
+            className={`h-7 px-3 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            data-testid="button-view-calendar"
+          >
+            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+            Calendar
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveView('list')}
+            className={`h-7 px-3 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            data-testid="button-view-list"
+          >
+            <ListIcon className="w-3.5 h-3.5 mr-1.5" />
+            List
+          </Button>
+        </div>
+
+        {/* Right: Timeline Scale Buttons */}
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
@@ -693,11 +767,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         </div>
       </div>
 
-      {/* Row 3 - Filters & Columns (32px) */}
-      <div className="h-8 bg-white border-b flex items-center justify-between px-2 gap-4">
-        {/* Left: Search + Filters */}
+      {/* Row 3 - Search, Filters & Columns (32px) */}
+      <div className="h-8 bg-white border-b flex items-center justify-between px-2 gap-2">
+        {/* Left: Search + Filter Dropdowns */}
         <div className="flex items-center gap-2 flex-1">
-          <div className="relative max-w-xs flex-1">
+          <div className="relative w-48">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               placeholder="Search..."
@@ -707,15 +781,65 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               data-testid="input-search-items"
             />
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            data-testid="button-filter"
-          >
-            <Filter className="w-3.5 h-3.5 mr-1.5" />
-            Filters
-          </Button>
+
+          {/* Assignee Filter */}
+          <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
+            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-assignee">
+              <SelectValue placeholder="Assignee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Assignees</SelectItem>
+              {contacts.map((contact) => (
+                <SelectItem key={contact.id} value={contact.id}>
+                  {contact.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Status Filter */}
+          <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-status">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="not_started">Not Started</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="on_hold">On Hold</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Type Filter */}
+          <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-type">
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="task">Task</SelectItem>
+              <SelectItem value="milestone">Milestone</SelectItem>
+              <SelectItem value="inspection">Inspection</SelectItem>
+              <SelectItem value="delivery">Delivery</SelectItem>
+              <SelectItem value="meeting">Meeting</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Date Range Filter */}
+          <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
+            <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-filter-date-range">
+              <SelectValue placeholder="Date" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Dates</SelectItem>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="this_week">This Week</SelectItem>
+              <SelectItem value="this_month">This Month</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Right: Columns Dropdown */}
@@ -769,6 +893,29 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           </PopoverContent>
         </Popover>
       </div>
+
+      {/* Online Confirmation Dialog */}
+      <AlertDialog open={showOnlineConfirmDialog} onOpenChange={setShowOnlineConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Set Schedule Online?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will make the schedule visible to all team members. Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                updateStatusMutation.mutate("online");
+                setShowOnlineConfirmDialog(false);
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
