@@ -60,6 +60,50 @@ interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
 }
 
+function SortableColumnItem({ 
+  id, 
+  label, 
+  checked, 
+  onChange 
+}: { 
+  id: string; 
+  label: string; 
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id });
+  
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 h-8 px-2 rounded-md hover:bg-accent"
+    >
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+        <GripVertical className="w-4 h-4 text-muted-foreground" />
+      </div>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-4 h-4"
+      />
+      <span className="text-sm flex-1">{label}</span>
+    </div>
+  );
+}
+
 export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
@@ -988,40 +1032,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               <SortableContext items={columnOrder} strategy={verticalListSortingStrategy}>
                 <div className="space-y-1">
                   {columnOrder.map((columnId) => {
-                    const SortableItem = ({ id, label }: { id: string; label: string }) => {
-                      const {
-                        attributes,
-                        listeners,
-                        setNodeRef,
-                        transform,
-                        transition,
-                      } = useSortable({ id });
-                      
-                      const style = {
-                        transform: CSS.Transform.toString(transform),
-                        transition,
-                      };
-                      
-                      return (
-                        <div
-                          ref={setNodeRef}
-                          style={style}
-                          className="flex items-center gap-2 h-8 px-2 rounded-md hover:bg-accent"
-                        >
-                          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
-                            <GripVertical className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={visibleColumns[id as keyof typeof visibleColumns]}
-                            onChange={(e) => setVisibleColumns({ ...visibleColumns, [id]: e.target.checked })}
-                            className="w-4 h-4"
-                          />
-                          <span className="text-sm flex-1">{label}</span>
-                        </div>
-                      );
-                    };
-                    
                     const labels: Record<string, string> = {
                       status: 'Status',
                       notes: 'Notes',
@@ -1029,7 +1039,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       assignee: 'Assignee'
                     };
                     
-                    return <SortableItem key={columnId} id={columnId} label={labels[columnId]} />;
+                    return (
+                      <SortableColumnItem 
+                        key={columnId} 
+                        id={columnId} 
+                        label={labels[columnId]}
+                        checked={visibleColumns[columnId as keyof typeof visibleColumns]}
+                        onChange={(checked) => setVisibleColumns({ ...visibleColumns, [columnId]: checked })}
+                      />
+                    );
                   })}
                 </div>
               </SortableContext>
