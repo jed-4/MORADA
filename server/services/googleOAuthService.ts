@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { encryptToken, decryptToken } from '../utils/encryption';
 import type { IStorage } from '../storage';
 import type { User } from '@shared/schema';
@@ -63,8 +63,7 @@ export class GoogleOAuthService {
   }
   
   private generateCodeChallenge(verifier: string): string {
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(verifier).digest('base64url');
+    return createHash('sha256').update(verifier).digest('base64url');
   }
   
   parseState(state: string): { userId: string; nonce: string; timestamp: number } {
