@@ -3385,55 +3385,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
-  // GOOGLE CALENDAR CONNECTOR ROUTES (Replit Integration)
+  // GOOGLE CALENDAR PER-USER OAUTH ROUTES
   // ============================================================
   
   // Get Google Calendar connection status
-  app.get('/api/google-calendar/status', async (req: any, res) => {
+  app.get('/api/google-calendar/status', requireAuth, async (req: any, res) => {
     try {
-      const { getGoogleCalendarConnectionInfo } = await import('./utils/googleCalendar');
-      const info = await getGoogleCalendarConnectionInfo();
-      res.json(info);
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+      const status = await oauthService.getConnectionStatus(req.user.id);
+      res.json(status);
     } catch (error) {
       console.error("Error getting Google Calendar status:", error);
-      res.json({ connected: false, email: null, calendars: [] });
+      res.json({ connected: false, email: null });
     }
   });
 
-  // Connect Google Calendar (triggers Replit connector flow)
-  app.post('/api/google-calendar/connect', async (req: any, res) => {
+  // Get OAuth URL to initiate connection
+  app.get('/api/google-calendar/auth-url', requireAuth, async (req: any, res) => {
     try {
-      // The Replit connector handles the OAuth flow automatically
-      // This endpoint just triggers a check to see if the user has connected
-      const { isGoogleCalendarConnected } = await import('./utils/googleCalendar');
-      const connected = await isGoogleCalendarConnected();
-      
-      if (connected) {
-        res.json({ success: true, connected: true });
-      } else {
-        res.status(400).json({ 
-          success: false, 
-          message: "Please connect Google Calendar through the Replit integrations panel first." 
-        });
-      }
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+      const authUrl = oauthService.generateAuthUrl(req.user.id);
+      res.json({ authUrl });
     } catch (error: any) {
-      console.error("Error connecting Google Calendar:", error);
+      console.error("Error generating Google OAuth URL:", error);
       res.status(500).json({ 
-        success: false, 
-        message: error.message || "Failed to connect Google Calendar" 
+        message: error.message || "Failed to generate OAuth URL" 
       });
+    }
+  });
+
+  // OAuth callback handler
+  app.get('/api/google-calendar/callback', async (req: any, res) => {
+    try {
+      const { code, state, error } = req.query;
+      
+      if (error) {
+        return res.redirect(`/?google_calendar_error=${encodeURIComponent(error)}`);
+      }
+      
+      if (!code || !state) {
+        return res.redirect('/?google_calendar_error=missing_params');
+      }
+      
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+      
+      await oauthService.handleCallback(code, state);
+      
+      res.redirect('/profile?google_calendar_success=true');
+    } catch (error: any) {
+      console.error("Error handling Google OAuth callback:", error);
+      res.redirect(`/profile?google_calendar_error=${encodeURIComponent(error.message || 'callback_failed')}`);
     }
   });
 
   // Disconnect Google Calendar
-  app.post('/api/google-calendar/disconnect', async (req: any, res) => {
+  app.post('/api/google-calendar/disconnect', requireAuth, async (req: any, res) => {
     try {
-      // For Replit connector, disconnection happens through the Replit UI
-      // This endpoint just confirms the disconnection
-      res.json({ 
-        success: true, 
-        message: "Please disconnect Google Calendar through the Replit integrations panel." 
-      });
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
+      await oauthService.disconnectCalendar(req.user.id);
+      res.json({ success: true });
     } catch (error) {
       console.error("Error disconnecting Google Calendar:", error);
       res.status(500).json({ message: "Failed to disconnect calendar" });
@@ -3441,16 +3455,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get Google Calendar events
-  app.get('/api/google-calendar/events', async (req: any, res) => {
+  app.get('/api/google-calendar/events', requireAuth, async (req: any, res) => {
     try {
-      const { getUncachableGoogleCalendarClient, isGoogleCalendarConnected } = await import('./utils/googleCalendar');
+      const { GoogleOAuthService } = await import('./services/googleOAuthService');
+      const oauthService = new GoogleOAuthService(storage);
       
-      const connected = await isGoogleCalendarConnected();
-      if (!connected) {
+      const status = await oauthService.getConnectionStatus(req.user.id);
+      if (!status.connected) {
         return res.json([]);
       }
 
-      const calendar = await getUncachableGoogleCalendarClient();
+      const calendar = await oauthService.getCalendarClient(req.user.id);
       
       // Get events for the next 3 months and past 1 month
       const timeMin = new Date();
@@ -3514,7 +3529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(events);
     } catch (error) {
       console.error("Error fetching Google Calendar events:", error);
-      res.status(500).json({ message: "Failed to fetch Google Calendar events" });
+      res.json([]);
     }
   });
 

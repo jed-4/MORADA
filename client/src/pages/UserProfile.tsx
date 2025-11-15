@@ -33,6 +33,31 @@ export default function UserProfile() {
     }
   }, [user]);
 
+  // Handle OAuth callback success/error
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('google_calendar_success');
+    const error = params.get('google_calendar_error');
+    
+    if (success) {
+      toast({
+        title: "Calendar connected",
+        description: "Your Google Calendar has been connected successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/google-calendar/status"] });
+      window.history.replaceState({}, '', '/profile');
+    }
+    
+    if (error) {
+      toast({
+        title: "Connection failed",
+        description: decodeURIComponent(error),
+        variant: "destructive",
+      });
+      window.history.replaceState({}, '', '/profile');
+    }
+  }, [toast, queryClient]);
+
   // Fetch Google Calendar connection status
   const { data: calendarStatus } = useQuery({
     queryKey: ["/api/google-calendar/status"],
@@ -53,27 +78,29 @@ export default function UserProfile() {
     },
   });
 
-  // Connect Google Calendar mutation
-  const connectGoogleCalendarMutation = useMutation({
-    mutationFn: async () => {
-      const result = await apiRequest("/api/google-calendar/connect", "POST");
-      return result;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/google-calendar/status"] });
-      toast({
-        title: "Calendar connected",
-        description: "Your Google Calendar has been connected successfully.",
-      });
-    },
-    onError: (error: any) => {
+  // Connect Google Calendar - fetch OAuth URL and redirect
+  const connectGoogleCalendar = async () => {
+    try {
+      const response = await fetch("/api/google-calendar/auth-url");
+      const data = await response.json();
+      
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        toast({
+          title: "Connection failed",
+          description: "Failed to generate OAuth URL. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
       toast({
         title: "Connection failed",
         description: error.message || "Failed to connect Google Calendar. Please try again.",
         variant: "destructive",
       });
-    },
-  });
+    }
+  };
 
   // Disconnect Google Calendar mutation
   const disconnectGoogleCalendarMutation = useMutation({
@@ -111,7 +138,7 @@ export default function UserProfile() {
   };
 
   const handleConnectGoogleCalendar = () => {
-    connectGoogleCalendarMutation.mutate();
+    connectGoogleCalendar();
   };
 
   const handleDisconnectGoogleCalendar = () => {
