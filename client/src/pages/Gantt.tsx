@@ -648,7 +648,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 updateStatusMutation.mutate("offline");
               }
             }}
-            className="flex items-center gap-1.5 hover-elevate active-elevate-2 px-2 py-1 rounded-md transition-all"
+            className="flex items-center gap-1 hover-elevate active-elevate-2 px-1.5 py-0.5 rounded-md transition-all"
             data-testid="button-toggle-online"
           >
             {schedule?.status === "online" ? (
@@ -666,10 +666,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         </div>
 
         {/* Right: Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Button
             size="sm"
-            className="h-8 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border border-[#bba7db]/20"
+            className="h-7 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border border-[#bba7db]/20"
             onClick={() => {
               setEditingItemContext(null);
               setShowItemDialog(true);
@@ -677,24 +677,24 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             disabled={schedule?.status === "locked"}
             data-testid="button-add-item"
           >
-            <Plus className="w-4 h-4 mr-1" />
+            <Plus className="w-3 h-3 mr-1" />
             Add Item
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 hover:bg-muted"
+            className="h-7 w-7 hover:bg-muted"
             data-testid="button-export-pdf"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 hover:bg-muted"
+            className="h-7 w-7 hover:bg-muted"
             data-testid="button-settings"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>
@@ -707,30 +707,30 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('gantt')}
-            className={`h-7 px-2 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 px-1.5 text-xs ${activeView === 'gantt' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-gantt"
           >
-            <GanttChart className="w-3 h-3 mr-1" />
+            <GanttChart className="w-3 h-3 mr-0.5" />
             Gantt
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('calendar')}
-            className={`h-7 px-2 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 px-1.5 text-xs ${activeView === 'calendar' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-calendar"
           >
-            <Calendar className="w-3 h-3 mr-1" />
+            <Calendar className="w-3 h-3 mr-0.5" />
             Calendar
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setActiveView('list')}
-            className={`h-7 px-2 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 px-1.5 text-xs ${activeView === 'list' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-view-list"
           >
-            <ListIcon className="w-3 h-3 mr-1" />
+            <ListIcon className="w-3 h-3 mr-0.5" />
             List
           </Button>
         </div>
@@ -741,7 +741,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('day')}
-            className={`h-7 px-2 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 px-1.5 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-day"
           >
             Day
@@ -750,7 +750,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('week')}
-            className={`h-7 px-2 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 px-1.5 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-week"
           >
             Week
@@ -759,7 +759,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             variant="ghost"
             size="sm"
             onClick={() => setZoomLevel('month')}
-            className={`h-7 px-2 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            className={`h-6 px-1.5 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
             data-testid="button-zoom-month"
           >
             Month
@@ -768,23 +768,23 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       </div>
 
       {/* Row 3 - Search, Filters & Columns (32px) */}
-      <div className="h-8 bg-white border-b flex items-center justify-between px-2 gap-2">
+      <div className="h-8 bg-white border-b flex items-center justify-between px-2 gap-1.5">
         {/* Left: Search + Filter Dropdowns */}
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-1.5 flex-1">
           <div className="relative w-48">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-7 text-xs border"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
               data-testid="input-search-items"
             />
           </div>
 
           {/* Assignee Filter */}
           <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-assignee">
+            <SelectTrigger className="h-6 w-20 px-1.5 text-xs border" data-testid="select-filter-assignee">
               <span>Assignee</span>
             </SelectTrigger>
             <SelectContent>
@@ -799,7 +799,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
           {/* Status Filter */}
           <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-status">
+            <SelectTrigger className="h-6 w-20 px-1.5 text-xs border" data-testid="select-filter-status">
               <span>Status</span>
             </SelectTrigger>
             <SelectContent>
@@ -814,7 +814,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
           {/* Type Filter */}
           <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-type">
+            <SelectTrigger className="h-6 w-20 px-1.5 text-xs border" data-testid="select-filter-type">
               <span>Type</span>
             </SelectTrigger>
             <SelectContent>
@@ -829,7 +829,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
           {/* Date Range Filter */}
           <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-            <SelectTrigger className="h-7 w-24 text-xs border" data-testid="select-filter-date-range">
+            <SelectTrigger className="h-6 w-20 px-1.5 text-xs border" data-testid="select-filter-date-range">
               <span>Date</span>
             </SelectTrigger>
             <SelectContent>
@@ -848,10 +848,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             <Button 
               variant="outline" 
               size="sm" 
-              className="h-7 text-xs border"
+              className="h-6 px-1.5 text-xs border"
               data-testid="button-column-config"
             >
-              <Columns className="w-3.5 h-3.5 mr-1.5" />
+              <Columns className="w-3 h-3 mr-1" />
               Columns
             </Button>
           </PopoverTrigger>
