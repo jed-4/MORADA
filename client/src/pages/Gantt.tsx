@@ -896,6 +896,20 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           </Select>
         </div>
 
+        {/* Today Button */}
+        <button
+          onClick={() => {
+            if (timelineRef.current) {
+              const todayPos = getPosition(new Date());
+              timelineRef.current.scrollLeft = todayPos - timelineRef.current.clientWidth / 2;
+            }
+          }}
+          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+          data-testid="button-scroll-to-today"
+        >
+          Today
+        </button>
+
         {/* Right: Columns Dropdown */}
         <Popover>
           <PopoverTrigger asChild>
@@ -952,20 +966,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             </div>
           </PopoverContent>
         </Popover>
-        
-        {/* Today Button */}
-        <button
-          onClick={() => {
-            if (timelineRef.current) {
-              const todayPos = getPosition(new Date());
-              timelineRef.current.scrollLeft = todayPos - timelineRef.current.clientWidth / 2;
-            }
-          }}
-          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-          data-testid="button-scroll-to-today"
-        >
-          Today
-        </button>
       </div>
 
       {/* Online Confirmation Dialog */}
@@ -997,7 +997,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         <div style={{ width: totalPanelWidth }} className="border-r flex flex-col bg-card flex-shrink-0">
           {/* Header row - matches timeline header height */}
           <div className="h-12 border-b flex items-end pb-1 px-2 text-xs font-medium text-muted-foreground relative">
-            <div style={{ width: columnWidths.taskName }} className="pl-2 flex-shrink-0">Task Name</div>
+            <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {
               let cumulativeOffset = columnWidths.taskName + 8; // Start after task name + padding
@@ -1050,7 +1050,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         onMouseDown={(e) => handleColumnDividerMouseDown(e, 'assignee')}
                         data-testid="divider-assignee"
                       />
-                      <div style={{ width: columnWidths.assignee }} className="text-center flex-shrink-0">User</div>
+                      <div style={{ width: columnWidths.assignee }} className="text-center flex-shrink-0">Assignee</div>
                     </>
                   )}
                   
