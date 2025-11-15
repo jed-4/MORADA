@@ -1,0 +1,133 @@
+2025-11-15 13:30:00.26
+99a2b682
+User
+httpMethodsToRetry: [Array],
+
+2025-11-15 13:30:00.26
+99a2b682
+User
+password: '',
+2025-11-15 13:30:00.26
+99a2b682
+User
+totalTimeout: 9007199254740991,
+2025-11-15 13:30:00.26
+99a2b682
+User
+headers: Headers {
+2025-11-15 13:30:00.26
+99a2b682
+User
+apiVersion: '',
+2025-11-15 13:30:00.26
+99a2b682
+User
+at async GoogleOAuthService.handleCallback (file:///home/runner/workspace/dist/index.js:9075:26)
+2025-11-15 13:30:00.26
+99a2b682
+User
+origin: 'https://www.googleapis.com',
+2025-11-15 13:30:00.26
+99a2b682
+User
+method: 'GET',
+2025-11-15 13:30:00.26
+99a2b682
+User
+at Gaxios._request (/home/runner/workspace/node_modules/gaxios/build/cjs/src/gaxios.js:154:23)
+2025-11-15 13:30:00.26
+99a2b682
+User
+retry: true,
+2025-11-15 13:30:00.26
+99a2b682
+User
+authorization: '< - See `errorRedactor` option in `gaxios` for configuration>.',
+2025-11-15 13:30:00.26
+99a2b682
+User
+search: '',
+2025-11-15 13:30:00.26
+99a2b682
+User
+config: {
+2025-11-15 13:30:00.26
+99a2b682
+User
+url: URL {},
+2025-11-15 13:30:00.26
+99a2b682
+User
+protocol: 'https:',
+2025-11-15 13:30:00.26
+99a2b682
+User
+maxRetryDelay: 9007199254740991,
+2025-11-15 13:30:00.26
+99a2b682
+User
+},
+2025-11-15 13:30:00.26
+99a2b682
+User
+at async createAPIRequestAsync (/home/runner/workspace/node_modules/googleapis-common/build/src/apirequest.js:308:25)
+2025-11-15 13:30:00.26
+99a2b682
+User
+'accept-encoding': 'gzip',
+2025-11-15 13:30:00.26
+99a2b682
+User
+port: '',
+2025-11-15 13:30:00.26
+99a2b682
+User
+response: Response {
+2025-11-15 13:30:00.26
+99a2b682
+User
+pathname: '/oauth2/v2/userinfo',
+2025-11-15 13:30:00.26
+99a2b682
+User
+noResponseRetries: 2,
+2025-11-15 13:30:00.26
+99a2b682
+User
+validateStatus: [Function (anonymous)],
+2025-11-15 13:30:00.26
+99a2b682
+User
+'user-agent': 'google-api-nodejs-client/8.0.0 (gzip)',
+2025-11-15 13:30:00.26
+99a2b682
+User
+errorRedactor: [Function: defaultErrorRedactor]
+2025-11-15 13:30:00.26
+99a2b682
+User
+data: { error: [Object] },
+2025-11-15 13:30:00.26
+99a2b682
+User
+at async OAuth2Client.requestAsync (/home/runner/workspace/node_modules/google-auth-library/build/src/auth/oauth2client.js:463:20)
+2025-11-15 13:30:00.26
+99a2b682
+User
+config: {
+2025-11-15 13:30:00.26
+99a2b682
+User
+retryDelayMultiplier: 2,
+2025-11-15 13:30:00.26
+99a2b682
+User
+userAgentDirectives: [Array],
+2025-11-15 13:30:00.26
+99a2b682
+User
+timeOfFirstRequest: 1763173800263,
+2025-11-15 13:30:00.26
+99a2b682
+User
+size: 0,
