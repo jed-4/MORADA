@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2 } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff } from "lucide-react";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
@@ -69,6 +69,12 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
   const colorPickerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Fetch project data
+  const { data: project } = useQuery({
+    queryKey: [`/api/projects/${projectId}`],
+  });
 
   // Fetch schedule items for this project
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
@@ -597,110 +603,171 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Search and Filter Bar */}
-      <div className="flex items-center justify-between gap-3 px-6 py-3 border-b">
-        {/* Left: Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search schedule items..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-            data-testid="input-search-items"
-          />
+      {/* JED'S 3-ROW BUILDER STYLE HEADER */}
+      
+      {/* Row 1 - Project Controls (40px) */}
+      <div className="h-10 bg-white border-b flex items-center justify-between px-2 gap-4">
+        {/* Left: Project Name + Online/Offline Toggle */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold">{project?.name || 'Loading...'}</h2>
+          <button
+            onClick={() => setIsOnline(!isOnline)}
+            className="flex items-center gap-1.5 hover-elevate active-elevate-2 px-2 py-1 rounded-md transition-all"
+            data-testid="button-toggle-online"
+          >
+            {isOnline ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-xs text-muted-foreground">Online</span>
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="text-xs text-muted-foreground">Offline</span>
+              </>
+            )}
+          </button>
         </div>
 
-        {/* Right: Controls */}
+        {/* Right: Action Buttons */}
         <div className="flex items-center gap-2">
-          {/* Zoom Controls */}
-          <div className="flex items-center gap-1 border rounded-md p-0.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setZoomLevel('day')}
-              className={`h-7 px-2 text-xs ${zoomLevel === 'day' ? 'bg-accent' : ''}`}
-              data-testid="button-zoom-day"
-            >
-              Day
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setZoomLevel('week')}
-              className={`h-7 px-2 text-xs ${zoomLevel === 'week' ? 'bg-accent' : ''}`}
-              data-testid="button-zoom-week"
-            >
-              Week
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setZoomLevel('month')}
-              className={`h-7 px-2 text-xs ${zoomLevel === 'month' ? 'bg-accent' : ''}`}
-              data-testid="button-zoom-month"
-            >
-              Month
-            </Button>
-          </div>
-
-          {/* Filter Button */}
-          <Button variant="outline" size="sm" className="h-8" data-testid="button-filter">
-            <Filter className="w-4 h-4 mr-2" />
-            Filter
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            data-testid="button-add-item"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Item
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            data-testid="button-export-pdf"
+          >
+            <Download className="w-4 h-4 mr-1" />
+            Export PDF
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            data-testid="button-settings"
+          >
+            <Settings className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
 
-          {/* Column Config Popover */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8"
-                data-testid="button-column-config"
-              >
-                <Columns className="w-4 h-4 mr-2" />
-                Columns
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80" align="start">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium mb-3">Show in left panel</h4>
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.status}
-                        onChange={(e) => setVisibleColumns({ ...visibleColumns, status: e.target.checked })}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm">Status</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.assignee}
-                        onChange={(e) => setVisibleColumns({ ...visibleColumns, assignee: e.target.checked })}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm">Assignee</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.completion}
-                        onChange={(e) => setVisibleColumns({ ...visibleColumns, completion: e.target.checked })}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm">Completion %</span>
-                    </label>
-                  </div>
+      {/* Row 2 - Timeline Scale (36px) */}
+      <div className="h-9 bg-white border-b flex items-center justify-center px-2">
+        <div className="flex items-center gap-1 border rounded-md p-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setZoomLevel('day')}
+            className={`h-7 px-3 text-xs ${zoomLevel === 'day' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            data-testid="button-zoom-day"
+          >
+            Day
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setZoomLevel('week')}
+            className={`h-7 px-3 text-xs ${zoomLevel === 'week' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            data-testid="button-zoom-week"
+          >
+            Week
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setZoomLevel('month')}
+            className={`h-7 px-3 text-xs ${zoomLevel === 'month' ? 'bg-[#bba7db] text-white hover:bg-[#bba7db]/90' : ''}`}
+            data-testid="button-zoom-month"
+          >
+            Month
+          </Button>
+        </div>
+      </div>
+
+      {/* Row 3 - Filters & Columns (32px) */}
+      <div className="h-8 bg-white border-b flex items-center justify-between px-2 gap-4">
+        {/* Left: Search + Filters */}
+        <div className="flex items-center gap-2 flex-1">
+          <div className="relative max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-7 text-xs"
+              data-testid="input-search-items"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            data-testid="button-filter"
+          >
+            <Filter className="w-3.5 h-3.5 mr-1.5" />
+            Filters
+          </Button>
+        </div>
+
+        {/* Right: Columns Dropdown */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-7 text-xs"
+              data-testid="button-column-config"
+            >
+              <Columns className="w-3.5 h-3.5 mr-1.5" />
+              Columns
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" align="end">
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-medium mb-3">Show in left panel</h4>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.status}
+                      onChange={(e) => setVisibleColumns({ ...visibleColumns, status: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Status</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.assignee}
+                      onChange={(e) => setVisibleColumns({ ...visibleColumns, assignee: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Assignee</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.completion}
+                      onChange={(e) => setVisibleColumns({ ...visibleColumns, completion: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Completion %</span>
+                  </label>
                 </div>
               </div>
-            </PopoverContent>
-          </Popover>
-        </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Timeline Container */}
