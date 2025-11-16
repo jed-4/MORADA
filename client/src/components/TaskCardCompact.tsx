@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, Flag, Pencil, DollarSign } from "lucide-react";
+import { Calendar, Flag, Pencil, DollarSign, GripVertical } from "lucide-react";
 import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -92,15 +92,22 @@ export default function TaskCardCompact({ task, onClick, isDragging = false }: T
 
   return (
     <Card
-      className={`h-20 transition-all duration-150 cursor-pointer rounded-lg border-border/50 ${
-        isHovered ? 'shadow-md scale-[1.01]' : 'shadow-sm'
-      } ${isDragging ? 'opacity-80 shadow-lg' : ''}`}
+      className={`h-[90px] transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
+        isHovered ? 'shadow-lg scale-[1.02]' : 'shadow-sm'
+      } ${isDragging ? 'opacity-80 shadow-xl' : ''} group`}
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`task-card-${task.id}`}
     >
-      <CardContent className="p-2 h-full flex flex-col justify-between">
+      <CardContent className="p-2 h-full flex flex-col justify-between relative">
+        {/* Drag handle - appears on hover */}
+        {isHovered && (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+          </div>
+        )}
+
         <div className="flex items-start gap-1.5">
           {/* Checkbox */}
           <div onClick={(e) => e.stopPropagation()}>
