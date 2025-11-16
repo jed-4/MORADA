@@ -28,9 +28,12 @@ export function CasvaTaskRow({
 
   return (
     <div 
-      className="group flex items-center gap-3 h-10 px-3 transition-all duration-200 hover:bg-gray-50 hover:shadow-md hover:scale-[1.01] cursor-pointer"
+      className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer relative"
       data-testid={`task-row-${task.id}`}
     >
+      {/* Border squares on hover - for inline editing */}
+      <div className="absolute inset-0 border-2 border-transparent group-hover:border-gray-300 rounded-sm pointer-events-none transition-all" />
+      
       {/* Drag Handle - Hidden until hover */}
       <div 
         className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0" 
@@ -81,11 +84,17 @@ export function CasvaTaskRow({
         )}
       </div>
 
-      {/* Chips Column - Vertical stack */}
-      <div className="flex-shrink-0 flex flex-col gap-1 items-end w-24">
+      {/* Status Column */}
+      <div className="flex-shrink-0 w-20">
         <ColorChip type="status" value={task.status || "todo"} />
-        {task.priority && (
+      </div>
+
+      {/* Priority Column */}
+      <div className="flex-shrink-0 w-20">
+        {task.priority ? (
           <ColorChip type="priority" value={task.priority} />
+        ) : (
+          <span className="text-[13px] text-gray-400">-</span>
         )}
       </div>
 

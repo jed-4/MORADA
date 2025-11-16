@@ -39,16 +39,19 @@ export function CasvaTaskList({
   }
 
   return (
-    <div className="border rounded-md bg-card overflow-hidden">
+    <div className="border rounded-md bg-card overflow-hidden m-0">
       {/* Header */}
-      <div className="flex items-center gap-3 h-[60px] px-3 border-b-2 border-border bg-white sticky top-0 z-10">
+      <div className="group/header flex items-center gap-3 h-10 px-2 border-b border-border bg-white sticky top-0 z-10 relative">
         <div className="w-4 flex-shrink-0"></div>
         {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
         <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
         <div className="flex-shrink-0 w-32 text-xs font-medium text-muted-foreground">ASSIGNEE</div>
         <div className="flex-shrink-0 w-28 text-xs font-medium text-muted-foreground">DUE DATE</div>
-        <div className="flex-shrink-0 w-24 text-xs font-medium text-muted-foreground text-right">STATUS</div>
+        <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">STATUS</div>
+        <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">PRIORITY</div>
         <div className="flex-shrink-0 w-6"></div>
+        {/* Resize handle - shows on hover */}
+        <div className="absolute right-0 top-0 bottom-0 w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all" />
       </div>
 
       {/* Task List */}
@@ -70,7 +73,7 @@ export function CasvaTaskList({
       {/* Inline Add Row */}
       {onAddTask && (
         <div 
-          className="group flex items-center gap-3 h-10 px-3 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
+          className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
           onClick={onAddTask}
           data-testid="button-add-task-inline"
         >
@@ -79,11 +82,6 @@ export function CasvaTaskList({
           <span className="text-sm text-gray-500 group-hover:text-gray-700">Add task</span>
         </div>
       )}
-
-      {/* Task Count Footer */}
-      <div className="h-6 px-3 border-t border-border bg-white flex items-center justify-between text-xs text-muted-foreground">
-        <span>{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</span>
-      </div>
     </div>
   );
 }

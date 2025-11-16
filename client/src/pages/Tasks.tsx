@@ -831,7 +831,7 @@ export default function Tasks() {
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-1">
               <CasvaTaskList
                 tasks={effectivelyFilteredTasks}
                 onEditTask={(task: Task) => setEditingTask(task)}
