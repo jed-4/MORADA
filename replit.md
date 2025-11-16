@@ -3,8 +3,20 @@
 ## Overview
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. It aims to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to simplify complex construction project management, improving efficiency and profitability for builders.
 
-## Recent Changes (November 15, 2025)
-- **Schedule Templates** (COMPLETED): Full save/load functionality with frontend dialogs and secure backend API
+## Recent Changes (November 16, 2025)
+- **Business Page Reorganization** (COMPLETED): Unified business navigation with 2-row header and tab system
+  - Created new `/business` route with 2-row header matching Tasks/Schedule pattern
+  - Row 1: Page title ("Business") in compact h-9 header
+  - Row 2: Horizontal tabs for all business sections (Overview, Projects, Tasks, Calendar, Expenses, Timesheets, Messages, Minutes, Leave, Team, Systems)
+  - All business routes (`/business/*`, `/systems`, `/business-team`) now use single Business component with URL-based tab selection
+  - Removed Business collapsible section from AppSidebar for cleaner navigation
+  - Sidebar now shows only: My Calendar (standalone) + Projects (collapsible)
+  - Company name in global header made larger (text-sm) and bold, links to `/business` page
+  - Tab navigation uses lilac (#bba7db) active state matching design system
+  - Deep linking preserved - URL changes with tab selection (/business/tasks, /business/calendar, etc.)
+
+## Previous Changes (November 15, 2025)
+- **Schedule Templates**: Full save/load functionality with frontend dialogs and secure backend API
   - Added `companyId` field to `scheduleTemplates` table (NOT NULL, FK to companies, cascade delete)
   - Storage layer enforces database-level filtering with SQL WHERE clauses for multi-tenant isolation
   - GET filters: `WHERE isArchived = false AND (companyId = $1 OR isPublic = true)`
