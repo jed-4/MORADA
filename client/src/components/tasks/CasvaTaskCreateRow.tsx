@@ -37,7 +37,7 @@ export function CasvaTaskCreateRow({
 
   return (
     <div 
-      className="flex items-center gap-3 h-9 px-2 border-t border-border bg-white"
+      className="flex items-center gap-3 h-10 px-2 border-t border-border bg-white"
       data-testid="task-create-row"
     >
       {/* Drag Handle Placeholder */}
@@ -55,7 +55,7 @@ export function CasvaTaskCreateRow({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Task name"
-          className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-0 p-0"
+          className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-1 focus:ring-[#bba7db] rounded px-1 -mx-1 p-0"
           data-testid="input-task-title"
         />
       </div>
