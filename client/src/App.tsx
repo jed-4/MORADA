@@ -19,7 +19,7 @@ import Settings from "@/pages/Settings";
 import ProjectSettings from "@/pages/ProjectSettings";
 import SystemConfiguration from "@/pages/SystemConfiguration";
 import RolesPermissions from "@/pages/RolesPermissions";
-import BusinessOverviewPage from "@/pages/BusinessOverview";
+import Business from "@/pages/Business";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import Estimates from "@/pages/Estimates";
 import ProjectEstimates from "@/pages/ProjectEstimates";
@@ -88,24 +88,20 @@ function Router() {
       {/* User Profile */}
       <Route path="/profile" component={UserProfile} />
       
-      {/* Business Project */}
-      <Route path="/business" component={BusinessOverviewPage} />
-      <Route path="/business/projects" component={BusinessProjects} />
-      <Route path="/business/tasks" component={BusinessTasks} />
-      <Route path="/business/calendar" component={BusinessCalendar} />
-      <Route path="/my-calendar" component={PersonalCalendar} />
-      <Route path="/business/expenses" component={() => <ComingSoonPage section="business-expenses" />} />
-      <Route path="/business/timesheets" component={Timesheets} />
-      <Route path="/business/minutes" component={Minutes} />
+      {/* Business Pages - All handled by Business component with tabs */}
+      <Route path="/business" component={Business} />
+      <Route path="/business/projects" component={Business} />
+      <Route path="/business/tasks" component={Business} />
+      <Route path="/business/calendar" component={Business} />
+      <Route path="/business/expenses" component={Business} />
+      <Route path="/business/timesheets" component={Business} />
+      <Route path="/business/minutes" component={Business} />
       <Route path="/business/minutes/:id" component={MinuteDetail} />
-      <Route path="/business/messages" component={() => <ComingSoonPage section="business-messages" />} />
-      <Route path="/business/leave" component={() => <ComingSoonPage section="business-leave" />} />
-      
-      {/* Systems Section */}
-      <Route path="/systems" component={Systems} />
-      
-      {/* Team Management */}
-      <Route path="/business-team" component={TeamManagement} />
+      <Route path="/business/messages" component={Business} />
+      <Route path="/business/leave" component={Business} />
+      <Route path="/my-calendar" component={PersonalCalendar} />
+      <Route path="/systems" component={Business} />
+      <Route path="/business-team" component={Business} />
       <Route path="/business-team/:userId" component={UserProfileView} />
       
       {/* Project-specific routes */}

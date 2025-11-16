@@ -100,22 +100,6 @@ const projectItemsBase = [
   { title: "Team", baseUrl: "/team", icon: Users },
 ];
 
-// Business sections
-const businessItems = [
-  { title: "Business Overview", url: "/business", icon: Home },
-  { title: "Projects", url: "/business/projects", icon: FolderOpen },
-  { title: "Business Tasks", url: "/business/tasks", icon: CheckSquare },
-  { title: "Business Calendar", url: "/business/calendar", icon: Calendar },
-  { title: "Expenses", url: "/business/expenses", icon: CreditCard },
-  { title: "Timesheets", url: "/business/timesheets", icon: Timer },
-  { title: "Messages", url: "/messages", icon: MessageSquare },
-  { title: "Minutes", url: "/business/minutes", icon: ClipboardList },
-  { title: "Sick Days & Leave", url: "/business/leave", icon: Calendar },
-  { title: "Bills", url: "/bills", icon: Receipt },
-  { title: "Team", url: "/business-team", icon: Users },
-  { title: "Systems", url: "/systems", icon: Settings },
-];
-
 // System sections
 const systemItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
@@ -140,11 +124,6 @@ export function AppSidebar() {
   const isBusinessContext = location.startsWith('/business');
   
   // Collapsible states with localStorage persistence
-  const [isCompanyOpen, setIsCompanyOpen] = useState(() => {
-    const saved = localStorage.getItem("sidebar-company-open");
-    return saved !== null ? JSON.parse(saved) : true;
-  });
-  
   const [isProjectsOpen, setIsProjectsOpen] = useState(() => {
     const saved = localStorage.getItem("sidebar-projects-open");
     return saved !== null ? JSON.parse(saved) : true;
@@ -166,10 +145,6 @@ export function AppSidebar() {
   });
 
   // Save collapsible states to localStorage
-  useEffect(() => {
-    localStorage.setItem("sidebar-company-open", JSON.stringify(isCompanyOpen));
-  }, [isCompanyOpen]);
-
   useEffect(() => {
     localStorage.setItem("sidebar-projects-open", JSON.stringify(isProjectsOpen));
   }, [isProjectsOpen]);
@@ -284,47 +259,6 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* Company Section - Collapsible */}
-        <Collapsible
-          open={isCompanyOpen}
-          onOpenChange={setIsCompanyOpen}
-          className="group/collapsible"
-        >
-          <SidebarGroup className={!isCompanyOpen ? "pb-0" : ""}>
-            <SidebarGroupLabel asChild>
-              <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
-                <span className="font-medium">{companyName}</span>
-                {isCompanyOpen ? (
-                  <ChevronDown className="h-4 w-4 transition-transform" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 transition-transform" />
-                )}
-              </CollapsibleTrigger>
-            </SidebarGroupLabel>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {businessItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton 
-                        asChild
-                        tooltip={item.title}
-                        data-testid={`nav-business-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                        data-active={location === item.url}
-                      >
-                        <Link href={item.url}>
-                          <item.icon className="h-4 w-4" />
-                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </SidebarGroup>
-        </Collapsible>
 
         {/* Projects Section - Collapsible */}
         <Collapsible
