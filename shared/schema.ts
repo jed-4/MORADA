@@ -306,6 +306,10 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  // Server-managed fields (backend will set these)
+  author: z.string().optional(),
+  ownerId: z.string().optional(),
+  ownerName: z.string().optional(),
   // Make legacy fields optional for backward compatibility during migration
   category: z.string().optional(),
   priority: z.string().optional(),
