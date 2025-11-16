@@ -187,6 +187,35 @@ export default function Tasks() {
     },
   });
 
+  // Mutation for updating views
+  const updateViewMutation = useMutation({
+    mutationFn: async (data: { id: string; filters?: any; columnConfig?: any }): Promise<TaskView> => {
+      const response = await fetch(`/api/task-views/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ filters: data.filters, columnConfig: data.columnConfig }),
+      });
+      if (!response.ok) throw new Error("Failed to update view");
+      return response.json();
+    },
+    onSuccess: (updatedView: TaskView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
+      setShowCreateViewDialog(false);
+      toast({
+        title: "View saved",
+        description: `"${updatedView.name}" has been updated.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to save view",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Mutation for deleting views
   const deleteViewMutation = useMutation({
     mutationFn: async (viewId: string): Promise<void> => {
@@ -426,13 +455,42 @@ export default function Tasks() {
     }
   };
 
-  const handleCreateView = () => {
-    if (!effectiveProjectId || !newViewName.trim()) return;
-    createViewMutation.mutate({
-      name: newViewName.trim(),
-      viewType: newViewType === "calendar" ? "kanban" : newViewType,
-      projectId: effectiveProjectId,
-    });
+  const handleSaveView = () => {
+    if (!effectiveProjectId) return;
+    
+    // Check if we're on a custom view
+    const currentView = taskViews.find(view => view.id === activeTab);
+    
+    if (currentView) {
+      // Update existing view with current filters and settings
+      updateViewMutation.mutate({
+        id: currentView.id,
+        filters: filters,
+        columnConfig: {
+          columnOrder,
+          columnVisibility,
+          cardDisplaySettings,
+          cardWidth,
+          groupBy,
+        },
+      });
+    } else {
+      // Create new view from default view
+      if (!newViewName.trim()) return;
+      createViewMutation.mutate({
+        name: newViewName.trim(),
+        viewType: newViewType === "calendar" ? "kanban" : newViewType,
+        projectId: effectiveProjectId,
+        filters: filters,
+        columnConfig: {
+          columnOrder,
+          columnVisibility,
+          cardDisplaySettings,
+          cardWidth,
+          groupBy,
+        },
+      });
+    }
   };
 
 
@@ -561,9 +619,9 @@ export default function Tasks() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setShowCreateViewDialog(true)} data-testid="menu-create-view">
+            <DropdownMenuItem onClick={() => setShowCreateViewDialog(true)} data-testid="menu-save-view">
               <Plus className="h-4 w-4 mr-2" />
-              Create New View
+              Save View
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-manage-views">
               <Settings className="h-4 w-4 mr-2" />
@@ -1022,40 +1080,46 @@ export default function Tasks() {
         </div>
       </Tabs>
 
-      {/* Create View Dialog */}
+      {/* Save View Dialog */}
       <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Create New View</DialogTitle>
+            <DialogTitle>
+              {taskViews.find(view => view.id === activeTab) ? "Save View" : "Save As New View"}
+            </DialogTitle>
             <DialogDescription>
-              Create a new view to organize and filter your tasks.
+              {taskViews.find(view => view.id === activeTab) 
+                ? "Update the current view with your current filters and settings."
+                : "Create a new view from the current view with your filters and settings."}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="view-name">View Name</Label>
-              <Input
-                id="view-name"
-                value={newViewName}
-                onChange={(e) => setNewViewName(e.target.value)}
-                placeholder="Enter view name"
-                data-testid="input-view-name"
-              />
+          {!taskViews.find(view => view.id === activeTab) && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="view-name">View Name</Label>
+                <Input
+                  id="view-name"
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  placeholder="Enter view name"
+                  data-testid="input-view-name"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="view-type">View Type</Label>
+                <Select value={newViewType} onValueChange={(value: "kanban" | "list") => setNewViewType(value)}>
+                  <SelectTrigger data-testid="select-view-type">
+                    <SelectValue placeholder="Select view type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="kanban">Board</SelectItem>
+                    <SelectItem value="list">List View</SelectItem>
+                    <SelectItem value="calendar">Calendar View</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="view-type">View Type</Label>
-              <Select value={newViewType} onValueChange={(value: "kanban" | "list") => setNewViewType(value)}>
-                <SelectTrigger data-testid="select-view-type">
-                  <SelectValue placeholder="Select view type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="kanban">Board</SelectItem>
-                  <SelectItem value="list">List View</SelectItem>
-                  <SelectItem value="calendar">Calendar View</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
@@ -1065,11 +1129,11 @@ export default function Tasks() {
               Cancel
             </Button>
             <Button
-              onClick={handleCreateView}
-              disabled={!newViewName.trim() || createViewMutation.isPending}
-              data-testid="button-create-view"
+              onClick={handleSaveView}
+              disabled={(taskViews.find(view => view.id === activeTab) ? false : !newViewName.trim()) || createViewMutation.isPending || updateViewMutation.isPending}
+              data-testid="button-save-view"
             >
-              {createViewMutation.isPending ? "Creating..." : "Create View"}
+              {(createViewMutation.isPending || updateViewMutation.isPending) ? "Saving..." : "Save View"}
             </Button>
           </div>
         </DialogContent>
