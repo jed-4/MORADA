@@ -164,6 +164,19 @@ export const userColumnPreferences = pgTable("user_column_preferences", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// User view preferences for persistent UI state (filters, layout, etc.)
+export const userViewPreferences = pgTable("user_view_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  viewKey: text("view_key").notNull(), // e.g., "tasks", "calendar", "estimates"
+  preferences: jsonb("preferences").notNull(), // JSON object with filters, activeTab, columnOrder, columnWidths, columnVisibility, groupBy, etc.
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // One preference record per user per view
+  uniqueUserView: uniqueIndex("user_view_preferences_user_view_unique").on(table.userId, table.viewKey),
+}));
+
 // Schema for company creation/updates
 export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,
@@ -225,6 +238,12 @@ export const insertUserColumnPreferencesSchema = createInsertSchema(userColumnPr
   updatedAt: true,
 });
 
+export const insertUserViewPreferencesSchema = createInsertSchema(userViewPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type Company = typeof companies.$inferSelect;
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
@@ -243,6 +262,8 @@ export type UserInvitation = typeof userInvitations.$inferSelect;
 export type InsertUserInvitation = z.infer<typeof insertUserInvitationSchema>;
 export type UserColumnPreferences = typeof userColumnPreferences.$inferSelect;
 export type InsertUserColumnPreferences = z.infer<typeof insertUserColumnPreferencesSchema>;
+export type UserViewPreferences = typeof userViewPreferences.$inferSelect;
+export type InsertUserViewPreferences = z.infer<typeof insertUserViewPreferencesSchema>;
 
 // Utility types for role-based access
 export type UserWithRole = User & {
