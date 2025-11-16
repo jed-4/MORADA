@@ -118,17 +118,17 @@ export default function Header() {
   };
   
   return (
-    <header className="flex items-center justify-between p-4 border-b bg-white dark:bg-gray-950 sticky top-0 z-50">
-      <div className="flex items-center gap-4">
+    <header className="flex items-center justify-between px-3 py-2 border-b bg-white dark:bg-gray-950 sticky top-0 z-50">
+      <div className="flex items-center gap-3">
         {/* Logo */}
-        <div className="flex items-center justify-center w-8 h-8 bg-primary rounded" data-testid="company-logo">
-          <Building2 className="h-5 w-5 text-primary-foreground" />
+        <div className="flex items-center justify-center w-7 h-7 bg-primary rounded" data-testid="company-logo">
+          <Building2 className="h-4 w-4 text-primary-foreground" />
         </div>
 
         {/* Business Name Link */}
         <button 
           onClick={() => navigate('/business')} 
-          className="text-lg font-semibold hover:text-primary transition-colors"
+          className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
           data-testid="business-name-link"
         >
           Lighthouse Projects
@@ -167,12 +167,51 @@ export default function Header() {
         </DropdownMenu>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        {/* Contacts Button */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => navigate("/contacts")}
+          data-testid="button-contacts"
+          className="h-8 w-8"
+        >
+          <Users className="h-4 w-4" />
+        </Button>
+
+        {/* Calendar Button */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => setIsCalendarOpen(true)}
+          data-testid="button-calendar"
+          className="h-8 w-8"
+        >
+          <Calendar className="h-4 w-4" />
+        </Button>
+
+        {/* Messages Dropdown */}
+        <MessagesDropdown />
+
+        {/* Time Clock Widget */}
+        <TimeClockWidget />
+
+        {/* Dark Mode Toggle */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={toggleDarkMode}
+          data-testid="button-dark-mode"
+          className="h-8 w-8"
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+
         {/* New Button with Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" size="sm" data-testid="button-new">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button variant="default" size="sm" data-testid="button-new" className="h-8">
+              <Plus className="h-4 w-4 mr-1.5" />
               New
             </Button>
           </DropdownMenuTrigger>
@@ -197,42 +236,6 @@ export default function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {/* Contacts Button */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => navigate("/contacts")}
-          data-testid="button-contacts"
-        >
-          <Users className="h-4 w-4" />
-        </Button>
-
-        {/* Calendar Button */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => setIsCalendarOpen(true)}
-          data-testid="button-calendar"
-        >
-          <Calendar className="h-4 w-4" />
-        </Button>
-
-        {/* Messages Dropdown */}
-        <MessagesDropdown />
-
-        {/* Time Clock Widget */}
-        <TimeClockWidget />
-
-        {/* Dark Mode Toggle */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={toggleDarkMode}
-          data-testid="button-dark-mode"
-        >
-          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </Button>
         
         {/* User Menu */}
         <DropdownMenu>

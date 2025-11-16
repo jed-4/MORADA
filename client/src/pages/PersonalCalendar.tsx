@@ -121,6 +121,12 @@ export default function PersonalCalendar() {
     queryKey: ["/api/projects"],
   });
 
+  // Fetch task templates to filter out tasks from inactive templates
+  const { data: taskTemplates = [] } = useQuery({
+    queryKey: ["/api/systems/task-templates"],
+    enabled: !!user,
+  });
+
   // Fetch Google Calendar events (only for current user)
   const { data: googleCalendarEvents = [], error: googleCalendarError } = useQuery({
     queryKey: ["/api/google-calendar/events"],
@@ -330,6 +336,17 @@ export default function PersonalCalendar() {
   const filteredEvents = useMemo(() => {
     const taskEvents: CalendarEvent[] = userTasks
       .filter((task: any) => task.dueDate)
+      .filter((task: any) => {
+        // Filter out tasks from deactivated templates
+        if (task.templateId) {
+          const template = taskTemplates.find((t: any) => t.id === task.templateId);
+          // If template exists and is inactive, exclude this task
+          if (template && template.isActive === false) {
+            return false;
+          }
+        }
+        return true;
+      })
       .map((task: any) => {
         const project = projects.find((p: any) => p.id === task.projectId);
         const isCompleted = task.status === completedOption?.key || task.status === "done" || task.status === "completed";
@@ -396,7 +413,7 @@ export default function PersonalCalendar() {
     }
 
     return filtered;
-  }, [userTasks, projects, completedOption, googleCalendarEvents, filters, displayedUserId, user?.id]);
+  }, [userTasks, projects, completedOption, googleCalendarEvents, filters, displayedUserId, user?.id, taskTemplates]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     if (eventId.startsWith('google-')) {
