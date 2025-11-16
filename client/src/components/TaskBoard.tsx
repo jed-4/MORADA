@@ -396,8 +396,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="p-6" data-testid="task-board">
-        <div className="flex items-center justify-end mb-4">
+      <div className="px-2 pt-2 pb-6" data-testid="task-board">
+        <div className="flex items-center justify-end mb-2">
           <div className="flex items-center gap-2">
             {showNavigation && (
               <>
