@@ -64,6 +64,7 @@ export function CasvaTaskRow({
   const [isSaving, setIsSaving] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [priorityOpen, setPriorityOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   
   const {
@@ -158,6 +159,17 @@ export function CasvaTaskRow({
         setAssigneeOpen(false);
       } catch (error) {
         console.error("Failed to update assignee:", error);
+      }
+    }
+  };
+
+  const handlePriorityChange = async (priority: string) => {
+    if (onUpdate) {
+      try {
+        await onUpdate(task.id, { priority });
+        setPriorityOpen(false);
+      } catch (error) {
+        console.error("Failed to update priority:", error);
       }
     }
   };
