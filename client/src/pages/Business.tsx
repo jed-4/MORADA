@@ -71,23 +71,27 @@ export default function Business() {
         </h2>
       </div>
 
-      {/* Row 2 - Tabs (36px) */}
-      <div className="h-9 bg-white flex items-center px-2 gap-0.5 border-b border-border flex-shrink-0 overflow-x-auto">
+      {/* Row 2 - Tabs (36px) - Underline Style */}
+      <div className="h-9 bg-white flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
         {tabs.map((tab) => {
           const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => navigate(tab.path)}
-              className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0 ${
-                activeTab === tab.id
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                  : 'hover-elevate'
-              } active-elevate-2`}
+              className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+                isActive
+                  ? 'text-[#bba7db] font-medium'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
               data-testid={`tab-${tab.id}`}
             >
               <Icon className="w-3 h-3" />
               <span>{tab.label}</span>
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
+              )}
             </button>
           );
         })}
