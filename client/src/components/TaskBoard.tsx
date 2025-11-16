@@ -396,42 +396,44 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="px-2 pt-2 pb-6" data-testid="task-board">
-        <div className="flex items-center justify-end mb-2">
-          <div className="flex items-center gap-2">
-            {showNavigation && (
-              <>
+      <div className="px-2 pb-6" data-testid="task-board">
+        {(showNavigation || columns.length > 0) && (
+          <div className="flex items-center justify-end mb-2">
+            <div className="flex items-center gap-2">
+              {showNavigation && (
+                <>
+                  <Button 
+                    variant="outline"
+                    size="icon"
+                    onClick={scrollLeft}
+                    data-testid="button-scroll-left"
+                    className="h-9 w-9"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    size="icon"
+                    onClick={scrollRight}
+                    data-testid="button-scroll-right"
+                    className="h-9 w-9"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+              {columns.length > 0 && (
                 <Button 
-                  variant="outline"
-                  size="icon"
-                  onClick={scrollLeft}
-                  data-testid="button-scroll-left"
-                  className="h-9 w-9"
+                  onClick={() => handleAddTaskToColumn(columns[0].status)}
+                  data-testid="button-new-task"
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Task
                 </Button>
-                <Button 
-                  variant="outline"
-                  size="icon"
-                  onClick={scrollRight}
-                  data-testid="button-scroll-right"
-                  className="h-9 w-9"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </>
-            )}
-            {columns.length > 0 && (
-              <Button 
-                onClick={() => handleAddTaskToColumn(columns[0].status)}
-                data-testid="button-new-task"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New Task
-              </Button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <div 
           ref={scrollContainerRef}
