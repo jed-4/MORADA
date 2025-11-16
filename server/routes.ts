@@ -333,8 +333,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
+      console.log("[POST /api/tasks] Request body:", JSON.stringify(req.body, null, 2));
       const validationResult = insertTaskSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.log("[POST /api/tasks] Validation error:", validationResult.error);
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 

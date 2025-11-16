@@ -70,7 +70,7 @@
   /* Construction-specific colors */
   --success: 142 76% 36%; /* Keep success green consistent */
   
-  --warning: 25 95% 53%; /* Safety orange */
+  --warning: 265 44% 76%; /* Lilac purple */
   
   --destructive: 0 84% 60%;
 
@@ -204,7 +204,7 @@
   /* Construction-specific colors - Dark Mode */
   --success: 142 76% 46%; /* Brighter eucalyptus for dark mode */
   
-  --warning: 25 95% 63%; /* Brighter safety orange */
+  --warning: 265 50% 80%; /* Brighter lilac purple */
   
   --destructive: 0 84% 65%;
 
@@ -404,7 +404,7 @@
   }
 
   .casva-chip-priority-high {
-    @apply bg-orange-100 text-orange-700;
+    @apply bg-purple-100 text-purple-700;
   }
 
   .casva-chip-priority-critical {

@@ -276,8 +276,8 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         <DialogDescription className="sr-only">
           Edit task details, assignee, due date, and other properties
         </DialogDescription>
-        {/* Header */}
-        <div className="flex items-start justify-between p-4 border-b border-gray-200">
+        {/* Header - Sticky */}
+        <div className="sticky top-0 z-10 bg-white flex items-start justify-between p-4 border-b border-gray-200">
           <div className="flex items-start gap-2 flex-1">
             <Checkbox
               checked={isCompleted}
