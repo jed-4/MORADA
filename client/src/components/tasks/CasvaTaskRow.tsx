@@ -4,6 +4,8 @@ import { MoreHorizontal, GripVertical } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 export interface CasvaTaskRowProps {
   task: Task;
@@ -11,8 +13,6 @@ export interface CasvaTaskRowProps {
   onToggleComplete?: () => void;
   showCheckbox?: boolean;
   isDraggable?: boolean;
-  dragAttributes?: any;
-  dragListeners?: any;
 }
 
 export function CasvaTaskRow({ 
@@ -20,14 +20,29 @@ export function CasvaTaskRow({
   onEdit, 
   onToggleComplete,
   showCheckbox = false,
-  isDraggable = false,
-  dragAttributes,
-  dragListeners 
+  isDraggable = false
 }: CasvaTaskRowProps) {
   const isCompleted = task.status === "done" || task.status === "completed";
+  
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   return (
     <div 
+      ref={setNodeRef}
+      style={style}
       className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer relative"
       data-testid={`task-row-${task.id}`}
     >
@@ -37,8 +52,8 @@ export function CasvaTaskRow({
       {/* Drag Handle - Hidden until hover */}
       <div 
         className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0" 
-        {...dragAttributes} 
-        {...dragListeners}
+        {...attributes} 
+        {...listeners}
         data-testid="drag-handle"
       >
         <GripVertical className="h-4 w-4 text-gray-400" />
