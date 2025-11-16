@@ -1,11 +1,13 @@
 import { Task } from "@shared/schema";
 import { CasvaTaskRow } from "./CasvaTaskRow";
+import { CasvaTaskCreateRow } from "./CasvaTaskCreateRow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 import { 
   DndContext, 
   closestCenter,
@@ -29,6 +31,9 @@ export interface CasvaTaskListProps {
   onAddTask?: () => void;
   showCheckboxes?: boolean;
   maxHeight?: string;
+  isCreatingInline?: boolean;
+  onCancelInlineCreate?: () => void;
+  projectId?: string;
 }
 
 export function CasvaTaskList({ 
@@ -37,9 +42,35 @@ export function CasvaTaskList({
   onToggleComplete,
   onAddTask,
   showCheckboxes = false,
-  maxHeight = "calc(100vh - 280px)"
+  maxHeight = "calc(100vh - 280px)",
+  isCreatingInline = false,
+  onCancelInlineCreate,
+  projectId
 }: CasvaTaskListProps) {
   const { toast } = useToast();
+
+  // Create task mutation
+  const createTaskMutation = useMutation({
+    mutationFn: async (taskData: { title: string; projectId?: string }) => {
+      const response = await apiRequest("/api/tasks", "POST", taskData);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      onCancelInlineCreate?.();
+      toast({
+        title: "Task created",
+        description: "Task has been created successfully"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create task",
+        variant: "destructive"
+      });
+    }
+  });
 
   // Update task mutation
   const updateTaskMutation = useMutation({
@@ -153,7 +184,13 @@ export function CasvaTaskList({
         </ScrollArea>
       
         {/* Inline Add Row */}
-        {onAddTask && (
+        {isCreatingInline ? (
+          <CasvaTaskCreateRow
+            onSave={(title) => createTaskMutation.mutate({ title, projectId })}
+            onCancel={onCancelInlineCreate}
+            showCheckbox={showCheckboxes}
+          />
+        ) : onAddTask ? (
           <div 
             className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
             onClick={onAddTask}
@@ -163,7 +200,7 @@ export function CasvaTaskList({
             <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
             <span className="text-sm text-gray-500 group-hover:text-gray-700">Add task</span>
           </div>
-        )}
+        ) : null}
       </div>
     </DndContext>
   );

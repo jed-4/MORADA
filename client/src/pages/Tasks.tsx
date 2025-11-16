@@ -78,6 +78,7 @@ export default function Tasks() {
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
   const [filters, setFilters] = useState<FilterState>({});
+  const [isCreatingInline, setIsCreatingInline] = useState(false);
 
   // Casva Keyboard Shortcuts
   useKeyboardShortcuts([
@@ -835,8 +836,11 @@ export default function Tasks() {
               <CasvaTaskList
                 tasks={effectivelyFilteredTasks}
                 onEditTask={(task: Task) => setEditingTask(task)}
-                onAddTask={() => setShowCreateTaskDialog(true)}
+                onAddTask={() => setIsCreatingInline(true)}
                 showCheckboxes={true}
+                isCreatingInline={isCreatingInline}
+                onCancelInlineCreate={() => setIsCreatingInline(false)}
+                projectId={effectiveProjectId}
               />
             </div>
           </TabsContent>
