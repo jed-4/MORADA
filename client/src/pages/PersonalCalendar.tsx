@@ -692,40 +692,138 @@ export default function PersonalCalendar() {
 
       {/* Row 3 - Filters (36px) */}
       <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Filters Button */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-              data-testid="button-filters"
-            >
-              <Filter className="w-3 h-3" />
-              <span>Filters</span>
-              {activeFilterCount > 0 && (
-                <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-72 p-3">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Filters</div>
-                {activeFilterCount > 0 && (
-                  <button
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setFilters({})}
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
+        <div className="flex items-center gap-1">
+          {/* Projects Filter */}
+          {projects.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-filter-projects"
+                >
+                  <span>Projects</span>
+                  {filters.projects && filters.projects.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {filters.projects.length}
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Projects</div>
+                    {filters.projects && filters.projects.length > 0 && (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setFilters({...filters, projects: undefined})}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                    {projects.map((project: any) => (
+                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.projects?.includes(project.id) || false}
+                          onCheckedChange={() => {
+                            const current = filters.projects || [];
+                            const updated = current.includes(project.id)
+                              ? current.filter(p => p !== project.id)
+                              : [...current, project.id];
+                            setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{project.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
 
-              {/* Event Types */}
-              {displayedUserId === user?.id && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">Event Types</Label>
+          {/* Status Filter */}
+          {statusOptions.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-filter-status"
+                >
+                  <span>Status</span>
+                  {filters.status && filters.status.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {filters.status.length}
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Status</div>
+                    {filters.status && filters.status.length > 0 && (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setFilters({...filters, status: undefined})}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {statusOptions.map((status: any) => (
+                      <label key={status.key} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.status?.includes(status.key) || false}
+                          onCheckedChange={() => {
+                            const current = filters.status || [];
+                            const updated = current.includes(status.key)
+                              ? current.filter(s => s !== status.key)
+                              : [...current, status.key];
+                            setFilters({...filters, status: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{status.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {/* Event Types Filter */}
+          {displayedUserId === user?.id && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-filter-event-types"
+                >
+                  <span>Event Types</span>
+                  {filters.eventTypes && filters.eventTypes.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {filters.eventTypes.length}
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Event Types</div>
+                    {filters.eventTypes && filters.eventTypes.length > 0 && (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setFilters({...filters, eventTypes: undefined})}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-1.5">
                     {[
                       { value: 'task', label: 'Tasks' },
@@ -748,59 +846,38 @@ export default function PersonalCalendar() {
                     ))}
                   </div>
                 </div>
-              )}
+              </PopoverContent>
+            </Popover>
+          )}
 
-              {/* Projects */}
-              {projects.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">Projects</Label>
-                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                    {projects.map((project: any) => (
-                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.projects?.includes(project.id) || false}
-                          onCheckedChange={() => {
-                            const current = filters.projects || [];
-                            const updated = current.includes(project.id)
-                              ? current.filter(p => p !== project.id)
-                              : [...current, project.id];
-                            setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{project.name}</span>
-                      </label>
-                    ))}
-                  </div>
+          {/* Date Range Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-filter-date-range"
+              >
+                <span>Date Range</span>
+                {(filters.dateFrom || filters.dateTo) && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Date Range</div>
+                  {(filters.dateFrom || filters.dateTo) && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setFilters({...filters, dateFrom: undefined, dateTo: undefined})}
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {/* Status */}
-              {statusOptions.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">Status</Label>
-                  <div className="space-y-1.5">
-                    {statusOptions.map((status: any) => (
-                      <label key={status.key} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.status?.includes(status.key) || false}
-                          onCheckedChange={() => {
-                            const current = filters.status || [];
-                            const updated = current.includes(status.key)
-                              ? current.filter(s => s !== status.key)
-                              : [...current, status.key];
-                            setFilters({...filters, status: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{status.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Date Range */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Date Range</Label>
                 <div className="space-y-2">
                   <Popover>
                     <PopoverTrigger asChild>
@@ -834,9 +911,20 @@ export default function PersonalCalendar() {
                   </Popover>
                 </div>
               </div>
-            </div>
-          </PopoverContent>
-        </Popover>
+            </PopoverContent>
+          </Popover>
+
+          {/* Clear All Filters */}
+          {activeFilterCount > 0 && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+              onClick={() => setFilters({})}
+              data-testid="button-clear-all-filters"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
@@ -848,9 +936,11 @@ export default function PersonalCalendar() {
           onEventReschedule={handleEventReschedule}
           onEventResize={handleEventResize}
           showCompletionCheckbox={true}
-          initialView={calendarMode as any}
           currentDate={currentDate}
           onCurrentDateChange={setCurrentDate}
+          view={calendarMode as any}
+          onViewChange={(newView) => setCalendarMode(newView)}
+          hideInternalHeader={true}
         />
       </div>
 

@@ -47,6 +47,9 @@ interface EnhancedCalendarProps {
   initialView?: "month" | "week" | "day" | "roster";
   currentDate?: Date;
   onCurrentDateChange?: (date: Date) => void;
+  view?: "month" | "week" | "day" | "roster";
+  onViewChange?: (view: "month" | "week" | "day" | "roster") => void;
+  hideInternalHeader?: boolean;
 }
 
 interface DraggableEventProps {
@@ -335,21 +338,33 @@ export function EnhancedCalendar({
   showCompletionCheckbox = true,
   initialView = "month",
   currentDate: externalCurrentDate,
-  onCurrentDateChange
+  onCurrentDateChange,
+  view: externalView,
+  onViewChange,
+  hideInternalHeader = false
 }: EnhancedCalendarProps) {
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
-  const [view, setView] = useState<"month" | "week" | "day" | "roster">(initialView);
+  const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   
   // Use controlled currentDate if provided, otherwise use internal state
-  const isControlled = externalCurrentDate !== undefined;
-  const currentDate = isControlled ? externalCurrentDate : internalCurrentDate;
-  const setCurrentDate = isControlled 
+  const isDateControlled = externalCurrentDate !== undefined;
+  const currentDate = isDateControlled ? externalCurrentDate : internalCurrentDate;
+  const setCurrentDate = isDateControlled 
     ? (date: Date | ((prev: Date) => Date)) => {
         const newDate = typeof date === 'function' ? date(currentDate) : date;
         onCurrentDateChange?.(newDate);
       }
     : setInternalCurrentDate;
+    
+  // Use controlled view if provided, otherwise use internal state
+  const isViewControlled = externalView !== undefined;
+  const view = isViewControlled ? externalView : internalView;
+  const setView = isViewControlled
+    ? (newView: "month" | "week" | "day" | "roster") => {
+        onViewChange?.(newView);
+      }
+    : setInternalView;
   
   // Filter toggle states
   const [showTasks, setShowTasks] = useState(true);
@@ -368,7 +383,7 @@ export function EnhancedCalendar({
 
   // Sync range buffers when controlled currentDate changes
   useEffect(() => {
-    if (isControlled && externalCurrentDate) {
+    if (isDateControlled && externalCurrentDate) {
       // Check if date is outside week range and recenter if needed
       const weekStart = startOfWeek(externalCurrentDate, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(externalCurrentDate, { weekStartsOn: 1 });
@@ -385,7 +400,7 @@ export function EnhancedCalendar({
         setMonthRangeEnd(endOfMonth(addMonths(externalCurrentDate, 2)));
       }
     }
-  }, [isControlled, externalCurrentDate, weekRangeStart, weekRangeEnd, monthRangeStart, monthRangeEnd]);
+  }, [isDateControlled, externalCurrentDate, weekRangeStart, weekRangeEnd, monthRangeStart, monthRangeEnd]);
 
   // Setup drag sensors
   const mouseSensor = useSensor(MouseSensor, {
@@ -1054,6 +1069,7 @@ export function EnhancedCalendar({
     >
       <div className="flex flex-col h-full bg-white dark:bg-background">
         {/* Header - Notion minimal style */}
+        {!hideInternalHeader && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-3 border-b">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <Button
@@ -1218,6 +1234,7 @@ export function EnhancedCalendar({
             </div>
           </div>
         </div>
+        )}
 
         {/* Calendar content */}
         {view === "month" && renderMonthView()}
