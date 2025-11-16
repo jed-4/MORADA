@@ -149,7 +149,7 @@ export default function Header() {
         {/* Business Name Link */}
         <button 
           onClick={() => navigate('/business')} 
-          className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          className="text-sm font-bold text-foreground hover:text-primary transition-colors"
           data-testid="business-name-link"
         >
           {companyName}
