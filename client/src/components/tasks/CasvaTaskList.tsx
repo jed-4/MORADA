@@ -100,6 +100,19 @@ export function CasvaTaskList({
     onToggleComplete?.(task);
   };
 
+  // Handle inline field updates
+  const handleUpdateTask = (taskId: string, updates: Partial<Task>): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      updateTaskMutation.mutate(
+        { taskId, updates },
+        {
+          onSuccess: () => resolve(),
+          onError: (error) => reject(error)
+        }
+      );
+    });
+  };
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -175,6 +188,7 @@ export function CasvaTaskList({
                   task={task}
                   onEdit={() => onEditTask(task)}
                   onToggleComplete={() => handleToggleComplete(task)}
+                  onUpdate={handleUpdateTask}
                   showCheckbox={showCheckboxes}
                   isDraggable={true}
                 />

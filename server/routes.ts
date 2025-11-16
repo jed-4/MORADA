@@ -328,6 +328,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
       const validationResult = insertTaskSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -336,15 +341,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const task = await storage.createTask(validationResult.data);
+      const task = await storage.createTask({
+        ...validationResult.data,
+        companyId: user.companyId,
+        ownerId: user.id,
+        ownerName: user.email,
+        author: user.email,
+        content: validationResult.data.content || ""
+      });
       res.status(201).json(task);
     } catch (error) {
+      console.error("Error creating task:", error);
       res.status(500).json({ error: "Failed to create task" });
     }
   });
 
-  app.patch("/api/tasks/:id", async (req, res) => {
+  app.patch("/api/tasks/:id", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      // First, verify the task exists and belongs to the user's company
+      const existingTask = await storage.getTask(req.params.id);
+      if (!existingTask) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      if (existingTask.companyId !== user.companyId) {
+        return res.status(403).json({ error: "Forbidden - task belongs to another company" });
+      }
+
       const updateSchema = insertTaskSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -360,6 +387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(task);
     } catch (error) {
+      console.error("Error updating task:", error);
       res.status(500).json({ error: "Failed to update task" });
     }
   });

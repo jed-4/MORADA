@@ -6,11 +6,13 @@ import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useState, useRef, useEffect } from "react";
 
 export interface CasvaTaskRowProps {
   task: Task;
   onEdit: () => void;
   onToggleComplete?: () => void;
+  onUpdate?: (taskId: string, updates: Partial<Task>) => void;
   showCheckbox?: boolean;
   isDraggable?: boolean;
 }
@@ -19,10 +21,15 @@ export function CasvaTaskRow({
   task, 
   onEdit, 
   onToggleComplete,
+  onUpdate,
   showCheckbox = false,
   isDraggable = false
 }: CasvaTaskRowProps) {
   const isCompleted = task.status === "done" || task.status === "completed";
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   
   const {
     attributes,
@@ -39,6 +46,72 @@ export function CasvaTaskRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  useEffect(() => {
+    if (editingField && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingField]);
+
+  const startEditing = (field: string, value: string) => {
+    setEditingField(field);
+    setEditValue(value);
+  };
+
+  const saveEdit = async () => {
+    if (!editingField || !onUpdate) return;
+    
+    // Validate non-empty title
+    const trimmedValue = editValue.trim();
+    if (editingField === 'title' && !trimmedValue) {
+      // Keep editor open if title is empty
+      return;
+    }
+    
+    // Only save if value changed
+    const originalValue = task[editingField as keyof Task];
+    if (trimmedValue !== originalValue) {
+      setIsSaving(true);
+      try {
+        await onUpdate(task.id, { [editingField]: trimmedValue });
+        // Only close editor on successful save
+        setEditingField(null);
+        setEditValue("");
+      } catch (error) {
+        // Restore original value and re-focus input on error
+        setEditValue(originalValue as string);
+        console.error("Failed to save edit:", error);
+        // Re-focus the input after a brief delay to allow blur to complete
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+          }
+        }, 0);
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      // No change, just close
+      setEditingField(null);
+      setEditValue("");
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingField(null);
+    setEditValue("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveEdit();
+    } else if (e.key === "Escape") {
+      cancelEdit();
+    }
+  };
+
   return (
     <div 
       ref={setNodeRef}
@@ -46,22 +119,21 @@ export function CasvaTaskRow({
       className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer relative"
       data-testid={`task-row-${task.id}`}
     >
-      {/* Border squares on hover - for inline editing */}
-      <div className="absolute inset-0 border-2 border-transparent group-hover:border-gray-300 rounded-sm pointer-events-none transition-all" />
-      
-      {/* Drag Handle - Hidden until hover */}
+      {/* Drag Handle - Hidden until hover with border on hover */}
       <div 
-        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0" 
+        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0 relative" 
         {...attributes} 
         {...listeners}
         data-testid="drag-handle"
       >
+        <div className="absolute inset-0 border border-transparent group-hover:border-gray-400 rounded-sm pointer-events-none" />
         <GripVertical className="h-4 w-4 text-gray-400" />
       </div>
 
-      {/* Checkbox (optional) */}
+      {/* Checkbox (optional) with border on hover */}
       {showCheckbox && (
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 relative">
+          <div className="absolute inset-0 border border-transparent group-hover:border-gray-400 rounded-sm pointer-events-none" />
           <Checkbox
             checked={isCompleted}
             onCheckedChange={onToggleComplete}
@@ -72,9 +144,29 @@ export function CasvaTaskRow({
 
       {/* Title Column - Flex grow to take remaining space */}
       <div className="flex-1 min-w-0">
-        <div className={cn("text-sm font-semibold truncate", isCompleted && "line-through opacity-60")} data-testid="task-title">
-          {task.title}
-        </div>
+        {editingField === "title" ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={saveEdit}
+            onKeyDown={handleKeyDown}
+            className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-0 p-0"
+            data-testid="input-edit-title"
+          />
+        ) : (
+          <div 
+            className={cn("text-sm font-semibold truncate cursor-text", isCompleted && "line-through opacity-60")} 
+            onClick={(e) => {
+              e.stopPropagation();
+              startEditing("title", task.title);
+            }}
+            data-testid="task-title"
+          >
+            {task.title}
+          </div>
+        )}
       </div>
 
       {/* Assignee - Secondary text */}
