@@ -88,6 +88,7 @@ import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
 import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared/schema";
+import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -108,6 +109,10 @@ export interface IStorage {
   // User column preferences
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
   saveUserColumnPreferences(preferences: InsertUserColumnPreferences): Promise<UserColumnPreferences>;
+
+  // User view preferences
+  getUserViewPreferences(userId: string, viewKey: string): Promise<UserViewPreferences | undefined>;
+  saveUserViewPreferences(preferences: InsertUserViewPreferences): Promise<UserViewPreferences>;
 
   // User Role operations  
   getUserRoles(category?: UserCategory, companyId?: string): Promise<UserRole[]>;
@@ -730,6 +735,7 @@ export class MemStorage implements IStorage {
   private userProjectAccess: Map<string, UserProjectAccess>;
   private userInvitations: Map<string, UserInvitation>;
   private userColumnPreferences: Map<string, UserColumnPreferences>;
+  private userViewPreferences: Map<string, UserViewPreferences>;
   private notes: Map<string, Note>;
   private customFieldDefs: Map<string, CustomFieldDef>;
   private customFieldOptions: Map<string, CustomFieldOption>;
@@ -763,6 +769,7 @@ export class MemStorage implements IStorage {
     this.userProjectAccess = new Map();
     this.userInvitations = new Map();
     this.userColumnPreferences = new Map();
+    this.userViewPreferences = new Map();
     this.notes = new Map();
     this.customFieldDefs = new Map();
     this.customFieldOptions = new Map();
@@ -1724,6 +1731,37 @@ export class MemStorage implements IStorage {
       updatedAt: now,
     };
     this.userColumnPreferences.set(id, newPreference);
+    return newPreference;
+  }
+
+  async getUserViewPreferences(userId: string, viewKey: string): Promise<UserViewPreferences | undefined> {
+    return Array.from(this.userViewPreferences.values()).find(
+      (pref) => pref.userId === userId && pref.viewKey === viewKey
+    );
+  }
+
+  async saveUserViewPreferences(preferences: InsertUserViewPreferences): Promise<UserViewPreferences> {
+    const existing = await this.getUserViewPreferences(preferences.userId, preferences.viewKey);
+    
+    if (existing) {
+      const updated: UserViewPreferences = {
+        ...existing,
+        preferences: preferences.preferences,
+        updatedAt: new Date(),
+      };
+      this.userViewPreferences.set(existing.id, updated);
+      return updated;
+    }
+    
+    const id = randomUUID();
+    const now = new Date();
+    const newPreference: UserViewPreferences = {
+      id,
+      ...preferences,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.userViewPreferences.set(id, newPreference);
     return newPreference;
   }
 
@@ -5288,6 +5326,42 @@ export class DbStorage implements IStorage {
     
     const [newPreference] = await db
       .insert(schema.userColumnPreferences)
+      .values(preferences)
+      .returning();
+    return newPreference;
+  }
+
+  async getUserViewPreferences(userId: string, viewKey: string): Promise<UserViewPreferences | undefined> {
+    const [preference] = await db
+      .select()
+      .from(schema.userViewPreferences)
+      .where(
+        and(
+          eq(schema.userViewPreferences.userId, userId),
+          eq(schema.userViewPreferences.viewKey, viewKey)
+        )
+      )
+      .limit(1);
+    return preference;
+  }
+
+  async saveUserViewPreferences(preferences: InsertUserViewPreferences): Promise<UserViewPreferences> {
+    const existing = await this.getUserViewPreferences(preferences.userId, preferences.viewKey);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(schema.userViewPreferences)
+        .set({
+          preferences: preferences.preferences,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.userViewPreferences.id, existing.id))
+        .returning();
+      return updated;
+    }
+    
+    const [newPreference] = await db
+      .insert(schema.userViewPreferences)
       .values(preferences)
       .returning();
     return newPreference;
