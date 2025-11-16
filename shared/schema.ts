@@ -346,7 +346,7 @@ export type Note = typeof notes.$inferSelect;
 // Task-specific types
 export const insertTaskSchema = insertNoteSchema.extend({
   type: z.literal("task"),
-  status: z.enum(["todo", "in-progress", "done"]).default("todo"),
+  status: z.string().default("todo"),
   projectId: z.string().optional().nullable(), // Optional - null for business/company-wide tasks
 });
 
