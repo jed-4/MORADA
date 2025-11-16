@@ -58,6 +58,7 @@ interface TaskBoardProps {
   onTaskClick?: (task: Task) => void;
   projectId?: string;
   displaySettings?: CardDisplaySettings;
+  cardWidth?: 'compact' | 'comfortable' | 'spacious';
 }
 
 // Draggable Task Card wrapper
@@ -140,15 +141,15 @@ function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-lg border transition-all duration-200 ${
-        isOver ? 'border-2 border-blue-500 border-dashed bg-blue-500/5' : 'border-border bg-background'
+      className={`rounded-xl border transition-all duration-200 ${
+        isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50 bg-background'
       }`}
     >
-      {/* Column Header - Asana style */}
-      <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
+      {/* Column Header - ClickUp style */}
+      <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isOver ? 'bg-[#bba7db]/5' : ''}`}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">{column.title}</h3>
-          <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-muted/50 no-default-hover-elevate">
+          <h3 className="text-sm font-bold text-foreground">{column.title}</h3>
+          <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold">
             {tasks.length}
           </Badge>
         </div>
@@ -184,7 +185,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, projectId, displaySettings }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable' }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -192,25 +193,9 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const { toast } = useToast();
   
-  // Column width state with localStorage persistence
-  const [columnWidth, setColumnWidth] = useState<ColumnWidth>('medium');
+  // Use cardWidth from props
+  const cardWidth = propCardWidth;
   
-  // Load column width from localStorage
-  useEffect(() => {
-    if (projectId) {
-      const savedWidth = localStorage.getItem(`columnWidth_${projectId}`);
-      if (savedWidth && (savedWidth === 'small' || savedWidth === 'medium' || savedWidth === 'wide')) {
-        setColumnWidth(savedWidth as ColumnWidth);
-      }
-    }
-  }, [projectId]);
-  
-  // Save column width to localStorage when it changes
-  useEffect(() => {
-    if (projectId) {
-      localStorage.setItem(`columnWidth_${projectId}`, columnWidth);
-    }
-  }, [columnWidth, projectId]);
   
   // Scroll container ref for navigation
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -237,16 +222,16 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     }
   };
   
-  // Get column width class based on setting
+  // Get column width class based on setting (ClickUp-style)
   const getColumnWidthClass = () => {
-    switch (columnWidth) {
-      case 'small':
+    switch (cardWidth) {
+      case 'compact':
         return 'w-60'; // 240px
-      case 'wide':
-        return 'w-[400px]'; // 400px
-      case 'medium':
+      case 'spacious':
+        return 'w-[350px]'; // 350px
+      case 'comfortable':
       default:
-        return 'w-80'; // 320px (default)
+        return 'w-[280px]'; // 280px (default - ClickUp style)
     }
   };
 

@@ -907,7 +907,7 @@ export default function Tasks() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <div className="flex-1 overflow-auto">
           <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
-            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} />
+            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
@@ -946,7 +946,7 @@ export default function Tasks() {
             return (
               <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
                 {view.viewType === "kanban" ? (
-                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} displaySettings={cardDisplaySettings} />
+                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
                 ) : view.viewType === "calendar" ? (
                   <TaskCalendar 
                     tasks={viewFilteredTasks} 
