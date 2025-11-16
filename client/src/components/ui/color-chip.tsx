@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import type { FieldCategoryWithOptions } from "@shared/schema";
 
 export interface ColorChipProps {
   type: "status" | "priority" | "role";
@@ -14,6 +16,7 @@ const statusColors: Record<string, string> = {
   completed: "casva-chip-status-done",
   blocked: "casva-chip-status-blocked",
   cancelled: "casva-chip-status-blocked",
+  "on-hold": "casva-chip-status-blocked",
 };
 
 const priorityColors: Record<string, string> = {
@@ -33,10 +36,22 @@ const roleColors: Record<string, string> = {
 export function ColorChip({ type, value, className }: ColorChipProps) {
   const normalizedValue = value?.toLowerCase() || "";
   
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  let displayLabel = value;
   let colorClass = "";
+  
   if (type === "status") {
+    const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
+    const statusOption = taskStatusCategory?.options?.find(opt => opt.key === value);
+    displayLabel = statusOption?.name || value;
     colorClass = statusColors[normalizedValue] || "casva-chip-status-todo";
   } else if (type === "priority") {
+    const taskPriorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
+    const priorityOption = taskPriorityCategory?.options?.find(opt => opt.key === value);
+    displayLabel = priorityOption?.name || value;
     colorClass = priorityColors[normalizedValue] || "casva-chip-priority-medium";
   } else if (type === "role") {
     colorClass = roleColors[normalizedValue] || "bg-gray-100 text-gray-600";
@@ -44,7 +59,7 @@ export function ColorChip({ type, value, className }: ColorChipProps) {
 
   return (
     <span className={cn("casva-chip", colorClass, className)} data-testid={`chip-${type}-${normalizedValue}`}>
-      {value}
+      {displayLabel}
     </span>
   );
 }
