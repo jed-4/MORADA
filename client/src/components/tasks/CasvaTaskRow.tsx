@@ -32,7 +32,7 @@ export function CasvaTaskRow({
     <>
       {/* Checkbox Column */}
       {showCheckbox && (
-        <TableCell className="w-12 h-10 py-1">
+        <TableCell className="w-12 h-9 py-0">
           <Checkbox
             checked={isCompleted}
             onCheckedChange={onToggleComplete}
@@ -42,8 +42,8 @@ export function CasvaTaskRow({
       )}
 
       {/* Title Column */}
-      <TableCell className="h-10 py-1">
-        <div className="flex items-center gap-2">
+      <TableCell className="h-9 py-0">
+        <div className="flex items-center gap-1.5">
           {isDraggable && (
             <div 
               className="drag-handle-enhanced cursor-grab active:cursor-grabbing" 
@@ -51,22 +51,22 @@ export function CasvaTaskRow({
               {...dragListeners}
               data-testid="drag-handle"
             >
-              <GripVertical className="h-4 w-4 text-muted-foreground" />
+              <GripVertical className="h-3 w-3 text-muted-foreground" />
             </div>
           )}
-          <span className={cn("font-medium text-sm truncate", isCompleted && "line-through opacity-60")} data-testid="task-title">
+          <span className={cn("text-sm truncate", isCompleted && "line-through opacity-60")} data-testid="task-title">
             {task.title}
           </span>
         </div>
       </TableCell>
 
       {/* Status Column */}
-      <TableCell className="w-32 h-10 py-1">
+      <TableCell className="w-32 h-9 py-0">
         <ColorChip type="status" value={task.status || "todo"} />
       </TableCell>
 
       {/* Priority Column */}
-      <TableCell className="w-32 h-10 py-1">
+      <TableCell className="w-32 h-9 py-0">
         {task.priority ? (
           <ColorChip type="priority" value={task.priority} />
         ) : (
@@ -75,7 +75,7 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Assignee Column */}
-      <TableCell className="w-40 h-10 py-1">
+      <TableCell className="w-40 h-9 py-0">
         {task.assigneeName ? (
           <div className="text-xs text-muted-foreground truncate" data-testid="task-assignee">
             {task.assigneeName}
@@ -86,7 +86,7 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Due Date Column */}
-      <TableCell className="w-32 h-10 py-1">
+      <TableCell className="w-32 h-9 py-0">
         {task.dueDate ? (
           <div className="text-xs text-muted-foreground" data-testid="task-due-date">
             {format(new Date(task.dueDate), 'MMM d, yyyy')}
@@ -97,16 +97,14 @@ export function CasvaTaskRow({
       </TableCell>
 
       {/* Actions Column */}
-      <TableCell className="w-12 h-10 py-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="casva-edit-icon h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+      <TableCell className="w-12 h-9 py-0">
+        <button
+          className="h-6 w-6 rounded-md border border-border hover-elevate active-elevate-2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={onEdit}
           data-testid={`button-edit-task-${task.id}`}
         >
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
+          <Pencil className="h-3 w-3" />
+        </button>
       </TableCell>
     </>
   );
