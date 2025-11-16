@@ -118,35 +118,35 @@ export default function Header() {
   };
   
   return (
-    <header className="flex items-center justify-between px-3 py-2 border-b bg-white dark:bg-gray-950 sticky top-0 z-50">
-      <div className="flex items-center gap-3">
+    <header className="flex items-center justify-between px-2 py-1 border-b bg-white dark:bg-gray-950 sticky top-0 z-50">
+      <div className="flex items-center gap-2">
         {/* Logo */}
-        <div className="flex items-center justify-center w-7 h-7 bg-primary rounded" data-testid="company-logo">
-          <Building2 className="h-4 w-4 text-primary-foreground" />
+        <div className="flex items-center justify-center w-6 h-6 bg-primary rounded" data-testid="company-logo">
+          <Building2 className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
 
         {/* Business Name Link */}
         <button 
           onClick={() => navigate('/business')} 
-          className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           data-testid="business-name-link"
         >
           Lighthouse Projects
         </button>
 
         {/* Dashboard Button */}
-        <Button variant="ghost" size="sm" data-testid="button-dashboard" disabled>
-          <LayoutDashboard className="h-4 w-4 mr-2" />
+        <Button variant="ghost" size="sm" data-testid="button-dashboard" disabled className="h-7 text-xs">
+          <LayoutDashboard className="h-3.5 w-3.5 mr-1.5" />
           Dashboard
         </Button>
 
         {/* All Items Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" data-testid="button-all-items">
-              <Clipboard className="h-4 w-4 mr-2" />
+            <Button variant="ghost" size="sm" data-testid="button-all-items" className="h-7 text-xs">
+              <Clipboard className="h-3.5 w-3.5 mr-1.5" />
               All Items
-              <ChevronDown className="h-4 w-4 ml-2" />
+              <ChevronDown className="h-3.5 w-3.5 ml-1.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -167,16 +167,16 @@ export default function Header() {
         </DropdownMenu>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         {/* Contacts Button */}
         <Button 
           variant="ghost" 
           size="icon" 
           onClick={() => navigate("/contacts")}
           data-testid="button-contacts"
-          className="h-8 w-8"
+          className="h-7 w-7"
         >
-          <Users className="h-4 w-4" />
+          <Users className="h-3.5 w-3.5" />
         </Button>
 
         {/* Calendar Button */}
@@ -185,9 +185,9 @@ export default function Header() {
           size="icon" 
           onClick={() => setIsCalendarOpen(true)}
           data-testid="button-calendar"
-          className="h-8 w-8"
+          className="h-7 w-7"
         >
-          <Calendar className="h-4 w-4" />
+          <Calendar className="h-3.5 w-3.5" />
         </Button>
 
         {/* Messages Dropdown */}
@@ -202,16 +202,16 @@ export default function Header() {
           size="icon" 
           onClick={toggleDarkMode}
           data-testid="button-dark-mode"
-          className="h-8 w-8"
+          className="h-7 w-7"
         >
-          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </Button>
 
         {/* New Button with Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" size="sm" data-testid="button-new" className="h-8">
-              <Plus className="h-4 w-4 mr-1.5" />
+            <Button variant="default" size="sm" data-testid="button-new" className="h-7 text-xs">
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
               New
             </Button>
           </DropdownMenuTrigger>
@@ -240,10 +240,10 @@ export default function Header() {
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="button-user-menu">
-              <Avatar className="h-8 w-8">
+            <Button variant="ghost" className="relative h-7 w-7 rounded-full" data-testid="button-user-menu">
+              <Avatar className="h-7 w-7">
                 <AvatarImage src={user?.profileImageUrl || ""} alt={getUserName()} />
-                <AvatarFallback>{getUserInitials()}</AvatarFallback>
+                <AvatarFallback className="text-xs">{getUserInitials()}</AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
