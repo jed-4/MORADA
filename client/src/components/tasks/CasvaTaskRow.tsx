@@ -21,6 +21,12 @@ export interface CasvaTaskRowProps {
   showCheckbox?: boolean;
   isDraggable?: boolean;
   users?: Array<{ id: string; name: string; email: string }>;
+  columnWidths?: {
+    assignee: number;
+    dueDate: number;
+    status: number;
+    priority: number;
+  };
 }
 
 const STATUS_OPTIONS = [
@@ -44,7 +50,13 @@ export function CasvaTaskRow({
   onUpdate,
   showCheckbox = false,
   isDraggable = false,
-  users = []
+  users = [],
+  columnWidths = {
+    assignee: 128,
+    dueDate: 112,
+    status: 80,
+    priority: 80
+  }
 }: CasvaTaskRowProps) {
   const isCompleted = task.status === "done" || task.status === "completed";
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -212,7 +224,7 @@ export function CasvaTaskRow({
       </div>
 
       {/* Assignee - Click for popover */}
-      <div className="flex-shrink-0 w-32">
+      <div className="flex-shrink-0" style={{ width: columnWidths.assignee }}>
         <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
           <PopoverTrigger asChild>
             <button 
@@ -252,7 +264,7 @@ export function CasvaTaskRow({
       </div>
 
       {/* Due Date */}
-      <div className="flex-shrink-0 w-28">
+      <div className="flex-shrink-0" style={{ width: columnWidths.dueDate }}>
         {task.dueDate ? (
           <div className="text-[13px] text-gray-600" data-testid="task-due-date">
             {format(new Date(task.dueDate), 'MMM d, yyyy')}
@@ -263,7 +275,7 @@ export function CasvaTaskRow({
       </div>
 
       {/* Status - Click for popover */}
-      <div className="flex-shrink-0 w-20">
+      <div className="flex-shrink-0" style={{ width: columnWidths.status }}>
         <Popover open={statusOpen} onOpenChange={setStatusOpen}>
           <PopoverTrigger asChild>
             <button 
@@ -290,7 +302,7 @@ export function CasvaTaskRow({
       </div>
 
       {/* Priority */}
-      <div className="flex-shrink-0 w-20">
+      <div className="flex-shrink-0" style={{ width: columnWidths.priority }}>
         {task.priority ? (
           <ColorChip type="priority" value={task.priority} />
         ) : (

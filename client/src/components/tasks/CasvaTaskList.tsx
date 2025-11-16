@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { 
   DndContext, 
   closestCenter,
@@ -48,6 +48,21 @@ export function CasvaTaskList({
   projectId
 }: CasvaTaskListProps) {
   const { toast } = useToast();
+
+  // Column widths state
+  const [columnWidths, setColumnWidths] = useState({
+    assignee: 128, // w-32 = 8rem = 128px
+    dueDate: 112,  // w-28 = 7rem = 112px
+    status: 80,    // w-20 = 5rem = 80px
+    priority: 80   // w-20 = 5rem = 80px
+  });
+
+  // Column resize state
+  const resizeRef = useRef<{
+    column: keyof typeof columnWidths | null;
+    startX: number;
+    startWidth: number;
+  }>({ column: null, startX: 0, startWidth: 0 });
 
   // Fetch users for assignee dropdown
   const { data: users = [] } = useQuery<Array<{ id: string; name: string; email: string }>>({
@@ -118,6 +133,35 @@ export function CasvaTaskList({
     });
   };
 
+  // Column resize handlers
+  const handleResizeStart = useCallback((column: keyof typeof columnWidths, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = {
+      column,
+      startX: e.clientX,
+      startWidth: columnWidths[column]
+    };
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  }, [columnWidths]);
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (!resizeRef.current.column) return;
+    const delta = e.clientX - resizeRef.current.startX;
+    const newWidth = Math.max(60, resizeRef.current.startWidth + delta);
+    setColumnWidths(prev => ({
+      ...prev,
+      [resizeRef.current.column as keyof typeof columnWidths]: newWidth
+    }));
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    resizeRef.current = { column: null, startX: 0, startWidth: 0 };
+    document.removeEventListener('mousemove', handleResizeMove);
+    document.removeEventListener('mouseup', handleResizeEnd);
+  }, [handleResizeMove]);
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -174,13 +218,44 @@ export function CasvaTaskList({
           <div className="w-4 flex-shrink-0"></div>
           {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
           <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
-          <div className="flex-shrink-0 w-32 text-xs font-medium text-muted-foreground">ASSIGNEE</div>
-          <div className="flex-shrink-0 w-28 text-xs font-medium text-muted-foreground">DUE DATE</div>
-          <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">STATUS</div>
-          <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">PRIORITY</div>
+          
+          {/* Assignee column with resize handle */}
+          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.assignee }}>
+            <div className="text-xs font-medium text-muted-foreground">ASSIGNEE</div>
+            <div 
+              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+              onMouseDown={(e) => handleResizeStart('assignee', e)}
+            />
+          </div>
+
+          {/* Due Date column with resize handle */}
+          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.dueDate }}>
+            <div className="text-xs font-medium text-muted-foreground">DUE DATE</div>
+            <div 
+              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+              onMouseDown={(e) => handleResizeStart('dueDate', e)}
+            />
+          </div>
+
+          {/* Status column with resize handle */}
+          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.status }}>
+            <div className="text-xs font-medium text-muted-foreground">STATUS</div>
+            <div 
+              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+              onMouseDown={(e) => handleResizeStart('status', e)}
+            />
+          </div>
+
+          {/* Priority column with resize handle */}
+          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.priority }}>
+            <div className="text-xs font-medium text-muted-foreground">PRIORITY</div>
+            <div 
+              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+              onMouseDown={(e) => handleResizeStart('priority', e)}
+            />
+          </div>
+
           <div className="flex-shrink-0 w-6"></div>
-          {/* Resize handle - shows on hover */}
-          <div className="absolute right-0 top-0 bottom-0 w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all" />
         </div>
 
         {/* Task List */}
@@ -197,6 +272,7 @@ export function CasvaTaskList({
                   showCheckbox={showCheckboxes}
                   isDraggable={true}
                   users={users}
+                  columnWidths={columnWidths}
                 />
               ))}
             </div>
