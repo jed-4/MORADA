@@ -1,7 +1,9 @@
 import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import CreateProjectDialog from "./CreateProjectDialog";
 import {
   DropdownMenu,
@@ -16,8 +18,11 @@ import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
 import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
+import { ProjectIcon } from "./ProjectIcon";
+import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import type { Project, CompanySettings } from "@shared/schema";
 
 // Project sections base configuration (from AppSidebar)
 const projectItemsBase = [
@@ -61,6 +66,22 @@ export default function Header() {
   const [isDark, setIsDark] = useState(false);
   const { toast } = useToast();
   const { user, logout } = useAuth();
+  const { currentProject, setCurrentProject } = useProject();
+
+  // Fetch company settings for company name
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Fetch projects for dropdown
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // Filter out archived projects
+  const activeProjects = projects.filter(p => !p.isArchived);
+
+  const companyName = companySettings?.companyName || user?.company?.name || "BuildPro";
 
   // Initialize dark mode state on mount
   useEffect(() => {
@@ -131,8 +152,72 @@ export default function Header() {
           className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           data-testid="business-name-link"
         >
-          Lighthouse Projects
+          {companyName}
         </button>
+
+        {/* Projects Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              data-testid="button-header-projects"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              <span>Projects</span>
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>Projects</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {activeProjects.length === 0 ? (
+              <DropdownMenuItem disabled>
+                <span className="text-muted-foreground text-xs">No active projects found</span>
+              </DropdownMenuItem>
+            ) : (
+              activeProjects.map((project) => (
+                <DropdownMenuItem 
+                  key={project.id} 
+                  onClick={() => {
+                    setCurrentProject(project);
+                    if (project.isBusiness) {
+                      navigate('/business');
+                    } else {
+                      navigate(`/projects/${project.id}`);
+                    }
+                  }}
+                  className={currentProject?.id === project.id ? "bg-accent" : ""}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <ProjectIcon 
+                      icon={project.icon} 
+                      color={project.color} 
+                      className="w-3.5 h-3.5 flex-shrink-0" 
+                    />
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate text-xs">{project.name}</span>
+                        {project.isBusiness && (
+                          <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            Business
+                          </Badge>
+                        )}
+                      </div>
+                      {project.description && (
+                        <span className="text-[10px] text-muted-foreground truncate">{project.description}</span>
+                      )}
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              ))
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setIsCreateProjectOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-2" />
+              <span className="text-xs">Create New Project</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Dashboard Button */}
         <Button variant="ghost" size="sm" data-testid="button-dashboard" disabled className="h-7 text-xs">
