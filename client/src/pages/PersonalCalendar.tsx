@@ -607,27 +607,18 @@ export default function PersonalCalendar() {
             ))}
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              onClick={() => setShowCreateViewDialog(true)}
+              onClick={() => {
+                if (currentView && !currentView.isDefault) {
+                  handleSaveView();
+                } else {
+                  setShowCreateViewDialog(true);
+                }
+              }}
               data-testid="button-add-view"
             >
               <Plus className="w-3 h-3" />
             </button>
           </div>
-
-          {/* Save View Button */}
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-            onClick={() => {
-              if (currentView && !currentView.isDefault) {
-                handleSaveView();
-              } else {
-                setShowCreateViewDialog(true);
-              }
-            }}
-            data-testid="button-save-view"
-          >
-            <span>{currentView && !currentView.isDefault ? 'Update View' : 'Save View'}</span>
-          </button>
 
           {/* Settings Icon */}
           <button
