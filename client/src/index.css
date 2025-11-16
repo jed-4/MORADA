@@ -376,7 +376,7 @@
 
   /* ========== CASVA PRINCIPLE 3: Color Chips ========== */
   .casva-chip {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center h-6 px-2 py-0 rounded-md text-xs border border-border;
   }
 
   .casva-chip-status-todo {
