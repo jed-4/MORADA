@@ -81,9 +81,10 @@ export default function Tasks() {
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
-  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
+  const [groupBy, setGroupBy] = useState<'status' | 'priority' | 'assignee' | 'tags'>('status');
   const [filters, setFilters] = useState<FilterState>({});
   const [isCreatingInline, setIsCreatingInline] = useState(false);
+  const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
 
   // Casva Keyboard Shortcuts
   useKeyboardShortcuts([
@@ -100,8 +101,8 @@ export default function Tasks() {
     },
     {
       key: "g",
-      handler: () => setActiveTab("kanban"),
-      description: "Go to Kanban (G)"
+      handler: () => setActiveTab("board"),
+      description: "Go to Board (G)"
     },
     {
       key: "d",
@@ -280,6 +281,7 @@ export default function Tasks() {
       if (prefs.columnOrder) setColumnOrder(prefs.columnOrder);
       if (prefs.columnVisibility) setColumnVisibility(prefs.columnVisibility);
       if (prefs.cardDisplaySettings) setCardDisplaySettings(prefs.cardDisplaySettings);
+      if (prefs.cardWidth) setCardWidth(prefs.cardWidth);
       setPreferencesLoaded(true);
     } else if (userPreferences === null) {
       // No saved preferences, mark as loaded with defaults
@@ -316,11 +318,12 @@ export default function Tasks() {
         columnOrder,
         columnVisibility,
         cardDisplaySettings,
+        cardWidth,
       });
     }, 1000); // 1 second debounce
 
     return () => clearTimeout(timeoutId);
-  }, [activeTab, groupBy, filters, columnOrder, columnVisibility, cardDisplaySettings, preferencesLoaded]);
+  }, [activeTab, groupBy, filters, columnOrder, columnVisibility, cardDisplaySettings, cardWidth, preferencesLoaded]);
 
   // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
   const groupedTasks = React.useMemo(() => {
@@ -328,7 +331,7 @@ export default function Tasks() {
     
     // Calculate dependencies inline when currentProject exists
     const defaultViews = [
-      { id: "kanban", name: "Kanban Board", viewType: "kanban" },
+      { id: "kanban", name: "Board", viewType: "kanban" },
       { id: "list", name: "List View", viewType: "list" },
       { id: "calendar", name: "Calendar View", viewType: "calendar" },
     ];
@@ -351,7 +354,12 @@ export default function Tasks() {
     
     const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
     
-    if (groupBy === 'none' || activeTab !== 'list') {
+    if (activeTab !== 'list' && activeTab !== 'kanban') {
+      return { 'All Tasks': effectivelyFilteredTasks };
+    }
+    
+    // For list view without grouping, return all tasks
+    if (activeTab === 'list') {
       return { 'All Tasks': effectivelyFilteredTasks };
     }
 
@@ -430,7 +438,7 @@ export default function Tasks() {
 
   // Default views
   const defaultViews = [
-    { id: "kanban", name: "Kanban Board", viewType: "kanban" },
+    { id: "kanban", name: "Board", viewType: "kanban" },
     { id: "list", name: "List View", viewType: "list" },
     { id: "calendar", name: "Calendar View", viewType: "calendar" },
   ];
@@ -779,8 +787,22 @@ export default function Tasks() {
 
           </div>
 
-          {/* Right: Group By Controls */}
+          {/* Right: Card Width & Group By Controls */}
           <div className="flex items-center gap-1.5">
+            {/* Card Width - only show in kanban view */}
+            {activeTab === "kanban" && (
+              <Select value={cardWidth} onValueChange={(value) => setCardWidth(value as typeof cardWidth)}>
+                <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-card-width">
+                  <span>Card Width</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="compact">Compact</SelectItem>
+                  <SelectItem value="comfortable">Comfortable</SelectItem>
+                  <SelectItem value="spacious">Spacious</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+
             {/* Group by - only show in kanban view */}
             {activeTab === "kanban" && (
               <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
@@ -788,7 +810,6 @@ export default function Tasks() {
                   <span>Group by</span>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
                   <SelectItem value="status">By Status</SelectItem>
                   <SelectItem value="priority">By Priority</SelectItem>
                   {filterOptions.availableAssignees.length > 0 && (
@@ -970,7 +991,7 @@ export default function Tasks() {
                   <SelectValue placeholder="Select view type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="kanban">Kanban Board</SelectItem>
+                  <SelectItem value="kanban">Board</SelectItem>
                   <SelectItem value="list">List View</SelectItem>
                   <SelectItem value="calendar">Calendar View</SelectItem>
                 </SelectContent>
