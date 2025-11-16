@@ -159,8 +159,14 @@ function DroppableColumn({
       <div className="p-2 space-y-1.5 max-h-[calc(100vh-300px)] overflow-y-auto">
         <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
           {tasks.length === 0 ? (
-            <div className="text-center py-12 text-xs text-muted-foreground">
-              No tasks
+            <div className="text-center py-16 px-4">
+              <div className="w-16 h-16 rounded-full bg-muted/30 mx-auto mb-3 flex items-center justify-center">
+                <svg className="w-8 h-8 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <p className="text-xs text-muted-foreground font-medium">No tasks</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-1">Add a task to get started</p>
             </div>
           ) : (
             tasks.map((task) => (
