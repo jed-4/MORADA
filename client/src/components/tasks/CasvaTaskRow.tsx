@@ -1,6 +1,6 @@
 import { Task } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
-import { Pencil, GripVertical } from "lucide-react";
+import { MoreHorizontal, GripVertical } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -108,7 +108,7 @@ export function CasvaTaskRow({
           }}
           data-testid={`button-edit-task-${task.id}`}
         >
-          <Pencil className="h-3 w-3" />
+          <MoreHorizontal className="h-4 w-4" />
         </button>
       </div>
     </div>

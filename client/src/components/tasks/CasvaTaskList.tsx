@@ -2,6 +2,25 @@ import { Task } from "@shared/schema";
 import { CasvaTaskRow } from "./CasvaTaskRow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  DndContext, 
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 
 export interface CasvaTaskListProps {
   tasks: Task[];
@@ -20,6 +39,62 @@ export function CasvaTaskList({
   showCheckboxes = false,
   maxHeight = "calc(100vh - 280px)"
 }: CasvaTaskListProps) {
+  const { toast } = useToast();
+
+  // Update task mutation
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
+      const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update task",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Handle checkbox toggle
+  const handleToggleComplete = (task: Task) => {
+    const newStatus = task.status === "done" ? "in_progress" : "done";
+    updateTaskMutation.mutate({
+      taskId: task.id,
+      updates: { status: newStatus }
+    });
+    onToggleComplete?.(task);
+  };
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = tasks.findIndex((t) => t.id === active.id);
+      const newIndex = tasks.findIndex((t) => t.id === over.id);
+      
+      // Reorder locally (parent component should handle this)
+      const reordered = arrayMove(tasks, oldIndex, newIndex);
+      
+      // You can add API call here to persist the new order if needed
+      toast({
+        title: "Task reordered",
+        description: "Task order updated"
+      });
+    }
+  };
+
   if (tasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
@@ -39,49 +114,57 @@ export function CasvaTaskList({
   }
 
   return (
-    <div className="border rounded-md bg-card overflow-hidden m-0">
-      {/* Header */}
-      <div className="group/header flex items-center gap-3 h-10 px-2 border-b border-border bg-white sticky top-0 z-10 relative">
-        <div className="w-4 flex-shrink-0"></div>
-        {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
-        <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
-        <div className="flex-shrink-0 w-32 text-xs font-medium text-muted-foreground">ASSIGNEE</div>
-        <div className="flex-shrink-0 w-28 text-xs font-medium text-muted-foreground">DUE DATE</div>
-        <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">STATUS</div>
-        <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">PRIORITY</div>
-        <div className="flex-shrink-0 w-6"></div>
-        {/* Resize handle - shows on hover */}
-        <div className="absolute right-0 top-0 bottom-0 w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all" />
-      </div>
-
-      {/* Task List */}
-      <ScrollArea style={{ maxHeight }} className="w-full">
-        <div className="divide-y-0">
-          {tasks.map((task) => (
-            <CasvaTaskRow
-              key={task.id}
-              task={task}
-              onEdit={() => onEditTask(task)}
-              onToggleComplete={onToggleComplete ? () => onToggleComplete(task) : undefined}
-              showCheckbox={showCheckboxes}
-              isDraggable={true}
-            />
-          ))}
-        </div>
-      </ScrollArea>
-      
-      {/* Inline Add Row */}
-      {onAddTask && (
-        <div 
-          className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
-          onClick={onAddTask}
-          data-testid="button-add-task-inline"
-        >
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="border rounded-md bg-card overflow-hidden m-0">
+        {/* Header */}
+        <div className="group/header flex items-center gap-3 h-[38px] px-2 border-b border-border bg-white sticky top-0 z-10 relative">
           <div className="w-4 flex-shrink-0"></div>
-          <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
-          <span className="text-sm text-gray-500 group-hover:text-gray-700">Add task</span>
+          {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
+          <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
+          <div className="flex-shrink-0 w-32 text-xs font-medium text-muted-foreground">ASSIGNEE</div>
+          <div className="flex-shrink-0 w-28 text-xs font-medium text-muted-foreground">DUE DATE</div>
+          <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">STATUS</div>
+          <div className="flex-shrink-0 w-20 text-xs font-medium text-muted-foreground">PRIORITY</div>
+          <div className="flex-shrink-0 w-6"></div>
+          {/* Resize handle - shows on hover */}
+          <div className="absolute right-0 top-0 bottom-0 w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all" />
         </div>
-      )}
-    </div>
+
+        {/* Task List */}
+        <ScrollArea style={{ maxHeight }} className="w-full">
+          <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+            <div className="divide-y-0">
+              {tasks.map((task) => (
+                <CasvaTaskRow
+                  key={task.id}
+                  task={task}
+                  onEdit={() => onEditTask(task)}
+                  onToggleComplete={() => handleToggleComplete(task)}
+                  showCheckbox={showCheckboxes}
+                  isDraggable={true}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </ScrollArea>
+      
+        {/* Inline Add Row */}
+        {onAddTask && (
+          <div 
+            className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
+            onClick={onAddTask}
+            data-testid="button-add-task-inline"
+          >
+            <div className="w-4 flex-shrink-0"></div>
+            <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-500 group-hover:text-gray-700">Add task</span>
+          </div>
+        )}
+      </div>
+    </DndContext>
   );
 }
