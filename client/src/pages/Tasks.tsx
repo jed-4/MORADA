@@ -401,7 +401,7 @@ export default function Tasks() {
               </button>
             </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5 text-sm font-semibold">Show on cards</div>
+                <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.preventDefault();
@@ -841,6 +841,12 @@ export default function Tasks() {
                 isCreatingInline={isCreatingInline}
                 onCancelInlineCreate={() => setIsCreatingInline(false)}
                 projectId={effectiveProjectId}
+                columnVisibility={{
+                  assignee: cardDisplaySettings.showAssignee,
+                  dueDate: cardDisplaySettings.showDueDate,
+                  status: cardDisplaySettings.showStatus,
+                  priority: cardDisplaySettings.showPriority
+                }}
               />
             </div>
           </TabsContent>

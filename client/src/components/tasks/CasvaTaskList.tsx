@@ -34,6 +34,12 @@ export interface CasvaTaskListProps {
   isCreatingInline?: boolean;
   onCancelInlineCreate?: () => void;
   projectId?: string;
+  columnVisibility?: {
+    assignee?: boolean;
+    dueDate?: boolean;
+    status?: boolean;
+    priority?: boolean;
+  };
 }
 
 export function CasvaTaskList({ 
@@ -45,7 +51,8 @@ export function CasvaTaskList({
   maxHeight = "calc(100vh - 280px)",
   isCreatingInline = false,
   onCancelInlineCreate,
-  projectId
+  projectId,
+  columnVisibility = { assignee: true, dueDate: true, status: true, priority: true }
 }: CasvaTaskListProps) {
   const { toast } = useToast();
 
@@ -214,46 +221,54 @@ export function CasvaTaskList({
     >
       <div className="border rounded-md bg-card overflow-hidden m-0">
         {/* Header */}
-        <div className="group/header flex items-center gap-3 h-10 px-2 border-b border-border bg-white sticky top-0 z-10 relative">
+        <div className="group/header flex items-center gap-3 h-8 px-2 border-b border-border bg-white sticky top-0 z-10 relative">
           <div className="w-4 flex-shrink-0"></div>
           {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
           <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
           
           {/* Assignee column with resize handle */}
-          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.assignee }}>
-            <div className="text-xs font-medium text-muted-foreground">ASSIGNEE</div>
-            <div 
-              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-              onMouseDown={(e) => handleResizeStart('assignee', e)}
-            />
-          </div>
+          {columnVisibility.assignee && (
+            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.assignee }}>
+              <div className="text-xs font-medium text-muted-foreground">ASSIGNEE</div>
+              <div 
+                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+                onMouseDown={(e) => handleResizeStart('assignee', e)}
+              />
+            </div>
+          )}
 
           {/* Due Date column with resize handle */}
-          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.dueDate }}>
-            <div className="text-xs font-medium text-muted-foreground">DUE DATE</div>
-            <div 
-              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-              onMouseDown={(e) => handleResizeStart('dueDate', e)}
-            />
-          </div>
+          {columnVisibility.dueDate && (
+            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.dueDate }}>
+              <div className="text-xs font-medium text-muted-foreground">DUE DATE</div>
+              <div 
+                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+                onMouseDown={(e) => handleResizeStart('dueDate', e)}
+              />
+            </div>
+          )}
 
           {/* Status column with resize handle */}
-          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.status }}>
-            <div className="text-xs font-medium text-muted-foreground">STATUS</div>
-            <div 
-              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-              onMouseDown={(e) => handleResizeStart('status', e)}
-            />
-          </div>
+          {columnVisibility.status && (
+            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.status }}>
+              <div className="text-xs font-medium text-muted-foreground">STATUS</div>
+              <div 
+                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+                onMouseDown={(e) => handleResizeStart('status', e)}
+              />
+            </div>
+          )}
 
           {/* Priority column with resize handle */}
-          <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.priority }}>
-            <div className="text-xs font-medium text-muted-foreground">PRIORITY</div>
-            <div 
-              className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-              onMouseDown={(e) => handleResizeStart('priority', e)}
-            />
-          </div>
+          {columnVisibility.priority && (
+            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.priority }}>
+              <div className="text-xs font-medium text-muted-foreground">PRIORITY</div>
+              <div 
+                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+                onMouseDown={(e) => handleResizeStart('priority', e)}
+              />
+            </div>
+          )}
 
           <div className="flex-shrink-0 w-6"></div>
         </div>
@@ -273,6 +288,7 @@ export function CasvaTaskList({
                   isDraggable={true}
                   users={users}
                   columnWidths={columnWidths}
+                  columnVisibility={columnVisibility}
                 />
               ))}
             </div>
