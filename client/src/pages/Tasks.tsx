@@ -246,9 +246,11 @@ export default function Tasks() {
     queryKey: ["/api/field-categories"],
   });
   
-  // Extract task status options
+  // Extract task status and priority options
   const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = taskStatusCategory?.options || [];
+  const taskPriorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
+  const priorityOptions = taskPriorityCategory?.options || [];
 
   // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
   const groupedTasks = React.useMemo(() => {
@@ -818,6 +820,8 @@ export default function Tasks() {
                 projectId={effectiveProjectId}
                 columnVisibility={columnVisibility}
                 columnOrder={columnOrder}
+                statusOptions={statusOptions}
+                priorityOptions={priorityOptions}
               />
             </div>
           </TabsContent>
@@ -935,16 +939,14 @@ export default function Tasks() {
       </AlertDialog>
 
       {/* Task Creation Dialog */}
-      {effectiveProjectId && (
-        <TaskModalAsana 
-          open={showCreateTaskDialog}
-          onOpenChange={setShowCreateTaskDialog}
-          projectId={effectiveProjectId}
-        />
-      )}
+      <TaskModalAsana 
+        open={showCreateTaskDialog}
+        onOpenChange={setShowCreateTaskDialog}
+        projectId={effectiveProjectId}
+      />
 
       {/* Task Editing Dialog */}
-      {effectiveProjectId && editingTask && (
+      {editingTask && (
         <TaskModalAsana
           task={editingTask}
           open={!!editingTask}

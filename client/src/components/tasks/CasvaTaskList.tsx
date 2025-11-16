@@ -41,6 +41,8 @@ export interface CasvaTaskListProps {
     priority?: boolean;
   };
   columnOrder?: string[];
+  statusOptions?: Array<{ key: string; name: string; color?: string | null }>;
+  priorityOptions?: Array<{ key: string; name: string; color?: string | null }>;
 }
 
 export function CasvaTaskList({ 
@@ -54,7 +56,9 @@ export function CasvaTaskList({
   onCancelInlineCreate,
   projectId,
   columnVisibility = { assignee: true, dueDate: true, status: true, priority: true },
-  columnOrder = ['assignee', 'dueDate', 'status', 'priority']
+  columnOrder = ['assignee', 'dueDate', 'status', 'priority'],
+  statusOptions,
+  priorityOptions
 }: CasvaTaskListProps) {
   const { toast } = useToast();
 
@@ -121,7 +125,7 @@ export function CasvaTaskList({
 
   // Handle checkbox toggle
   const handleToggleComplete = (task: Task) => {
-    const newStatus = task.status === "done" ? "in_progress" : "done";
+    const newStatus = task.status === "done" ? "in-progress" : "done";
     updateTaskMutation.mutate({
       taskId: task.id,
       updates: { status: newStatus }
@@ -278,6 +282,8 @@ export function CasvaTaskList({
                   columnWidths={columnWidths}
                   columnVisibility={columnVisibility}
                   columnOrder={columnOrder}
+                  statusOptions={statusOptions}
+                  priorityOptions={priorityOptions}
                 />
               ))}
             </div>

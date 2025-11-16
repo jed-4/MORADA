@@ -35,20 +35,21 @@ export interface CasvaTaskRowProps {
     priority?: boolean;
   };
   columnOrder?: string[];
+  statusOptions?: Array<{ key: string; name: string; color?: string | null }>;
+  priorityOptions?: Array<{ key: string; name: string; color?: string | null }>;
 }
 
-const STATUS_OPTIONS = [
-  { value: "todo", label: "To Do" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "done", label: "Done" },
-  { value: "blocked", label: "Blocked" },
+const DEFAULT_STATUS_OPTIONS = [
+  { key: "todo", name: "To Do", color: null },
+  { key: "in-progress", name: "In Progress", color: null },
+  { key: "done", name: "Done", color: null },
+  { key: "on-hold", name: "On Hold", color: null },
 ];
 
-const PRIORITY_OPTIONS = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "urgent", label: "Urgent" },
+const DEFAULT_PRIORITY_OPTIONS = [
+  { key: "low", name: "Low", color: null },
+  { key: "medium", name: "Medium", color: null },
+  { key: "high", name: "High", color: null },
 ];
 
 export function CasvaTaskRow({ 
@@ -66,7 +67,9 @@ export function CasvaTaskRow({
     priority: 80
   },
   columnVisibility = { assignee: true, dueDate: true, status: true, priority: true },
-  columnOrder = ['assignee', 'dueDate', 'status', 'priority']
+  columnOrder = ['assignee', 'dueDate', 'status', 'priority'],
+  statusOptions = DEFAULT_STATUS_OPTIONS,
+  priorityOptions = DEFAULT_PRIORITY_OPTIONS
 }: CasvaTaskRowProps) {
   const isCompleted = task.status === "done" || task.status === "completed";
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -406,13 +409,13 @@ export function CasvaTaskRow({
                 </PopoverTrigger>
                 <PopoverContent className="w-48 p-2" align="start">
                   <div className="space-y-1">
-                    {STATUS_OPTIONS.map((option) => (
+                    {statusOptions.map((option) => (
                       <button
-                        key={option.value}
-                        onClick={() => handleStatusChange(option.value)}
+                        key={option.key}
+                        onClick={() => handleStatusChange(option.key)}
                         className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
                       >
-                        <ColorChip type="status" value={option.value} />
+                        <ColorChip type="status" value={option.key} />
                       </button>
                     ))}
                   </div>
@@ -441,13 +444,13 @@ export function CasvaTaskRow({
                 </PopoverTrigger>
                 <PopoverContent className="w-48 p-2" align="start">
                   <div className="space-y-1">
-                    {PRIORITY_OPTIONS.map((option) => (
+                    {priorityOptions.map((option) => (
                       <button
-                        key={option.value}
-                        onClick={() => handlePriorityChange(option.value)}
+                        key={option.key}
+                        onClick={() => handlePriorityChange(option.key)}
                         className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
                       >
-                        <ColorChip type="priority" value={option.value} />
+                        <ColorChip type="priority" value={option.key} />
                       </button>
                     ))}
                   </div>

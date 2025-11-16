@@ -49,7 +49,7 @@ const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   content: z.string().default(""),
   status: z.string().default("todo"),
-  priority: z.enum(["low", "medium", "high"]).default("medium"),
+  priority: z.string().default("medium"),
   assigneeId: z.string().optional(),
   dueDate: z.string().optional(),
   startTime: z.string().optional(),
@@ -68,7 +68,7 @@ interface TaskModalAsanaProps {
   task?: Task;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId: string;
+  projectId?: string;
   initialStatus?: string;
 }
 
@@ -101,6 +101,9 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   const statusOptions = statusCategory?.options || [];
   const completedOption = statusOptions.find(opt => opt.isCompleted);
   const isCompleted = task?.status === completedOption?.key;
+  
+  const priorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
+  const priorityOptions = priorityCategory?.options || [];
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -118,7 +121,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
       recurringDays: (task?.recurringDays as number[]) || [],
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
-      projectId: task?.projectId || projectId,
+      projectId: task?.projectId || projectId || undefined,
     },
   });
 
@@ -139,7 +142,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         recurringDays: (task?.recurringDays as number[]) || [],
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
-        projectId: task?.projectId || projectId,
+        projectId: task?.projectId || projectId || undefined,
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
@@ -506,9 +509,11 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-white border-gray-200">
-                      <SelectItem value="high" className="text-gray-900 hover:bg-gray-50">High</SelectItem>
-                      <SelectItem value="medium" className="text-gray-900 hover:bg-gray-50">Medium</SelectItem>
-                      <SelectItem value="low" className="text-gray-900 hover:bg-gray-50">Low</SelectItem>
+                      {priorityOptions.map((option) => (
+                        <SelectItem key={option.key} value={option.key} className="text-gray-900 hover:bg-gray-50">
+                          {option.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <Badge className={`h-5 px-2 border ${priorityColors[form.watch("priority")]} no-default-hover-elevate`}>
