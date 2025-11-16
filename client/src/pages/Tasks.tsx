@@ -129,6 +129,9 @@ export default function Tasks() {
     priority: true,
   });
 
+  // Track whether preferences have been loaded to prevent saving before load
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+
   // Load card display settings from localStorage when project changes
   React.useEffect(() => {
     if (effectiveProjectId) {
@@ -251,6 +254,73 @@ export default function Tasks() {
   const statusOptions = taskStatusCategory?.options || [];
   const taskPriorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
   const priorityOptions = taskPriorityCategory?.options || [];
+
+  // Load user view preferences
+  const { data: userPreferences } = useQuery({
+    queryKey: ["/api/user-view-preferences", "tasks"],
+    queryFn: async () => {
+      const response = await fetch("/api/user-view-preferences/tasks", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new Error("Failed to fetch view preferences");
+      }
+      return response.json();
+    },
+  });
+
+  // Apply loaded preferences when they arrive
+  React.useEffect(() => {
+    if (userPreferences?.preferences) {
+      const prefs = userPreferences.preferences;
+      if (prefs.activeTab) setActiveTab(prefs.activeTab);
+      if (prefs.groupBy) setGroupBy(prefs.groupBy);
+      if (prefs.filters) setFilters(prefs.filters);
+      if (prefs.columnOrder) setColumnOrder(prefs.columnOrder);
+      if (prefs.columnVisibility) setColumnVisibility(prefs.columnVisibility);
+      if (prefs.cardDisplaySettings) setCardDisplaySettings(prefs.cardDisplaySettings);
+      setPreferencesLoaded(true);
+    } else if (userPreferences === null) {
+      // No saved preferences, mark as loaded with defaults
+      setPreferencesLoaded(true);
+    }
+  }, [userPreferences]);
+
+  // Save user view preferences mutation
+  const savePreferencesMutation = useMutation({
+    mutationFn: async (preferences: any) => {
+      const response = await fetch("/api/user-view-preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          viewKey: "tasks",
+          preferences,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to save view preferences");
+      return response.json();
+    },
+  });
+
+  // Debounced save effect - save preferences when state changes (only after initial load)
+  React.useEffect(() => {
+    if (!preferencesLoaded) return;
+
+    const timeoutId = setTimeout(() => {
+      savePreferencesMutation.mutate({
+        activeTab,
+        groupBy,
+        filters,
+        columnOrder,
+        columnVisibility,
+        cardDisplaySettings,
+      });
+    }, 1000); // 1 second debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [activeTab, groupBy, filters, columnOrder, columnVisibility, cardDisplaySettings, preferencesLoaded]);
 
   // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
   const groupedTasks = React.useMemo(() => {
