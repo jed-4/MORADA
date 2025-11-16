@@ -4,6 +4,7 @@ import { MoreHorizontal, GripVertical } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState, useRef, useEffect } from "react";
@@ -175,10 +176,17 @@ export function CasvaTaskRow({
     }
   };
 
-  const handleDueDateChange = async (date: Date | null) => {
+  const handleDueDateChange = async (date: Date | undefined, hours?: string, minutes?: string) => {
     if (onUpdate) {
       try {
-        await onUpdate(task.id, { dueDate: date ? date.toISOString() : null });
+        let finalDate: Date | null = null;
+        if (date) {
+          finalDate = new Date(date);
+          if (hours !== undefined && minutes !== undefined) {
+            finalDate.setHours(parseInt(hours) || 0, parseInt(minutes) || 0, 0, 0);
+          }
+        }
+        await onUpdate(task.id, { dueDate: finalDate ? finalDate.toISOString() : null });
         setDueDateOpen(false);
       } catch (error) {
         console.error("Failed to update due date:", error);
@@ -295,29 +303,65 @@ export function CasvaTaskRow({
             >
               {task.dueDate ? (
                 <div className="text-[13px] text-gray-600" data-testid="task-due-date">
-                  {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                  {format(new Date(task.dueDate), 'MMM d, h:mm a')}
                 </div>
               ) : null}
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-3" align="start">
-            <input
-              type="date"
-              value={task.dueDate ? format(new Date(task.dueDate), 'yyyy-MM-dd') : ''}
-              onChange={(e) => {
-                const date = e.target.value ? new Date(e.target.value) : null;
-                handleDueDateChange(date);
-              }}
-              className="text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#bba7db] outline-none"
-            />
-            {task.dueDate && (
-              <button
-                onClick={() => handleDueDateChange(null)}
-                className="mt-2 w-full text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
-              >
-                Clear date
-              </button>
-            )}
+          <PopoverContent className="w-auto p-0" align="start">
+            <div className="flex flex-col">
+              <Calendar
+                mode="single"
+                selected={task.dueDate ? new Date(task.dueDate) : undefined}
+                onSelect={(date) => {
+                  const currentDate = task.dueDate ? new Date(task.dueDate) : new Date();
+                  const hours = currentDate.getHours().toString().padStart(2, '0');
+                  const minutes = currentDate.getMinutes().toString().padStart(2, '0');
+                  handleDueDateChange(date, hours, minutes);
+                }}
+                initialFocus
+              />
+              <div className="border-t p-3 space-y-2">
+                <div className="text-xs font-medium text-gray-600 mb-2">Time</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    placeholder="HH"
+                    defaultValue={task.dueDate ? format(new Date(task.dueDate), 'HH') : '09'}
+                    onChange={(e) => {
+                      const currentDate = task.dueDate ? new Date(task.dueDate) : new Date();
+                      const minutes = currentDate.getMinutes().toString().padStart(2, '0');
+                      handleDueDateChange(currentDate, e.target.value, minutes);
+                    }}
+                    className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#bba7db] outline-none text-center"
+                  />
+                  <span className="text-gray-500">:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    placeholder="MM"
+                    defaultValue={task.dueDate ? format(new Date(task.dueDate), 'mm') : '00'}
+                    onChange={(e) => {
+                      const currentDate = task.dueDate ? new Date(task.dueDate) : new Date();
+                      const hours = currentDate.getHours().toString().padStart(2, '0');
+                      handleDueDateChange(currentDate, hours, e.target.value);
+                    }}
+                    className="w-14 text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#bba7db] outline-none text-center"
+                  />
+                </div>
+                {task.dueDate && (
+                  <button
+                    onClick={() => handleDueDateChange(undefined)}
+                    className="w-full text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+                  >
+                    Clear date
+                  </button>
+                )}
+              </div>
+            </div>
           </PopoverContent>
         </Popover>
       </div>
