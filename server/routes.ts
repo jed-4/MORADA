@@ -26,6 +26,7 @@ import {
   insertUserProjectAccessSchema,
   insertUserInvitationSchema,
   insertUserColumnPreferencesSchema,
+  insertUserViewPreferencesSchema,
   insertCompanySettingsSchema,
   insertSystemConfigurationSchema,
   insertFieldCategorySchema,
@@ -3776,6 +3777,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(preferences);
     } catch (error) {
       res.status(500).json({ error: "Failed to save column preferences" });
+    }
+  });
+
+  // User View Preferences Routes
+  app.get("/api/user-view-preferences/:viewKey", requireAuth, async (req, res) => {
+    try {
+      const preferences = await storage.getUserViewPreferences(req.user!.id, req.params.viewKey);
+      res.json(preferences || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch view preferences" });
+    }
+  });
+
+  app.post("/api/user-view-preferences", requireAuth, async (req, res) => {
+    try {
+      const validationResult = insertUserViewPreferencesSchema.safeParse({
+        ...req.body,
+        userId: req.user!.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const preferences = await storage.saveUserViewPreferences(validationResult.data);
+      res.json(preferences);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save view preferences" });
     }
   });
 
