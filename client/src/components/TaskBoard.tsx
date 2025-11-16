@@ -6,13 +6,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task } from "@shared/schema";
-import { Plus, ChevronLeft, ChevronRight, Columns3 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import TaskCardCompact from "./TaskCardCompact";
 import TaskModalAsana from "./TaskModalAsana";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
@@ -37,9 +31,6 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-
-type ColumnWidth = 'small' | 'medium' | 'wide';
 
 interface CardDisplaySettings {
   showPriority?: boolean;
@@ -414,39 +405,6 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Tasks</h1>
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-column-width"
-                  className="h-9"
-                >
-                  <Columns3 className="h-4 w-4 mr-2" />
-                  {columnWidth === 'small' ? 'Small' : columnWidth === 'wide' ? 'Wide' : 'Medium'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={() => setColumnWidth('small')}
-                  data-testid="menu-item-column-small"
-                >
-                  Small (240px)
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => setColumnWidth('medium')}
-                  data-testid="menu-item-column-medium"
-                >
-                  Medium (320px)
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => setColumnWidth('wide')}
-                  data-testid="menu-item-column-wide"
-                >
-                  Wide (400px)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
             {showNavigation && (
               <>
                 <Button 
