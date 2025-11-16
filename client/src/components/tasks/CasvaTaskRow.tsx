@@ -65,6 +65,7 @@ export function CasvaTaskRow({
   const [statusOpen, setStatusOpen] = useState(false);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
+  const [dueDateOpen, setDueDateOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   
   const {
@@ -174,6 +175,17 @@ export function CasvaTaskRow({
     }
   };
 
+  const handleDueDateChange = async (date: Date | null) => {
+    if (onUpdate) {
+      try {
+        await onUpdate(task.id, { dueDate: date ? date.toISOString() : null });
+        setDueDateOpen(false);
+      } catch (error) {
+        console.error("Failed to update due date:", error);
+      }
+    }
+  };
+
   return (
     <div 
       ref={setNodeRef}
@@ -194,11 +206,11 @@ export function CasvaTaskRow({
       {/* Checkbox - Hidden by default, shows on hover */}
       {showCheckbox && (
         <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-5 h-5 flex items-center justify-center">
+          <div className="w-4 h-4 flex items-center justify-center">
             <Checkbox
               checked={isCompleted}
               onCheckedChange={onToggleComplete}
-              className="w-5 h-5 border-2 rounded data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+              className="w-4 h-4 border-2 rounded data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
               data-testid={`checkbox-task-${task.id}`}
             />
           </div>
@@ -240,15 +252,13 @@ export function CasvaTaskRow({
         <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
           <PopoverTrigger asChild>
             <button 
-              className="text-left w-full hover:bg-gray-100 rounded px-2 py-1 -mx-2 -my-1"
+              className="text-left w-full hover:bg-gray-100 rounded px-2 py-1 -mx-2 -my-1 min-h-[24px]"
               onClick={(e) => e.stopPropagation()}
             >
-              {task.assigneeName ? (
+              {task.assigneeName && (
                 <div className="text-[13px] text-gray-600 truncate" data-testid="task-assignee">
                   {task.assigneeName}
                 </div>
-              ) : (
-                <span className="text-[13px] text-gray-400">Unassigned</span>
               )}
             </button>
           </PopoverTrigger>
@@ -275,15 +285,41 @@ export function CasvaTaskRow({
         </Popover>
       </div>
 
-      {/* Due Date */}
+      {/* Due Date - Click for date picker popover */}
       <div className="flex-shrink-0" style={{ width: columnWidths.dueDate }}>
-        {task.dueDate ? (
-          <div className="text-[13px] text-gray-600" data-testid="task-due-date">
-            {format(new Date(task.dueDate), 'MMM d, yyyy')}
-          </div>
-        ) : (
-          <span className="text-[13px] text-gray-400">-</span>
-        )}
+        <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+          <PopoverTrigger asChild>
+            <button 
+              className="text-left w-full hover:bg-gray-100 rounded px-2 py-1 -mx-2 -my-1 min-h-[24px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {task.dueDate ? (
+                <div className="text-[13px] text-gray-600" data-testid="task-due-date">
+                  {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                </div>
+              ) : null}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-3" align="start">
+            <input
+              type="date"
+              value={task.dueDate ? format(new Date(task.dueDate), 'yyyy-MM-dd') : ''}
+              onChange={(e) => {
+                const date = e.target.value ? new Date(e.target.value) : null;
+                handleDueDateChange(date);
+              }}
+              className="text-sm border border-border rounded px-2 py-1 focus:ring-1 focus:ring-[#bba7db] outline-none"
+            />
+            {task.dueDate && (
+              <button
+                onClick={() => handleDueDateChange(null)}
+                className="mt-2 w-full text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+              >
+                Clear date
+              </button>
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Status - Click for popover */}
@@ -313,13 +349,35 @@ export function CasvaTaskRow({
         </Popover>
       </div>
 
-      {/* Priority */}
+      {/* Priority - Click for popover */}
       <div className="flex-shrink-0" style={{ width: columnWidths.priority }}>
-        {task.priority ? (
-          <ColorChip type="priority" value={task.priority} />
-        ) : (
-          <span className="text-[13px] text-gray-400">-</span>
-        )}
+        <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+          <PopoverTrigger asChild>
+            <button 
+              className="hover:opacity-80 transition-opacity"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {task.priority ? (
+                <ColorChip type="priority" value={task.priority} />
+              ) : (
+                <span className="text-[13px] text-gray-400">-</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-2" align="start">
+            <div className="space-y-1">
+              {PRIORITY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handlePriorityChange(option.value)}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
+                >
+                  <ColorChip type="priority" value={option.value} />
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Edit Action - Hidden until hover */}
