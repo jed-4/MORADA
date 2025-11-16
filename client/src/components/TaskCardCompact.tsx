@@ -14,6 +14,12 @@ interface TaskCardCompactProps {
   task: Task;
   onClick?: () => void;
   isDragging?: boolean;
+  displaySettings?: {
+    showStatus?: boolean;
+    showAssignee?: boolean;
+    showDueDate?: boolean;
+    showPriority?: boolean;
+  };
 }
 
 // Status colors matching Asana 2025
@@ -39,7 +45,7 @@ const getInitials = (name: string | null | undefined): string => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
-export default function TaskCardCompact({ task, onClick, isDragging = false }: TaskCardCompactProps) {
+export default function TaskCardCompact({ task, onClick, isDragging = false, displaySettings }: TaskCardCompactProps) {
   const [isHovered, setIsHovered] = useState(false);
   const { toast } = useToast();
 
@@ -119,19 +125,12 @@ export default function TaskCardCompact({ task, onClick, isDragging = false }: T
             />
           </div>
 
-          {/* Title & Status */}
+          {/* Title */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-1">
               <h3 className={`text-sm leading-5 truncate flex-1 ${isCompleted ? 'line-through text-muted-foreground' : 'text-foreground font-medium'}`}>
                 {task.title}
               </h3>
-              
-              {/* Status chip - compact */}
-              {statusOption && (
-                <Badge className={`text-[10px] px-1.5 py-0 h-4 rounded-full ${statusColor} border no-default-hover-elevate no-default-active-elevate shrink-0`}>
-                  {isCompleted ? '✓' : statusOption.name}
-                </Badge>
-              )}
             </div>
 
             {/* Construction fields - small line below title */}
@@ -151,7 +150,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false }: T
           </div>
 
           {/* Priority tag - top right */}
-          {priorityColor && (
+          {priorityColor && (displaySettings?.showPriority !== false) && (
             <Badge className={`text-[10px] px-1 py-0 h-4 rounded-full ${priorityColor} border gap-0.5 no-default-hover-elevate no-default-active-elevate shrink-0`}>
               <Flag className="h-2 w-2" />
             </Badge>
@@ -163,27 +162,36 @@ export default function TaskCardCompact({ task, onClick, isDragging = false }: T
           )}
         </div>
 
-        {/* Bottom row: Due date & Assignee */}
-        <div className="flex items-center justify-between mt-1">
-          {/* Due date chip */}
-          {task.dueDate ? (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
-              <Calendar className="h-2 w-2 mr-0.5" />
-              {format(new Date(task.dueDate), 'MMM d')}
-            </Badge>
-          ) : (
-            <div />
-          )}
+        {/* Bottom row: Status, Due date & Assignee */}
+        <div className="flex items-center justify-between mt-1 gap-1">
+          <div className="flex items-center gap-1">
+            {/* Status chip - bottom left */}
+            {statusOption && (displaySettings?.showStatus !== false) && (
+              <Badge className={`text-[10px] px-1.5 py-0 h-4 rounded-full ${statusColor} border no-default-hover-elevate no-default-active-elevate shrink-0`}>
+                {isCompleted ? '✓' : statusOption.name}
+              </Badge>
+            )}
+            
+            {/* Due date chip */}
+            {task.dueDate && (displaySettings?.showDueDate !== false) && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
+                <Calendar className="h-2 w-2 mr-0.5" />
+                {format(new Date(task.dueDate), 'MMM d')}
+              </Badge>
+            )}
+          </div>
 
           {/* Assignee avatar */}
-          {task.assigneeName ? (
-            <Avatar className="h-5 w-5 border border-border/50">
-              <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                {getInitials(task.assigneeName)}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/20" />
+          {(displaySettings?.showAssignee !== false) && (
+            task.assigneeName ? (
+              <Avatar className="h-5 w-5 border border-border/50">
+                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                  {getInitials(task.assigneeName)}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/20" />
+            )
           )}
         </div>
       </CardContent>

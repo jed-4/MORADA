@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -793,7 +793,7 @@ export default function Tasks() {
             {activeTab === "kanban" && (
               <Select value={cardWidth} onValueChange={(value) => setCardWidth(value as typeof cardWidth)}>
                 <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-card-width">
-                  <span>Card Width</span>
+                  <span>Cards</span>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="compact">Compact</SelectItem>
@@ -801,6 +801,64 @@ export default function Tasks() {
                   <SelectItem value="spacious">Spacious</SelectItem>
                 </SelectContent>
               </Select>
+            )}
+
+            {/* Card Display Settings - only show in kanban view */}
+            {activeTab === "kanban" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-card-settings"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Display</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-3">
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Card Display</div>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showStatus !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showStatus: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Status</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showAssignee !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showAssignee: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Assignee</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showDueDate !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showDueDate: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Due Date</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showPriority !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showPriority: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Priority</span>
+                      </label>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
 
             {/* Group by - only show in kanban view */}

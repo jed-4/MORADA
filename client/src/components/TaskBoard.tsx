@@ -53,7 +53,7 @@ interface TaskBoardProps {
 }
 
 // Draggable Task Card wrapper
-function DraggableTaskCard({ task, onTaskClick }: { task: Task; onTaskClick?: (task: Task) => void }) {
+function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task; onTaskClick?: (task: Task) => void; displaySettings?: any }) {
   const {
     attributes,
     listeners,
@@ -82,7 +82,7 @@ function DraggableTaskCard({ task, onTaskClick }: { task: Task; onTaskClick?: (t
       {...listeners}
       className="touch-none"
     >
-      <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} />
+      <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} displaySettings={displaySettings} />
     </div>
   );
 }
@@ -112,11 +112,13 @@ function DroppableColumn({
   tasks, 
   onAddTask,
   onTaskClick,
+  displaySettings,
 }: { 
   column: { id: string; title: string; status: string; color?: string }; 
   tasks: Task[]; 
   onAddTask: () => void;
   onTaskClick?: (task: Task) => void;
+  displaySettings?: any;
 }) {
   const {
     setNodeRef,
@@ -129,12 +131,17 @@ function DroppableColumn({
     },
   });
 
+  // Get background color from column
+  const bgColor = column.color;
+  const bgStyle = bgColor ? { backgroundColor: `${bgColor}08` } : undefined;
+
   return (
     <div
       ref={setNodeRef}
       className={`rounded-xl border transition-all duration-200 ${
-        isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50 bg-background'
+        isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
       }`}
+      style={!isOver ? bgStyle : undefined}
     >
       {/* Column Header - ClickUp style */}
       <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isOver ? 'bg-[#bba7db]/5' : ''}`}>
@@ -149,21 +156,9 @@ function DroppableColumn({
       {/* Cards Container - max height with scroll for 6-8 cards */}
       <div className="p-2 space-y-1.5 max-h-[calc(100vh-300px)] overflow-y-auto">
         <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
-          {tasks.length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <div className="w-16 h-16 rounded-full bg-muted/30 mx-auto mb-3 flex items-center justify-center">
-                <svg className="w-8 h-8 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <p className="text-xs text-muted-foreground font-medium">No tasks</p>
-              <p className="text-[10px] text-muted-foreground/60 mt-1">Add a task to get started</p>
-            </div>
-          ) : (
-            tasks.map((task) => (
-              <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} />
-            ))
-          )}
+          {tasks.map((task) => (
+            <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} displaySettings={displaySettings} />
+          ))}
         </SortableContext>
 
         {/* Add Task Button - compact */}
@@ -402,8 +397,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       onDragEnd={handleDragEnd}
     >
       <div className="p-6" data-testid="task-board">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Tasks</h1>
+        <div className="flex items-center justify-end mb-4">
           <div className="flex items-center gap-2">
             {showNavigation && (
               <>
@@ -460,6 +454,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                       setSelectedTask(task);
                       setIsTaskModalOpen(true);
                     }}
+                    displaySettings={displaySettings}
                   />
                 </div>
               );
@@ -493,7 +488,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <DragOverlay>
           {activeTask ? (
             <div className="rotate-2">
-              <TaskCardCompact task={activeTask} onClick={() => {}} isDragging={true} />
+              <TaskCardCompact task={activeTask} onClick={() => {}} isDragging={true} displaySettings={displaySettings} />
             </div>
           ) : null}
         </DragOverlay>
