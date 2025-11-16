@@ -4,13 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -113,6 +118,15 @@ export default function Tasks() {
     showAssignee: true,
     showDueDate: true,
     showSubtasks: true,
+  });
+
+  // Column order and visibility for list view
+  const [columnOrder, setColumnOrder] = useState(['assignee', 'dueDate', 'status', 'priority']);
+  const [columnVisibility, setColumnVisibility] = useState({
+    assignee: true,
+    dueDate: true,
+    status: true,
+    priority: true,
   });
 
   // Load card display settings from localStorage when project changes
@@ -390,131 +404,6 @@ export default function Tasks() {
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-                data-testid="button-card-display-settings"
-              >
-                <Eye className="w-3 h-3" />
-                <span>Display</span>
-              </button>
-            </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showPriority: !cardDisplaySettings.showPriority});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showPriority}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showPriority: !cardDisplaySettings.showPriority})}
-                    className="mr-2"
-                  />
-                  Priority
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showStatus: !cardDisplaySettings.showStatus});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showStatus}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showStatus: !cardDisplaySettings.showStatus})}
-                    className="mr-2"
-                  />
-                  Status
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showDescription: !cardDisplaySettings.showDescription});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showDescription}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showDescription: !cardDisplaySettings.showDescription})}
-                    className="mr-2"
-                  />
-                  Description
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showTags: !cardDisplaySettings.showTags});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showTags}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showTags: !cardDisplaySettings.showTags})}
-                    className="mr-2"
-                  />
-                  Tags
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showLabels: !cardDisplaySettings.showLabels});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showLabels}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showLabels: !cardDisplaySettings.showLabels})}
-                    className="mr-2"
-                  />
-                  Labels
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showAssignee: !cardDisplaySettings.showAssignee});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showAssignee}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showAssignee: !cardDisplaySettings.showAssignee})}
-                    className="mr-2"
-                  />
-                  Assignee
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showDueDate: !cardDisplaySettings.showDueDate});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showDueDate}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showDueDate: !cardDisplaySettings.showDueDate})}
-                    className="mr-2"
-                  />
-                  Due Date
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCardDisplaySettings({...cardDisplaySettings, showSubtasks: !cardDisplaySettings.showSubtasks});
-                  }}
-                >
-                  <Checkbox
-                    checked={cardDisplaySettings.showSubtasks}
-                    onCheckedChange={() => setCardDisplaySettings({...cardDisplaySettings, showSubtasks: !cardDisplaySettings.showSubtasks})}
-                    className="mr-2"
-                  />
-                  Subtasks
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowViewSettings(true)}
-            data-testid="button-settings"
-          >
-            <Settings className="w-3 h-3" />
-          </button>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}
@@ -522,6 +411,13 @@ export default function Tasks() {
           >
             <Plus className="w-3 h-3" />
             <span>Add Task</span>
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowViewSettings(true)}
+            data-testid="button-settings"
+          >
+            <Settings className="w-3 h-3" />
           </button>
         </div>
       </div>
@@ -821,6 +717,85 @@ export default function Tasks() {
                 )}
               </SelectContent>
             </Select>
+
+            {/* Columns button - only show in list view */}
+            {activeTab === "list" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-columns"
+                  >
+                    <ColumnsIcon className="w-3 h-3" />
+                    <span>Columns</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-64 p-3">
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Columns</div>
+                    
+                    <div className="space-y-2">
+                      {columnOrder.map((columnKey, index) => {
+                        const columnLabels = {
+                          assignee: 'Assignee',
+                          dueDate: 'Due Date',
+                          status: 'Status',
+                          priority: 'Priority'
+                        };
+                        
+                        return (
+                          <div key={columnKey} className="flex items-center gap-2 group">
+                            <button
+                              className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+                              onMouseDown={(e) => {
+                                const startY = e.clientY;
+                                const startIndex = index;
+                                
+                                const handleMouseMove = (moveEvent: MouseEvent) => {
+                                  const deltaY = moveEvent.clientY - startY;
+                                  const newIndex = Math.max(0, Math.min(columnOrder.length - 1, startIndex + Math.round(deltaY / 32)));
+                                  
+                                  if (newIndex !== startIndex) {
+                                    const newOrder = [...columnOrder];
+                                    const [removed] = newOrder.splice(startIndex, 1);
+                                    newOrder.splice(newIndex, 0, removed);
+                                    setColumnOrder(newOrder);
+                                  }
+                                };
+                                
+                                const handleMouseUp = () => {
+                                  document.removeEventListener('mousemove', handleMouseMove);
+                                  document.removeEventListener('mouseup', handleMouseUp);
+                                };
+                                
+                                document.addEventListener('mousemove', handleMouseMove);
+                                document.addEventListener('mouseup', handleMouseUp);
+                              }}
+                            >
+                              <GripVertical className="h-4 w-4 text-gray-400" />
+                            </button>
+                            
+                            <Checkbox
+                              checked={columnVisibility[columnKey as keyof typeof columnVisibility]}
+                              onCheckedChange={(checked) => {
+                                setColumnVisibility({
+                                  ...columnVisibility,
+                                  [columnKey]: checked
+                                });
+                              }}
+                            />
+                            
+                            <span className="text-sm flex-1">
+                              {columnLabels[columnKey as keyof typeof columnLabels]}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
         </div>
 
@@ -841,12 +816,8 @@ export default function Tasks() {
                 isCreatingInline={isCreatingInline}
                 onCancelInlineCreate={() => setIsCreatingInline(false)}
                 projectId={effectiveProjectId}
-                columnVisibility={{
-                  assignee: cardDisplaySettings.showAssignee,
-                  dueDate: cardDisplaySettings.showDueDate,
-                  status: cardDisplaySettings.showStatus,
-                  priority: cardDisplaySettings.showPriority
-                }}
+                columnVisibility={columnVisibility}
+                columnOrder={columnOrder}
               />
             </div>
           </TabsContent>

@@ -40,6 +40,7 @@ export interface CasvaTaskListProps {
     status?: boolean;
     priority?: boolean;
   };
+  columnOrder?: string[];
 }
 
 export function CasvaTaskList({ 
@@ -52,7 +53,8 @@ export function CasvaTaskList({
   isCreatingInline = false,
   onCancelInlineCreate,
   projectId,
-  columnVisibility = { assignee: true, dueDate: true, status: true, priority: true }
+  columnVisibility = { assignee: true, dueDate: true, status: true, priority: true },
+  columnOrder = ['assignee', 'dueDate', 'status', 'priority']
 }: CasvaTaskListProps) {
   const { toast } = useToast();
 
@@ -226,49 +228,35 @@ export function CasvaTaskList({
           {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
           <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
           
-          {/* Assignee column with resize handle */}
-          {columnVisibility.assignee && (
-            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.assignee }}>
-              <div className="text-xs font-medium text-muted-foreground">ASSIGNEE</div>
+          {/* Render columns in order */}
+          {columnOrder.map((columnKey) => {
+            const columnLabels: Record<string, string> = {
+              assignee: 'ASSIGNEE',
+              dueDate: 'DUE DATE',
+              status: 'STATUS',
+              priority: 'PRIORITY'
+            };
+            
+            if (!columnVisibility[columnKey as keyof typeof columnVisibility]) {
+              return null;
+            }
+            
+            return (
               <div 
-                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-                onMouseDown={(e) => handleResizeStart('assignee', e)}
-              />
-            </div>
-          )}
-
-          {/* Due Date column with resize handle */}
-          {columnVisibility.dueDate && (
-            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.dueDate }}>
-              <div className="text-xs font-medium text-muted-foreground">DUE DATE</div>
-              <div 
-                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-                onMouseDown={(e) => handleResizeStart('dueDate', e)}
-              />
-            </div>
-          )}
-
-          {/* Status column with resize handle */}
-          {columnVisibility.status && (
-            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.status }}>
-              <div className="text-xs font-medium text-muted-foreground">STATUS</div>
-              <div 
-                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-                onMouseDown={(e) => handleResizeStart('status', e)}
-              />
-            </div>
-          )}
-
-          {/* Priority column with resize handle */}
-          {columnVisibility.priority && (
-            <div className="flex-shrink-0 relative group/col" style={{ width: columnWidths.priority }}>
-              <div className="text-xs font-medium text-muted-foreground">PRIORITY</div>
-              <div 
-                className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
-                onMouseDown={(e) => handleResizeStart('priority', e)}
-              />
-            </div>
-          )}
+                key={columnKey}
+                className="flex-shrink-0 relative group/col" 
+                style={{ width: columnWidths[columnKey as keyof typeof columnWidths] }}
+              >
+                <div className="text-xs font-medium text-muted-foreground">
+                  {columnLabels[columnKey]}
+                </div>
+                <div 
+                  className="absolute right-0 top-[-8px] bottom-[-8px] w-1 bg-border opacity-0 group-hover/header:opacity-100 hover:!bg-primary cursor-col-resize transition-all z-20"
+                  onMouseDown={(e) => handleResizeStart(columnKey as keyof typeof columnWidths, e)}
+                />
+              </div>
+            );
+          })}
 
           <div className="flex-shrink-0 w-6"></div>
         </div>
@@ -289,6 +277,7 @@ export function CasvaTaskList({
                   users={users}
                   columnWidths={columnWidths}
                   columnVisibility={columnVisibility}
+                  columnOrder={columnOrder}
                 />
               ))}
             </div>
