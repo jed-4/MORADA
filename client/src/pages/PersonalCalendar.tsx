@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isWithinInterval } from "date-fns";
-import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -9,17 +8,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar as CalendarIcon, AlertCircle, User } from "lucide-react";
+import { 
+  Calendar as CalendarIcon, 
+  AlertCircle, 
+  User, 
+  Plus, 
+  X, 
+  Filter,
+  Settings,
+  MoreHorizontal,
+} from "lucide-react";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { CalendarEventDetailDialog } from "@/components/CalendarEventDetailDialog";
-import CalendarFilters, { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
-import SavedViews, { CalendarView } from "@/components/SavedViews";
+import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
+import { CalendarView } from "@/components/SavedViews";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import ThemeToggle from "@/components/ThemeToggle";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -42,6 +73,10 @@ export default function PersonalCalendar() {
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
+  const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
+  const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+  const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
+  const [newViewName, setNewViewName] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
   const defaultViewCreationAttempted = useRef(false);
@@ -142,6 +177,60 @@ export default function PersonalCalendar() {
     onSuccess: (newView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
       setSelectedViewId(newView.id);
+    },
+  });
+
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string; filters: CalendarFiltersType; calendarMode: string }) => {
+      return await apiRequest("/api/calendar-views", "POST", {
+        name: data.name,
+        calendarType: "personal",
+        filters: data.filters,
+        calendarMode: data.calendarMode,
+        isDefault: false,
+      });
+    },
+    onSuccess: (newView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      toast({ title: "View created successfully" });
+      setShowCreateViewDialog(false);
+      setNewViewName("");
+      setSelectedViewId(newView.id);
+      setFilters(normalizeFilterDates(newView.filters || {}));
+      setCalendarMode(newView.calendarMode || "week");
+    },
+  });
+
+  const updateViewMutation = useMutation({
+    mutationFn: async (data: { id: string; filters: CalendarFiltersType; calendarMode: string }) => {
+      return await apiRequest(`/api/calendar-views/${data.id}`, "PATCH", {
+        filters: data.filters,
+        calendarMode: data.calendarMode,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      toast({ title: "View updated" });
+    },
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest(`/api/calendar-views/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      toast({ title: "View deleted" });
+      setShowDeleteViewDialog(false);
+      setViewToDelete(null);
+      if (selectedViewId === viewToDelete?.id) {
+        const defaultView = views.find((v: CalendarView) => v.isDefault);
+        if (defaultView) {
+          setSelectedViewId(defaultView.id);
+          setFilters(normalizeFilterDates(defaultView.filters || {}));
+          setCalendarMode(defaultView.calendarMode || "week");
+        }
+      }
     },
   });
 
@@ -366,6 +455,44 @@ export default function PersonalCalendar() {
     setCalendarMode(view.calendarMode || "week");
   };
 
+  const handleSaveView = () => {
+    const currentView = views.find((v: CalendarView) => v.id === selectedViewId);
+    if (currentView && !currentView.isDefault) {
+      updateViewMutation.mutate({
+        id: currentView.id,
+        filters: filters,
+        calendarMode: calendarMode,
+      });
+    } else {
+      if (!newViewName.trim()) return;
+      createViewMutation.mutate({
+        name: newViewName.trim(),
+        filters: filters,
+        calendarMode: calendarMode,
+      });
+    }
+  };
+
+  const handleDeleteView = (view: CalendarView) => {
+    setViewToDelete(view);
+    setShowDeleteViewDialog(true);
+  };
+
+  const confirmDeleteView = () => {
+    if (viewToDelete) {
+      deleteViewMutation.mutate(viewToDelete.id);
+    }
+  };
+
+  const getActiveFilterCount = () => {
+    return Object.entries(filters).filter(([_, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== undefined && value !== null;
+    }).length;
+  };
+
+  const activeFilterCount = getActiveFilterCount();
+
   const isLoading = isLoadingTasks;
   const userName = displayedUser 
     ? `${displayedUser.firstName || ''} ${displayedUser.lastName || ''}`.trim() || (displayedUserId === user?.id ? 'My' : 'User')
@@ -374,132 +501,392 @@ export default function PersonalCalendar() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full" data-testid="personal-calendar">
-        {/* Skeleton Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-b">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-            <div className="flex items-center gap-2">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 sm:h-6 w-28 sm:w-32" />
-            </div>
+        <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-4 w-32" />
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
-            <Skeleton className="h-9 w-9 rounded-md" />
-            <Skeleton className="h-9 w-28 sm:w-32 rounded-md" />
-            <Skeleton className="h-9 w-20 sm:w-24 rounded-md" />
+          <div className="flex items-center gap-1.5">
+            <Skeleton className="h-6 w-24" />
           </div>
         </div>
-
-        {/* Skeleton Calendar */}
-        <div className="flex-1 min-h-0 p-3 sm:p-6">
-          <Card className="h-full flex flex-col p-3 sm:p-4 gap-3 sm:gap-4">
-            {/* Calendar header skeleton */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-              <Skeleton className="h-7 sm:h-8 w-36 sm:w-48" />
-              <div className="flex gap-2">
-                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20 rounded-md" />
-                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20 rounded-md" />
-              </div>
-            </div>
-            {/* Calendar grid skeleton */}
-            <div className="flex-1 grid grid-cols-7 gap-2">
-              {Array.from({ length: 21 }).map((_, i) => (
-                <Skeleton key={i} className="h-full rounded-md" />
-              ))}
-            </div>
-          </Card>
+        <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+          <Skeleton className="h-6 w-48" />
+        </div>
+        <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-1.5">
+            <Skeleton className="h-6 w-20" />
+            <Skeleton className="h-6 w-20" />
+            <Skeleton className="h-6 w-20" />
+          </div>
+          <Skeleton className="h-6 w-20" />
+        </div>
+        <div className="flex-1 min-h-0">
+          <div className="h-full">
+            <Skeleton className="h-full w-full" />
+          </div>
         </div>
       </div>
     );
   }
 
+  const currentView = views.find((v: CalendarView) => v.id === selectedViewId);
+
   return (
     <div className="flex flex-col h-full" data-testid="personal-calendar">
-      {/* Top Bar with Title, Team Selector, Views, and Filters */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-b">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-          <div className="flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5" />
-            <h2 className="text-base sm:text-lg font-semibold">{userName} Calendar</h2>
-          </div>
-
-          {/* Team Calendar Selector */}
+      {/* UNIFIED 3-ROW COMPACT HEADER */}
+      
+      {/* Row 1 - Calendar Title & Team Selector (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Title + Team Selector */}
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">{userName} Calendar</h2>
           {hasTeamCalendarPermission && teamMembers.length > 0 && (
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <Select 
-                value={selectedUserId || user?.id} 
-                onValueChange={(value) => setSelectedUserId(value === user?.id ? undefined : value)}
-              >
-                <SelectTrigger className="w-full sm:w-48" data-testid="select-team-member">
-                  <SelectValue placeholder="Select team member" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamMembers.map((member: any) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {`${member.firstName || ''} ${member.lastName || ''}`.trim() || member.email}
-                      {member.id === user?.id && " (You)"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select 
+              value={selectedUserId || user?.id} 
+              onValueChange={(value) => setSelectedUserId(value === user?.id ? undefined : value)}
+            >
+              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-team-member">
+                <User className="w-3 h-3 mr-1" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {teamMembers.map((member: any) => (
+                  <SelectItem key={member.id} value={member.id}>
+                    {`${member.firstName || ''} ${member.lastName || ''}`.trim() || member.email}
+                    {member.id === user?.id && " (You)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
-          <ThemeToggle />
-          <SavedViews
-            calendarType="personal"
-            currentFilters={filters}
-            currentCalendarMode={calendarMode}
-            onViewSelect={handleViewSelect}
-            selectedViewId={selectedViewId}
-          />
-          <CalendarFilters
-            filters={filters}
-            onFiltersChange={setFilters}
-            availableProjects={projects.map((p: any) => ({ id: p.id, name: p.name, color: p.color }))}
-            availableStatuses={statusOptions.map((s: any) => ({ key: s.key, label: s.name }))}
-            showEventTypeFilter={displayedUserId === user?.id}
-            calendarType="personal"
-          />
-        </div>
+        {/* Right: Google Calendar Alert (if error) */}
+        {googleCalendarError && displayedUserId === user?.id && (
+          <Badge variant="destructive" className="text-xs flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            Google Calendar Error
+          </Badge>
+        )}
       </div>
 
-      {/* Google Calendar Error Alert */}
-      {googleCalendarError && displayedUserId === user?.id && (
-        <div className="px-6 pt-4">
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Failed to load Google Calendar events. Please check your connection in Profile settings.
-            </AlertDescription>
-          </Alert>
+      {/* Row 2 - View Tabs (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
+          {views.map((view: CalendarView) => (
+            <div key={view.id} className="relative group">
+              <button
+                onClick={() => handleViewSelect(view)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  selectedViewId === view.id
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2 flex items-center gap-1`}
+                data-testid={`tab-${view.id}`}
+              >
+                {view.name}
+              </button>
+              {!view.isDefault && (
+                <button
+                  className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteView(view);
+                  }}
+                  data-testid={`button-delete-${view.id}`}
+                >
+                  <X className="h-2 w-2" />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowCreateViewDialog(true)}
+            data-testid="button-add-view"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
         </div>
-      )}
 
-      {/* Calendar Card */}
-      <div className="flex-1 min-h-0 p-3 sm:p-6">
-        <Card className="h-full flex flex-col">
-          <div className="flex-1 min-h-0">
-            <EnhancedCalendar
-              events={filteredEvents}
-              onEventClick={handleEventClick}
-              onEventComplete={handleEventComplete}
-              onEventReschedule={handleEventReschedule}
-              onEventResize={handleEventResize}
-              showCompletionCheckbox={true}
-              initialView={calendarMode as any}
-            />
-          </div>
-        </Card>
+        {/* Right: Save View */}
+        <button
+          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+          onClick={() => {
+            if (currentView && !currentView.isDefault) {
+              handleSaveView();
+            } else {
+              setShowCreateViewDialog(true);
+            }
+          }}
+          data-testid="button-save-view"
+        >
+          <Settings className="w-3 h-3" />
+          <span>{currentView && !currentView.isDefault ? 'Update View' : 'Save View'}</span>
+        </button>
       </div>
 
+      {/* Row 3 - Calendar Mode & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Calendar Mode Buttons */}
+        <div className="flex items-center gap-0.5">
+          {[
+            { value: 'month', label: 'Month' },
+            { value: 'week', label: 'Week' },
+            { value: 'day', label: 'Day' },
+          ].map((mode) => (
+            <button
+              key={mode.value}
+              onClick={() => setCalendarMode(mode.value)}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                calendarMode === mode.value
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                  : 'hover-elevate'
+              } active-elevate-2`}
+              data-testid={`button-mode-${mode.value}`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Right: Filters Button */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              data-testid="button-filters"
+            >
+              <Filter className="w-3 h-3" />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  {activeFilterCount}
+                </Badge>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-3">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold">Filters</div>
+                {activeFilterCount > 0 && (
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setFilters({})}
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {/* Event Types */}
+              {displayedUserId === user?.id && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Event Types</Label>
+                  <div className="space-y-1.5">
+                    {[
+                      { value: 'task', label: 'Tasks' },
+                      { value: 'schedule-item', label: 'Schedule Items' },
+                      { value: 'google-calendar', label: 'Google Calendar' },
+                    ].map((type) => (
+                      <label key={type.value} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.eventTypes?.includes(type.value) || false}
+                          onCheckedChange={() => {
+                            const current = filters.eventTypes || [];
+                            const updated = current.includes(type.value)
+                              ? current.filter(t => t !== type.value)
+                              : [...current, type.value];
+                            setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{type.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Projects */}
+              {projects.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Projects</Label>
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                    {projects.map((project: any) => (
+                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.projects?.includes(project.id) || false}
+                          onCheckedChange={() => {
+                            const current = filters.projects || [];
+                            const updated = current.includes(project.id)
+                              ? current.filter(p => p !== project.id)
+                              : [...current, project.id];
+                            setFilters({...filters, projects: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{project.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Status */}
+              {statusOptions.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Status</Label>
+                  <div className="space-y-1.5">
+                    {statusOptions.map((status: any) => (
+                      <label key={status.key} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.status?.includes(status.key) || false}
+                          onCheckedChange={() => {
+                            const current = filters.status || [];
+                            const updated = current.includes(status.key)
+                              ? current.filter(s => s !== status.key)
+                              : [...current, status.key];
+                            setFilters({...filters, status: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{status.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Date Range */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Date Range</Label>
+                <div className="space-y-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="w-full h-8 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between">
+                        <span>{filters.dateFrom ? format(filters.dateFrom, "MMM dd, yyyy") : "From date"}</span>
+                        <CalendarIcon className="w-3 h-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={filters.dateFrom}
+                        onSelect={(date) => setFilters({...filters, dateFrom: date || undefined})}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="w-full h-8 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between">
+                        <span>{filters.dateTo ? format(filters.dateTo, "MMM dd, yyyy") : "To date"}</span>
+                        <CalendarIcon className="w-3 h-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={filters.dateTo}
+                        onSelect={(date) => setFilters({...filters, dateTo: date || undefined})}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* Calendar Content - No Card Wrapper, Flush with Header */}
+      <div className="flex-1 min-h-0">
+        <EnhancedCalendar
+          events={filteredEvents}
+          onEventClick={handleEventClick}
+          onEventComplete={handleEventComplete}
+          onEventReschedule={handleEventReschedule}
+          onEventResize={handleEventResize}
+          showCompletionCheckbox={true}
+          initialView={calendarMode as any}
+        />
+      </div>
+
+      {/* Event Detail Dialog */}
       <CalendarEventDetailDialog
         event={selectedEvent}
         open={detailDialogOpen}
         onOpenChange={setDetailDialogOpen}
       />
+
+      {/* Create View Dialog */}
+      <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save View</DialogTitle>
+            <DialogDescription>
+              Save your current filters and calendar mode as a new view
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="view-name">View Name</Label>
+              <Input
+                id="view-name"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                placeholder="e.g., My Week View"
+                data-testid="input-view-name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <button
+              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+              onClick={() => {
+                setShowCreateViewDialog(false);
+                setNewViewName("");
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="h-8 px-3 text-sm rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+              onClick={handleSaveView}
+              disabled={!newViewName.trim()}
+              data-testid="button-confirm-save-view"
+            >
+              Save View
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete View Dialog */}
+      <Dialog open={showDeleteViewDialog} onOpenChange={setShowDeleteViewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete View</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+              onClick={() => setShowDeleteViewDialog(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="h-8 px-3 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 active-elevate-2"
+              onClick={confirmDeleteView}
+              data-testid="button-confirm-delete-view"
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
