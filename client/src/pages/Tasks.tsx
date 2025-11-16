@@ -835,6 +835,7 @@ export default function Tasks() {
               <CasvaTaskList
                 tasks={effectivelyFilteredTasks}
                 onEditTask={(task: Task) => setEditingTask(task)}
+                onAddTask={() => setShowCreateTaskDialog(true)}
                 showCheckboxes={true}
               />
             </div>

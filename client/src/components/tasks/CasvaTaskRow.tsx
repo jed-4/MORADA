@@ -1,11 +1,9 @@
 import { Task } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
-import { Button } from "@/components/ui/button";
 import { Pencil, GripVertical } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
-import { TableCell } from "@/components/ui/table";
 
 export interface CasvaTaskRowProps {
   task: Task;
@@ -29,83 +27,81 @@ export function CasvaTaskRow({
   const isCompleted = task.status === "done" || task.status === "completed";
 
   return (
-    <>
-      {/* Checkbox Column */}
+    <div 
+      className="group flex items-center gap-3 h-10 px-3 transition-all duration-200 hover:bg-gray-50 hover:shadow-md hover:scale-[1.01] cursor-pointer"
+      data-testid={`task-row-${task.id}`}
+    >
+      {/* Drag Handle - Hidden until hover */}
+      <div 
+        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0" 
+        {...dragAttributes} 
+        {...dragListeners}
+        data-testid="drag-handle"
+      >
+        <GripVertical className="h-4 w-4 text-gray-400" />
+      </div>
+
+      {/* Checkbox (optional) */}
       {showCheckbox && (
-        <TableCell className="w-12 h-9 py-0">
+        <div className="flex-shrink-0">
           <Checkbox
             checked={isCompleted}
             onCheckedChange={onToggleComplete}
             data-testid={`checkbox-task-${task.id}`}
           />
-        </TableCell>
+        </div>
       )}
 
-      {/* Title Column */}
-      <TableCell className="h-9 py-0">
-        <div className="flex items-center gap-1.5">
-          {isDraggable && (
-            <div 
-              className="drag-handle-enhanced cursor-grab active:cursor-grabbing" 
-              {...dragAttributes} 
-              {...dragListeners}
-              data-testid="drag-handle"
-            >
-              <GripVertical className="h-3 w-3 text-muted-foreground" />
-            </div>
-          )}
-          <span className={cn("text-sm truncate", isCompleted && "line-through opacity-60")} data-testid="task-title">
-            {task.title}
-          </span>
+      {/* Title Column - Flex grow to take remaining space */}
+      <div className="flex-1 min-w-0">
+        <div className={cn("text-sm font-semibold truncate", isCompleted && "line-through opacity-60")} data-testid="task-title">
+          {task.title}
         </div>
-      </TableCell>
+      </div>
 
-      {/* Status Column */}
-      <TableCell className="w-32 h-9 py-0">
-        <ColorChip type="status" value={task.status || "todo"} />
-      </TableCell>
-
-      {/* Priority Column */}
-      <TableCell className="w-32 h-9 py-0">
-        {task.priority ? (
-          <ColorChip type="priority" value={task.priority} />
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        )}
-      </TableCell>
-
-      {/* Assignee Column */}
-      <TableCell className="w-40 h-9 py-0">
+      {/* Assignee - Secondary text */}
+      <div className="flex-shrink-0 w-32">
         {task.assigneeName ? (
-          <div className="text-xs text-muted-foreground truncate" data-testid="task-assignee">
+          <div className="text-[13px] text-gray-600 truncate" data-testid="task-assignee">
             {task.assigneeName}
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+          <span className="text-[13px] text-gray-400">-</span>
         )}
-      </TableCell>
+      </div>
 
-      {/* Due Date Column */}
-      <TableCell className="w-32 h-9 py-0">
+      {/* Due Date - Secondary text */}
+      <div className="flex-shrink-0 w-28">
         {task.dueDate ? (
-          <div className="text-xs text-muted-foreground" data-testid="task-due-date">
+          <div className="text-[13px] text-gray-600" data-testid="task-due-date">
             {format(new Date(task.dueDate), 'MMM d, yyyy')}
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+          <span className="text-[13px] text-gray-400">-</span>
         )}
-      </TableCell>
+      </div>
 
-      {/* Actions Column */}
-      <TableCell className="w-12 h-9 py-0">
+      {/* Chips Column - Vertical stack */}
+      <div className="flex-shrink-0 flex flex-col gap-1 items-end w-24">
+        <ColorChip type="status" value={task.status || "todo"} />
+        {task.priority && (
+          <ColorChip type="priority" value={task.priority} />
+        )}
+      </div>
+
+      {/* Edit Action - Hidden until hover */}
+      <div className="flex-shrink-0">
         <button
           className="h-6 w-6 rounded-md border border-border hover-elevate active-elevate-2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={onEdit}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
           data-testid={`button-edit-task-${task.id}`}
         >
           <Pencil className="h-3 w-3" />
         </button>
-      </TableCell>
-    </>
+      </div>
+    </div>
   );
 }
