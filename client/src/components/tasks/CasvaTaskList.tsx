@@ -3,7 +3,7 @@ import { CasvaTaskRow } from "./CasvaTaskRow";
 import { CasvaTaskCreateRow } from "./CasvaTaskCreateRow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +48,11 @@ export function CasvaTaskList({
   projectId
 }: CasvaTaskListProps) {
   const { toast } = useToast();
+
+  // Fetch users for assignee dropdown
+  const { data: users = [] } = useQuery<Array<{ id: string; name: string; email: string }>>({
+    queryKey: ["/api/users"],
+  });
 
   // Create task mutation
   const createTaskMutation = useMutation({
@@ -165,7 +170,7 @@ export function CasvaTaskList({
     >
       <div className="border rounded-md bg-card overflow-hidden m-0">
         {/* Header */}
-        <div className="group/header flex items-center gap-3 h-[38px] px-2 border-b border-border bg-white sticky top-0 z-10 relative">
+        <div className="group/header flex items-center gap-3 h-10 px-2 border-b border-border bg-white sticky top-0 z-10 relative">
           <div className="w-4 flex-shrink-0"></div>
           {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
           <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
@@ -181,7 +186,7 @@ export function CasvaTaskList({
         {/* Task List */}
         <ScrollArea style={{ maxHeight }} className="w-full">
           <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-            <div className="divide-y-0">
+            <div>
               {tasks.map((task) => (
                 <CasvaTaskRow
                   key={task.id}
@@ -191,6 +196,7 @@ export function CasvaTaskList({
                   onUpdate={handleUpdateTask}
                   showCheckbox={showCheckboxes}
                   isDraggable={true}
+                  users={users}
                 />
               ))}
             </div>
@@ -206,7 +212,7 @@ export function CasvaTaskList({
           />
         ) : onAddTask ? (
           <div 
-            className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
+            className="group flex items-center gap-3 h-10 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer border-t border-border"
             onClick={onAddTask}
             data-testid="button-add-task-inline"
           >

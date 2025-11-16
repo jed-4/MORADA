@@ -7,15 +7,35 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState, useRef, useEffect } from "react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export interface CasvaTaskRowProps {
   task: Task;
   onEdit: () => void;
   onToggleComplete?: () => void;
-  onUpdate?: (taskId: string, updates: Partial<Task>) => void;
+  onUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
   showCheckbox?: boolean;
   isDraggable?: boolean;
+  users?: Array<{ id: string; name: string; email: string }>;
 }
+
+const STATUS_OPTIONS = [
+  { value: "todo", label: "To Do" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "done", label: "Done" },
+  { value: "blocked", label: "Blocked" },
+];
+
+const PRIORITY_OPTIONS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+];
 
 export function CasvaTaskRow({ 
   task, 
@@ -23,12 +43,15 @@ export function CasvaTaskRow({
   onToggleComplete,
   onUpdate,
   showCheckbox = false,
-  isDraggable = false
+  isDraggable = false,
+  users = []
 }: CasvaTaskRowProps) {
   const isCompleted = task.status === "done" || task.status === "completed";
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   
   const {
@@ -61,27 +84,21 @@ export function CasvaTaskRow({
   const saveEdit = async () => {
     if (!editingField || !onUpdate) return;
     
-    // Validate non-empty title
     const trimmedValue = editValue.trim();
     if (editingField === 'title' && !trimmedValue) {
-      // Keep editor open if title is empty
       return;
     }
     
-    // Only save if value changed
     const originalValue = task[editingField as keyof Task];
     if (trimmedValue !== originalValue) {
       setIsSaving(true);
       try {
         await onUpdate(task.id, { [editingField]: trimmedValue });
-        // Only close editor on successful save
         setEditingField(null);
         setEditValue("");
       } catch (error) {
-        // Restore original value and re-focus input on error
         setEditValue(originalValue as string);
         console.error("Failed to save edit:", error);
-        // Re-focus the input after a brief delay to allow blur to complete
         setTimeout(() => {
           if (inputRef.current) {
             inputRef.current.focus();
@@ -92,7 +109,6 @@ export function CasvaTaskRow({
         setIsSaving(false);
       }
     } else {
-      // No change, just close
       setEditingField(null);
       setEditValue("");
     }
@@ -112,37 +128,60 @@ export function CasvaTaskRow({
     }
   };
 
+  const handleStatusChange = async (newStatus: string) => {
+    if (onUpdate) {
+      try {
+        await onUpdate(task.id, { status: newStatus });
+        setStatusOpen(false);
+      } catch (error) {
+        console.error("Failed to update status:", error);
+      }
+    }
+  };
+
+  const handleAssigneeChange = async (userId: string) => {
+    if (onUpdate) {
+      try {
+        await onUpdate(task.id, { assignee: userId });
+        setAssigneeOpen(false);
+      } catch (error) {
+        console.error("Failed to update assignee:", error);
+      }
+    }
+  };
+
   return (
     <div 
       ref={setNodeRef}
       style={style}
-      className="group flex items-center gap-3 h-9 px-2 transition-all duration-200 hover:bg-gray-50 cursor-pointer relative"
+      className="group flex items-center gap-3 h-10 px-2 transition-all duration-200 hover:bg-gray-50 relative"
       data-testid={`task-row-${task.id}`}
     >
-      {/* Drag Handle - Hidden until hover with border on hover */}
+      {/* Drag Handle - Hidden until hover */}
       <div 
-        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0 relative" 
+        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-grab active:cursor-grabbing flex-shrink-0" 
         {...attributes} 
         {...listeners}
         data-testid="drag-handle"
       >
-        <div className="absolute inset-0 border border-transparent group-hover:border-gray-400 rounded-sm pointer-events-none" />
         <GripVertical className="h-4 w-4 text-gray-400" />
       </div>
 
-      {/* Checkbox (optional) with border on hover */}
+      {/* Checkbox - Hidden by default, shows on hover */}
       {showCheckbox && (
-        <div className="flex-shrink-0 relative">
-          <div className="absolute inset-0 border border-transparent group-hover:border-gray-400 rounded-sm pointer-events-none" />
-          <Checkbox
-            checked={isCompleted}
-            onCheckedChange={onToggleComplete}
-            data-testid={`checkbox-task-${task.id}`}
-          />
+        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="w-5 h-5 flex items-center justify-center">
+            <Checkbox
+              checked={isCompleted}
+              onCheckedChange={onToggleComplete}
+              className="w-5 h-5 border-2 rounded data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+              data-testid={`checkbox-task-${task.id}`}
+            />
+          </div>
         </div>
       )}
 
-      {/* Title Column - Flex grow to take remaining space */}
+      {/* Title Column - Click to edit */}
       <div className="flex-1 min-w-0">
         {editingField === "title" ? (
           <input
@@ -152,12 +191,15 @@ export function CasvaTaskRow({
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={saveEdit}
             onKeyDown={handleKeyDown}
-            className="w-full text-sm font-semibold bg-transparent border-none outline-none focus:ring-0 p-0"
+            className="w-full text-sm font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-[#bba7db] rounded px-1 -mx-1"
             data-testid="input-edit-title"
           />
         ) : (
           <div 
-            className={cn("text-sm font-semibold truncate cursor-text", isCompleted && "line-through opacity-60")} 
+            className={cn(
+              "text-sm font-medium truncate cursor-text hover:bg-gray-100 rounded px-1 -mx-1",
+              isCompleted && "line-through opacity-60"
+            )} 
             onClick={(e) => {
               e.stopPropagation();
               startEditing("title", task.title);
@@ -169,18 +211,47 @@ export function CasvaTaskRow({
         )}
       </div>
 
-      {/* Assignee - Secondary text */}
+      {/* Assignee - Click for popover */}
       <div className="flex-shrink-0 w-32">
-        {task.assigneeName ? (
-          <div className="text-[13px] text-gray-600 truncate" data-testid="task-assignee">
-            {task.assigneeName}
-          </div>
-        ) : (
-          <span className="text-[13px] text-gray-400">-</span>
-        )}
+        <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
+          <PopoverTrigger asChild>
+            <button 
+              className="text-left w-full hover:bg-gray-100 rounded px-2 py-1 -mx-2 -my-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {task.assigneeName ? (
+                <div className="text-[13px] text-gray-600 truncate" data-testid="task-assignee">
+                  {task.assigneeName}
+                </div>
+              ) : (
+                <span className="text-[13px] text-gray-400">Unassigned</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2" align="start">
+            <div className="space-y-1">
+              {users.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => handleAssigneeChange(user.id)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 transition-colors",
+                    task.assignee === user.id && "bg-[#bba7db]/10 text-[#bba7db]"
+                  )}
+                >
+                  <div className="font-medium">{user.name || user.email}</div>
+                  <div className="text-xs text-gray-500">{user.email}</div>
+                </button>
+              ))}
+              {users.length === 0 && (
+                <div className="px-3 py-2 text-sm text-gray-500">No users available</div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
-      {/* Due Date - Secondary text */}
+      {/* Due Date */}
       <div className="flex-shrink-0 w-28">
         {task.dueDate ? (
           <div className="text-[13px] text-gray-600" data-testid="task-due-date">
@@ -191,12 +262,34 @@ export function CasvaTaskRow({
         )}
       </div>
 
-      {/* Status Column */}
+      {/* Status - Click for popover */}
       <div className="flex-shrink-0 w-20">
-        <ColorChip type="status" value={task.status || "todo"} />
+        <Popover open={statusOpen} onOpenChange={setStatusOpen}>
+          <PopoverTrigger asChild>
+            <button 
+              className="hover:opacity-80 transition-opacity"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ColorChip type="status" value={task.status || "todo"} />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-2" align="start">
+            <div className="space-y-1">
+              {STATUS_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleStatusChange(option.value)}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
+                >
+                  <ColorChip type="status" value={option.value} />
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
-      {/* Priority Column */}
+      {/* Priority */}
       <div className="flex-shrink-0 w-20">
         {task.priority ? (
           <ColorChip type="priority" value={task.priority} />
