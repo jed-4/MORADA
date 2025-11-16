@@ -45,6 +45,8 @@ interface EnhancedCalendarProps {
   onDateClick?: (date: Date) => void;
   showCompletionCheckbox?: boolean;
   initialView?: "month" | "week" | "day" | "roster";
+  currentDate?: Date;
+  onCurrentDateChange?: (date: Date) => void;
 }
 
 interface DraggableEventProps {
@@ -331,11 +333,23 @@ export function EnhancedCalendar({
   onEventResize,
   onDateClick,
   showCompletionCheckbox = true,
-  initialView = "month"
+  initialView = "month",
+  currentDate: externalCurrentDate,
+  onCurrentDateChange
 }: EnhancedCalendarProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [view, setView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
+  
+  // Use controlled currentDate if provided, otherwise use internal state
+  const isControlled = externalCurrentDate !== undefined;
+  const currentDate = isControlled ? externalCurrentDate : internalCurrentDate;
+  const setCurrentDate = isControlled 
+    ? (date: Date | ((prev: Date) => Date)) => {
+        const newDate = typeof date === 'function' ? date(currentDate) : date;
+        onCurrentDateChange?.(newDate);
+      }
+    : setInternalCurrentDate;
   
   // Filter toggle states
   const [showTasks, setShowTasks] = useState(true);
@@ -351,6 +365,27 @@ export function EnhancedCalendar({
   const [weekRangeEnd, setWeekRangeEnd] = useState(() => endOfWeek(addWeeks(new Date(), 4), { weekStartsOn: 1 }));
   const [monthRangeStart, setMonthRangeStart] = useState(() => startOfMonth(subMonths(new Date(), 2)));
   const [monthRangeEnd, setMonthRangeEnd] = useState(() => endOfMonth(addMonths(new Date(), 2)));
+
+  // Sync range buffers when controlled currentDate changes
+  useEffect(() => {
+    if (isControlled && externalCurrentDate) {
+      // Check if date is outside week range and recenter if needed
+      const weekStart = startOfWeek(externalCurrentDate, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(externalCurrentDate, { weekStartsOn: 1 });
+      if (weekStart < weekRangeStart || weekEnd > weekRangeEnd) {
+        setWeekRangeStart(startOfWeek(subWeeks(externalCurrentDate, 4), { weekStartsOn: 1 }));
+        setWeekRangeEnd(endOfWeek(addWeeks(externalCurrentDate, 4), { weekStartsOn: 1 }));
+      }
+      
+      // Check if date is outside month range and recenter if needed
+      const monthStart = startOfMonth(externalCurrentDate);
+      const monthEnd = endOfMonth(externalCurrentDate);
+      if (monthStart < monthRangeStart || monthEnd > monthRangeEnd) {
+        setMonthRangeStart(startOfMonth(subMonths(externalCurrentDate, 2)));
+        setMonthRangeEnd(endOfMonth(addMonths(externalCurrentDate, 2)));
+      }
+    }
+  }, [isControlled, externalCurrentDate, weekRangeStart, weekRangeEnd, monthRangeStart, monthRangeEnd]);
 
   // Setup drag sensors
   const mouseSensor = useSensor(MouseSensor, {

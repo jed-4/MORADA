@@ -17,6 +17,8 @@ import {
   Filter,
   Settings,
   MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { CalendarEventDetailDialog } from "@/components/CalendarEventDetailDialog";
@@ -77,6 +79,8 @@ export default function PersonalCalendar() {
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
   const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
   const [newViewName, setNewViewName] = useState("");
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const defaultViewCreationAttempted = useRef(false);
@@ -493,6 +497,34 @@ export default function PersonalCalendar() {
 
   const activeFilterCount = getActiveFilterCount();
 
+  const handleNavigateToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  const handleNavigatePrevious = () => {
+    const newDate = new Date(currentDate);
+    if (calendarMode === 'month') {
+      newDate.setMonth(newDate.getMonth() - 1);
+    } else if (calendarMode === 'week') {
+      newDate.setDate(newDate.getDate() - 7);
+    } else {
+      newDate.setDate(newDate.getDate() - 1);
+    }
+    setCurrentDate(newDate);
+  };
+
+  const handleNavigateNext = () => {
+    const newDate = new Date(currentDate);
+    if (calendarMode === 'month') {
+      newDate.setMonth(newDate.getMonth() + 1);
+    } else if (calendarMode === 'week') {
+      newDate.setDate(newDate.getDate() + 7);
+    } else {
+      newDate.setDate(newDate.getDate() + 1);
+    }
+    setCurrentDate(newDate);
+  };
+
   const isLoading = isLoadingTasks;
   const userName = displayedUser 
     ? `${displayedUser.firstName || ''} ${displayedUser.lastName || ''}`.trim() || (displayedUserId === user?.id ? 'My' : 'User')
@@ -533,108 +565,114 @@ export default function PersonalCalendar() {
 
   return (
     <div className="flex flex-col h-full" data-testid="personal-calendar">
-      {/* UNIFIED 3-ROW COMPACT HEADER */}
+      {/* REDESIGNED 3-ROW COMPACT HEADER */}
       
-      {/* Row 1 - Calendar Title & Team Selector (36px) */}
+      {/* Row 1 - Title & Views (36px) */}
       <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Title + Team Selector */}
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">{userName} Calendar</h2>
-          {hasTeamCalendarPermission && teamMembers.length > 0 && (
-            <Select 
-              value={selectedUserId || user?.id} 
-              onValueChange={(value) => setSelectedUserId(value === user?.id ? undefined : value)}
-            >
-              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-team-member">
-                <User className="w-3 h-3 mr-1" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {teamMembers.map((member: any) => (
-                  <SelectItem key={member.id} value={member.id}>
-                    {`${member.firstName || ''} ${member.lastName || ''}`.trim() || member.email}
-                    {member.id === user?.id && " (You)"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        {/* Left: Title */}
+        <h2 className="text-sm font-semibold" data-testid="text-page-title">
+          {userName} Calendar
+        </h2>
 
-        {/* Right: Google Calendar Alert (if error) */}
-        {googleCalendarError && displayedUserId === user?.id && (
-          <Badge variant="destructive" className="text-xs flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" />
-            Google Calendar Error
-          </Badge>
-        )}
-      </div>
-
-      {/* Row 2 - View Tabs (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Tabs */}
-        <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
-          {views.map((view: CalendarView) => (
-            <div key={view.id} className="relative group">
-              <button
-                onClick={() => handleViewSelect(view)}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  selectedViewId === view.id
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                    : 'hover-elevate'
-                } active-elevate-2 flex items-center gap-1`}
-                data-testid={`tab-${view.id}`}
-              >
-                {view.name}
-              </button>
-              {!view.isDefault && (
+        {/* Right: View Tabs + Save View + Settings */}
+        <div className="flex items-center gap-1">
+          {/* View Tabs */}
+          <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
+            {views.map((view: CalendarView) => (
+              <div key={view.id} className="relative group">
                 <button
-                  className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteView(view);
-                  }}
-                  data-testid={`button-delete-${view.id}`}
+                  onClick={() => handleViewSelect(view)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                    selectedViewId === view.id
+                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                      : 'hover-elevate'
+                  } active-elevate-2 flex items-center gap-1`}
+                  data-testid={`tab-${view.id}`}
                 >
-                  <X className="h-2 w-2" />
+                  {view.name}
                 </button>
-              )}
-            </div>
-          ))}
+                {!view.isDefault && (
+                  <button
+                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteView(view);
+                    }}
+                    data-testid={`button-delete-${view.id}`}
+                  >
+                    <X className="h-2 w-2" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              onClick={() => setShowCreateViewDialog(true)}
+              data-testid="button-add-view"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+
+          {/* Save View Button */}
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+            onClick={() => {
+              if (currentView && !currentView.isDefault) {
+                handleSaveView();
+              } else {
+                setShowCreateViewDialog(true);
+              }
+            }}
+            data-testid="button-save-view"
+          >
+            <span>{currentView && !currentView.isDefault ? 'Update View' : 'Save View'}</span>
+          </button>
+
+          {/* Settings Icon */}
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowCreateViewDialog(true)}
-            data-testid="button-add-view"
+            onClick={() => setShowSettingsDialog(true)}
+            data-testid="button-settings"
           >
-            <Plus className="w-3 h-3" />
+            <Settings className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2 - Navigation & View Mode (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: Today + Navigation Arrows */}
+        <div className="flex items-center gap-0.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+            onClick={handleNavigateToday}
+            data-testid="button-today"
+          >
+            Today
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={handleNavigatePrevious}
+            data-testid="button-previous"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={handleNavigateNext}
+            data-testid="button-next"
+          >
+            <ChevronRight className="w-3 h-3" />
           </button>
         </div>
 
-        {/* Right: Save View */}
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-          onClick={() => {
-            if (currentView && !currentView.isDefault) {
-              handleSaveView();
-            } else {
-              setShowCreateViewDialog(true);
-            }
-          }}
-          data-testid="button-save-view"
-        >
-          <Settings className="w-3 h-3" />
-          <span>{currentView && !currentView.isDefault ? 'Update View' : 'Save View'}</span>
-        </button>
-      </div>
-
-      {/* Row 3 - Calendar Mode & Filters (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Calendar Mode Buttons */}
+        {/* Right: Day, Week, Month Buttons */}
         <div className="flex items-center gap-0.5">
           {[
-            { value: 'month', label: 'Month' },
-            { value: 'week', label: 'Week' },
             { value: 'day', label: 'Day' },
+            { value: 'week', label: 'Week' },
+            { value: 'month', label: 'Month' },
           ].map((mode) => (
             <button
               key={mode.value}
@@ -650,8 +688,11 @@ export default function PersonalCalendar() {
             </button>
           ))}
         </div>
+      </div>
 
-        {/* Right: Filters Button */}
+      {/* Row 3 - Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Filters Button */}
         <Popover>
           <PopoverTrigger asChild>
             <button
@@ -808,6 +849,8 @@ export default function PersonalCalendar() {
           onEventResize={handleEventResize}
           showCompletionCheckbox={true}
           initialView={calendarMode as any}
+          currentDate={currentDate}
+          onCurrentDateChange={setCurrentDate}
         />
       </div>
 
@@ -883,6 +926,60 @@ export default function PersonalCalendar() {
               data-testid="button-confirm-delete-view"
             >
               Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Calendar Settings</DialogTitle>
+            <DialogDescription>
+              Configure your calendar preferences
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Team Calendar Selector */}
+            {hasTeamCalendarPermission && teamMembers.length > 0 && (
+              <div className="space-y-2">
+                <Label>View Team Member Calendar</Label>
+                <Select 
+                  value={selectedUserId || user?.id} 
+                  onValueChange={(value) => setSelectedUserId(value === user?.id ? undefined : value)}
+                >
+                  <SelectTrigger data-testid="select-team-member">
+                    <SelectValue placeholder="Select team member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamMembers.map((member: any) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {`${member.firstName || ''} ${member.lastName || ''}`.trim() || member.email}
+                        {member.id === user?.id && " (You)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Google Calendar Error Alert */}
+            {googleCalendarError && displayedUserId === user?.id && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Failed to load Google Calendar events. Please check your connection in Profile settings.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <DialogFooter>
+            <button
+              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+              onClick={() => setShowSettingsDialog(false)}
+            >
+              Close
             </button>
           </DialogFooter>
         </DialogContent>
