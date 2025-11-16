@@ -569,24 +569,32 @@ export default function Tasks() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                {[
-                  { value: "high", label: "High" },
-                  { value: "medium", label: "Medium" },
-                  { value: "low", label: "Low" },
-                ].map(option => (
-                  <DropdownMenuItem key={option.value} className="flex items-center">
+                {(priorityOptions.length > 0 ? priorityOptions : [
+                  { key: "high", name: "High", color: null },
+                  { key: "medium", name: "Medium", color: null },
+                  { key: "low", name: "Low", color: null },
+                ]).map(option => (
+                  <DropdownMenuItem key={option.key} className="flex items-center">
                     <Checkbox
-                      checked={filters.priority?.includes(option.value) || false}
+                      checked={filters.priority?.includes(option.key) || false}
                       onCheckedChange={() => {
                         const currentPriority = filters.priority || [];
-                        const newPriority = currentPriority.includes(option.value)
-                          ? currentPriority.filter(p => p !== option.value)
-                          : [...currentPriority, option.value];
+                        const newPriority = currentPriority.includes(option.key)
+                          ? currentPriority.filter(p => p !== option.key)
+                          : [...currentPriority, option.key];
                         setFilters({...filters, priority: newPriority.length > 0 ? newPriority : undefined});
                       }}
                       className="mr-2"
                     />
-                    {option.label}
+                    <div className="flex items-center gap-2">
+                      {option.color && (
+                        <div 
+                          className="w-3 h-3 rounded-full border border-border" 
+                          style={{ backgroundColor: option.color }}
+                        />
+                      )}
+                      {option.name}
+                    </div>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -703,22 +711,25 @@ export default function Tasks() {
 
           {/* Right: Group By Controls */}
           <div className="flex items-center gap-1.5">
-            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
-              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-group-by">
-                <span>Group by</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="status">By Status</SelectItem>
-                <SelectItem value="priority">By Priority</SelectItem>
-                {filterOptions.availableAssignees.length > 0 && (
-                  <SelectItem value="assignee">By Assignee</SelectItem>
-                )}
-                {filterOptions.availableTags.length > 0 && (
-                  <SelectItem value="tags">By Tags</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
+            {/* Group by - only show in kanban view */}
+            {activeTab === "kanban" && (
+              <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
+                <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-group-by">
+                  <span>Group by</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="status">By Status</SelectItem>
+                  <SelectItem value="priority">By Priority</SelectItem>
+                  {filterOptions.availableAssignees.length > 0 && (
+                    <SelectItem value="assignee">By Assignee</SelectItem>
+                  )}
+                  {filterOptions.availableTags.length > 0 && (
+                    <SelectItem value="tags">By Tags</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            )}
 
             {/* Columns button - only show in list view */}
             {activeTab === "list" && (
