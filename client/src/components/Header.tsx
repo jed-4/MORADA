@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -159,12 +159,11 @@ export default function Header() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               data-testid="button-header-projects"
+              title="Projects"
             >
-              <FolderOpen className="h-3.5 w-3.5" />
-              <span>Projects</span>
-              <ChevronDown className="h-3 w-3" />
+              <Kanban className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64">
@@ -212,6 +211,10 @@ export default function Header() {
               ))
             )}
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate('/business/projects')}>
+              <Kanban className="h-3.5 w-3.5 mr-2" />
+              <span className="text-xs">Projects Board</span>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setIsCreateProjectOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-2" />
               <span className="text-xs">Create New Project</span>

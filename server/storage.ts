@@ -4733,6 +4733,17 @@ export class DbStorage implements IStorage {
         isActive: true,
         sortOrder: 13,
       },
+      {
+        id: 'cat-project-status',
+        key: 'project.status',
+        label: 'Project Statuses',
+        entity: 'project',
+        description: 'Hierarchical status options for projects',
+        isBuiltIn: true,
+        isActive: true,
+        supportsHierarchy: true,
+        sortOrder: 14,
+      },
     ];
 
     for (const categoryData of requiredCategories) {
@@ -4900,6 +4911,37 @@ export class DbStorage implements IStorage {
           { id: 'opt-schedule-item-status-completed', categoryId, key: 'completed', name: 'Completed', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
           { id: 'opt-schedule-item-status-on-hold', categoryId, key: 'on_hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
           { id: 'opt-schedule-item-status-cancelled', categoryId, key: 'cancelled', name: 'Cancelled', color: '#94A3B8', isDefault: false, isCompleted: false, sortOrder: 4 },
+        ];
+      case 'project.status':
+        return [
+          // Parent statuses
+          { id: 'opt-project-status-lead', categoryId, key: 'lead', name: 'Lead', color: '#6B7280', isDefault: true, sortOrder: 0 },
+          { id: 'opt-project-status-pre-construction', categoryId, key: 'pre_construction', name: 'Pre-Construction', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+          { id: 'opt-project-status-construction', categoryId, key: 'construction', name: 'Construction', color: '#3B82F6', isDefault: false, sortOrder: 2 },
+          { id: 'opt-project-status-post-construction', categoryId, key: 'post_construction', name: 'Post Construction', color: '#10B981', isDefault: false, sortOrder: 3 },
+          
+          // Lead sub-statuses
+          { id: 'opt-project-substatus-lead-new', categoryId, key: 'lead_new', name: 'Application Submitted', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 4 },
+          { id: 'opt-project-substatus-lead-contacted', categoryId, key: 'lead_contacted', name: 'On-Site Consultation Booked', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 5 },
+          { id: 'opt-project-substatus-lead-proposal', categoryId, key: 'lead_proposal_sent', name: 'Awaiting Pre-Con', color: '#9CA3AF', parentId: 'opt-project-status-lead', sortOrder: 6 },
+          
+          // Pre-Construction sub-statuses
+          { id: 'opt-project-substatus-precon-awaiting-agreement', categoryId, key: 'awaiting_pre-con_agreement', name: 'Awaiting Pre-Con Agreement', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 7 },
+          { id: 'opt-project-substatus-precon-agreement-signed', categoryId, key: 'pre-con_agreement_signed', name: 'Pre-Con Agreement Signed', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 8 },
+          { id: 'opt-project-substatus-precon-awaiting-fdp', categoryId, key: 'awaiting_fdp', name: 'Awaiting FDP', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 9 },
+          { id: 'opt-project-substatus-precon-fdp', categoryId, key: 'fdp', name: 'FDP', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 10 },
+          { id: 'opt-project-substatus-precon-fdp-review', categoryId, key: 'fdp_review', name: 'FDP Review', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 11 },
+          { id: 'opt-project-substatus-precon-planning', categoryId, key: 'precon_planning', name: 'QBE', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 12 },
+          { id: 'opt-project-substatus-precon-awaiting-confirmation', categoryId, key: 'awaiting_confirmation', name: 'Awaiting Confirmation', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 13 },
+          { id: 'opt-project-substatus-precon-contract-prep', categoryId, key: 'contract_preparation', name: 'Contract Preparation', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 14 },
+          { id: 'opt-project-substatus-precon-scheduling', categoryId, key: 'scheduling', name: 'Scheduling', color: '#FDE68A', parentId: 'opt-project-status-pre-construction', sortOrder: 15 },
+          
+          // Construction sub-statuses
+          { id: 'opt-project-substatus-const-foundation', categoryId, key: 'const_foundation', name: 'Construction', color: '#93C5FD', parentId: 'opt-project-status-construction', sortOrder: 16 },
+          
+          // Post Construction sub-statuses
+          { id: 'opt-project-substatus-postcon-defects', categoryId, key: 'postcon_defects_period', name: 'Post Construction', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 17 },
+          { id: 'opt-project-substatus-postcon-completed', categoryId, key: 'postcon_completed', name: 'Completed', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 18 },
         ];
       default:
         return [];

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, Settings as SettingsIcon } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
@@ -11,25 +11,29 @@ import TeamManagement from "./TeamManagement";
 import Systems from "./Systems";
 import ComingSoonPage from "./ComingSoonPage";
 
+const BUSINESS_TABS = [
+  { id: "overview", label: "Overview", icon: Home, path: "/business" },
+  { id: "projects", label: "Projects", icon: FolderOpen, path: "/business/projects" },
+  { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/business/tasks" },
+  { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "/business/calendar" },
+  { id: "expenses", label: "Expenses", icon: CreditCard, path: "/business/expenses" },
+  { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
+  { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
+  { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/business/minutes" },
+  { id: "leave", label: "Leave", icon: CalendarIcon, path: "/business/leave" },
+  { id: "team", label: "Team", icon: Users, path: "/business-team" },
+  { id: "systems", label: "Systems", icon: SettingsIcon, path: "/systems" },
+] as const;
+
 export default function Business() {
   const [location, navigate] = useLocation();
 
-  const tabs = [
-    { id: "overview", label: "Overview", icon: Home, path: "/business" },
-    { id: "projects", label: "Projects", icon: FolderOpen, path: "/business/projects" },
-    { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/business/tasks" },
-    { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "/business/calendar" },
-    { id: "expenses", label: "Expenses", icon: CreditCard, path: "/business/expenses" },
-    { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
-    { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
-    { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/business/minutes" },
-    { id: "leave", label: "Leave", icon: CalendarIcon, path: "/business/leave" },
-    { id: "team", label: "Team", icon: Users, path: "/business-team" },
-    { id: "systems", label: "Systems", icon: SettingsIcon, path: "/systems" },
-  ];
-
   const activeTab = useMemo(() => {
-    const currentTab = tabs.find(tab => location === tab.path || location.startsWith(tab.path + "/"));
+    const currentTab = BUSINESS_TABS.find(tab => {
+      if (location === tab.path) return true;
+      if (location.startsWith(tab.path + "/")) return true;
+      return false;
+    });
     return currentTab?.id || "overview";
   }, [location]);
 
@@ -73,7 +77,7 @@ export default function Business() {
 
       {/* Row 2 - Tabs (36px) - Underline Style */}
       <div className="h-9 bg-white flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
-        {tabs.map((tab) => {
+        {BUSINESS_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
