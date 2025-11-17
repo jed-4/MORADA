@@ -5908,11 +5908,84 @@ export class DbStorage implements IStorage {
   async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
   async getUserInvitations(status?: string): Promise<UserInvitation[]> { return []; }
   async getUserInvitation(id: string): Promise<UserInvitation | undefined> { return undefined; }
-  async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> { return undefined; }
+  
+  async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> {
+    try {
+      const [invitation] = await db.select()
+        .from(schema.userInvitations)
+        .where(eq(schema.userInvitations.inviteToken, token))
+        .limit(1);
+      return invitation;
+    } catch (error) {
+      console.error("Database error in getUserInvitationByToken:", error);
+      throw error;
+    }
+  }
+  
   async createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation> { throw new Error("Not implemented"); }
-  async updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> { return undefined; }
+  
+  async updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> {
+    try {
+      const [updated] = await db.update(schema.userInvitations)
+        .set({ ...invitation, updatedAt: new Date() })
+        .where(eq(schema.userInvitations.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateUserInvitation:", error);
+      throw error;
+    }
+  }
+  
   async deleteUserInvitation(id: string): Promise<boolean> { return false; }
-  async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> { return undefined; }
+  
+  async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> {
+    try {
+      const invitation = await this.getUserInvitationByToken(token);
+      
+      // SECURITY: Validate token, status, and expiry
+      if (!invitation || 
+          invitation.status !== "pending" || 
+          invitation.expiresAt < new Date()) {
+        return undefined;
+      }
+
+      // SECURITY: Ensure password is provided and validate
+      if (!userData.password) {
+        throw new Error("Password is required to accept invitation");
+      }
+
+      // Create the user account with secure password handling
+      const newUser = await this.createUser({
+        username: userData.username || invitation.email,
+        password: userData.password,
+        email: invitation.email,
+        firstName: invitation.firstName || userData.firstName,
+        lastName: invitation.lastName || userData.lastName,
+        phone: invitation.phone,
+        company: invitation.company,
+        userCategory: invitation.userCategory as UserCategory,
+        roleId: invitation.roleId,
+        companyId: invitation.companyId,
+        isInvitePending: false,
+        invitedBy: invitation.invitedBy,
+        invitedAt: invitation.createdAt,
+        ...userData,
+      });
+
+      // SECURITY: Mark invitation as used (single-use tokens)
+      const updatedInvitation = await this.updateUserInvitation(invitation.id, {
+        status: "accepted",
+        acceptedAt: new Date(),
+        createdUserId: newUser.id,
+      });
+
+      return { user: newUser, invitation: updatedInvitation! };
+    } catch (error) {
+      console.error("Database error in acceptInvitation:", error);
+      throw error;
+    }
+  }
   async getNotes(projectId?: string, companyId?: string): Promise<Note[]> {
     // Build query to join with projects table for company filtering
     let query = db
