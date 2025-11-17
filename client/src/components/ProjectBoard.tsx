@@ -286,7 +286,7 @@ function DroppableColumn({
       <div className="p-2 space-y-1.5 max-h-[calc(100vh-300px)] overflow-y-auto">
         <SortableContext items={projects.map(project => project.id)} strategy={verticalListSortingStrategy}>
           {projects.length === 0 ? (
-            <div className="text-center py-12 text-xs text-muted-foreground">
+            <div className="h-20 flex items-center justify-center text-xs text-muted-foreground">
               No projects
             </div>
           ) : (
