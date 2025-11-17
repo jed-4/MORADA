@@ -288,11 +288,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Tasks API Routes
   app.get("/api/tasks", async (req, res) => {
     try {
-      const { projectId, status, businessTasks } = req.query;
+      const { projectId, status, businessTasks, assigneeId } = req.query;
       const tasks = await storage.getTasks(
         projectId as string | undefined,
         status as string | undefined,
-        businessTasks === 'true'
+        businessTasks === 'true',
+        assigneeId as string | undefined
       );
       res.json(tasks);
     } catch (error) {

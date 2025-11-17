@@ -2456,7 +2456,7 @@ export class MemStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string, businessTasks?: boolean): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]> {
     const allTasks = Array.from(this.notes.values())
       .filter(note => note.type === "task") as Task[];
     
@@ -2466,6 +2466,13 @@ export class MemStorage implements IStorage {
       filteredTasks = filteredTasks.filter(task => !task.projectId);
     } else if (projectId) {
       filteredTasks = filteredTasks.filter(task => task.projectId === projectId);
+    }
+    
+    if (assigneeId) {
+      filteredTasks = filteredTasks.filter(task => 
+        task.assigneeId === assigneeId || 
+        (task.assignedTo && task.assignedTo.includes(assigneeId))
+      );
     }
     
     if (status) {

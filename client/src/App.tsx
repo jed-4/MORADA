@@ -59,12 +59,13 @@ import BusinessTasks from "@/pages/BusinessTasks";
 import Systems from "@/pages/Systems";
 import TeamManagement from "@/pages/TeamManagement";
 import UserProfileView from "@/pages/UserProfileView";
+import UserWorkspace from "@/pages/UserWorkspace";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useLocation } from "wouter";
+import { useLocation, Redirect } from "wouter";
 import { SocketProvider } from "@/lib/socket";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
@@ -74,6 +75,8 @@ import ProjectTeam from "@/pages/ProjectTeam";
 import Gantt from "@/pages/Gantt";
 
 function Router() {
+  const { user } = useAuth();
+  
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
@@ -84,6 +87,22 @@ function Router() {
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />
+      
+      {/* User Workspace - /me redirects to current user */}
+      <Route path="/me">
+        {() => {
+          if (!user) {
+            return (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-muted-foreground">Loading...</div>
+              </div>
+            );
+          }
+          return <Redirect to={`/users/${user.id}`} />;
+        }}
+      </Route>
+      <Route path="/users/:userId" component={UserWorkspace} />
+      <Route path="/users/:userId/:tab" component={UserWorkspace} />
       
       {/* User Profile */}
       <Route path="/profile" component={UserProfile} />

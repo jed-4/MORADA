@@ -34,6 +34,7 @@ import {
   ClipboardList,
   ListTree,
   GanttChart,
+  User,
 } from "lucide-react";
 
 import {
@@ -237,21 +238,24 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
-        {/* My Calendar - Standalone */}
+        {/* Personal Section */}
         <SidebarGroup>
+          <SidebarGroupLabel className="text-xs font-medium text-muted-foreground">
+            Personal
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
-                  tooltip={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() + "'s Calendar" : "My Calendar"}
-                  data-testid="nav-my-calendar"
-                  data-active={location === "/my-calendar"}
+                  tooltip="My Workspace"
+                  data-testid="nav-my-workspace"
+                  data-active={location.startsWith("/me") || location.startsWith("/users/")}
                 >
-                  <Link href="/my-calendar">
-                    <Calendar className="h-4 w-4" />
+                  <Link href="/me">
+                    <User className="h-4 w-4" />
                     <span className="group-data-[collapsible=icon]:hidden">
-                      {user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() + "'s Calendar" : "My Calendar"}
+                      My Workspace
                     </span>
                   </Link>
                 </SidebarMenuButton>
