@@ -198,6 +198,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   // Initialize to undefined so it auto-sizes to totalPanelWidth on first render
   const [leftPanelWidth, setLeftPanelWidth] = useState<number | undefined>(undefined);
   
+  // Track if preferences have been loaded
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  
   // Resizing states
   const [resizingColumn, setResizingColumn] = useState<{
     column: keyof typeof columnWidths;
@@ -214,6 +217,53 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { data: project } = useQuery({
     queryKey: [`/api/projects/${projectId}`],
   });
+
+  // Load user view preferences for Gantt
+  const { data: viewPreferences, isError: preferencesError } = useQuery({
+    queryKey: ["/api/user-view-preferences/gantt"],
+  });
+
+  // Apply loaded preferences
+  useEffect(() => {
+    if (viewPreferences && (viewPreferences as any).preferences) {
+      const prefs = (viewPreferences as any).preferences;
+      if (prefs.columnWidths) setColumnWidths(prefs.columnWidths);
+      if (prefs.visibleColumns) setVisibleColumns(prefs.visibleColumns);
+      if (prefs.zoomLevel) setZoomLevel(prefs.zoomLevel);
+      if (prefs.leftPanelWidth !== undefined) setLeftPanelWidth(prefs.leftPanelWidth);
+      if (prefs.columnOrder) setColumnOrder(prefs.columnOrder);
+      setPreferencesLoaded(true);
+    } else if (viewPreferences === null || preferencesError) {
+      // No saved preferences or error loading, use defaults
+      setPreferencesLoaded(true);
+    }
+  }, [viewPreferences, preferencesError]);
+
+  // Save view preferences mutation
+  const saveViewPreferencesMutation = useMutation({
+    mutationFn: async (preferences: any) => {
+      return await apiRequest("/api/user-view-preferences", "POST", {
+        viewKey: "gantt",
+        preferences,
+      });
+    },
+  });
+
+  // Auto-save preferences when they change (after initial load)
+  useEffect(() => {
+    if (preferencesLoaded) {
+      const timer = setTimeout(() => {
+        saveViewPreferencesMutation.mutate({
+          columnWidths,
+          visibleColumns,
+          zoomLevel,
+          leftPanelWidth,
+          columnOrder,
+        });
+      }, 1000); // Debounce for 1 second
+      return () => clearTimeout(timer);
+    }
+  }, [columnWidths, visibleColumns, zoomLevel, leftPanelWidth, columnOrder, preferencesLoaded]);
 
   // Fetch schedule items for this project
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
