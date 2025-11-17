@@ -350,7 +350,7 @@ export default function BusinessTasks() {
           </DropdownMenu>
         </div>
 
-        {/* Right: Navigation + Settings + New Task */}
+        {/* Right: Navigation + New Task + Settings */}
         <div className="flex items-center gap-1.5">
           {activeTab === "board" && showNavigation && (
             <>
@@ -370,6 +370,14 @@ export default function BusinessTasks() {
               </button>
             </>
           )}
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowCreateTaskDialog(true)}
+            data-testid="button-new-task-header"
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Task</span>
+          </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
@@ -386,14 +394,6 @@ export default function BusinessTasks() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setShowCreateTaskDialog(true)}
-            data-testid="button-new-task-header"
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Task</span>
-          </button>
         </div>
       </div>
 
