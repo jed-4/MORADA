@@ -488,8 +488,8 @@ export const projects = pgTable("projects", {
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
   
   // New hierarchical status fields
-  projectStatus: text("project_status").notNull(), // High-level status: Lead, Pre-Construction, Construction, Post Construction
-  projectSubStatus: text("project_sub_status").notNull(), // Low-level status tied to projectStatus
+  projectStatus: text("project_status").notNull().default("lead"), // High-level status: Lead, Pre-Construction, Construction, Post Construction
+  projectSubStatus: text("project_sub_status").notNull().default("lead_new"), // Low-level status tied to projectStatus
   
   // Client and financial fields
   clientId: varchar("client_id").references(() => clients.id),
