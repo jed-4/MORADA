@@ -33,7 +33,7 @@ export default function BusinessTasks() {
   const [activeTab, setActiveTab] = useState("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee'>('none');
   const [filters, setFilters] = useState<FilterState>({});
   const [cardDisplaySettings, setCardDisplaySettings] = useState({
     showPriority: true,
@@ -137,9 +137,6 @@ export default function BusinessTasks() {
         case 'assignee':
           groupKey = task.assignee || 'Unassigned';
           break;
-        case 'tags':
-          groupKey = task.tags && task.tags.length > 0 ? task.tags[0] : 'No Tags';
-          break;
       }
       
       if (!groups[groupKey]) {
@@ -160,13 +157,15 @@ export default function BusinessTasks() {
   const { 
     availableAssignees: assigneeOptions = [],
     availableProjects: projectOptions = [],
-    availableTags: tagOptions = [],
-    availableLabels: labelOptions = []
   } = extractFilterOptions(allTasks);
   
   // Extract status options from field categories
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = statusCategory?.options || [];
+
+  // Extract label options from field categories
+  const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
+  const labelOptions = labelCategory?.options?.map(opt => opt.name) || [];
 
   return (
     <div className="flex h-full flex-col" data-testid="business-tasks">
@@ -319,37 +318,6 @@ export default function BusinessTasks() {
                     }}
                   />
                   <span className="ml-2">{assignee}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Tags Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                <span>Tags</span>
-                {filters.tags && filters.tags.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                    {filters.tags.length}
-                  </Badge>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {tagOptions.map(tag => (
-                <DropdownMenuItem key={tag} className="flex items-center">
-                  <Checkbox
-                    checked={filters.tags?.includes(tag) || false}
-                    onCheckedChange={() => {
-                      const currentTags = filters.tags || [];
-                      const newTags = currentTags.includes(tag)
-                        ? currentTags.filter(t => t !== tag)
-                        : [...currentTags, tag];
-                      setFilters({...filters, tags: newTags.length > 0 ? newTags : undefined});
-                    }}
-                  />
-                  <span className="ml-2">{tag}</span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
