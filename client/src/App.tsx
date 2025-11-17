@@ -72,7 +72,6 @@ import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
 import ProjectScope from "@/pages/ProjectScope";
 import ProjectTeam from "@/pages/ProjectTeam";
-import Gantt from "@/pages/Gantt";
 
 function Router() {
   const { user } = useAuth();
@@ -139,7 +138,6 @@ function Router() {
       <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
       <Route path="/projects/:projectId/messages" component={() => <ComingSoonPage section="messages" />} />
       <Route path="/projects/:projectId/schedule" component={Schedule} />
-      <Route path="/projects/:projectId/gantt" component={() => <Gantt />} />
       <Route path="/projects/:projectId/takeoff" component={Takeoff} />
       <Route path="/projects/:projectId/rfqs" component={RFQs} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
