@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, LayoutGrid, List, Eye, SlidersHorizontal, Edit3, Columns3 } from "lucide-react";
+import { Plus, LayoutGrid, List, Eye, Users, Edit3, Columns3 } from "lucide-react";
 import { type Project } from "@shared/schema";
 import { ProjectBoard, type ViewPreferences, type GroupBy, type ColumnWidth } from "@/components/ProjectBoard";
 import { ProjectList } from "@/components/ProjectList";
@@ -9,13 +9,8 @@ import CreateProjectDialog from "@/components/CreateProjectDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuCheckboxItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
   DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 const DEFAULT_PREFERENCES: ViewPreferences = {
@@ -118,7 +113,7 @@ export default function BusinessProjects() {
 
         {/* Right: Controls */}
         <div className="flex items-center gap-1.5">
-          {/* Card Display - Opens Edit Card Fields Dialog */}
+          {/* Card Display - Opens Edit Card Fields Popover */}
           <Button
             size="icon"
             variant="ghost"
@@ -129,74 +124,19 @@ export default function BusinessProjects() {
             <Eye className="h-3 w-3" />
           </Button>
 
-          {/* View Options - Dropdown with proper trigger */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6"
-                data-testid="button-view-options"
-              >
-                <SlidersHorizontal className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Group By</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={preferences.groupBy}
-                onValueChange={(value) => updatePreference("groupBy", value as GroupBy)}
-              >
-                <DropdownMenuRadioItem value="parent" data-testid="radio-group-parent">
-                  Parent Status
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="substatus" data-testid="radio-group-substatus">
-                  Sub-Status
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
+          {/* Group By - Toggle Button */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => updatePreference('groupBy', preferences.groupBy === 'parent' ? 'substatus' : 'parent')}
+            className={`h-6 w-6 ${preferences.groupBy === 'substatus' ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
+            data-testid="button-group-by"
+            title={preferences.groupBy === 'parent' ? 'Grouped by Parent Status' : 'Grouped by Sub-Status'}
+          >
+            <Users className="h-3 w-3" />
+          </Button>
 
-              <DropdownMenuSeparator />
-
-              <DropdownMenuLabel>Show Fields</DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={preferences.visibleFields.client}
-                onCheckedChange={() => toggleField("client")}
-                data-testid="checkbox-field-client"
-              >
-                Client
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={preferences.visibleFields.budget}
-                onCheckedChange={() => toggleField("budget")}
-                data-testid="checkbox-field-budget"
-              >
-                Budget
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={preferences.visibleFields.stage}
-                onCheckedChange={() => toggleField("stage")}
-                data-testid="checkbox-field-stage"
-              >
-                Location
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={preferences.visibleFields.dueDate}
-                onCheckedChange={() => toggleField("dueDate")}
-                data-testid="checkbox-field-dueDate"
-              >
-                Due Date
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={preferences.visibleFields.foreman}
-                onCheckedChange={() => toggleField("foreman")}
-                data-testid="checkbox-field-foreman"
-              >
-                Foreman
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Column Width - Dropdown with proper trigger */}
+          {/* Column Width - Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -213,30 +153,31 @@ export default function BusinessProjects() {
                 onClick={() => updatePreference('columnWidth', 'small')}
                 data-testid="menu-item-column-small"
               >
-                Small (240px)
+                Small
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => updatePreference('columnWidth', 'medium')}
                 data-testid="menu-item-column-medium"
               >
-                Medium (320px)
+                Medium
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => updatePreference('columnWidth', 'wide')}
                 data-testid="menu-item-column-wide"
               >
-                Wide (400px)
+                Wide
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Edit Mode Toggle */}
+          {/* Edit Mode Toggle - Highlights when active */}
           <Button
             size="icon"
             variant="ghost"
             onClick={() => setEditMode(!editMode)}
-            className="h-6 w-6"
+            className={`h-6 w-6 ${editMode ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
             data-testid="button-edit-mode"
+            title={editMode ? 'Edit Mode: ON - Drag projects to move' : 'Edit Mode: OFF'}
           >
             <Edit3 className="h-3 w-3" />
           </Button>

@@ -386,24 +386,24 @@ export function ProjectBoard({
     }
   };
 
-  // Get column width class based on setting
+  // Get column width class based on setting (all reduced by 20%)
   const getColumnWidthClass = () => {
     switch (preferences.columnWidth) {
       case 'small':
-        return 'w-60'; // 240px
+        return 'w-48'; // 192px (was 240px)
       case 'wide':
-        return 'w-[400px]'; // 400px
+        return 'w-80'; // 320px (was 400px)
       case 'medium':
       default:
-        return 'w-80'; // 320px (default)
+        return 'w-64'; // 256px (was 320px)
     }
   };
 
-  // Set up drag sensors
+  // Set up drag sensors - only active in edit mode
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: editMode ? 8 : 999999, // Effectively disable when editMode is false
       },
     })
   );
@@ -731,72 +731,83 @@ export function ProjectBoard({
           ) : null}
         </DragOverlay>
 
-        {/* Edit Card Fields Dialog */}
-        <Dialog open={cardFieldsDialogOpen} onOpenChange={setCardFieldsDialogOpen}>
-          <DialogContent className="sm:max-w-md" data-testid="dialog-edit-card-fields">
-            <DialogHeader>
-              <DialogTitle>Edit Card Fields</DialogTitle>
-              <DialogDescription>
-                Customize which fields appear on project cards and their order. Drag to reorder.
-              </DialogDescription>
-            </DialogHeader>
-
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCorners}
-              onDragStart={handleFieldDragStart}
-              onDragEnd={handleFieldDragEnd}
+        {/* Edit Card Fields Popover Content */}
+        {cardFieldsDialogOpen && (
+          <div className="fixed inset-0 z-[100]" onClick={() => setCardFieldsDialogOpen(false)}>
+            <div 
+              className="absolute right-4 top-20 w-80 bg-popover border border-border rounded-md shadow-lg p-4"
+              onClick={(e) => e.stopPropagation()}
+              data-testid="popover-card-fields-content"
             >
-              <div className="space-y-2 py-4">
-                <SortableContext
-                  items={cardFields.map(f => f.id)}
-                  strategy={verticalListSortingStrategy}
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Edit Card Fields</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Customize which fields appear on project cards and their order. Drag to reorder.
+                  </p>
+                </div>
+
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCorners}
+                  onDragStart={handleFieldDragStart}
+                  onDragEnd={handleFieldDragEnd}
                 >
-                  {cardFields.map(field => (
-                    <DraggableFieldRow
-                      key={field.id}
-                      field={field}
-                      onToggle={handleToggleCardField}
-                    />
-                  ))}
-                </SortableContext>
-              </div>
-
-              <DragOverlay>
-                {activeField ? (
-                  <div className="flex items-center gap-3 h-10 px-3 rounded-md border-2 bg-background border-[#bba7db] shadow-lg opacity-80">
-                    <GripVertical className="h-4 w-4 text-muted-foreground" />
-                    <Checkbox checked={activeField.visible} />
-                    <label
-                      className="flex-1 text-sm font-medium"
-                      style={{ color: activeField.visible ? "#bba7db" : "inherit" }}
+                  <div className="space-y-2">
+                    <SortableContext
+                      items={cardFields.map(f => f.id)}
+                      strategy={verticalListSortingStrategy}
                     >
-                      {activeField.label}
-                    </label>
+                      {cardFields.map(field => (
+                        <DraggableFieldRow
+                          key={field.id}
+                          field={field}
+                          onToggle={handleToggleCardField}
+                        />
+                      ))}
+                    </SortableContext>
                   </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
 
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setCardFieldsDialogOpen(false)}
-                data-testid="button-cancel-card-fields"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveCardFields}
-                data-testid="button-save-card-fields"
-                style={{ backgroundColor: "#bba7db", color: "white" }}
-                className="hover:opacity-90"
-              >
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                  <DragOverlay>
+                    {activeField ? (
+                      <div className="flex items-center gap-3 h-10 px-3 rounded-md border-2 bg-background border-[#bba7db] shadow-lg opacity-80">
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                        <Checkbox checked={activeField.visible} />
+                        <label
+                          className="flex-1 text-sm font-medium"
+                          style={{ color: activeField.visible ? "#bba7db" : "inherit" }}
+                        >
+                          {activeField.label}
+                        </label>
+                      </div>
+                    ) : null}
+                  </DragOverlay>
+                </DndContext>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-border">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCardFieldsDialogOpen(false)}
+                    className="flex-1"
+                    data-testid="button-cancel-card-fields"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveCardFields}
+                    className="flex-1"
+                    data-testid="button-save-card-fields"
+                    style={{ backgroundColor: "#bba7db", color: "white" }}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DndContext>
   );
