@@ -6121,6 +6121,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Company routes
+  app.get("/api/companies/:id", requireAuth, async (req, res) => {
+    try {
+      const company = await storage.getCompany(req.params.id);
+      if (!company) {
+        return res.status(404).json({ error: "Company not found" });
+      }
+      res.json(company);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch company" });
+    }
+  });
+
   // Company Settings routes (protected - admin access only)
   app.get("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
     try {

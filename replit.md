@@ -4,6 +4,21 @@
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. It aims to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to simplify complex construction project management, improving efficiency and profitability for builders.
 
 ## Recent Changes (November 17, 2025)
+- **User Workspace Implementation** (COMPLETED): Comprehensive personal user workspace
+  - Created `/users/:id` and `/me` routes with 2-row header matching Business page pattern
+  - Built 5 workspace tabs: Overview (stats, AI placeholder, task widgets), Tasks (Board/List with assignee filtering), Schedule/Time/Notes (coming soon)
+  - Updated sidebar with "Personal" section containing "My Workspace" link
+  - Enhanced tasks API with assigneeId filtering that checks both assigneeId field and assignedTo array
+  - Fixed routing: proper tab paths with slash separator, /me redirect with auth loading state
+  - Removed standalone Gantt route - Gantt only accessible through Schedule page with ScheduleViewProvider
+
+- **Header Company Button Enhancement** (COMPLETED): Improved styling and company name display
+  - Company button now styled as soft grey button: `bg-muted/60` with `hover-elevate` and `active-elevate-2`
+  - Added `/api/companies/:id` endpoint to fetch company data by ID
+  - Header now queries companies table to display actual company name ("Lighthouse Projects") instead of fallback "BuildPro"
+  - Prioritizes: companySettings.companyName > company.name > "BuildPro" fallback
+  - Button uses h-7 height, px-3 padding, rounded-md, font-semibold for clear clickable appearance
+
 - **Gantt Chart User Preferences** (COMPLETED): Per-user view persistence
   - Implemented user view preferences using existing `userViewPreferences` API with viewKey "gantt"
   - Persists column widths, visible columns, zoom level, left panel width, and column order

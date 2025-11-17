@@ -22,7 +22,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import type { Project, CompanySettings } from "@shared/schema";
+import type { Project, CompanySettings, Company } from "@shared/schema";
 
 // Project sections base configuration (from AppSidebar)
 const projectItemsBase = [
@@ -68,7 +68,13 @@ export default function Header() {
   const { user, logout } = useAuth();
   const { currentProject, setCurrentProject } = useProject();
 
-  // Fetch company settings for company name
+  // Fetch company data
+  const { data: company } = useQuery<Company>({
+    queryKey: ["/api/companies", user?.companyId],
+    enabled: !!user?.companyId,
+  });
+
+  // Fetch company settings for company name override
   const { data: companySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
   });
@@ -81,7 +87,8 @@ export default function Header() {
   // Filter out archived projects
   const activeProjects = projects.filter(p => !p.isArchived);
 
-  const companyName = companySettings?.companyName || user?.company?.name || "BuildPro";
+  // Prioritize: companySettings name > company name > fallback
+  const companyName = companySettings?.companyName || company?.name || "BuildPro";
 
   // Initialize dark mode state on mount
   useEffect(() => {
@@ -146,10 +153,10 @@ export default function Header() {
           <Building2 className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
 
-        {/* Business Name Link */}
+        {/* Business Name Button */}
         <button 
           onClick={() => navigate('/business')} 
-          className="text-sm font-bold text-foreground hover:text-primary transition-colors"
+          className="h-7 px-3 rounded-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
           data-testid="business-name-link"
         >
           {companyName}
