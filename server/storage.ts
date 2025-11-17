@@ -4592,6 +4592,9 @@ export class DbStorage implements IStorage {
 
   // Initialize default data - ensure all required defaults exist
   private async initializeDefaultData(): Promise<void> {
+    // Always ensure built-in permissions exist (idempotent)
+    await this.ensureBuiltInPermissionsExist();
+    
     // Always ensure all required categories exist (idempotent)
     await this.ensureRequiredCategoriesExist();
     
@@ -4600,6 +4603,65 @@ export class DbStorage implements IStorage {
 
     // Always ensure required custom fields exist (idempotent)
     await this.ensureRequiredCustomFieldsExist();
+  }
+
+  // Ensure all built-in permissions exist (idempotent upsert by key)
+  private async ensureBuiltInPermissionsExist(): Promise<void> {
+    const now = new Date();
+    
+    const builtInPermissions = [
+      // Files category
+      { key: "files.view", name: "Files", description: "View files", category: "files", actions: ["view"], isBuiltIn: true },
+      
+      // Admin category
+      { key: "admin.users", name: "User (team)", description: "Manage team users", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.suppliers", name: "Sub/Vendor", description: "Manage suppliers/vendors", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.roles", name: "Role", description: "Manage user roles", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.cost_codes", name: "Cost code/category", description: "Manage cost codes", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.terms", name: "Terms and Conditions", description: "Manage terms", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      
+      // Sales category
+      { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      
+      // Project Management category
+      { key: "projects.view", name: "Projects", description: "View projects", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.schedule", name: "Schedule", description: "Manage project schedules", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.variations", name: "Variations", description: "Manage project variations", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.todos", name: "To Dos", description: "Manage project to-dos", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.invoices", name: "Client Invoices", description: "Manage client invoices", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.site_diary", name: "Site Diary", description: "Manage site diary", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.selections", name: "Selections and Allowances", description: "Manage selections", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.timesheet", name: "Timesheet", description: "Manage timesheets", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.rfi", name: "RFI", description: "Manage RFIs", category: "projects", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "projects.team_calendars", name: "View Team Calendars", description: "View other team members' calendars", category: "projects", actions: ["view"], isBuiltIn: true },
+      
+      // Financial category
+      { key: "financial.estimate", name: "Estimate", description: "Manage estimates", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.purchase_orders", name: "Purchase Orders", description: "Manage purchase orders", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.bills", name: "Bills", description: "Manage bills", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.budget", name: "Budget", description: "Manage budgets", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.quotes", name: "Request for Quotes", description: "Manage quotes", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "financial.proposal", name: "Proposal", description: "Manage proposals", category: "financial", actions: ["view", "add", "edit", "delete"], isBuiltIn: true }
+    ];
+
+    for (const permData of builtInPermissions) {
+      // Check if permission exists by key
+      const existing = await db.select().from(schema.permissions)
+        .where(eq(schema.permissions.key, permData.key))
+        .limit(1);
+      
+      if (existing.length === 0) {
+        // Permission doesn't exist, insert it with deterministic ID
+        await db.insert(schema.permissions).values({
+          id: `perm-${permData.key.replace(/\./g, '-')}`,
+          ...permData,
+          actions: permData.actions as PermissionAction[],
+          createdAt: now,
+        });
+      }
+    }
   }
 
   // Ensure all required categories exist (upsert by key)
