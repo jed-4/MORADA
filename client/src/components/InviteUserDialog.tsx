@@ -90,14 +90,11 @@ export default function InviteUserDialog({
 
   const inviteMutation = useMutation({
     mutationFn: async (data: InviteFormValues) => {
-      return await apiRequest("/api/invitations", {
-        method: "POST",
-        body: JSON.stringify({
-          ...data,
-          userCategory: "team",
-          invitedBy: user?.id,
-          company: user?.company,
-        }),
+      return await apiRequest("/api/invitations", "POST", {
+        ...data,
+        userCategory: "team",
+        invitedBy: user?.id,
+        company: user?.company,
       });
     },
     onSuccess: (data) => {
