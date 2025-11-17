@@ -3,7 +3,16 @@
 ## Overview
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. It aims to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to simplify complex construction project management, improving efficiency and profitability for builders.
 
-## Recent Changes (November 16, 2025)
+## Recent Changes (November 17, 2025)
+- **Two-Step Onboarding Flow** (COMPLETED): Split onboarding into profile completion and company creation
+  - Step 1: User completes profile (First Name, Last Name) with pre-fill from Replit Auth
+  - Step 2: User creates company (name, ABN, address, phone, email, website)
+  - Clear progression with "Step 1 of 2" / "Step 2 of 2" indicators
+  - Button between steps: "Create Your Company" for clarity
+  - User profile updated via API before transitioning to company setup
+  - Maintains automatic General Manager role assignment with full permissions
+
+## Previous Changes (November 16, 2025)
 - **Business Page Reorganization** (COMPLETED): Unified business navigation with 2-row header and tab system
   - Created new `/business` route with 2-row header matching Tasks/Schedule pattern
   - Row 1: Page title ("Business") in compact h-9 header
