@@ -81,7 +81,7 @@ export default function ProjectCardCompact({
 
   return (
     <Card
-      className={`h-20 transition-all duration-150 cursor-pointer rounded-lg border-border/50 ${
+      className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
         isHovered ? 'shadow-xl scale-[1.01]' : 'shadow-sm'
       } ${isDragging ? 'opacity-80 shadow-lg' : ''}`}
       onClick={onClick}

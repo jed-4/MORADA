@@ -220,7 +220,7 @@ function DraggableProjectCard({
 // Loading skeleton card - exactly 80px (h-20)
 function SkeletonCard() {
   return (
-    <div className="h-20 rounded-lg border border-border/50 bg-muted/20 animate-pulse p-2">
+    <div className="h-20 rounded-xl border border-border/50 bg-muted/20 animate-pulse p-2">
       <div className="flex items-start gap-1.5">
         <div className="w-3.5 h-3.5 bg-muted rounded mt-0.5" />
         <div className="flex-1 space-y-1.5">
