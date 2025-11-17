@@ -25,7 +25,7 @@ type CompanyFormValues = z.infer<typeof companyFormSchema>;
 
 export default function OnboardingPage() {
   const { toast } = useToast();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   
   const form = useForm<CompanyFormValues>({
     resolver: zodResolver(companyFormSchema),
@@ -88,11 +88,16 @@ export default function OnboardingPage() {
             <span className="text-3xl font-bold text-foreground" data-testid="text-logo-onboarding">BuildPro</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-2" data-testid="text-onboarding-title">
-            Welcome to BuildPro!
+            Welcome{user?.firstName ? `, ${user.firstName}` : ''}!
           </h1>
-          <p className="text-muted-foreground" data-testid="text-onboarding-subtitle">
-            Let's set up your company to get started
+          <p className="text-muted-foreground mb-1" data-testid="text-onboarding-subtitle">
+            Your account is ready. Now let's set up your company.
           </p>
+          {user?.email && (
+            <p className="text-sm text-muted-foreground" data-testid="text-user-email">
+              Signed in as {user.email}
+            </p>
+          )}
         </div>
 
         <Card>
