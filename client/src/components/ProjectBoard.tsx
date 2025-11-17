@@ -495,8 +495,7 @@ export function ProjectBoard({
         ? { projectStatus: newStatus }
         : { projectSubStatus: newSubStatus };
       
-      const response = await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
-      return response.json();
+      await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
