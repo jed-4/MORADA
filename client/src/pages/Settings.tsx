@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -153,6 +153,7 @@ const SETTINGS_CATEGORIES = [
 // Company info form schema
 const companyInfoSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
+  nickname: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   phone: z.string().optional(),
   website: z.string().url("Invalid website URL").optional().or(z.literal("")),
@@ -205,6 +206,7 @@ export default function Settings() {
     if (companySettings) {
       companyForm.reset({
         companyName: companySettings.companyName || "",
+        nickname: companySettings.nickname || "",
         email: companySettings.email || "",
         phone: companySettings.phone || "",
         website: companySettings.website || "",
@@ -599,12 +601,34 @@ export default function Settings() {
                       <FormLabel>Company Name *</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Lighthouse Projects"
+                          placeholder="Lighthouse Projects & Construction Pty Ltd"
                           {...field}
                           disabled={!isEditing}
                           data-testid="company-name-input"
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={companyForm.control}
+                  name="nickname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Display Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Lighthouse projects"
+                          {...field}
+                          disabled={!isEditing}
+                          data-testid="company-nickname-input"
+                        />
+                      </FormControl>
+                      <FormDescription className="text-xs">
+                        Short name shown in header (optional)
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

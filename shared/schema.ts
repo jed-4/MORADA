@@ -662,6 +662,7 @@ export type EstimateSummary = {
 export const companySettings = pgTable("company_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyName: text("company_name"),
+  nickname: text("nickname"), // Short display name for header/UI
   email: text("email"),
   phone: text("phone"), 
   website: text("website"),

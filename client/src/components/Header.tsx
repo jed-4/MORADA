@@ -87,8 +87,8 @@ export default function Header() {
   // Filter out archived projects
   const activeProjects = projects.filter(p => !p.isArchived);
 
-  // Prioritize: companySettings name > company nickname > company name > fallback
-  const companyName = companySettings?.companyName || company?.nickname || company?.name || "BuildPro";
+  // Prioritize: companySettings nickname > companySettings name > company nickname > company name > fallback
+  const companyName = companySettings?.nickname || companySettings?.companyName || company?.nickname || company?.name || "BuildPro";
 
   // Initialize dark mode state on mount
   useEffect(() => {
