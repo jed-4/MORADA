@@ -29,7 +29,10 @@ export default function Business() {
   const [location, navigate] = useLocation();
 
   const activeTab = useMemo(() => {
-    const currentTab = BUSINESS_TABS.find(tab => {
+    // Sort tabs by path length (longest first) to match most specific path
+    const sortedTabs = [...BUSINESS_TABS].sort((a, b) => b.path.length - a.path.length);
+    
+    const currentTab = sortedTabs.find(tab => {
       if (location === tab.path) return true;
       if (location.startsWith(tab.path + "/")) return true;
       return false;
