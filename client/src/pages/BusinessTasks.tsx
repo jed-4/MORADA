@@ -153,7 +153,7 @@ export default function BusinessTasks() {
   } = extractFilterOptions(allTasks);
   
   // Extract status options from field categories
-  const statusCategory = fieldCategories.find(cat => cat?.name?.toLowerCase() === 'task status');
+  const statusCategory = fieldCategories.find(cat => cat && 'name' in cat && typeof cat.name === 'string' && cat.name.toLowerCase() === 'task status');
   const statusOptions = statusCategory?.options || [];
   const priorityOptions = [
     { key: "low", name: "Low", color: null },
@@ -201,34 +201,6 @@ export default function BusinessTasks() {
           >
             Calendar
           </button>
-        </div>
-
-        {/* Right: Add Task + Options */}
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setShowCreateTaskDialog(true)}
-            data-testid="button-add-task"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Add Task</span>
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                data-testid="button-view-menu"
-              >
-                <Settings className="w-3 h-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem data-testid="menu-manage-views">
-                <Settings className="h-4 w-4 mr-2" />
-                View Settings
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
@@ -378,7 +350,7 @@ export default function BusinessTasks() {
           </DropdownMenu>
         </div>
 
-        {/* Right: Navigation + New Task */}
+        {/* Right: Navigation + Settings + New Task */}
         <div className="flex items-center gap-1.5">
           {activeTab === "board" && showNavigation && (
             <>
@@ -398,6 +370,22 @@ export default function BusinessTasks() {
               </button>
             </>
           )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-view-menu"
+              >
+                <Settings className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem data-testid="menu-manage-views">
+                <Settings className="h-4 w-4 mr-2" />
+                View Settings
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}
@@ -420,7 +408,7 @@ export default function BusinessTasks() {
                 setEditingTask(task);
                 setShowCreateTaskDialog(true);
               }}
-              cardDisplaySettings={cardDisplaySettings}
+              displaySettings={cardDisplaySettings}
             />
           </div>
         )}
@@ -444,9 +432,6 @@ export default function BusinessTasks() {
               tasks={filteredTasks}
               onTaskClick={(task) => {
                 setEditingTask(task);
-                setShowCreateTaskDialog(true);
-              }}
-              onDateSelect={(date) => {
                 setShowCreateTaskDialog(true);
               }}
             />
