@@ -12,11 +12,12 @@ BuildPro is a project management software for Australian residential builders, o
   - Fixed routing: proper tab paths with slash separator, /me redirect with auth loading state
   - Removed standalone Gantt route - Gantt only accessible through Schedule page with ScheduleViewProvider
 
-- **Header Company Button Enhancement** (COMPLETED): Improved styling and company name display
+- **Header Company Button Enhancement** (COMPLETED): Improved styling and company name display with nickname support
   - Company button now styled as soft grey button: `bg-muted/60` with `hover-elevate` and `active-elevate-2`
+  - Added `nickname` field to companies table for displaying shorter company name in header
   - Added `/api/companies/:id` endpoint to fetch company data by ID
-  - Header now queries companies table to display actual company name ("Lighthouse Projects") instead of fallback "BuildPro"
-  - Prioritizes: companySettings.companyName > company.name > "BuildPro" fallback
+  - Header now queries companies table to display actual company name instead of fallback "BuildPro"
+  - Prioritizes: companySettings.companyName > company.nickname > company.name > "BuildPro" fallback
   - Button uses h-7 height, px-3 padding, rounded-md, font-semibold for clear clickable appearance
 
 - **Gantt Chart User Preferences** (COMPLETED): Per-user view persistence

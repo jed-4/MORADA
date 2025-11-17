@@ -19,6 +19,7 @@ export const sessions = pgTable(
 export const companies = pgTable("companies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  nickname: text("nickname"), // Short display name for header/UI
   abn: text("abn"),
   address: text("address"),
   phone: text("phone"),
