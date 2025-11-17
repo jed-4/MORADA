@@ -4,6 +4,15 @@
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. It aims to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to simplify complex construction project management, improving efficiency and profitability for builders.
 
 ## Recent Changes (November 17, 2025)
+- **Projects Board UX Enhancement** (COMPLETED): ClickUp 2025 aesthetic consistency and smart column widths
+  - Changed groupBy icon from Users to Layers for clearer grouping representation
+  - Updated column styling to match Tasks board: rounded-xl, bg-muted/20, border-border/50 for softer appearance
+  - Badge styling uses lilac theme: bg-[#bba7db]/10, text-[#bba7db], border-[#bba7db]/20 with font-semibold
+  - Cards updated with rounded-xl and transition-all duration-200 for smooth animations
+  - Empty columns are now half-width (Small: 96px, Medium: 128px, Wide: 160px) to save horizontal space
+  - Fixed critical drag bug: removed `.json()` call on already-parsed apiRequest response
+  - Consistent ClickUp 2025 aesthetic throughout: ultra-subtle backgrounds (/20, /30 opacity), gentle borders, lilac accents
+
 - **User Workspace Implementation** (COMPLETED): Comprehensive personal user workspace
   - Created `/users/:id` and `/me` routes with 2-row header matching Business page pattern
   - Built 5 workspace tabs: Overview (stats, AI placeholder, task widgets), Tasks (Board/List with assignee filtering), Schedule/Time/Notes (coming soon)

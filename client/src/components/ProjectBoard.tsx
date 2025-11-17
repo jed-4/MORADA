@@ -387,7 +387,20 @@ export function ProjectBoard({
   };
 
   // Get column width class based on setting (all reduced by 20%)
-  const getColumnWidthClass = () => {
+  const getColumnWidthClass = (isEmpty: boolean = false) => {
+    if (isEmpty) {
+      // Empty columns are half width to save space
+      switch (preferences.columnWidth) {
+        case 'small':
+          return 'w-24'; // 96px (half of 192px)
+        case 'wide':
+          return 'w-40'; // 160px (half of 320px)
+        case 'medium':
+        default:
+          return 'w-32'; // 128px (half of 256px)
+      }
+    }
+    
     switch (preferences.columnWidth) {
       case 'small':
         return 'w-48'; // 192px (was 240px)
@@ -701,9 +714,10 @@ export function ProjectBoard({
           <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
               const columnProjects = projects.filter(column.filterFn);
+              const isEmpty = columnProjects.length === 0;
               
               return (
-                <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0`}>
+                <div key={column.id} className={`${getColumnWidthClass(isEmpty)} flex-shrink-0`}>
                   <DroppableColumn
                     column={column}
                     projects={columnProjects}
