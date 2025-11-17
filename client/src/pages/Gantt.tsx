@@ -363,7 +363,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       return eachDayOfInterval({ start: timelineStart, end: timelineEnd }).map(day => ({
         date: day,
         dateLabel: format(day, 'd'),
-        dayLabel: format(day, 'EEEEE'),
+        dayLabel: format(day, 'EEE').slice(0, 2),
         width: 40,
       }));
     } else if (zoomLevel === 'week') {
@@ -375,7 +375,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         return {
           date: week,
           dateLabel: format(week, 'MMM d'),
-          dayLabel: format(week, 'EEEEE'),
+          dayLabel: format(week, 'EEE').slice(0, 2),
           width: daysInSegment * 20,
         };
       });
@@ -428,7 +428,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       
       currentWeekDays.push({
         date: day,
-        label: `${format(day, 'EEEEE')} ${format(day, 'd')}`,
+        label: `${format(day, 'EEE').slice(0, 2)} ${format(day, 'd')}`,
         widthPx: 40,
         isWeekend,
       });
