@@ -670,7 +670,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       if (!resizingPanel) return;
       
       const deltaX = e.clientX - resizingPanel.startX;
-      const newWidth = Math.max(200, resizingPanel.startWidth + deltaX); // Min width 200px
+      // Min: 40px (can collapse to hide columns), Max: totalPanelWidth (right edge of assignee column)
+      const newWidth = Math.min(Math.max(40, resizingPanel.startWidth + deltaX), totalPanelWidth);
       
       setLeftPanelWidth(newWidth);
     };
@@ -686,7 +687,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizingPanel]);
+  }, [resizingPanel, totalPanelWidth]);
 
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
@@ -893,6 +894,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         data-testid="divider-completion"
                       />
                       <div style={{ width: columnWidths.assignee }} className="text-center flex-shrink-0">Assignee</div>
+                      {(() => { cumulativeOffset += columnWidths.assignee; return null; })()}
+                      <div
+                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                        style={{ left: cumulativeOffset }}
+                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'assignee')}
+                        data-testid="divider-assignee"
+                      />
                     </>
                   )}
                   
