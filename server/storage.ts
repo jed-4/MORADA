@@ -5946,7 +5946,7 @@ export class DbStorage implements IStorage {
       // SECURITY: Validate token, status, and expiry
       if (!invitation || 
           invitation.status !== "pending" || 
-          invitation.expiresAt < new Date()) {
+          (invitation.expiresAt && invitation.expiresAt < new Date())) {
         return undefined;
       }
 
