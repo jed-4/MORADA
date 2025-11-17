@@ -262,12 +262,12 @@ function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-lg border transition-all duration-200 ${
-        isOver ? 'border-2 border-blue-500 border-dashed bg-blue-500/5' : 'border-border bg-background'
+      className={`rounded-xl border transition-all duration-200 ${
+        isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/5' : 'border-border/50 bg-muted/20'
       }`}
     >
       {/* Column Header */}
-      <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
+      <div className="px-3 py-2.5 border-b border-border/30 bg-muted/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
@@ -276,7 +276,7 @@ function DroppableColumn({
             />
             <h3 className="text-sm font-semibold text-foreground">{column.title}</h3>
           </div>
-          <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-muted/50 no-default-hover-elevate">
+          <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold">
             {projects.length}
           </Badge>
         </div>
@@ -650,11 +650,11 @@ export function ProjectBoard({
           className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
           style={{ scrollbarWidth: 'thin' }}>
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="w-80 flex-shrink-0 rounded-lg border border-border bg-background">
-              <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
+            <div key={i} className="w-80 flex-shrink-0 rounded-xl border border-border/50 bg-muted/20">
+              <div className="px-3 py-2.5 border-b border-border/30 bg-muted/30">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">...</h3>
-                  <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-muted/50">...</Badge>
+                  <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 font-semibold">...</Badge>
                 </div>
               </div>
               <div className="p-2 space-y-1.5">
