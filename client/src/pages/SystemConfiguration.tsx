@@ -25,8 +25,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertSystemConfigurationSchema, type SystemConfiguration } from "@shared/schema";
-import { Settings, Globe, FileText, Building2 } from "lucide-react";
+import { Settings, Globe, FileText, Building2, ArrowLeft } from "lucide-react";
 import { z } from "zod";
+import { useLocation } from "wouter";
 
 // Extend schema to coerce number inputs (HTML number inputs return strings)
 const formSchema = insertSystemConfigurationSchema.extend({
@@ -43,6 +44,7 @@ const formSchema = insertSystemConfigurationSchema.extend({
 
 export default function SystemConfigurationPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("regional");
 
   // Fetch system configuration
@@ -139,6 +141,16 @@ export default function SystemConfigurationPage() {
   return (
     <div className="p-6 max-w-6xl">
       <div className="flex items-center gap-2 mb-6">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/settings")}
+          className="mr-2"
+          data-testid="button-back-to-settings"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Settings
+        </Button>
         <Settings className="h-6 w-6" />
         <h1 className="text-2xl font-semibold">System Configuration</h1>
       </div>

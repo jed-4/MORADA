@@ -43,8 +43,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertUserRoleSchema, type UserRole, type Permission, type RolePermission } from "@shared/schema";
-import { Search, Plus, Star, Loader2, Shield, GripVertical, Edit, Trash2 } from "lucide-react";
+import { Search, Plus, Star, Loader2, Shield, GripVertical, Edit, Trash2, ArrowLeft } from "lucide-react";
 import { z } from "zod";
+import { useLocation } from "wouter";
 import {
   DndContext,
   closestCenter,
@@ -129,6 +130,7 @@ function SortableRoleItem({
 
 export default function RolesPermissions() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
@@ -381,6 +383,18 @@ export default function RolesPermissions() {
       {/* Left Sidebar - Roles List */}
       <div className="w-64 border-r bg-card flex flex-col">
         <div className="p-4 border-b">
+          <div className="mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/settings")}
+              className="mb-2 w-full justify-start"
+              data-testid="button-back-to-settings"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Settings
+            </Button>
+          </div>
           <h1 className="text-xl font-semibold mb-4">Roles & Permissions</h1>
           
           {/* Add new role button */}

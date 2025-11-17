@@ -8,8 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FieldOption, FieldCategory } from "@shared/schema";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -119,6 +120,7 @@ function SortableRow({ option, onEdit, onDelete, parentOptions, supportsHierarch
 
 export default function FieldSettings() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<FieldOption | null>(null);
@@ -364,6 +366,16 @@ export default function FieldSettings() {
       {/* Left Sidebar - Categories */}
       <div className="w-64 border-r bg-card">
         <div className="p-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/settings")}
+            className="mb-4 w-full justify-start"
+            data-testid="button-back-to-settings"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
           <h1 className="text-2xl font-bold tracking-tight mb-6">Field Settings</h1>
           <nav className="space-y-1">
             {fieldCategories.map((category) => {

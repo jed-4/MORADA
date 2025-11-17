@@ -1,29 +1,36 @@
-import React, { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import React, { useState, useRef } from "react";
+import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Settings, Filter } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
-import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { TaskCalendar } from "@/components/TaskCalendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
+import { type FilterState } from "@/components/FilterPanel";
 
 export default function BusinessTasks() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("list");
+  const [activeTab, setActiveTab] = useState("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'tags'>('none');
   const [filters, setFilters] = useState<FilterState>({});
@@ -37,6 +44,7 @@ export default function BusinessTasks() {
     showDueDate: true,
     showSubtasks: true,
   });
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Load card display settings from localStorage
   React.useEffect(() => {
@@ -72,11 +80,11 @@ export default function BusinessTasks() {
     queryKey: ["/api/field-categories"],
   });
 
+  // Apply filters to get filtered tasks
+  const filteredTasks = applyTaskFilters(allTasks, filters);
+
   // Group tasks based on selected grouping
   const groupedTasks = React.useMemo(() => {
-    const filterOptions = extractFilterOptions(allTasks);
-    const filteredTasks = applyTaskFilters(allTasks, filters);
-    
     if (groupBy === 'none' || activeTab !== 'list') {
       return { 'All Tasks': filteredTasks };
     }
@@ -114,91 +122,292 @@ export default function BusinessTasks() {
     });
     
     return sortedGroups;
-  }, [allTasks, filters, groupBy, activeTab]);
+  }, [filteredTasks, groupBy, activeTab]);
 
-  const filterOptions = extractFilterOptions(allTasks);
+  const { 
+    availableAssignees: assigneeOptions = [],
+    availableProjects: projectOptions = [],
+    availableTags: tagOptions = [],
+    availableLabels: labelOptions = []
+  } = extractFilterOptions(allTasks);
+  
+  // Extract status options from field categories
+  const statusCategory = fieldCategories.find(cat => cat.name.toLowerCase() === 'task status');
+  const statusOptions = statusCategory?.options || [];
+  const priorityOptions = [
+    { key: "low", name: "Low", color: null },
+    { key: "medium", name: "Medium", color: null },
+    { key: "high", name: "High", color: null },
+    { key: "urgent", name: "Urgent", color: null },
+  ];
 
   return (
-    <div className="flex flex-col h-full" data-testid="business-tasks">
-      <div className="flex-1 min-h-0 p-6">
-        <div className="flex flex-col gap-4 h-full">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Business Tasks</h1>
-              <p className="text-muted-foreground text-sm">
-                Company-wide tasks not tied to specific projects
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowFilterPanel(!showFilterPanel)}
-                data-testid="button-toggle-filters"
+    <div className="flex h-full flex-col" data-testid="business-tasks">
+      {/* Row 2 - Views & Options (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
+          <button
+            onClick={() => setActiveTab("board")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "board" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-board"
+          >
+            Board
+          </button>
+          <button
+            onClick={() => setActiveTab("list")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "list" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-list"
+          >
+            List
+          </button>
+          <button
+            onClick={() => setActiveTab("calendar")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "calendar" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-calendar"
+          >
+            Calendar
+          </button>
+        </div>
+
+        {/* Right: Add Task + Options */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowCreateTaskDialog(true)}
+            data-testid="button-add-task"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Task</span>
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-view-menu"
               >
-                <Filter className="h-4 w-4 mr-2" />
-                Filters
-              </Button>
-              <Button onClick={() => setShowCreateTaskDialog(true)} data-testid="button-create-task">
-                <Plus className="h-4 w-4 mr-2" />
-                New Task
-              </Button>
-            </div>
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem data-testid="menu-manage-views">
+                <Settings className="h-4 w-4 mr-2" />
+                View Settings
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Row 3 - Search & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search + Filter Dropdowns */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              placeholder="Search..."
+              value={filters.search || ""}
+              onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-tasks"
+            />
           </div>
 
-          {showFilterPanel && (
-            <FilterPanel
-              filters={filters}
-              onFiltersChange={setFilters}
-              filterOptions={filterOptions}
-              onClose={() => setShowFilterPanel(false)}
-            />
-          )}
+          {/* Status Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Status</span>
+                {filters.status && filters.status.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {filters.status.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {(statusOptions.length > 0 ? statusOptions : [
+                { key: "todo", name: "To Do", color: null },
+                { key: "in-progress", name: "In Progress", color: null },
+                { key: "done", name: "Done", color: null },
+              ]).map(option => (
+                <DropdownMenuItem key={option.key} className="flex items-center">
+                  <Checkbox
+                    checked={filters.status?.includes(option.key) || false}
+                    onCheckedChange={() => {
+                      const currentStatus = filters.status || [];
+                      const newStatus = currentStatus.includes(option.key)
+                        ? currentStatus.filter(s => s !== option.key)
+                        : [...currentStatus, option.key];
+                      setFilters({...filters, status: newStatus.length > 0 ? newStatus : undefined});
+                    }}
+                  />
+                  <span className="ml-2">{option.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-            <TabsList>
-              <TabsTrigger value="list" data-testid="tab-list">List</TabsTrigger>
-              <TabsTrigger value="kanban" data-testid="tab-kanban">Kanban</TabsTrigger>
-              <TabsTrigger value="calendar" data-testid="tab-calendar">Calendar</TabsTrigger>
-            </TabsList>
+          {/* Priority Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Priority</span>
+                {filters.priority && filters.priority.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {filters.priority.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {priorityOptions.map(option => (
+                <DropdownMenuItem key={option.key} className="flex items-center">
+                  <Checkbox
+                    checked={filters.priority?.includes(option.key) || false}
+                    onCheckedChange={() => {
+                      const currentPriority = filters.priority || [];
+                      const newPriority = currentPriority.includes(option.key)
+                        ? currentPriority.filter(p => p !== option.key)
+                        : [...currentPriority, option.key];
+                      setFilters({...filters, priority: newPriority.length > 0 ? newPriority : undefined});
+                    }}
+                  />
+                  <span className="ml-2">{option.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-            <TabsContent value="kanban" className="flex-1 min-h-0 mt-4" data-testid="content-kanban">
-              <TaskBoard
-                tasks={applyTaskFilters(allTasks, filters)}
-                isLoading={tasksLoading}
-                onTaskClick={(task) => {
-                  setEditingTask(task);
-                  setShowCreateTaskDialog(true);
-                }}
-                cardDisplaySettings={cardDisplaySettings}
-              />
-            </TabsContent>
+          {/* Assignee Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Assignee</span>
+                {filters.assignee && filters.assignee.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {filters.assignee.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {assigneeOptions.map(assignee => (
+                <DropdownMenuItem key={assignee} className="flex items-center">
+                  <Checkbox
+                    checked={filters.assignee?.includes(assignee) || false}
+                    onCheckedChange={() => {
+                      const currentAssignee = filters.assignee || [];
+                      const newAssignee = currentAssignee.includes(assignee)
+                        ? currentAssignee.filter(a => a !== assignee)
+                        : [...currentAssignee, assignee];
+                      setFilters({...filters, assignee: newAssignee.length > 0 ? newAssignee : undefined});
+                    }}
+                  />
+                  <span className="ml-2">{assignee}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-            <TabsContent value="list" className="flex-1 min-h-0 mt-4" data-testid="content-list">
-              <TaskListCompact
-                groupedTasks={groupedTasks}
-                isLoading={tasksLoading}
-                onTaskClick={(task) => {
-                  setEditingTask(task);
-                  setShowCreateTaskDialog(true);
-                }}
-              />
-            </TabsContent>
-
-            <TabsContent value="calendar" className="flex-1 min-h-0 mt-4" data-testid="content-calendar">
-              <TaskCalendar
-                tasks={applyTaskFilters(allTasks, filters)}
-                onTaskClick={(task) => {
-                  setEditingTask(task);
-                  setShowCreateTaskDialog(true);
-                }}
-                onDateSelect={(date) => {
-                  setShowCreateTaskDialog(true);
-                }}
-              />
-            </TabsContent>
-          </Tabs>
+          {/* Tags Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Tags</span>
+                {filters.tags && filters.tags.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {filters.tags.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {tagOptions.map(tag => (
+                <DropdownMenuItem key={tag} className="flex items-center">
+                  <Checkbox
+                    checked={filters.tags?.includes(tag) || false}
+                    onCheckedChange={() => {
+                      const currentTags = filters.tags || [];
+                      const newTags = currentTags.includes(tag)
+                        ? currentTags.filter(t => t !== tag)
+                        : [...currentTags, tag];
+                      setFilters({...filters, tags: newTags.length > 0 ? newTags : undefined});
+                    }}
+                  />
+                  <span className="ml-2">{tag}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+
+        {/* Right: Task Count */}
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="text-xs" data-testid="text-task-count">
+            {filteredTasks.length} tasks
+          </Badge>
+        </div>
+      </div>
+
+      {/* Content Area - Full Height */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === "board" && (
+          <div className="h-full p-4" data-testid="content-board">
+            <TaskBoard
+              tasks={filteredTasks}
+              isLoading={tasksLoading}
+              onTaskClick={(task) => {
+                setEditingTask(task);
+                setShowCreateTaskDialog(true);
+              }}
+              cardDisplaySettings={cardDisplaySettings}
+            />
+          </div>
+        )}
+
+        {activeTab === "list" && (
+          <div className="h-full p-4" data-testid="content-list">
+            <TaskListCompact
+              groupedTasks={groupedTasks}
+              isLoading={tasksLoading}
+              onTaskClick={(task) => {
+                setEditingTask(task);
+                setShowCreateTaskDialog(true);
+              }}
+            />
+          </div>
+        )}
+
+        {activeTab === "calendar" && (
+          <div className="h-full p-4" data-testid="content-calendar">
+            <TaskCalendar
+              tasks={filteredTasks}
+              onTaskClick={(task) => {
+                setEditingTask(task);
+                setShowCreateTaskDialog(true);
+              }}
+              onDateSelect={(date) => {
+                setShowCreateTaskDialog(true);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Task Creation Dialog */}
