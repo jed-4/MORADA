@@ -26,6 +26,7 @@ import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState } from "@/components/FilterPanel";
+import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
 
 export default function BusinessTasks() {
   const { toast } = useToast();
@@ -101,6 +102,17 @@ export default function BusinessTasks() {
     queryKey: ["/api/field-categories"],
   });
 
+  // Fetch task priority options from field categories
+  const { priorityOptions: fetchedPriorityOptions } = useTaskPriorityOptions();
+  
+  // Use fetched priority options or fallback to defaults if none exist
+  const priorityOptions = fetchedPriorityOptions.length > 0 ? fetchedPriorityOptions : [
+    { key: "low", name: "Low", color: "#10B981" },
+    { key: "medium", name: "Medium", color: "#F59E0B" },
+    { key: "high", name: "High", color: "#EF4444" },
+    { key: "urgent", name: "Urgent", color: "#DC2626" },
+  ];
+
   // Apply filters to get filtered tasks
   const filteredTasks = applyTaskFilters(allTasks, filters);
 
@@ -153,14 +165,8 @@ export default function BusinessTasks() {
   } = extractFilterOptions(allTasks);
   
   // Extract status options from field categories
-  const statusCategory = fieldCategories.find(cat => cat && 'name' in cat && typeof cat.name === 'string' && cat.name.toLowerCase() === 'task status');
+  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = statusCategory?.options || [];
-  const priorityOptions = [
-    { key: "low", name: "Low", color: null },
-    { key: "medium", name: "Medium", color: null },
-    { key: "high", name: "High", color: null },
-    { key: "urgent", name: "Urgent", color: null },
-  ];
 
   return (
     <div className="flex h-full flex-col" data-testid="business-tasks">
@@ -348,6 +354,37 @@ export default function BusinessTasks() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Labels Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Labels</span>
+                {filters.labels && filters.labels.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {filters.labels.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {labelOptions.map(label => (
+                <DropdownMenuItem key={label} className="flex items-center">
+                  <Checkbox
+                    checked={filters.labels?.includes(label) || false}
+                    onCheckedChange={() => {
+                      const currentLabels = filters.labels || [];
+                      const newLabels = currentLabels.includes(label)
+                        ? currentLabels.filter(l => l !== label)
+                        : [...currentLabels, label];
+                      setFilters({...filters, labels: newLabels.length > 0 ? newLabels : undefined});
+                    }}
+                  />
+                  <span className="ml-2">{label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Right: Navigation + New Task + Settings */}
@@ -430,6 +467,7 @@ export default function BusinessTasks() {
           <div className="h-full p-4" data-testid="content-calendar">
             <TaskCalendar
               tasks={filteredTasks}
+              projectId=""
               onTaskClick={(task) => {
                 setEditingTask(task);
                 setShowCreateTaskDialog(true);
