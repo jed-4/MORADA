@@ -849,54 +849,9 @@ export class MemStorage implements IStorage {
       this.permissions.set(permission.id, permission);
     });
 
-    // Initialize built-in user roles
-    const builtInRoles: Array<Omit<UserRole, 'id' | 'createdAt' | 'updatedAt'>> = [
-      // Team roles
-      { name: "General admin", description: "Full system administration access", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Project manager", description: "Manage projects and teams", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Field worker", description: "Site-based team member", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Office manager", description: "Office operations management", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Sales manager", description: "Sales and client management", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Bookkeeper", description: "Financial operations", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Architect", description: "Design and technical oversight", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Engineer", description: "Engineering and technical work", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Purchasing coordinator", description: "Materials and purchasing", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Apprentice", description: "Learning team member", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Carpenter", description: "Carpentry specialist", userCategory: "team", isBuiltIn: true, isActive: true },
-      { name: "Designer", description: "Design specialist", userCategory: "team", isBuiltIn: true, isActive: true },
-      
-      // Supplier roles
-      { name: "Sub/Vendor", description: "Subcontractor or vendor access", userCategory: "supplier", isBuiltIn: true, isActive: true },
-      
-      // Client roles
-      { name: "Client", description: "Project client access", userCategory: "client", isBuiltIn: true, isActive: true },
-    ];
-
-    const now = new Date();
-    builtInRoles.forEach(roleData => {
-      const role: UserRole = {
-        ...roleData,
-        id: `role-${roleData.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.userRoles.set(role.id, role);
-    });
-
-    // Set default permissions for General admin (full access to everything)
-    const adminRole = Array.from(this.userRoles.values()).find(r => r.name === "General admin");
-    if (adminRole) {
-      Array.from(this.permissions.values()).forEach(permission => {
-        const rolePermission: RolePermission = {
-          id: randomUUID(),
-          roleId: adminRole.id,
-          permissionId: permission.id,
-          allowedActions: permission.actions as PermissionAction[],
-          createdAt: now,
-        };
-        this.rolePermissions.set(rolePermission.id, rolePermission);
-      });
-    }
+    // NOTE: Built-in roles are no longer seeded globally.
+    // They are now seeded per-company when a company is created via seedDefaultRolesForCompany()
+    // This ensures proper multi-tenant isolation with roles linked to their companyId.
   }
 
   // Initialize default custom fields to replace category and priority
