@@ -132,7 +132,7 @@ export default function BusinessTasks() {
   } = extractFilterOptions(allTasks);
   
   // Extract status options from field categories
-  const statusCategory = fieldCategories.find(cat => cat.name.toLowerCase() === 'task status');
+  const statusCategory = fieldCategories.find(cat => cat?.name?.toLowerCase() === 'task status');
   const statusOptions = statusCategory?.options || [];
   const priorityOptions = [
     { key: "low", name: "Low", color: null },
