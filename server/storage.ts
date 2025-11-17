@@ -3831,15 +3831,15 @@ export class MemStorage implements IStorage {
     };
     this.companies.set(newCompany.id, newCompany);
     
-    // Seed default roles for the company and get General admin roleId
-    const generalAdminRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
+    // Seed default roles for the company and get General Manager roleId
+    const generalManagerRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
     
-    // Update user's companyId and assign General admin role
+    // Update user's companyId and assign General Manager role
     const user = await this.getUser(ownerId);
     if (user) {
       await this.updateUser(ownerId, { 
         companyId: newCompany.id,
-        roleId: generalAdminRoleId
+        roleId: generalManagerRoleId
       });
     }
     
@@ -8039,14 +8039,14 @@ export class DbStorage implements IStorage {
       })
       .returning();
     
-    // Seed default roles for the company and get General admin roleId
-    const generalAdminRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
+    // Seed default roles for the company and get General Manager roleId
+    const generalManagerRoleId = await this.seedDefaultRolesForCompany(newCompany.id);
     
-    // Update user's companyId and assign General admin role
+    // Update user's companyId and assign General Manager role
     await db.update(schema.users)
       .set({ 
         companyId: newCompany.id,
-        roleId: generalAdminRoleId,
+        roleId: generalManagerRoleId,
         updatedAt: new Date()
       })
       .where(eq(schema.users.id, ownerId));
