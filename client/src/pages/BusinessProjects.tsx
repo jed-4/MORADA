@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, LayoutGrid, List, Eye, Users, Edit3, Columns3 } from "lucide-react";
+import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3 } from "lucide-react";
 import { type Project } from "@shared/schema";
 import { ProjectBoard, type ViewPreferences, type GroupBy, type ColumnWidth } from "@/components/ProjectBoard";
 import { ProjectList } from "@/components/ProjectList";
@@ -133,7 +133,7 @@ export default function BusinessProjects() {
             data-testid="button-group-by"
             title={preferences.groupBy === 'parent' ? 'Grouped by Parent Status' : 'Grouped by Sub-Status'}
           >
-            <Users className="h-3 w-3" />
+            <Layers className="h-3 w-3" />
           </Button>
 
           {/* Column Width - Dropdown */}
