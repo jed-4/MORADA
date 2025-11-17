@@ -53,12 +53,17 @@ import { CSS } from "@dnd-kit/utilities";
 interface ProjectBoardProps {
   projects: Project[];
   isLoading: boolean;
+  cardFieldsDialogOpen?: boolean;
+  onCardFieldsDialogChange?: (open: boolean) => void;
+  editMode?: boolean;
+  onPreferencesChange?: (preferences: ViewPreferences | ((prev: ViewPreferences) => ViewPreferences)) => void;
+  preferences?: ViewPreferences;
 }
 
-type GroupBy = "parent" | "substatus";
-type ColumnWidth = 'small' | 'medium' | 'wide';
+export type GroupBy = "parent" | "substatus";
+export type ColumnWidth = 'small' | 'medium' | 'wide';
 
-interface VisibleFields {
+export interface VisibleFields {
   client: boolean;
   budget: boolean;
   stage: boolean;
@@ -67,7 +72,7 @@ interface VisibleFields {
   foreman: boolean;
 }
 
-interface ViewPreferences {
+export interface ViewPreferences {
   groupBy: GroupBy;
   columnWidth: ColumnWidth;
   visibleFields: VisibleFields;
@@ -300,13 +305,21 @@ function DroppableColumn({
   );
 }
 
-export function ProjectBoard({ projects, isLoading }: ProjectBoardProps) {
+export function ProjectBoard({ 
+  projects, 
+  isLoading,
+  cardFieldsDialogOpen: externalCardFieldsDialogOpen,
+  onCardFieldsDialogChange,
+  editMode = false,
+  onPreferencesChange,
+  preferences: externalPreferences
+}: ProjectBoardProps) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   
-  // Load preferences from localStorage
-  const [preferences, setPreferences] = useState<ViewPreferences>(() => {
+  // Load preferences from localStorage (or use external preferences)
+  const [internalPreferences, setInternalPreferences] = useState<ViewPreferences>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       return stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
@@ -315,8 +328,24 @@ export function ProjectBoard({ projects, isLoading }: ProjectBoardProps) {
     }
   });
 
-  // Edit Card Fields dialog state
-  const [cardFieldsDialogOpen, setCardFieldsDialogOpen] = useState(false);
+  // Use external preferences if provided, otherwise use internal
+  const preferences = externalPreferences ?? internalPreferences;
+  const setPreferences = (newPrefs: ViewPreferences | ((prev: ViewPreferences) => ViewPreferences)) => {
+    if (externalPreferences && onPreferencesChange) {
+      // If external, pass updater directly to parent (handles functional updates)
+      onPreferencesChange(newPrefs);
+    } else {
+      // If internal, compute update and persist to localStorage
+      const updatedPrefs = typeof newPrefs === 'function' ? newPrefs(internalPreferences) : newPrefs;
+      setInternalPreferences(updatedPrefs);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedPrefs));
+    }
+  };
+
+  // Edit Card Fields dialog state - controlled/uncontrolled
+  const [internalCardFieldsDialogOpen, setInternalCardFieldsDialogOpen] = useState(false);
+  const cardFieldsDialogOpen = externalCardFieldsDialogOpen ?? internalCardFieldsDialogOpen;
+  const setCardFieldsDialogOpen = onCardFieldsDialogChange ?? setInternalCardFieldsDialogOpen;
   const [cardFields, setCardFields] = useState<CardField[]>(() => {
     try {
       const stored = localStorage.getItem(CARD_FIELDS_STORAGE_KEY);
@@ -662,153 +691,6 @@ export function ProjectBoard({ projects, isLoading }: ProjectBoardProps) {
       onDragEnd={handleDragEnd}
     >
       <div className="h-full flex flex-col">
-        {/* View Controls */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">
-              Group by: {preferences.groupBy === "parent" ? "Parent Status" : "Sub-Status"}
-            </span>
-            <span className="text-sm text-muted-foreground">•</span>
-            <span className="text-sm font-medium text-muted-foreground">
-              {preferences.columnWidth === 'small' ? 'Small' : 
-               preferences.columnWidth === 'wide' ? 'Wide' : 'Medium'} columns
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-column-width"
-                  className="h-9"
-                >
-                  <Columns3 className="h-4 w-4 mr-2" />
-                  {preferences.columnWidth === 'small' ? 'Small' : 
-                   preferences.columnWidth === 'wide' ? 'Wide' : 'Medium'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={() => updatePreference('columnWidth', 'small')}
-                  data-testid="menu-item-column-small"
-                >
-                  Small (240px)
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => updatePreference('columnWidth', 'medium')}
-                  data-testid="menu-item-column-medium"
-                >
-                  Medium (320px)
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => updatePreference('columnWidth', 'wide')}
-                  data-testid="menu-item-column-wide"
-                >
-                  Wide (400px)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            {showNavigation && (
-              <>
-                <Button 
-                  variant="outline"
-                  size="icon"
-                  onClick={scrollLeft}
-                  data-testid="button-scroll-left"
-                  className="h-9 w-9"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="outline"
-                  size="icon"
-                  onClick={scrollRight}
-                  data-testid="button-scroll-right"
-                  className="h-9 w-9"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </>
-            )}
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCardFieldsDialogOpen(true)}
-              data-testid="button-edit-card"
-              className="h-9"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Edit Card
-            </Button>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="button-view-settings" className="h-9">
-                  <Settings2 className="h-4 w-4 mr-2" />
-                  View Options
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Group By</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={preferences.groupBy}
-                  onValueChange={(value) => updatePreference("groupBy", value as GroupBy)}
-                >
-                  <DropdownMenuRadioItem value="parent" data-testid="radio-group-parent">
-                    Parent Status
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="substatus" data-testid="radio-group-substatus">
-                    Sub-Status
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-
-                <DropdownMenuSeparator />
-
-                <DropdownMenuLabel>Show Fields</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  checked={preferences.visibleFields.client}
-                  onCheckedChange={() => toggleField("client")}
-                  data-testid="checkbox-field-client"
-                >
-                  Client
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={preferences.visibleFields.budget}
-                  onCheckedChange={() => toggleField("budget")}
-                  data-testid="checkbox-field-budget"
-                >
-                  Budget
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={preferences.visibleFields.stage}
-                  onCheckedChange={() => toggleField("stage")}
-                  data-testid="checkbox-field-stage"
-                >
-                  Location
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={preferences.visibleFields.dueDate}
-                  onCheckedChange={() => toggleField("dueDate")}
-                  data-testid="checkbox-field-dueDate"
-                >
-                  Due Date
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={preferences.visibleFields.foreman}
-                  onCheckedChange={() => toggleField("foreman")}
-                  data-testid="checkbox-field-foreman"
-                >
-                  Foreman
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
         {/* Board - Horizontal Scroll */}
         <div 
           ref={scrollContainerRef}
