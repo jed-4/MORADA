@@ -83,7 +83,11 @@ export default function Business() {
           return (
             <button
               key={tab.id}
-              onClick={() => navigate(tab.path)}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(tab.path);
+              }}
               className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
                 isActive
                   ? 'text-[#bba7db] font-medium'
