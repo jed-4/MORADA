@@ -867,7 +867,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         onMouseDown={(e) => handleColumnDividerMouseDown(e, 'status')}
                         data-testid="divider-status"
                       />
-                      <div style={{ width: columnWidths.notes }} className="text-center flex-shrink-0">Notes</div>
+                      <div style={{ width: columnWidths.notes }} className="text-center flex-shrink-0"></div>
                       {(() => { cumulativeOffset += columnWidths.notes; return null; })()}
                     </>
                   )}
