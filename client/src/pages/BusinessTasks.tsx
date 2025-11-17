@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +45,27 @@ export default function BusinessTasks() {
     showSubtasks: true,
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showNavigation, setShowNavigation] = useState(false);
+
+  // Scroll navigation functions
+  const scrollLeft = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({
+        left: -320,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const scrollRight = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({
+        left: 320,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Load card display settings from localStorage
   React.useEffect(() => {
@@ -198,7 +219,7 @@ export default function BusinessTasks() {
                 className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                 data-testid="button-view-menu"
               >
-                <MoreHorizontal className="w-3 h-3" />
+                <Settings className="w-3 h-3" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -357,11 +378,34 @@ export default function BusinessTasks() {
           </DropdownMenu>
         </div>
 
-        {/* Right: Task Count */}
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="text-xs" data-testid="text-task-count">
-            {filteredTasks.length} tasks
-          </Badge>
+        {/* Right: Navigation + New Task */}
+        <div className="flex items-center gap-1.5">
+          {activeTab === "board" && showNavigation && (
+            <>
+              <button
+                onClick={scrollLeft}
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-scroll-left"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </button>
+              <button
+                onClick={scrollRight}
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-scroll-right"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </>
+          )}
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowCreateTaskDialog(true)}
+            data-testid="button-new-task-header"
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Task</span>
+          </button>
         </div>
       </div>
 

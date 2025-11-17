@@ -50,6 +50,8 @@ interface TaskBoardProps {
   projectId?: string;
   displaySettings?: CardDisplaySettings;
   cardWidth?: 'compact' | 'comfortable' | 'spacious';
+  scrollContainerRef?: React.RefObject<HTMLDivElement>;
+  onScrollOverflowChange?: (hasOverflow: boolean) => void;
 }
 
 // Draggable Task Card wrapper
@@ -397,44 +399,6 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       onDragEnd={handleDragEnd}
     >
       <div className="px-2 pb-6" data-testid="task-board">
-        {(showNavigation || columns.length > 0) && (
-          <div className="flex items-center justify-end mb-2">
-            <div className="flex items-center gap-2">
-              {showNavigation && (
-                <>
-                  <Button 
-                    variant="outline"
-                    size="icon"
-                    onClick={scrollLeft}
-                    data-testid="button-scroll-left"
-                    className="h-9 w-9"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    size="icon"
-                    onClick={scrollRight}
-                    data-testid="button-scroll-right"
-                    className="h-9 w-9"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
-              {columns.length > 0 && (
-                <Button 
-                  onClick={() => handleAddTaskToColumn(columns[0].status)}
-                  data-testid="button-new-task"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Task
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
         <div 
           ref={scrollContainerRef}
           className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
