@@ -11,6 +11,8 @@ BuildPro is a project management software for Australian residential builders, o
   - Cards updated with rounded-xl and transition-all duration-200 for smooth animations
   - Empty columns are now half-width (Small: 96px, Medium: 128px, Wide: 160px) to save horizontal space
   - Fixed critical drag bug: removed `.json()` call on already-parsed apiRequest response
+  - Column headers improved: text clips (not wraps), count badge only if > 0, $ value summary row
+  - Value summary uses price hierarchy: budget → estimateTotal → contractValue → $0
   - Consistent ClickUp 2025 aesthetic throughout: ultra-subtle backgrounds (/20, /30 opacity), gentle borders, lilac accents
 
 - **User Workspace Implementation** (COMPLETED): Comprehensive personal user workspace

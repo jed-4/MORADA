@@ -259,6 +259,22 @@ function DroppableColumn({
     },
   });
 
+  // Calculate total value using price hierarchy: budget → estimate → contract → $0
+  const totalValue = projects.reduce((sum, project) => {
+    // Price hierarchy: use first available value
+    const value = project.budget || project.estimateTotal || project.contractValue || 0;
+    return sum + value;
+  }, 0);
+
+  const formatCurrency = (cents: number) => {
+    if (!cents) return "$0";
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      minimumFractionDigits: 0,
+    }).format(cents / 100);
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -268,17 +284,24 @@ function DroppableColumn({
     >
       {/* Column Header */}
       <div className="px-3 py-2.5 border-b border-border/30 bg-muted/30">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        {/* Row 1: Status name + count (if > 0) */}
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div
               className="w-3 h-3 rounded-full flex-shrink-0"
               style={{ backgroundColor: column.color }}
             />
-            <h3 className="text-sm font-semibold text-foreground">{column.title}</h3>
+            <h3 className="text-sm font-semibold text-foreground truncate">{column.title}</h3>
           </div>
-          <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold">
-            {projects.length}
-          </Badge>
+          {projects.length > 0 && (
+            <Badge variant="secondary" className="text-xs px-2 py-0 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold flex-shrink-0">
+              {projects.length}
+            </Badge>
+          )}
+        </div>
+        {/* Row 2: Total value */}
+        <div className="text-xs text-muted-foreground font-medium">
+          {formatCurrency(totalValue)}
         </div>
       </div>
 
