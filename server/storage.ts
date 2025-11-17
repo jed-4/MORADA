@@ -1863,24 +1863,16 @@ export class MemStorage implements IStorage {
 
   async seedDefaultRolesForCompany(companyId: string): Promise<string> {
     const builtInRoles: Array<Omit<UserRole, 'id' | 'createdAt' | 'updatedAt'>> = [
-      { companyId, name: "General admin", description: "Full system administration access", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 0 },
-      { companyId, name: "Project manager", description: "Manage projects and teams", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 1 },
-      { companyId, name: "Field worker", description: "Site-based team member", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 2 },
-      { companyId, name: "Office manager", description: "Office operations management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 3 },
-      { companyId, name: "Sales manager", description: "Sales and client management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 4 },
-      { companyId, name: "Bookkeeper", description: "Financial operations", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 5 },
-      { companyId, name: "Architect", description: "Design and technical oversight", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 6 },
-      { companyId, name: "Engineer", description: "Engineering and technical work", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 7 },
-      { companyId, name: "Purchasing coordinator", description: "Materials and purchasing", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 8 },
-      { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 9 },
-      { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 10 },
-      { companyId, name: "Designer", description: "Design specialist", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 11 },
-      { companyId, name: "Sub/Vendor", description: "Subcontractor or vendor access", userCategory: "supplier", isBuiltIn: true, isActive: true, displayOrder: 12 },
-      { companyId, name: "Client", description: "Project client access", userCategory: "client", isBuiltIn: true, isActive: true, displayOrder: 13 },
+      { companyId, name: "General Manager", description: "Full system administration access", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 0 },
+      { companyId, name: "Office Manager", description: "Office operations management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 1 },
+      { companyId, name: "Construction Manager", description: "Construction oversight and management", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 2 },
+      { companyId, name: "Foreman", description: "Site-based team lead", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 3 },
+      { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 4 },
+      { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team", isBuiltIn: true, isActive: true, displayOrder: 5 },
     ];
 
     const now = new Date();
-    let generalAdminRoleId = '';
+    let generalManagerRoleId = '';
 
     for (const roleData of builtInRoles) {
       const roleId = randomUUID();
@@ -1892,10 +1884,10 @@ export class MemStorage implements IStorage {
       };
       this.userRoles.set(roleId, role);
 
-      if (roleData.name === "General admin") {
-        generalAdminRoleId = roleId;
+      if (roleData.name === "General Manager") {
+        generalManagerRoleId = roleId;
         
-        // Set full permissions for General admin
+        // Set full permissions for General Manager
         const allPermissions = Array.from(this.permissions.values());
         for (const permission of allPermissions) {
           const rolePermission: RolePermission = {
@@ -1910,7 +1902,7 @@ export class MemStorage implements IStorage {
       }
     }
 
-    return generalAdminRoleId;
+    return generalManagerRoleId;
   }
 
   // Permission operations
@@ -5773,23 +5765,15 @@ export class DbStorage implements IStorage {
   async seedDefaultRolesForCompany(companyId: string): Promise<string> {
     try {
       const builtInRoles = [
-        { companyId, name: "General admin", description: "Full system administration access", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 0 },
-        { companyId, name: "Project manager", description: "Manage projects and teams", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 1 },
-        { companyId, name: "Field worker", description: "Site-based team member", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 2 },
-        { companyId, name: "Office manager", description: "Office operations management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 3 },
-        { companyId, name: "Sales manager", description: "Sales and client management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 4 },
-        { companyId, name: "Bookkeeper", description: "Financial operations", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 5 },
-        { companyId, name: "Architect", description: "Design and technical oversight", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 6 },
-        { companyId, name: "Engineer", description: "Engineering and technical work", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 7 },
-        { companyId, name: "Purchasing coordinator", description: "Materials and purchasing", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 8 },
-        { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 9 },
-        { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 10 },
-        { companyId, name: "Designer", description: "Design specialist", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 11 },
-        { companyId, name: "Sub/Vendor", description: "Subcontractor or vendor access", userCategory: "supplier" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 12 },
-        { companyId, name: "Client", description: "Project client access", userCategory: "client" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 13 },
+        { companyId, name: "General Manager", description: "Full system administration access", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 0 },
+        { companyId, name: "Office Manager", description: "Office operations management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 1 },
+        { companyId, name: "Construction Manager", description: "Construction oversight and management", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 2 },
+        { companyId, name: "Foreman", description: "Site-based team lead", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 3 },
+        { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 4 },
+        { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 5 },
       ];
 
-      let generalAdminRoleId = '';
+      let generalManagerRoleId = '';
 
       await db.transaction(async (tx) => {
         // Insert all roles
@@ -5797,19 +5781,19 @@ export class DbStorage implements IStorage {
           .values(builtInRoles)
           .returning();
 
-        // Find General admin role
-        const generalAdminRole = insertedRoles.find(r => r.name === "General admin");
-        if (!generalAdminRole) {
-          throw new Error("Failed to create General admin role");
+        // Find General Manager role
+        const generalManagerRole = insertedRoles.find(r => r.name === "General Manager");
+        if (!generalManagerRole) {
+          throw new Error("Failed to create General Manager role");
         }
-        generalAdminRoleId = generalAdminRole.id;
+        generalManagerRoleId = generalManagerRole.id;
 
         // Get all permissions
         const allPermissions = await tx.select().from(schema.permissions);
 
-        // Create role permissions for General admin (full access)
+        // Create role permissions for General Manager (full access)
         const rolePermissions = allPermissions.map(permission => ({
-          roleId: generalAdminRoleId,
+          roleId: generalManagerRoleId,
           permissionId: permission.id,
           allowedActions: permission.actions as PermissionAction[],
         }));
@@ -5819,7 +5803,7 @@ export class DbStorage implements IStorage {
         }
       });
 
-      return generalAdminRoleId;
+      return generalManagerRoleId;
     } catch (error) {
       console.error("Database error in seedDefaultRolesForCompany:", error);
       throw error;
