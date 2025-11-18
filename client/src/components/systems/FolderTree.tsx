@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useImperativeHandle, forwardRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -360,7 +360,16 @@ function DropIndicator({
   );
 }
 
-export function FolderTree() {
+export interface FolderTreeHandle {
+  openNewFolderDialog: () => void;
+  openNewDocumentDialog: () => void;
+}
+
+interface FolderTreeProps {
+  searchQuery?: string;
+}
+
+export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(({ searchQuery }, ref) => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
@@ -373,6 +382,8 @@ export function FolderTree() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const { toast} = useToast();
+
+  // Note: useImperativeHandle will be added after dialog functions are defined
 
   // Folder form state
   const [folderForm, setFolderForm] = useState({
@@ -651,6 +662,12 @@ export function FolderTree() {
       setShowCreateTaskDialog(true);
     }
   };
+
+  // Expose dialog opening functions to parent via ref
+  useImperativeHandle(ref, () => ({
+    openNewFolderDialog,
+    openNewDocumentDialog,
+  }));
 
   const handleCreateTask = () => {
     if (!selectedTemplate || !taskForm.projectId) {
@@ -1449,4 +1466,6 @@ export function FolderTree() {
       </Dialog>
     </div>
   );
-}
+});
+
+FolderTree.displayName = "FolderTree";

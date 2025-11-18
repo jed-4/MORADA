@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useImperativeHandle, forwardRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,16 @@ const DAYS_OF_WEEK = [
   { value: 6, label: "Sat", fullLabel: "Saturday" },
 ];
 
-export function TaskLibrary() {
+export interface TaskLibraryHandle {
+  openNewTemplateDialog: () => void;
+  generateRecurringTasks: () => void;
+}
+
+interface TaskLibraryProps {
+  searchQuery?: string;
+}
+
+export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ searchQuery }, ref) => {
   const [showDialog, setShowDialog] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const { toast } = useToast();
@@ -252,6 +261,12 @@ export function TaskLibrary() {
     });
     setShowDialog(true);
   };
+
+  // Expose dialog opening functions to parent via ref
+  useImperativeHandle(ref, () => ({
+    openNewTemplateDialog,
+    generateRecurringTasks: () => generateRecurringMutation.mutate(),
+  }));
 
   const handleSaveTemplate = () => {
     // Build recurringSchedule from dueDayOfWeek and individual day schedules
@@ -922,4 +937,6 @@ export function TaskLibrary() {
       </Dialog>
     </div>
   );
-}
+});
+
+TaskLibrary.displayName = "TaskLibrary";

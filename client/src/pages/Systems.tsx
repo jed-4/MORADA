@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { FolderTree } from "@/components/systems/FolderTree";
+import { FolderTree, type FolderTreeHandle } from "@/components/systems/FolderTree";
 import { TaskLibrary } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder } from "@/components/systems/WorkflowBuilder";
 
 export default function Systems() {
   const [activeTab, setActiveTab] = useState("folders");
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Refs for accessing child component functions
+  const folderTreeRef = useRef<FolderTreeHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -66,13 +69,14 @@ export default function Systems() {
         activeTab={activeTab} 
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        folderTreeRef={folderTreeRef}
       />
 
       {/* Content Area */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === "folders" && (
           <div className="h-full">
-            <FolderTree searchQuery={searchQuery} />
+            <FolderTree ref={folderTreeRef} searchQuery={searchQuery} />
           </div>
         )}
         {activeTab === "tasks" && (
@@ -94,11 +98,13 @@ export default function Systems() {
 function SystemsControlBar({ 
   activeTab, 
   searchQuery,
-  setSearchQuery 
+  setSearchQuery,
+  folderTreeRef
 }: { 
   activeTab: string;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  folderTreeRef: React.RefObject<FolderTreeHandle>;
 }) {
   return (
     <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
@@ -117,7 +123,7 @@ function SystemsControlBar({
       {/* Right: Tab-Specific Action Buttons */}
       <div className="flex items-center gap-1.5">
         {activeTab === "folders" && (
-          <FoldersControls />
+          <FoldersControls folderTreeRef={folderTreeRef} />
         )}
         {activeTab === "tasks" && (
           <TasksControls />
@@ -131,13 +137,14 @@ function SystemsControlBar({
 }
 
 // Folders tab controls
-function FoldersControls() {
+function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<FolderTreeHandle> }) {
   return (
     <>
       <Button
         size="sm"
         variant="outline"
         className="h-6 px-2 text-xs gap-1"
+        onClick={() => folderTreeRef.current?.openNewFolderDialog()}
         data-testid="button-new-folder"
       >
         <FolderPlus className="w-3 h-3" />
@@ -147,6 +154,7 @@ function FoldersControls() {
         size="sm"
         variant="outline"
         className="h-6 px-2 text-xs gap-1"
+        onClick={() => folderTreeRef.current?.openNewDocumentDialog()}
         data-testid="button-new-document"
       >
         <FilePlus className="w-3 h-3" />
