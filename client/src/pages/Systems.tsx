@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Folder, ListTodo, Workflow } from "lucide-react";
 import { FolderTree } from "@/components/systems/FolderTree";
 import { TaskLibrary } from "@/components/systems/TaskLibrary";
@@ -10,46 +9,76 @@ export default function Systems() {
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
-      <div className="flex-1 min-h-0 p-6">
-        <div className="flex flex-col gap-4 h-full">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Systems Library</h1>
-              <p className="text-muted-foreground text-sm">
-                Manage company-wide processes, templates, and documentation
-              </p>
+      {/* Row 1: Title (h-9) */}
+      <div className="h-9 bg-background dark:bg-background flex items-center px-2 border-b border-border flex-shrink-0">
+        <h2 className="text-sm font-semibold">Systems Library</h2>
+      </div>
+
+      {/* Row 2: Horizontal Tabs (h-9) */}
+      <div className="h-9 bg-background dark:bg-background flex items-center px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setActiveTab("folders")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "folders"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-folders"
+          >
+            <div className="flex items-center gap-1.5">
+              <Folder className="h-3 w-3" />
+              <span>Folders</span>
             </div>
-          </div>
-
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-            <TabsList className="w-fit">
-              <TabsTrigger value="folders" className="gap-2" data-testid="tab-folders">
-                <Folder className="h-4 w-4" />
-                Folders
-              </TabsTrigger>
-              <TabsTrigger value="tasks" className="gap-2" data-testid="tab-tasks">
-                <ListTodo className="h-4 w-4" />
-                Task Templates
-              </TabsTrigger>
-              <TabsTrigger value="workflows" className="gap-2" data-testid="tab-workflows">
-                <Workflow className="h-4 w-4" />
-                Workflows
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="folders" className="flex-1 min-h-0 mt-4">
-              <FolderTree />
-            </TabsContent>
-
-            <TabsContent value="tasks" className="flex-1 min-h-0 mt-4">
-              <TaskLibrary />
-            </TabsContent>
-
-            <TabsContent value="workflows" className="flex-1 min-h-0 mt-4">
-              <WorkflowBuilder />
-            </TabsContent>
-          </Tabs>
+          </button>
+          <button
+            onClick={() => setActiveTab("tasks")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "tasks"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-tasks"
+          >
+            <div className="flex items-center gap-1.5">
+              <ListTodo className="h-3 w-3" />
+              <span>Task Templates</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab("workflows")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "workflows"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-workflows"
+          >
+            <div className="flex items-center gap-1.5">
+              <Workflow className="h-3 w-3" />
+              <span>Workflows</span>
+            </div>
+          </button>
         </div>
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {activeTab === "folders" && (
+          <div className="h-full p-3">
+            <FolderTree />
+          </div>
+        )}
+        {activeTab === "tasks" && (
+          <div className="h-full p-3">
+            <TaskLibrary />
+          </div>
+        )}
+        {activeTab === "workflows" && (
+          <div className="h-full p-3">
+            <WorkflowBuilder />
+          </div>
+        )}
       </div>
     </div>
   );
