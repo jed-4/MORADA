@@ -27,7 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus, User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
 import {
@@ -80,7 +80,11 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
   return parts.length > 0 ? parts : content;
 }
 
-export default function Messages() {
+interface MessagesProps {
+  channelTypeFilter?: "channel" | "dm" | "all";
+}
+
+export default function Messages({ channelTypeFilter = "all" }: MessagesProps) {
   const { user } = useAuth();
   const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead } = useSocket();
   
@@ -98,6 +102,9 @@ export default function Messages() {
   const [newChannelName, setNewChannelName] = useState("");
   const [isClientFacing, setIsClientFacing] = useState(false);
   
+  const [isCreateDmOpen, setIsCreateDmOpen] = useState(false);
+  const [selectedDmUserId, setSelectedDmUserId] = useState<string>("");
+  
   const [isAddPeopleOpen, setIsAddPeopleOpen] = useState(false);
   const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
   
@@ -112,6 +119,12 @@ export default function Messages() {
 
   const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
     queryKey: ["/api/channels"],
+  });
+
+  // Filter channels based on type
+  const filteredChannels = channels.filter(channel => {
+    if (channelTypeFilter === "all") return true;
+    return channel.type === channelTypeFilter;
   });
 
   const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
@@ -239,6 +252,33 @@ export default function Messages() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+    }
+  });
+
+  const createDmMutation = useMutation({
+    mutationFn: async (otherUserId: string) => {
+      if (!user?.id) throw new Error("User not found");
+      
+      // Generate DM name from user IDs (sorted for consistency)
+      const userIds = [user.id, otherUserId].sort();
+      const dmName = `dm-${userIds.join('-')}`;
+      
+      const response = await fetch("/api/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          name: dmName,
+          type: "dm",
+          dmParticipants: userIds,
+        }),
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("Failed to create DM");
+      return response.json();
+    },
+    onSuccess: (newChannel) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      setSelectedChannelId(newChannel.id);
     }
   });
 
@@ -400,11 +440,26 @@ export default function Messages() {
     return "U";
   };
 
+  // Get DM display name - shows other participant's name
+  const getDmDisplayName = (channel: Channel) => {
+    if (channel.type !== "dm" || !channel.dmParticipants) return channel.name;
+    
+    const otherUserId = (channel.dmParticipants as string[]).find(id => id !== user?.id);
+    if (!otherUserId) return channel.name;
+    
+    const otherUser = allUsers.find((u: any) => u.id === otherUserId);
+    if (!otherUser) return channel.name;
+    
+    return otherUser.firstName && otherUser.lastName 
+      ? `${otherUser.firstName} ${otherUser.lastName}` 
+      : otherUser.email || channel.name;
+  };
+
   useEffect(() => {
-    if (channels.length > 0 && !selectedChannelId) {
-      setSelectedChannelId(channels[0].id);
+    if (filteredChannels.length > 0 && !selectedChannelId) {
+      setSelectedChannelId(filteredChannels[0].id);
     }
-  }, [channels, selectedChannelId]);
+  }, [filteredChannels, selectedChannelId]);
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
 
@@ -518,8 +573,9 @@ export default function Messages() {
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0"
-                onClick={() => setIsCreateChannelOpen(true)}
+                onClick={() => channelTypeFilter === "dm" ? setIsCreateDmOpen(true) : setIsCreateChannelOpen(true)}
                 data-testid="button-new-channel"
+                title={channelTypeFilter === "dm" ? "Start DM" : "Create Channel"}
               >
                 <Plus className="h-3.5 w-3.5" />
               </Button>
@@ -532,12 +588,12 @@ export default function Messages() {
                 <div className="flex items-center justify-center p-4">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : channels.length === 0 ? (
+              ) : filteredChannels.length === 0 ? (
                 <div className="text-center text-xs text-muted-foreground p-4">
-                  No channels yet
+                  {channelTypeFilter === "dm" ? "No direct messages yet" : channelTypeFilter === "channel" ? "No channels yet" : "No channels yet"}
                 </div>
               ) : (
-                channels.map((channel) => {
+                filteredChannels.map((channel) => {
                   const unreadCount = unreadCounts[channel.id] || 0;
                   const isActive = selectedChannelId === channel.id;
                   
@@ -556,12 +612,14 @@ export default function Messages() {
                       data-testid={`channel-${channel.id}`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        {channel.isClientFacing ? (
+                        {channel.type === "dm" ? (
+                          <User className="h-3.5 w-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+                        ) : channel.isClientFacing ? (
                           <Eye className="h-3.5 w-3.5 shrink-0 text-green-600 dark:text-green-400" />
                         ) : (
                           <Lock className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
                         )}
-                        <span className="truncate">{channel.name}</span>
+                        <span className="truncate">{getDmDisplayName(channel)}</span>
                       </div>
                       {unreadCount > 0 && !isActive && (
                         <Badge variant="default" className="h-4 text-[10px] px-1.5 shrink-0" data-testid={`unread-${channel.id}`}>
@@ -780,6 +838,64 @@ export default function Messages() {
               data-testid="button-create"
             >
               {createChannelMutation.isPending ? "Creating..." : "Create Channel"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Start DM Dialog */}
+      <Dialog open={isCreateDmOpen} onOpenChange={setIsCreateDmOpen}>
+        <DialogContent data-testid="dialog-start-dm">
+          <DialogHeader>
+            <DialogTitle>Start Direct Message</DialogTitle>
+            <DialogDescription>
+              Choose a team member to start a conversation
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="dm-user">Select User *</Label>
+              <select
+                id="dm-user"
+                value={selectedDmUserId}
+                onChange={(e) => setSelectedDmUserId(e.target.value)}
+                className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm"
+                data-testid="select-dm-user"
+              >
+                <option value="">Choose a user...</option>
+                {allUsers
+                  .filter((u: any) => u.id !== user?.id)
+                  .map((u: any) => (
+                    <option key={u.id} value={u.id}>
+                      {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setIsCreateDmOpen(false);
+                setSelectedDmUserId("");
+              }}
+              data-testid="button-cancel-dm"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedDmUserId) {
+                  createDmMutation.mutate(selectedDmUserId);
+                  setIsCreateDmOpen(false);
+                  setSelectedDmUserId("");
+                }
+              }}
+              disabled={!selectedDmUserId || createDmMutation.isPending}
+              data-testid="button-start-dm"
+            >
+              {createDmMutation.isPending ? "Starting..." : "Start Conversation"}
             </Button>
           </DialogFooter>
         </DialogContent>
