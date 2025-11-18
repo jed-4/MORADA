@@ -209,6 +209,20 @@ export default function BusinessTasks() {
             Calendar
           </button>
         </div>
+
+        {/* Right: Saved Views */}
+        <TaskViewsManager 
+          currentViewType={activeTab}
+          currentFilters={filters as TaskViewFilters}
+          currentGroupBy={groupBy}
+          onViewSelect={(view: TaskView) => {
+            setActiveTab(view.viewType);
+            setFilters(view.filters as FilterState);
+            setGroupBy(view.groupBy);
+            setSelectedViewId(view.id);
+          }}
+          selectedViewId={selectedViewId}
+        />
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
@@ -357,7 +371,7 @@ export default function BusinessTasks() {
           </DropdownMenu>
         </div>
 
-        {/* Right: Navigation + Saved Views + New Task + Settings */}
+        {/* Right: Navigation + New Task + Settings */}
         <div className="flex items-center gap-1.5">
           {activeTab === "board" && showNavigation && (
             <>
@@ -377,18 +391,6 @@ export default function BusinessTasks() {
               </button>
             </>
           )}
-          <TaskViewsManager 
-            currentViewType={activeTab}
-            currentFilters={filters as TaskViewFilters}
-            currentGroupBy={groupBy}
-            onViewSelect={(view: TaskView) => {
-              setActiveTab(view.viewType);
-              setFilters(view.filters as FilterState);
-              setGroupBy(view.groupBy);
-              setSelectedViewId(view.id);
-            }}
-            selectedViewId={selectedViewId}
-          />
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}
