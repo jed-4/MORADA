@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, Settings as SettingsIcon } from "lucide-react";
+import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { User } from "@shared/schema";
 import ComingSoonPage from "./ComingSoonPage";
@@ -13,6 +13,7 @@ import UserTasks from "@/components/user-workspace/UserTasks";
 import UserSchedule from "@/components/user-workspace/UserSchedule";
 import UserTime from "@/components/user-workspace/UserTime";
 import UserNotes from "@/components/user-workspace/UserNotes";
+import Messages from "./Messages";
 
 const USER_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "" },
@@ -20,6 +21,7 @@ const USER_TABS = [
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
   { id: "schedule", label: "Schedule", icon: CalendarIcon, path: "schedule" },
   { id: "time", label: "Time", icon: Timer, path: "time" },
+  { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
   { id: "notes", label: "Notes", icon: FileText, path: "notes" },
 ] as const;
 
@@ -72,6 +74,8 @@ export default function UserWorkspace() {
         return <UserSchedule user={user} isOwnPage={isOwnPage} />;
       case "time":
         return <UserTime user={user} isOwnPage={isOwnPage} />;
+      case "messages":
+        return <Messages channelTypeFilter="dm" />;
       case "notes":
         return <UserNotes user={user} isOwnPage={isOwnPage} />;
       default:

@@ -9,6 +9,7 @@ import Timesheets from "./Timesheets";
 import Minutes from "./Minutes";
 import TeamManagement from "./TeamManagement";
 import Systems from "./Systems";
+import Messages from "./Messages";
 import ComingSoonPage from "./ComingSoonPage";
 
 const BUSINESS_TABS = [
@@ -55,7 +56,7 @@ export default function Business() {
       case "timesheets":
         return <Timesheets />;
       case "messages":
-        return <ComingSoonPage section="business-messages" />;
+        return <Messages channelTypeFilter="channel" />;
       case "minutes":
         return <Minutes />;
       case "leave":
