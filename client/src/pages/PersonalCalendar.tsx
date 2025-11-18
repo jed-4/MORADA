@@ -648,58 +648,9 @@ export default function PersonalCalendar() {
         </div>
       </div>
 
-      {/* Row 2 - Navigation & View Mode (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: Today + Navigation Arrows */}
-        <div className="flex items-center gap-0.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-            onClick={handleNavigateToday}
-            data-testid="button-today"
-          >
-            Today
-          </button>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={handleNavigatePrevious}
-            data-testid="button-previous"
-          >
-            <ChevronLeft className="w-3 h-3" />
-          </button>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={handleNavigateNext}
-            data-testid="button-next"
-          >
-            <ChevronRight className="w-3 h-3" />
-          </button>
-        </div>
-
-        {/* Right: Day, Week, Month Buttons */}
-        <div className="flex items-center gap-0.5">
-          {[
-            { value: 'day', label: 'Day' },
-            { value: 'week', label: 'Week' },
-            { value: 'month', label: 'Month' },
-          ].map((mode) => (
-            <button
-              key={mode.value}
-              onClick={() => setCalendarMode(mode.value)}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                calendarMode === mode.value
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                  : 'hover-elevate'
-              } active-elevate-2`}
-              data-testid={`button-mode-${mode.value}`}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Row 3 - Filters (36px) */}
+      {/* Row 2 - Filters & Controls (36px) */}
       <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Filters */}
         <div className="flex items-center gap-1">
           {/* Projects Filter */}
           {projects.length > 0 && (
@@ -932,6 +883,71 @@ export default function PersonalCalendar() {
               Clear All
             </button>
           )}
+        </div>
+
+        {/* Right: Navigation & View Controls */}
+        <div className="flex items-center gap-1.5">
+          {/* Navigation: Previous, Today, Next */}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={handleNavigatePrevious}
+            data-testid="button-previous"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+            onClick={handleNavigateToday}
+            data-testid="button-today"
+          >
+            Today
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={handleNavigateNext}
+            data-testid="button-next"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+
+          {/* Current Date Display */}
+          <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
+            {format(currentDate, 'MMM d, yyyy')}
+          </span>
+
+          {/* View Mode Selector */}
+          <div className="flex items-center gap-0.5">
+            {[
+              { value: 'day', label: 'Day' },
+              { value: 'week', label: 'Week' },
+              { value: 'month', label: 'Month' },
+            ].map((mode) => (
+              <button
+                key={mode.value}
+                onClick={() => setCalendarMode(mode.value)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  calendarMode === mode.value
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid={`button-mode-${mode.value}`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Add Event Button */}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+            onClick={() => {
+              // TODO: Open event creation dialog
+              toast({ title: "Add Event", description: "Event creation coming soon!" });
+            }}
+            data-testid="button-add-event"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
         </div>
       </div>
 
