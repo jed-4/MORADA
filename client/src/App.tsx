@@ -35,6 +35,7 @@ import ClientInvoices from "@/pages/ClientInvoices";
 import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
 import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
+import ScopeTemplates from "@/pages/ScopeTemplates";
 import ChecklistTemplates from "@/pages/ChecklistTemplates";
 import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
 import CostCodes from "@/pages/CostCodes";
@@ -201,6 +202,7 @@ function Router() {
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
+      <Route path="/scope-templates" component={ScopeTemplates} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/settings" component={Settings} />

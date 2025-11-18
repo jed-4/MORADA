@@ -13,6 +13,7 @@ import {
   File,
   CheckCircle,
   Receipt,
+  Layers,
 } from "lucide-react";
 
 const templateTypes = [
@@ -42,6 +43,15 @@ const templateTypes = [
     url: "/schedule-templates",
     color: "text-green-500",
     implemented: false,
+  },
+  {
+    id: "scope",
+    title: "Scope",
+    description: "Manage scope templates with stages and items",
+    icon: Layers,
+    url: "/scope-templates",
+    color: "text-amber-500",
+    implemented: true,
   },
   {
     id: "tasks",
