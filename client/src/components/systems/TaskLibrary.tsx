@@ -15,7 +15,10 @@ import {
   CheckSquare,
   Target,
   Calendar as CalendarIcon,
-  RefreshCw
+  RefreshCw,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +74,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const { toast } = useToast();
   const { categoryOptions, getCategoryInfo } = useTaskTemplateCategoryOptions();
+
+  // Sorting state
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Form state
   const [templateForm, setTemplateForm] = useState({
@@ -424,6 +431,52 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     }));
   };
 
+  // Sorting logic
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+    }
+    return sortDirection === 'asc' 
+      ? <ArrowUp className="h-3.5 w-3.5 text-gray-700" />
+      : <ArrowDown className="h-3.5 w-3.5 text-gray-700" />;
+  };
+
+  const sortedTemplates = [...templates].sort((a, b) => {
+    if (!sortColumn) return 0;
+    
+    const direction = sortDirection === 'asc' ? 1 : -1;
+    
+    switch (sortColumn) {
+      case 'title':
+        return direction * a.title.localeCompare(b.title);
+      case 'category':
+        const catA = getCategoryInfo(a.category)?.name || a.category || '';
+        const catB = getCategoryInfo(b.category)?.name || b.category || '';
+        return direction * catA.localeCompare(catB);
+      case 'role':
+        const roleA = getRoleName(a.defaultRoleId);
+        const roleB = getRoleName(b.defaultRoleId);
+        return direction * roleA.localeCompare(roleB);
+      case 'frequency':
+        const freqA = getFrequencyLabel(a);
+        const freqB = getFrequencyLabel(b);
+        return direction * freqA.localeCompare(freqB);
+      case 'status':
+        return direction * ((a.isActive ? 1 : 0) - (b.isActive ? 1 : 0));
+      default:
+        return 0;
+    }
+  });
+
   if (templatesLoading) {
     return (
       <Card className="p-6">
@@ -452,16 +505,51 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 100px 32px" }}
             >
               <div></div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Title & Goal</div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Info</div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Role</div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Frequency</div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+              <button 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                onClick={() => handleSort('title')}
+                data-testid="sort-title"
+              >
+                <span>Title & Goal</span>
+                {getSortIcon('title')}
+              </button>
+              <button 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                onClick={() => handleSort('category')}
+                data-testid="sort-category"
+              >
+                <span>Category</span>
+                {getSortIcon('category')}
+              </button>
+              <button 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                onClick={() => handleSort('role')}
+                data-testid="sort-role"
+              >
+                <span>Role</span>
+                {getSortIcon('role')}
+              </button>
+              <button 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                onClick={() => handleSort('frequency')}
+                data-testid="sort-frequency"
+              >
+                <span>Frequency</span>
+                {getSortIcon('frequency')}
+              </button>
+              <button 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                onClick={() => handleSort('status')}
+                data-testid="sort-status"
+              >
+                <span>Status</span>
+                {getSortIcon('status')}
+              </button>
               <div></div>
             </div>
 
             {/* Template Rows */}
-            {templates.map((template) => {
+            {sortedTemplates.map((template) => {
               const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
               const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
               const hasGoal = !!template.goal;
@@ -530,17 +618,15 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   </div>
 
                   {/* Active Status */}
-                  <div className="flex items-center gap-1.5">
+                  <div>
                     {template.isActive ? (
-                      <>
-                        <Power className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
-                        <span className="capitalize text-sm text-gray-700 dark:text-gray-300">Active</span>
-                      </>
+                      <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 h-5 px-2 text-xs">
+                        Active
+                      </Badge>
                     ) : (
-                      <>
-                        <PowerOff className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                        <span className="capitalize text-sm text-gray-500 dark:text-gray-400">Inactive</span>
-                      </>
+                      <Badge variant="secondary" className="h-5 px-2 text-xs">
+                        Inactive
+                      </Badge>
                     )}
                   </div>
 
