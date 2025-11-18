@@ -254,7 +254,6 @@ export default function Timesheets() {
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
             data-testid="button-export-timesheets"
-            className="h-7"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" />
             Export
@@ -266,7 +265,6 @@ export default function Timesheets() {
               setIsDialogOpen(true);
             }}
             data-testid="button-add-timesheet"
-            className="h-7 bg-[#bba7db] hover:bg-[#a890cb] text-white"
           >
             <Clock className="w-3.5 h-3.5 mr-1.5" />
             Clock In
@@ -352,7 +350,7 @@ export default function Timesheets() {
           <div className="flex items-center gap-2">
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-sm" data-testid="button-start-date">
+                <Button variant="outline" size="sm" className="text-sm" data-testid="button-start-date">
                   <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
                   {customStartDate ? format(customStartDate, "dd MMM") : "Start"}
                 </Button>
@@ -371,7 +369,7 @@ export default function Timesheets() {
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-sm" data-testid="button-end-date">
+                <Button variant="outline" size="sm" className="text-sm" data-testid="button-end-date">
                   <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
                   {customEndDate ? format(customEndDate, "dd MMM") : "End"}
                 </Button>
@@ -508,7 +506,7 @@ export default function Timesheets() {
                         variant="outline"
                         onClick={() => submitMutation.mutate(timesheet.id)}
                         data-testid={`button-submit-${timesheet.id}`}
-                        className="h-7 text-xs"
+                        className="text-xs"
                       >
                         <Send className="w-3 h-3 mr-1" />
                         Submit
@@ -521,7 +519,7 @@ export default function Timesheets() {
                           variant="outline"
                           onClick={() => approveMutation.mutate(timesheet.id)}
                           data-testid={`button-approve-${timesheet.id}`}
-                          className="h-7 text-xs text-green-600 hover:text-green-700 border-green-200 hover:bg-green-50"
+                          className="text-xs text-green-600"
                         >
                           <Check className="w-3 h-3" />
                         </Button>
@@ -530,7 +528,7 @@ export default function Timesheets() {
                           variant="outline"
                           onClick={() => rejectMutation.mutate(timesheet.id)}
                           data-testid={`button-reject-${timesheet.id}`}
-                          className="h-7 text-xs text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
+                          className="text-xs text-red-600"
                         >
                           <X className="w-3 h-3" />
                         </Button>
