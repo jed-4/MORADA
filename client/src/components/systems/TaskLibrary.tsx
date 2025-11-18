@@ -429,36 +429,8 @@ export function TaskLibrary() {
   const inactiveTemplates = templates.filter((t) => !t.isActive);
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <Badge variant="outline" className="gap-1">
-            <Power className="h-3 w-3 text-green-600" />
-            {activeTemplates.length} Active
-          </Badge>
-          <Badge variant="outline" className="gap-1">
-            <PowerOff className="h-3 w-3 text-muted-foreground" />
-            {inactiveTemplates.length} Inactive
-          </Badge>
-        </div>
-        <div className="flex gap-2">
-          <Button 
-            onClick={() => generateRecurringMutation.mutate()}
-            disabled={generateRecurringMutation.isPending || activeTemplates.filter(t => t.isRecurringTemplate).length === 0}
-            variant="outline"
-            data-testid="button-generate-recurring"
-          >
-            <CalendarIcon className="h-4 w-4 mr-2" />
-            {generateRecurringMutation.isPending ? "Generating..." : "Generate Tasks"}
-          </Button>
-          <Button onClick={openNewTemplateDialog} data-testid="button-new-template">
-            <Plus className="h-4 w-4 mr-2" />
-            New Template
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto">
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-auto p-3">
         {templates.length === 0 ? (
           <Card className="p-8">
             <div className="text-center text-muted-foreground">

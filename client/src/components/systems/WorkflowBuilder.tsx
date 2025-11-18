@@ -198,25 +198,8 @@ export function WorkflowBuilder() {
   const inactiveWorkflows = workflows.filter((w) => !w.isActive);
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <Badge variant="outline" className="gap-1">
-            <Power className="h-3 w-3 text-green-600" />
-            {activeWorkflows.length} Active
-          </Badge>
-          <Badge variant="outline" className="gap-1">
-            <PowerOff className="h-3 w-3 text-muted-foreground" />
-            {inactiveWorkflows.length} Inactive
-          </Badge>
-        </div>
-        <Button onClick={openNewWorkflowDialog} data-testid="button-new-workflow">
-          <Plus className="h-4 w-4 mr-2" />
-          New Workflow
-        </Button>
-      </div>
-
-      <div className="flex-1 overflow-auto space-y-4">
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-auto space-y-4 p-3">
         {activeWorkflows.length > 0 && (
           <div>
             <h3 className="text-sm font-medium mb-2 text-muted-foreground">Active Workflows</h3>

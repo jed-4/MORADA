@@ -1079,19 +1079,8 @@ export function FolderTree() {
   const allDraggableIds = [...allFolderIds, ...allDocumentIds];
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center gap-2">
-        <Button onClick={() => openNewFolderDialog()} data-testid="button-new-folder">
-          <FolderPlus className="h-4 w-4 mr-2" />
-          New Folder
-        </Button>
-        <Button variant="outline" onClick={() => openNewDocumentDialog()} data-testid="button-new-document">
-          <FilePlus className="h-4 w-4 mr-2" />
-          New Document
-        </Button>
-      </div>
-
-      <Card className="flex-1 p-4 overflow-auto">
+    <div className="flex flex-col h-full">
+      <Card className="flex-1 m-3 p-4 overflow-auto">
         {rootFolders.length === 0 && rootDocuments.length === 0 ? (
           <div className="text-center text-muted-foreground py-8">
             No folders or documents yet. Create your first folder to get started.
