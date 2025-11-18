@@ -286,26 +286,595 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     setDetailDialogOpen(false);
   };
 
+  // Navigation handlers
+  const handleNavigateToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  const handleNavigatePrevious = () => {
+    const newDate = new Date(currentDate);
+    if (calendarMode === "day") {
+      newDate.setDate(newDate.getDate() - 1);
+    } else if (calendarMode === "week") {
+      newDate.setDate(newDate.getDate() - 7);
+    } else {
+      newDate.setMonth(newDate.getMonth() - 1);
+    }
+    setCurrentDate(newDate);
+  };
+
+  const handleNavigateNext = () => {
+    const newDate = new Date(currentDate);
+    if (calendarMode === "day") {
+      newDate.setDate(newDate.getDate() + 1);
+    } else if (calendarMode === "week") {
+      newDate.setDate(newDate.getDate() + 7);
+    } else {
+      newDate.setMonth(newDate.getMonth() + 1);
+    }
+    setCurrentDate(newDate);
+  };
+
+  // Status options for filtering
+  const statusOptions = [
+    { key: "todo", label: "To Do" },
+    { key: "in-progress", label: "In Progress" },
+    { key: "completed", label: "Completed" },
+  ];
+
+  // Event type options for filtering
+  const eventTypeOptions = [
+    { key: "task", label: "Tasks" },
+    { key: "schedule", label: "Schedule Items" },
+    ...(isOwnPage ? [{ key: "google", label: "Google Calendar" }] : []),
+  ];
+
+  // Count active filters
+  const activeFilterCount = 
+    (filters.projectIds?.length || 0) +
+    (filters.statuses?.length || 0) +
+    (filters.eventTypes?.length || 0) +
+    (filters.dateFrom || filters.dateTo ? 1 : 0);
+
+  // View management
+  const currentView = savedViews.find((v: CalendarView) => v.id === selectedViewId);
+  const views = savedViews.filter((v: CalendarView) => v.isDefault || v.createdBy === user.id);
+
+  const handleViewSelect = (view: CalendarView) => {
+    setSelectedViewId(view.id);
+  };
+
+  const handleSaveView = async () => {
+    if (!currentView || currentView.isDefault) return;
+    
+    try {
+      await apiRequest(`/api/calendar-views/${currentView.id}`, "PATCH", {
+        filters,
+        calendarMode,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      toast({ title: "View Updated", description: "Your view has been saved successfully." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save view.", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteView = (view: CalendarView) => {
+    setViewToDelete(view);
+    setShowDeleteViewDialog(true);
+  };
+
+  const confirmDeleteView = async () => {
+    if (!viewToDelete) return;
+    
+    try {
+      await apiRequest(`/api/calendar-views/${viewToDelete.id}`, "DELETE");
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      setShowDeleteViewDialog(false);
+      setViewToDelete(null);
+      if (selectedViewId === viewToDelete.id) {
+        setSelectedViewId(undefined);
+      }
+      toast({ title: "View Deleted", description: "View has been removed." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete view.", variant: "destructive" });
+    }
+  };
+
+  const createNewView = async () => {
+    if (!newViewName.trim()) return;
+    
+    try {
+      await apiRequest("/api/calendar-views", "POST", {
+        name: newViewName,
+        calendarType: "personal",
+        filters,
+        calendarMode,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
+      setShowCreateViewDialog(false);
+      setNewViewName("");
+      toast({ title: "View Created", description: "Your new view has been saved." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create view.", variant: "destructive" });
+    }
+  };
+
   return (
     <div className="flex flex-col h-full" data-testid="user-calendar">
-      <div className="flex-1 min-h-0 p-4">
+      {/* Row 1 - Saved Views & Settings (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1">
+          {/* View Tabs */}
+          <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
+            {views.map((view: CalendarView) => (
+              <div key={view.id} className="relative group">
+                <button
+                  onClick={() => handleViewSelect(view)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                    selectedViewId === view.id
+                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                      : 'hover-elevate'
+                  } active-elevate-2 flex items-center gap-1`}
+                  data-testid={`tab-${view.id}`}
+                >
+                  {view.name}
+                </button>
+                {!view.isDefault && (
+                  <button
+                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteView(view);
+                    }}
+                    data-testid={`button-delete-${view.id}`}
+                  >
+                    <X className="h-2 w-2" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              onClick={() => {
+                if (currentView && !currentView.isDefault) {
+                  handleSaveView();
+                } else {
+                  setShowCreateViewDialog(true);
+                }
+              }}
+              data-testid="button-add-view"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+
+          {/* Settings Icon */}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowSettingsDialog(true)}
+            data-testid="button-settings"
+          >
+            <Settings className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2 - Filters & Controls (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Filters */}
+        <div className="flex items-center gap-1">
+          {/* Projects Filter */}
+          {projects.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-filter-projects"
+                >
+                  <span>Projects</span>
+                  {filters.projectIds && filters.projectIds.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {filters.projectIds.length}
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Projects</div>
+                    {filters.projectIds && filters.projectIds.length > 0 && (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setFilters({...filters, projectIds: undefined})}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                    {projects.map((project: any) => (
+                      <label key={project.id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.projectIds?.includes(project.id) || false}
+                          onCheckedChange={() => {
+                            const current = filters.projectIds || [];
+                            const updated = current.includes(project.id)
+                              ? current.filter(p => p !== project.id)
+                              : [...current, project.id];
+                            setFilters({...filters, projectIds: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{project.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {/* Status Filter */}
+          {statusOptions.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-filter-status"
+                >
+                  <span>Status</span>
+                  {filters.statuses && filters.statuses.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {filters.statuses.length}
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Status</div>
+                    {filters.statuses && filters.statuses.length > 0 && (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setFilters({...filters, statuses: undefined})}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {statusOptions.map((status: any) => (
+                      <label key={status.key} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.statuses?.includes(status.key) || false}
+                          onCheckedChange={() => {
+                            const current = filters.statuses || [];
+                            const updated = current.includes(status.key)
+                              ? current.filter(s => s !== status.key)
+                              : [...current, status.key];
+                            setFilters({...filters, statuses: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{status.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {/* Event Types Filter */}
+          {eventTypeOptions.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-filter-event-types"
+                >
+                  <span>Event Types</span>
+                  {filters.eventTypes && filters.eventTypes.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {filters.eventTypes.length}
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Event Types</div>
+                    {filters.eventTypes && filters.eventTypes.length > 0 && (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setFilters({...filters, eventTypes: undefined})}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {eventTypeOptions.map((type: any) => (
+                      <label key={type.key} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={filters.eventTypes?.includes(type.key) || false}
+                          onCheckedChange={() => {
+                            const current = filters.eventTypes || [];
+                            const updated = current.includes(type.key)
+                              ? current.filter(t => t !== type.key)
+                              : [...current, type.key];
+                            setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                          }}
+                        />
+                        <span className="text-xs">{type.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {/* Date Range Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-filter-date-range"
+              >
+                <span>Date Range</span>
+                {(filters.dateFrom || filters.dateTo) && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Date Range</div>
+                  {(filters.dateFrom || filters.dateTo) && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setFilters({...filters, dateFrom: undefined, dateTo: undefined})}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="w-full h-8 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between">
+                        <span>{filters.dateFrom ? format(filters.dateFrom, "MMM dd, yyyy") : "From date"}</span>
+                        <CalendarIcon className="w-3 h-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={filters.dateFrom}
+                        onSelect={(date) => setFilters({...filters, dateFrom: date || undefined})}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="w-full h-8 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between">
+                        <span>{filters.dateTo ? format(filters.dateTo, "MMM dd, yyyy") : "To date"}</span>
+                        <CalendarIcon className="w-3 h-3" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={filters.dateTo}
+                        onSelect={(date) => setFilters({...filters, dateTo: date || undefined})}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Clear All Filters */}
+          {activeFilterCount > 0 && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+              onClick={() => setFilters({})}
+              data-testid="button-clear-all-filters"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
+
+        {/* Right: Navigation & View Controls */}
+        <div className="flex items-center gap-1.5">
+          {/* Navigation: Previous, Today, Next */}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={handleNavigatePrevious}
+            data-testid="button-previous"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+            onClick={handleNavigateToday}
+            data-testid="button-today"
+          >
+            Today
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={handleNavigateNext}
+            data-testid="button-next"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+
+          {/* Current Date Display */}
+          <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
+            {format(currentDate, 'MMM d, yyyy')}
+          </span>
+
+          {/* View Mode Selector */}
+          <div className="flex items-center gap-0.5">
+            {[
+              { value: 'day', label: 'Day' },
+              { value: 'week', label: 'Week' },
+              { value: 'month', label: 'Month' },
+            ].map((mode) => (
+              <button
+                key={mode.value}
+                onClick={() => setCalendarMode(mode.value)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  calendarMode === mode.value
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid={`button-mode-${mode.value}`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Add Event Button */}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+            onClick={() => {
+              // TODO: Open event creation dialog
+              toast({ title: "Add Event", description: "Event creation coming soon!" });
+            }}
+            data-testid="button-add-event"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Calendar Content - No Card Wrapper, Flush with Header */}
+      <div className="flex-1 min-h-0">
         <EnhancedCalendar
           events={filteredEvents}
           onEventClick={handleEventClick}
           currentDate={currentDate}
-          onNavigate={setCurrentDate}
-          view={calendarMode}
-          onViewChange={setCalendarMode}
+          onCurrentDateChange={setCurrentDate}
+          view={calendarMode as any}
+          onViewChange={(newView) => setCalendarMode(newView)}
+          hideInternalHeader={true}
         />
       </div>
 
-      {selectedEvent && (
-        <CalendarEventDetailDialog
-          event={selectedEvent}
-          open={detailDialogOpen}
-          onClose={handleCloseDetail}
-        />
-      )}
+      {/* Event Detail Dialog */}
+      <CalendarEventDetailDialog
+        event={selectedEvent}
+        open={detailDialogOpen}
+        onOpenChange={setDetailDialogOpen}
+      />
+
+      {/* Create View Dialog */}
+      <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save View</DialogTitle>
+            <DialogDescription>
+              Save your current filters and calendar mode as a new view
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="view-name">View Name</Label>
+              <Input
+                id="view-name"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                placeholder="e.g., My Week View"
+                data-testid="input-view-name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <button
+              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+              onClick={() => {
+                setShowCreateViewDialog(false);
+                setNewViewName("");
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="h-8 px-3 text-sm rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+              onClick={createNewView}
+              disabled={!newViewName.trim()}
+              data-testid="button-confirm-save-view"
+            >
+              Save View
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete View Dialog */}
+      <Dialog open={showDeleteViewDialog} onOpenChange={setShowDeleteViewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete View</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+              onClick={() => setShowDeleteViewDialog(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="h-8 px-3 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 active-elevate-2"
+              onClick={confirmDeleteView}
+              data-testid="button-confirm-delete-view"
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Calendar Settings</DialogTitle>
+            <DialogDescription>
+              Configure your calendar preferences
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              {isOwnPage 
+                ? "This is your personal calendar. Google Calendar integration is managed in your Profile settings."
+                : `Viewing ${user.firstName}'s calendar.`}
+            </div>
+          </div>
+          <DialogFooter>
+            <button
+              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+              onClick={() => setShowSettingsDialog(false)}
+            >
+              Close
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
