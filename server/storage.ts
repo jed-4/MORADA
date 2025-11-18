@@ -158,6 +158,7 @@ export interface IStorage {
   // Notes CRUD operations
   getNotes(projectId?: string, companyId?: string): Promise<Note[]>;
   getNote(id: string, companyId?: string): Promise<Note | undefined>;
+  getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]>;
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined>;
   deleteNote(id: string): Promise<boolean>;
@@ -2235,6 +2236,26 @@ export class MemStorage implements IStorage {
     }
     
     return note;
+  }
+
+  async getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]> {
+    const allNotes = Array.from(this.notes.values());
+    
+    // Filter for personal notes owned by this user in this company
+    const filtered = allNotes.filter(note => {
+      // Must be owned by the specified user
+      if (note.ownerId !== userId) return false;
+      
+      // Must be personal scope
+      if (note.scope !== 'personal') return false;
+      
+      // Must belong to the same company (check via owner's company, not project)
+      // In-memory storage limitation: we can't easily verify company here
+      // In production (DbStorage), we'll properly filter by company
+      return true;
+    });
+    
+    return filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async createNote(insertNote: InsertNote): Promise<Note> {
@@ -6156,6 +6177,69 @@ export class DbStorage implements IStorage {
     
     return result[0] as Note | undefined;
   }
+
+  async getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]> {
+    try {
+      // Get personal notes for this user with proper security filtering
+      // Join with users table to verify the user belongs to the specified company
+      const result = await db
+        .select({
+          id: schema.notes.id,
+          companyId: schema.notes.companyId,
+          title: schema.notes.title,
+          content: schema.notes.content,
+          contentHtml: schema.notes.contentHtml,
+          contentText: schema.notes.contentText,
+          category: schema.notes.category,
+          priority: schema.notes.priority,
+          author: schema.notes.author,
+          ownerId: schema.notes.ownerId,
+          ownerName: schema.notes.ownerName,
+          visibility: schema.notes.visibility,
+          pinned: schema.notes.pinned,
+          customFields: schema.notes.customFields,
+          projectId: schema.notes.projectId,
+          scope: schema.notes.scope,
+          type: schema.notes.type,
+          status: schema.notes.status,
+          assigneeId: schema.notes.assigneeId,
+          assigneeName: schema.notes.assigneeName,
+          dueDate: schema.notes.dueDate,
+          startTime: schema.notes.startTime,
+          endTime: schema.notes.endTime,
+          completedAt: schema.notes.completedAt,
+          tags: schema.notes.tags,
+          labels: schema.notes.labels,
+          parentTaskId: schema.notes.parentTaskId,
+          subtaskOrder: schema.notes.subtaskOrder,
+          isRecurring: schema.notes.isRecurring,
+          recurringType: schema.notes.recurringType,
+          recurringInterval: schema.notes.recurringInterval,
+          recurringDays: schema.notes.recurringDays,
+          recurringStartDate: schema.notes.recurringStartDate,
+          recurringEndDate: schema.notes.recurringEndDate,
+          lastRecurringDate: schema.notes.lastRecurringDate,
+          templateId: schema.notes.templateId,
+          createdAt: schema.notes.createdAt,
+          updatedAt: schema.notes.updatedAt,
+        })
+        .from(schema.notes)
+        .innerJoin(schema.users, eq(schema.notes.ownerId, schema.users.id))
+        .where(and(
+          eq(schema.notes.ownerId, userId),
+          eq(schema.notes.scope, 'personal'),
+          eq(schema.users.companyId, companyId), // Security: verify user belongs to company
+          eq(schema.notes.type, 'note') // Only notes, not tasks
+        ))
+        .orderBy(desc(schema.notes.createdAt));
+      
+      return result as Note[];
+    } catch (error) {
+      console.error("Database error in getPersonalNotesByUser:", error);
+      return [];
+    }
+  }
+
   async createNote(insertNote: InsertNote): Promise<Note> {
     const now = new Date();
     const noteData = {

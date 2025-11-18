@@ -285,6 +285,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User Personal Notes - scoped to specific user's private notes
+  app.get("/api/users/:userId/notes", async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      const targetUserId = req.params.userId;
+      const companyId = currentUser?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Security: Only allow users to view their own personal notes
+      // Admins with appropriate permissions could be added here
+      if (currentUser.id !== targetUserId) {
+        return res.status(403).json({ error: "Forbidden - cannot access other users' personal notes" });
+      }
+      
+      // Get personal notes for this user only
+      const notes = await storage.getPersonalNotesByUser(targetUserId, companyId);
+      res.json(notes);
+    } catch (error) {
+      console.error("Error fetching personal notes:", error);
+      res.status(500).json({ error: "Failed to fetch personal notes" });
+    }
+  });
+
   // Tasks API Routes
   app.get("/api/tasks", async (req, res) => {
     try {
