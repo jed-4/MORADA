@@ -40,6 +40,8 @@ import {
   Package,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   GripVertical,
   Trash2,
   CheckSquare,
@@ -1616,6 +1618,19 @@ export default function ProjectScope() {
     setStageExpanded(prev => ({ ...prev, [stageName]: !prev[stageName] }));
   };
 
+  // Collapse/Expand all stages
+  const toggleAllStages = () => {
+    const allExpanded = scopeStages.every(stage => stageExpanded[stage.name]);
+    const newExpanded: StageState = {};
+    scopeStages.forEach(stage => {
+      newExpanded[stage.name] = !allExpanded;
+    });
+    setStageExpanded(newExpanded);
+  };
+
+  // Check if all stages are expanded
+  const allStagesExpanded = scopeStages.length > 0 && scopeStages.every(stage => stageExpanded[stage.name]);
+
   const getItemsByStage = (stageName: string) => {
     return scopeItems
       .filter(item => item.stage === stageName)
@@ -1731,6 +1746,28 @@ export default function ProjectScope() {
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1">
+          {/* Collapse/Expand All Stages */}
+          {scopeStages.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggleAllStages}
+                  className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
+                  data-testid="button-toggle-all-stages"
+                >
+                  {allStagesExpanded ? (
+                    <ChevronsDownUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronsUpDown className="h-3 w-3" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{allStagesExpanded ? 'Collapse All' : 'Expand All'}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           {/* Add Stage */}
           <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
             <Tooltip>
