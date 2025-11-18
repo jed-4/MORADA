@@ -1423,56 +1423,46 @@ export default function ProjectScope() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b bg-card">
-        <div className="flex items-center gap-3">
-          <ListTree className="h-6 w-6" style={{ color: CASVA_LILAC }} />
-          <div>
-            <h1 className="text-2xl font-bold">Scope</h1>
-            <p className="text-sm text-muted-foreground">The DNA of your project</p>
-          </div>
-        </div>
-
+      {/* Row 1: Title */}
+      <div className="h-9 flex items-center px-3 border-b border-border/50 bg-background">
         <div className="flex items-center gap-2">
-          {/* Scope 2.0: Type Filter Chips */}
-          <div className="flex items-center gap-2 px-3 py-1 bg-muted/30 rounded-lg">
-            {SCOPE_TYPES.map((type) => (
-              <Button
-                key={type}
-                size="sm"
-                variant={activeTypeFilters.has(type) ? "default" : "ghost"}
-                onClick={() => toggleTypeFilter(type)}
-                className={`h-8 text-xs font-medium rounded-full transition-all ${
-                  activeTypeFilters.has(type) 
-                    ? 'shadow-md' 
-                    : 'opacity-60 hover:opacity-100'
-                }`}
-                style={activeTypeFilters.has(type) ? {
-                  backgroundColor: CASVA_LILAC,
-                  color: 'white',
-                  borderColor: CASVA_LILAC,
-                } : {}}
-                data-testid={`chip-filter-${type}`}
-              >
-                {getTypeLabel(type)}
-              </Button>
-            ))}
-          </div>
+          <ListTree className="h-4 w-4 text-muted-foreground" />
+          <h1 className="text-sm font-semibold">Scope</h1>
         </div>
       </div>
 
-      {/* Secondary Actions Bar */}
-      <div className="flex items-center justify-end px-6 py-2 border-b bg-muted/20">
-        <div className="flex items-center gap-2">
-          {/* Add Stage - Icon Only */}
+      {/* Row 2: Filters & Actions */}
+      <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 bg-background">
+        {/* Left: Type Filters */}
+        <div className="flex items-center gap-1">
+          {SCOPE_TYPES.map((type) => {
+            const isActive = activeTypeFilters.has(type);
+            return (
+              <button
+                key={type}
+                onClick={() => toggleTypeFilter(type)}
+                className={`h-6 px-2 text-[10px] font-medium rounded-md border transition-all hover-elevate active-elevate-2 ${
+                  isActive 
+                    ? 'bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20' 
+                    : 'bg-background text-muted-foreground border-border/50'
+                }`}
+                data-testid={`chip-filter-${type}`}
+              >
+                {getTypeLabel(type)}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1">
+          {/* Add Stage */}
           <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <DialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="h-9 w-9" 
+                  <button 
+                    className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2"
                     onClick={() => {
                       if (scopeStages.length > 0) {
                         setAddStageAfterId(scopeStages[scopeStages.length - 1].id);
@@ -1480,8 +1470,8 @@ export default function ProjectScope() {
                     }}
                     data-testid="button-add-stage"
                   >
-                    <Plus className="h-4 w-4" />
-                  </Button>
+                    <Plus className="h-3 w-3" />
+                  </button>
                 </DialogTrigger>
               </TooltipTrigger>
               <TooltipContent>
@@ -1518,14 +1508,14 @@ export default function ProjectScope() {
             </DialogContent>
           </Dialog>
 
-          {/* Load Template - Icon Only */}
+          {/* Load Template */}
           <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-9 w-9" data-testid="button-load-template">
-                    <FileDown className="h-4 w-4" />
-                  </Button>
+                  <button className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2" data-testid="button-load-template">
+                    <FileDown className="h-3 w-3" />
+                  </button>
                 </DialogTrigger>
               </TooltipTrigger>
               <TooltipContent>
@@ -1571,10 +1561,10 @@ export default function ProjectScope() {
           {selectedItems.size > 0 && estimates.length > 0 && (
             <Dialog open={isPushDialogOpen} onOpenChange={setIsPushDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="button-push-to-estimate">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Push ({selectedItems.size})
-                </Button>
+                <button className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-push-to-estimate">
+                  <DollarSign className="h-3 w-3" />
+                  <span>Push ({selectedItems.size})</span>
+                </button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -1619,10 +1609,10 @@ export default function ProjectScope() {
           {selectedItems.size > 0 && (
             <Dialog open={isRfqDialogOpen} onOpenChange={setIsRfqDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="button-create-rfq">
-                  <Send className="h-4 w-4 mr-2" />
-                  Create RFQ
-                </Button>
+                <button className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-rfq">
+                  <Send className="h-3 w-3" />
+                  <span>RFQ</span>
+                </button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -1647,10 +1637,10 @@ export default function ProjectScope() {
           {selectedItems.size > 0 && (
             <Dialog open={isPoDialogOpen} onOpenChange={setIsPoDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="button-create-po">
-                  <Package className="h-4 w-4 mr-2" />
-                  Create PO
-                </Button>
+                <button className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-create-po">
+                  <Package className="h-3 w-3" />
+                  <span>PO</span>
+                </button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -1671,7 +1661,7 @@ export default function ProjectScope() {
             </Dialog>
           )}
 
-          {/* Export PDF - Icon Only */}
+          {/* Export PDF */}
           <Dialog open={isPdfDialogOpen} onOpenChange={(open) => {
             setIsPdfDialogOpen(open);
             if (!open) {
@@ -1681,9 +1671,9 @@ export default function ProjectScope() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-9 w-9" data-testid="button-export-pdf">
-                    <FileText className="h-4 w-4" />
-                  </Button>
+                  <button className="h-6 w-6 flex items-center justify-center rounded-md border border-border/50 hover-elevate active-elevate-2" data-testid="button-export-pdf">
+                    <FileText className="h-3 w-3" />
+                  </button>
                 </DialogTrigger>
               </TooltipTrigger>
               <TooltipContent>
