@@ -86,13 +86,13 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "high":
-        return "bg-red-500/90 border-red-600";
+        return "bg-red-100 dark:bg-red-900/20 text-red-900 dark:text-red-100 border-red-300 dark:border-red-700";
       case "medium":
-        return "bg-orange-500/90 border-orange-600";
+        return "bg-orange-100 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 border-orange-300 dark:border-orange-700";
       case "low":
-        return "bg-green-500/90 border-green-600";
+        return "bg-green-100 dark:bg-green-900/20 text-green-900 dark:text-green-100 border-green-300 dark:border-green-700";
       default:
-        return "bg-blue-500/90 border-blue-600";
+        return "bg-blue-100 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100 border-blue-300 dark:border-blue-700";
     }
   };
 
@@ -104,8 +104,8 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
       className={`
         ${getPriorityColor(task.priority || "medium")}
         ${isCompleted ? "opacity-60 line-through" : ""}
-        ${isOverdue ? "bg-red-700/90 border-red-800" : ""}
-        text-white text-xs p-2 rounded border-l-4 cursor-pointer hover:opacity-80 transition-opacity
+        ${isOverdue ? "bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-100 border-red-400 dark:border-red-600" : ""}
+        text-xs p-2 rounded border-l-4 cursor-pointer hover:opacity-80 transition-opacity
       `}
       data-testid={`calendar-task-${task.id}`}
     >
@@ -113,7 +113,7 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
         <Checkbox
           checked={isCompleted}
           onCheckedChange={handleCompleteToggle}
-          className="mt-0.5 h-3 w-3 border-white data-[state=checked]:bg-white data-[state=checked]:text-black"
+          className="mt-0.5 h-3 w-3"
           data-testid={`checkbox-task-${task.id}`}
         />
         <div className="flex-1 min-w-0">
