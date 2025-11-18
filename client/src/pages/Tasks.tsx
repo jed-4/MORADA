@@ -49,9 +49,9 @@ import TaskListCompact from "@/components/TaskListCompact";
 import { CasvaTaskList } from "@/components/tasks/CasvaTaskList";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
-import { TaskCalendar } from "@/components/TaskCalendar";
-import "react-big-calendar/lib/css/react-big-calendar.css";
-import { type TaskView, type Task, type FieldCategoryWithOptions } from "@shared/schema";
+import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import { type TaskView, type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useProject } from "@/contexts/ProjectContext";
 import { queryClient } from "@/lib/queryClient";
@@ -246,6 +246,36 @@ export default function Tasks() {
       });
     },
   });
+
+  // Calendar state
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [calendarMode, setCalendarMode] = useState<"day" | "week" | "month">("month");
+
+  // Calendar mutations
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
+      return apiRequest(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", effectiveProjectId] });
+    },
+  });
+
+  // Calendar event handlers
+  const handleTaskComplete = (taskId: string, completed: boolean) => {
+    updateTaskMutation.mutate({ taskId, updates: { completed } });
+  };
+
+  const handleTaskReschedule = (taskId: string, dueDate: string) => {
+    updateTaskMutation.mutate({ taskId, updates: { dueDate } });
+  };
+
+  const handleTaskResize = (taskId: string, dueDate: string) => {
+    updateTaskMutation.mutate({ taskId, updates: { dueDate } });
+  };
 
   // Fetch saved task views and tasks filtered by current project (with enabled flags to prevent fetching when no project)
   const { data: taskViews = [] } = useQuery<TaskView[]>({
@@ -525,6 +555,25 @@ export default function Tasks() {
   };
 
   const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
+
+  // Convert tasks to calendar events
+  const tasksToCalendarEvents = (tasks: Task[]): CalendarEvent[] => {
+    return tasks.map((task) => {
+      const dueDate = task.dueDate ? new Date(task.dueDate) : new Date();
+      return {
+        id: task.id,
+        title: task.title,
+        start: dueDate,
+        end: dueDate,
+        type: "task" as const,
+        projectId: task.projectId,
+        status: task.status,
+        priority: task.priority,
+        completed: task.completed,
+        assigneeId: task.assigneeId,
+      };
+    });
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -1045,10 +1094,18 @@ export default function Tasks() {
           </TabsContent>
 
           <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">
-            <TaskCalendar 
-              tasks={effectivelyFilteredTasks} 
-              projectId={effectiveProjectId || ""} 
-              onTaskClick={(task: Task) => setEditingTask(task)} 
+            <EnhancedCalendar
+              events={tasksToCalendarEvents(effectivelyFilteredTasks)}
+              date={calendarDate}
+              onDateChange={setCalendarDate}
+              mode={calendarMode}
+              onEventClick={(event) => {
+                const task = allTasks.find((t) => t.id === event.id);
+                if (task) setEditingTask(task);
+              }}
+              onEventComplete={handleTaskComplete}
+              onEventReschedule={handleTaskReschedule}
+              onEventResize={handleTaskResize}
             />
           </TabsContent>
           
@@ -1064,10 +1121,18 @@ export default function Tasks() {
                 {view.viewType === "kanban" ? (
                   <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
                 ) : view.viewType === "calendar" ? (
-                  <TaskCalendar 
-                    tasks={viewFilteredTasks} 
-                    projectId={effectiveProjectId || ""} 
-                    onTaskClick={(task: Task) => setEditingTask(task)} 
+                  <EnhancedCalendar
+                    events={tasksToCalendarEvents(viewFilteredTasks)}
+                    date={calendarDate}
+                    onDateChange={setCalendarDate}
+                    mode={calendarMode}
+                    onEventClick={(event) => {
+                      const task = allTasks.find((t) => t.id === event.id);
+                      if (task) setEditingTask(task);
+                    }}
+                    onEventComplete={handleTaskComplete}
+                    onEventReschedule={handleTaskReschedule}
+                    onEventResize={handleTaskResize}
                   />
                 ) : (
                   <div className="flex-1 overflow-auto p-4">

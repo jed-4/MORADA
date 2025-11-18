@@ -20,11 +20,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
-import { TaskCalendar } from "@/components/TaskCalendar";
+import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
-import { Views } from "react-big-calendar";
-import "react-big-calendar/lib/css/react-big-calendar.css";
-import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState } from "@/components/FilterPanel";
@@ -32,6 +32,7 @@ import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
 
 export default function BusinessTasks() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"board" | "list" | "calendar">("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -54,7 +55,7 @@ export default function BusinessTasks() {
   
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(new Date());
-  const [calendarView, setCalendarView] = useState<typeof Views[keyof typeof Views]>(Views.WEEK);
+  const [calendarMode, setCalendarMode] = useState<string>("week");
 
   // Scroll navigation functions
   const scrollLeft = () => {
@@ -169,10 +170,120 @@ export default function BusinessTasks() {
   // Extract status options from field categories
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = statusCategory?.options || [];
+  const completedOption = statusCategory?.options.find(opt => opt.isCompleted);
+  const defaultOption = statusCategory?.options.find(opt => opt.isDefault);
 
   // Extract label options from field categories
   const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
   const labelOptions = labelCategory?.options?.map(opt => opt.name) || [];
+
+  // Fetch projects for color coding
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // Update task mutations
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task updated",
+        description: "Task status has been updated successfully.",
+      });
+    },
+  });
+
+  const rescheduleTaskMutation = useMutation({
+    mutationFn: async ({ taskId, dueDate, startTime }: { taskId: string; dueDate: string; startTime?: string }) => {
+      const payload: any = { dueDate };
+      if (startTime !== undefined) {
+        payload.startTime = startTime;
+      }
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task rescheduled",
+        description: "Task has been moved to the new date.",
+      });
+    },
+  });
+
+  const resizeTaskMutation = useMutation({
+    mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task time updated",
+        description: "Task time has been updated successfully.",
+      });
+    },
+  });
+
+  // Convert tasks to calendar events
+  const calendarEvents: CalendarEvent[] = React.useMemo(() => {
+    return filteredTasks
+      .filter(task => task.dueDate)
+      .map(task => {
+        const project = projects.find(p => p.id === task.projectId);
+        const isCompleted = task.status === completedOption?.key;
+        
+        return {
+          id: task.id,
+          title: task.title,
+          startDate: new Date(task.dueDate!),
+          endDate: new Date(task.dueDate!),
+          startTime: task.startTime,
+          endTime: task.endTime,
+          color: project?.color,
+          projectId: task.projectId,
+          projectColor: project?.color,
+          type: "task" as const,
+          status: task.status,
+          isCompleted,
+          assigneeId: task.assigneeId,
+          priority: task.priority,
+          resource: task,
+        };
+      });
+  }, [filteredTasks, projects, completedOption]);
+
+  const handleEventComplete = (eventId: string, completed: boolean) => {
+    const newStatus = completed 
+      ? (completedOption?.key || "done") 
+      : (defaultOption?.key || "todo");
+    updateTaskMutation.mutate({ taskId: eventId, status: newStatus });
+  };
+
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
+    const updatePayload: any = { 
+      taskId: eventId, 
+      dueDate: new Date(newDate).toISOString().split('T')[0]
+    };
+    
+    if (newTime) {
+      updatePayload.startTime = newTime;
+    }
+    
+    rescheduleTaskMutation.mutate(updatePayload);
+  };
+
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
+    resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
+  };
+
+  const handleEventClick = (event: CalendarEvent) => {
+    if (event.resource && event.type === "task") {
+      setEditingTask(event.resource as Task);
+      setShowCreateTaskDialog(true);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col" data-testid="business-tasks">
@@ -222,9 +333,9 @@ export default function BusinessTasks() {
             <button
               onClick={() => {
                 const newDate = new Date(calendarDate);
-                if (calendarView === Views.DAY) {
+                if (calendarMode === "day") {
                   newDate.setDate(newDate.getDate() - 1);
-                } else if (calendarView === Views.WEEK) {
+                } else if (calendarMode === "week") {
                   newDate.setDate(newDate.getDate() - 7);
                 } else {
                   newDate.setMonth(newDate.getMonth() - 1);
@@ -246,9 +357,9 @@ export default function BusinessTasks() {
             <button
               onClick={() => {
                 const newDate = new Date(calendarDate);
-                if (calendarView === Views.DAY) {
+                if (calendarMode === "day") {
                   newDate.setDate(newDate.getDate() + 1);
-                } else if (calendarView === Views.WEEK) {
+                } else if (calendarMode === "week") {
                   newDate.setDate(newDate.getDate() + 7);
                 } else {
                   newDate.setMonth(newDate.getMonth() + 1);
@@ -264,9 +375,9 @@ export default function BusinessTasks() {
             {/* View Switcher */}
             <div className="flex items-center gap-0.5 ml-2">
               <button
-                onClick={() => setCalendarView(Views.DAY)}
+                onClick={() => setCalendarMode("day")}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarView === Views.DAY
+                  calendarMode === "day"
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -275,9 +386,9 @@ export default function BusinessTasks() {
                 Day
               </button>
               <button
-                onClick={() => setCalendarView(Views.WEEK)}
+                onClick={() => setCalendarMode("week")}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarView === Views.WEEK
+                  calendarMode === "week"
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -286,9 +397,9 @@ export default function BusinessTasks() {
                 Week
               </button>
               <button
-                onClick={() => setCalendarView(Views.MONTH)}
+                onClick={() => setCalendarMode("month")}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarView === Views.MONTH
+                  calendarMode === "month"
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
                     : 'hover-elevate'
                 } active-elevate-2`}
@@ -537,18 +648,19 @@ export default function BusinessTasks() {
         )}
 
         {activeTab === "calendar" && (
-          <div className="h-full p-4" data-testid="content-calendar">
-            <TaskCalendar
-              tasks={filteredTasks}
-              projectId=""
-              onTaskClick={(task) => {
-                setEditingTask(task);
-                setShowCreateTaskDialog(true);
-              }}
+          <div className="h-full" data-testid="content-calendar">
+            <EnhancedCalendar
+              events={calendarEvents}
+              onEventClick={handleEventClick}
+              onEventComplete={handleEventComplete}
+              onEventReschedule={handleEventReschedule}
+              onEventResize={handleEventResize}
+              showCompletionCheckbox={true}
               currentDate={calendarDate}
-              currentView={calendarView}
-              onNavigate={setCalendarDate}
-              onViewChange={setCalendarView}
+              onCurrentDateChange={setCalendarDate}
+              view={calendarMode as any}
+              onViewChange={(newView) => setCalendarMode(newView)}
+              hideInternalHeader={true}
             />
           </div>
         )}
