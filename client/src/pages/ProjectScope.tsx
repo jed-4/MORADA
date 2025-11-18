@@ -582,140 +582,152 @@ function DroppableStage({
 
   const hasChildren = children.length > 0;
 
+  // Calculate total value for this stage
+  const stageTotal = items.reduce((sum, item) => {
+    const qty = item.quantity || 0;
+    const rate = item.rate || 0;
+    return sum + (qty * rate);
+  }, 0);
+
   return (
     <>
       <div 
         ref={setNodeRef} 
-        style={{...style, width: '90%', margin: '0 auto 1rem auto'}}
-        className={`${level > 0 ? 'ml-8' : ''}`}
+        style={style}
+        className={`mb-3 ${level > 0 ? 'ml-8' : ''}`}
       >
-        <Card 
-          className={`transition-all duration-200 rounded-xl shadow-sm ${isOver && isDraggingStage ? 'ring-2 bg-[#bba7db]/10' : ''}`}
-          style={{ 
-            borderLeftColor: CASVA_LILAC, 
-            borderLeftWidth: '4px',
-            ...(level > 0 ? { borderLeftStyle: 'dashed' } : {})
-          }}
+        <div 
+          className={`rounded-xl bg-muted/20 border border-border/50 transition-all duration-200 overflow-hidden ${
+            isOver && isDraggingStage ? 'ring-2 ring-[#bba7db]/50 bg-[#bba7db]/10' : ''
+          }`}
         >
-          <CardHeader 
-            className="py-2 px-4 group"
-            style={{ minHeight: '40px' }}
+          {/* Stage Header - h-9, collapsible */}
+          <div 
+            className="h-9 px-3 flex items-center justify-between border-b border-border/50 bg-background/50 group cursor-pointer hover-elevate"
+            onClick={onToggleExpand}
+            data-testid={`stage-header-${stageData.id}`}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {/* Drag Handle */}
-                <div 
-                  {...attributes} 
-                  {...listeners} 
-                  className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
-                  data-testid={`drag-handle-stage-${stageData.id}`}
-                >
-                  <GripVertical className="h-5 w-5 text-muted-foreground" style={{ color: CASVA_LILAC }} />
-                </div>
-
-                {/* Expand/Collapse and Name - Always show chevron */}
-                <div 
-                  className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 -m-2 p-2 rounded" 
-                  onClick={onToggleExpand}
-                >
-                  {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  {isEditing ? (
-                    <Input
-                      value={editingStageName}
-                      onChange={(e) => setEditingStageName(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      onBlur={handleSaveEdit}
-                      autoFocus
-                      className="h-7 text-base font-semibold border-2 px-2"
-                      style={{ borderColor: CASVA_LILAC, color: CASVA_LILAC, fontFamily: 'Inter, sans-serif' }}
-                      data-testid={`input-edit-stage-${stageData.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <h3 
-                      className="text-base font-semibold" 
-                      style={{ color: CASVA_LILAC, fontFamily: 'Inter, sans-serif' }}
-                      data-testid={`text-stage-name-${stageData.id}`}
-                    >
-                      {stageData.name}
-                    </h3>
-                  )}
-                  {!isEditing && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingStageId(stageData.id);
-                        setEditingStageName(stageData.name);
-                      }}
-                      data-testid={`button-edit-stage-${stageData.id}`}
-                    >
-                      <Pen className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-                <Badge variant="secondary" className="ml-2">
-                  {items.length}
-                </Badge>
+            <div className="flex items-center gap-2">
+              {/* Chevron */}
+              {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              
+              {/* Drag Handle */}
+              <div 
+                {...attributes} 
+                {...listeners} 
+                className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`drag-handle-stage-${stageData.id}`}
+              >
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
+
+              {/* Stage Name */}
+              {isEditing ? (
+                <Input
+                  value={editingStageName}
+                  onChange={(e) => setEditingStageName(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onBlur={handleSaveEdit}
+                  autoFocus
+                  className="h-6 text-sm font-semibold px-2"
+                  data-testid={`input-edit-stage-${stageData.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span 
+                  className="text-sm font-semibold" 
+                  data-testid={`text-stage-name-${stageData.id}`}
+                >
+                  {stageData.name}
+                </span>
+              )}
+
+              {/* Item Count Badge */}
+              {items.length > 0 && (
+                <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/20">
+                  {items.length}
+                </span>
+              )}
+
+              {/* Total Value */}
+              {stageTotal > 0 && (
+                <span className="text-[10px] text-muted-foreground font-medium">
+                  ${stageTotal.toLocaleString()}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {/* Edit Button */}
+              {!isEditing && (
+                <button
+                  className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover-elevate"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onAddItem(stageData.name);
+                    setEditingStageId(stageData.id);
+                    setEditingStageName(stageData.name);
                   }}
-                  data-testid={`button-add-item-${stageData.name.toLowerCase().replace(/\s+/g, '-')}`}
-                  className="h-7"
+                  data-testid={`button-edit-stage-${stageData.id}`}
                 >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Item
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => e.stopPropagation()}
-                      data-testid={`button-menu-stage-${stageData.id}`}
-                    >
-                      <span className="text-lg leading-none">⋯</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddNewStage(stageData.id);
-                      }}
-                      data-testid={`menu-add-stage-after-${stageData.id}`}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Stage
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDeleteDialog(true);
-                      }}
-                      className="text-destructive"
-                      data-testid={`menu-delete-stage-${stageData.id}`}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Stage
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                  <Pen className="h-3 w-3" />
+                </button>
+              )}
+
+              {/* Add Item */}
+              <button
+                className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddItem(stageData.name);
+                }}
+                data-testid={`button-add-item-${stageData.name.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                <Plus className="h-3 w-3" />
+                <span>Item</span>
+              </button>
+
+              {/* Stage Menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover-elevate"
+                    onClick={(e) => e.stopPropagation()}
+                    data-testid={`button-menu-stage-${stageData.id}`}
+                  >
+                    <span className="text-sm leading-none">⋯</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddNewStage(stageData.id);
+                    }}
+                    data-testid={`menu-add-stage-after-${stageData.id}`}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Stage
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteDialog(true);
+                    }}
+                    className="text-destructive"
+                    data-testid={`menu-delete-stage-${stageData.id}`}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Stage
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-          </CardHeader>
+          </div>
           
+          {/* Items Container - collapsible */}
           {isExpanded && (
-            <CardContent ref={setDroppableRef} className="pt-2 pb-4 space-y-2">
+            <div ref={setDroppableRef} className="p-2">
               {topLevelItems.length === 0 ? (
                 <div 
                   className={`text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center ${isDroppableOver ? 'bg-primary/5 border-primary' : ''}`}
@@ -753,9 +765,9 @@ function DroppableStage({
                   ))}
                 </SortableContext>
               )}
-            </CardContent>
+            </div>
           )}
-        </Card>
+        </div>
       </div>
 
       {/* Render nested child stages */}
