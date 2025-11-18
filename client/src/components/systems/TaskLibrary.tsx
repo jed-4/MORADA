@@ -510,6 +510,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const activeTemplates = templates.filter((t) => t.isActive);
   const inactiveTemplates = templates.filter((t) => !t.isActive);
 
+  // Grid template with minimum widths to prevent column squashing
+  const gridTemplate = "32px minmax(260px, 1.4fr) minmax(160px, 0.8fr) minmax(150px, 0.7fr) minmax(180px, 0.9fr) minmax(180px, 0.9fr) minmax(120px, 0.5fr) 32px";
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-auto p-3">
@@ -521,11 +524,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
           </Card>
         ) : (
           <Card className="overflow-hidden">
-            {/* Header Row */}
-            <div 
-              className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
-              style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 140px 100px 32px" }}
-            >
+            <div className="overflow-x-auto">
+              {/* Header Row */}
+              <div 
+                className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
+                style={{ gridTemplateColumns: gridTemplate }}
+              >
               <div></div>
               <button 
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
@@ -578,20 +582,20 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               <div></div>
             </div>
 
-            {/* Template Rows */}
-            {sortedTemplates.map((template) => {
-              const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
-              const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
-              const hasGoal = !!template.goal;
-              
-              return (
-                <div 
-                  key={template.id}
-                  className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
-                  style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 140px 100px 32px" }}
-                  onClick={() => openEditTemplateDialog(template)}
-                  data-testid={`template-row-${template.id}`}
-                >
+              {/* Template Rows */}
+              {sortedTemplates.map((template) => {
+                const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
+                const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
+                const hasGoal = !!template.goal;
+                
+                return (
+                  <div 
+                    key={template.id}
+                    className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                    style={{ gridTemplateColumns: gridTemplate }}
+                    onClick={() => openEditTemplateDialog(template)}
+                    data-testid={`template-row-${template.id}`}
+                  >
                   {/* Leading space for consistency */}
                   <div></div>
 
@@ -732,6 +736,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 </div>
               );
             })}
+            </div>
           </Card>
         )}
       </div>
