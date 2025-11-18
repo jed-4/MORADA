@@ -49,7 +49,7 @@ export default function UserWorkspace() {
     const sortedTabs = [...USER_TABS].sort((a, b) => b.path.length - a.path.length);
     const currentTab = sortedTabs.find(tab => {
       if (tab.path === "") return false; // Skip overview for this check
-      const fullPath = baseUserPath + tab.path;
+      const fullPath = `${baseUserPath}/${tab.path}`;
       if (location === fullPath) return true;
       if (location.startsWith(fullPath + "/")) return true;
       return false;
