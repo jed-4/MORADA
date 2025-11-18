@@ -209,15 +209,15 @@ export default function TaskViewsManager({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       {views.length > 0 && (
         <>
           <Select value={selectedViewId} onValueChange={handleViewChange}>
-            <SelectTrigger className="w-48" data-testid="select-task-view">
+            <SelectTrigger className="h-6 w-auto min-w-32 text-xs border rounded-md hover-elevate active-elevate-2" data-testid="select-task-view">
               <SelectValue placeholder="Select a view">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   {currentView?.isDefault && <Star className="h-3 w-3 fill-current" />}
-                  {currentView?.name || "Select a view"}
+                  <span className="text-xs">{currentView?.name || "Select a view"}</span>
                 </div>
               </SelectValue>
             </SelectTrigger>
@@ -236,14 +236,12 @@ export default function TaskViewsManager({
           {currentView && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  className="h-9 w-9"
+                <button 
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                   data-testid="button-view-actions"
                 >
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
+                  <MoreVertical className="h-3 w-3" />
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => handleEditClick(currentView)} data-testid="button-edit-view">
@@ -266,19 +264,17 @@ export default function TaskViewsManager({
         </>
       )}
 
-      <Button 
-        variant="outline" 
-        size="sm"
-        className="h-9"
+      <button 
+        className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
         onClick={() => {
           setViewName("");
           setCreateDialogOpen(true);
         }}
         data-testid="button-create-view"
       >
-        <Plus className="h-4 w-4 mr-2" />
-        Save View
-      </Button>
+        <Plus className="h-3 w-3" />
+        <span>Save View</span>
+      </button>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent data-testid="dialog-create-view">
