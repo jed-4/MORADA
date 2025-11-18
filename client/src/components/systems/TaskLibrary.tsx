@@ -85,6 +85,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     goal: "",
     description: "",
     defaultRoleId: "",
+    assigneeType: "role" as "role" | "user",
+    assigneeUserId: "",
     frequency: "once",
     category: "",
     estimatedDuration: 0,
@@ -108,6 +110,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   // Fetch user roles
   const { data: roles = [] } = useQuery<UserRole[]>({
     queryKey: ["/api/user-roles"],
+  });
+
+  // Fetch users for assignee selection
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
   });
 
   // Create template mutation
@@ -215,6 +222,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       goal: "",
       description: "",
       defaultRoleId: "",
+      assigneeType: "role",
+      assigneeUserId: "",
       frequency: "once",
       category: "",
       estimatedDuration: 0,
@@ -244,6 +253,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       goal: template.goal || "",
       description: template.description || "",
       defaultRoleId: template.defaultRoleId || "",
+      assigneeType: (template.assigneeType as "role" | "user") || "role",
+      assigneeUserId: template.assigneeUserId || "",
       frequency: template.frequency || "once",
       category: template.category || "",
       estimatedDuration: template.estimatedDuration || 0,
@@ -296,6 +307,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       isRecurringTemplate: templateForm.isRecurringTemplate,
       recurringSchedule: recurringScheduleData,
       defaultRoleId: templateForm.isRecurringTemplate ? (templateForm.defaultRoleId || null) : null,
+      // Include assignee fields
+      assigneeType: templateForm.assigneeType,
+      assigneeUserId: templateForm.assigneeType === 'user' ? (templateForm.assigneeUserId || null) : null,
     };
 
     console.log("Saving template with data:", cleanedData);
@@ -470,6 +484,14 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
         const freqA = getFrequencyLabel(a);
         const freqB = getFrequencyLabel(b);
         return direction * freqA.localeCompare(freqB);
+      case 'assignee':
+        const assigneeA = a.assigneeType === 'user' 
+          ? (a.assigneeUserName || '-')
+          : (a.defaultRoleId ? getRoleName(a.defaultRoleId) : '-');
+        const assigneeB = b.assigneeType === 'user' 
+          ? (b.assigneeUserName || '-')
+          : (b.defaultRoleId ? getRoleName(b.defaultRoleId) : '-');
+        return direction * assigneeA.localeCompare(assigneeB);
       case 'status':
         return direction * ((a.isActive ? 1 : 0) - (b.isActive ? 1 : 0));
       default:
@@ -502,7 +524,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             {/* Header Row */}
             <div 
               className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
-              style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 100px 32px" }}
+              style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 140px 100px 32px" }}
             >
               <div></div>
               <button 
@@ -539,6 +561,14 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               </button>
               <button 
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                onClick={() => handleSort('assignee')}
+                data-testid="sort-assignee"
+              >
+                <span>Assignee</span>
+                {getSortIcon('assignee')}
+              </button>
+              <button 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
                 onClick={() => handleSort('status')}
                 data-testid="sort-status"
               >
@@ -558,7 +588,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 <div 
                   key={template.id}
                   className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
-                  style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 100px 32px" }}
+                  style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 140px 100px 32px" }}
                   onClick={() => openEditTemplateDialog(template)}
                   data-testid={`template-row-${template.id}`}
                 >
@@ -615,6 +645,23 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Frequency */}
                   <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
                     {getFrequencyLabel(template)}
+                  </div>
+
+                  {/* Assignee */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                    {template.assigneeType === 'user' ? (
+                      template.assigneeUserName ? (
+                        <Badge variant="outline" className="h-5 px-2 text-xs">
+                          {template.assigneeUserName}
+                        </Badge>
+                      ) : (
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
+                      )
+                    ) : (
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {template.defaultRoleId ? getRoleName(template.defaultRoleId) : '-'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Active Status */}
@@ -766,23 +813,63 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
             {templateForm.isRecurringTemplate && (
               <>
-                <div>
-                  <Label>Default Role Assignment</Label>
-                  <Select
-                    value={templateForm.defaultRoleId}
-                    onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
-                  >
-                    <SelectTrigger data-testid="select-recurring-role">
-                      <SelectValue placeholder="Select a role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {roles.map((role) => (
-                        <SelectItem key={role.id} value={role.id}>
-                          {role.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                {/* Assignee Selection */}
+                <div className="space-y-3">
+                  <Label>Assign To</Label>
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant={templateForm.assigneeType === "role" ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={() => setTemplateForm({ ...templateForm, assigneeType: "role" })}
+                      data-testid="button-assign-role"
+                    >
+                      Role
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={templateForm.assigneeType === "user" ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={() => setTemplateForm({ ...templateForm, assigneeType: "user" })}
+                      data-testid="button-assign-user"
+                    >
+                      Specific User
+                    </Button>
+                  </div>
+                  
+                  {templateForm.assigneeType === "role" ? (
+                    <Select
+                      value={templateForm.defaultRoleId}
+                      onValueChange={(value) => setTemplateForm({ ...templateForm, defaultRoleId: value })}
+                    >
+                      <SelectTrigger data-testid="select-recurring-role">
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roles.map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            {role.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select
+                      value={templateForm.assigneeUserId}
+                      onValueChange={(value) => setTemplateForm({ ...templateForm, assigneeUserId: value })}
+                    >
+                      <SelectTrigger data-testid="select-assignee-user">
+                        <SelectValue placeholder="Select a user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.firstName} {user.lastName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 <div>

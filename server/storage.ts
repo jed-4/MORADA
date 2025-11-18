@@ -11674,8 +11674,26 @@ export class DbStorage implements IStorage {
 
   async createTaskTemplate(template: InsertTaskTemplate & { companyId: string }): Promise<TaskTemplate> {
     try {
+      // Populate assigneeUserName if assigneeUserId is provided (with company isolation)
+      let assigneeUserName = null;
+      if (template.assigneeUserId) {
+        const user = await db.select()
+          .from(schema.users)
+          .where(and(
+            eq(schema.users.id, template.assigneeUserId),
+            eq(schema.users.companyId, template.companyId)
+          ))
+          .limit(1);
+        if (user.length > 0) {
+          assigneeUserName = `${user[0].firstName} ${user[0].lastName}`;
+        }
+      }
+
       const result = await db.insert(schema.taskTemplates)
-        .values(template)
+        .values({
+          ...template,
+          assigneeUserName,
+        })
         .returning();
       return result[0] as TaskTemplate;
     } catch (error) {
@@ -11686,8 +11704,31 @@ export class DbStorage implements IStorage {
 
   async updateTaskTemplate(id: string, template: Partial<InsertTaskTemplate>, companyId: string): Promise<TaskTemplate | undefined> {
     try {
+      // Populate assigneeUserName if assigneeUserId is provided (with company isolation)
+      let assigneeUserName: string | null | undefined = undefined;
+      if (template.assigneeUserId !== undefined) {
+        if (template.assigneeUserId) {
+          const user = await db.select()
+            .from(schema.users)
+            .where(and(
+              eq(schema.users.id, template.assigneeUserId),
+              eq(schema.users.companyId, companyId)
+            ))
+            .limit(1);
+          if (user.length > 0) {
+            assigneeUserName = `${user[0].firstName} ${user[0].lastName}`;
+          }
+        } else {
+          assigneeUserName = null;
+        }
+      }
+
       const result = await db.update(schema.taskTemplates)
-        .set({ ...template, updatedAt: new Date() })
+        .set({ 
+          ...template, 
+          ...(assigneeUserName !== undefined ? { assigneeUserName } : {}),
+          updatedAt: new Date() 
+        })
         .where(and(
           eq(schema.taskTemplates.id, id),
           eq(schema.taskTemplates.companyId, companyId)

@@ -2757,6 +2757,11 @@ export const taskTemplates = pgTable("task_templates", {
   defaultRoleId: varchar("default_role_id").references(() => userRoles.id), // Default role to assign
   defaultRoleName: text("default_role_name"), // Cached for performance
   
+  // Assignee - can be either role or specific user
+  assigneeType: text("assignee_type").default("role"), // "role" | "user"
+  assigneeUserId: varchar("assignee_user_id").references(() => users.id), // Specific user assignment
+  assigneeUserName: text("assignee_user_name"), // Cached user name for performance
+  
   // Scheduling
   frequency: text("frequency"), // "daily" | "weekly" | "monthly" | "yearly" | "once"
   frequencyInterval: integer("frequency_interval").default(1), // Every N days/weeks/months
@@ -2804,7 +2809,10 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   statusName: true, // Server will populate this
   defaultRoleName: true, // Server will populate this
   recurringAssigneeName: true, // Server will populate this
+  assigneeUserName: true, // Server will populate this
 }).extend({
+  assigneeType: z.enum(["role", "user"]).optional(),
+  assigneeUserId: z.string().optional(),
   goal: z.string().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),
   frequencyInterval: z.number().optional(),
