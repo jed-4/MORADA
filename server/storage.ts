@@ -207,11 +207,11 @@ export interface IStorage {
   deleteProject(id: string): Promise<boolean>;
 
   // Task Views CRUD
-  getTaskViews(ownerId?: string): Promise<TaskView[]>;
-  getTaskView(id: string): Promise<TaskView | undefined>;
-  createTaskView(view: InsertTaskView): Promise<TaskView>;
-  updateTaskView(id: string, view: Partial<InsertTaskView>): Promise<TaskView | undefined>;
-  deleteTaskView(id: string): Promise<boolean>;
+  getTaskViews(companyId: string, userId?: string): Promise<TaskView[]>;
+  getTaskView(id: string, companyId: string): Promise<TaskView | undefined>;
+  createTaskView(view: InsertTaskView, userId: string, companyId: string): Promise<TaskView>;
+  updateTaskView(id: string, view: Partial<InsertTaskView>, companyId: string): Promise<TaskView | undefined>;
+  deleteTaskView(id: string, companyId: string): Promise<boolean>;
 
   // Subtasks operations
   getSubtasks(parentTaskId: string): Promise<Task[]>;
@@ -2741,29 +2741,33 @@ export class MemStorage implements IStorage {
   }
 
   // Task Views CRUD operations
-  async getTaskViews(ownerId?: string): Promise<TaskView[]> {
-    const allViews = Array.from(this.taskViews.values());
-    
-    if (ownerId) {
-      return allViews.filter(view => view.ownerId === ownerId)
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    }
-    return allViews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  async getTaskViews(companyId: string, userId?: string): Promise<TaskView[]> {
+    const views = Array.from(this.taskViews.values())
+      .filter(view => {
+        if (view.companyId !== companyId) return false;
+        if (userId && view.userId !== userId) return false;
+        return true;
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return views;
   }
 
-  async getTaskView(id: string): Promise<TaskView | undefined> {
-    return this.taskViews.get(id);
+  async getTaskView(id: string, companyId: string): Promise<TaskView | undefined> {
+    const view = this.taskViews.get(id);
+    return view && view.companyId === companyId ? view : undefined;
   }
 
-  async createTaskView(insertTaskView: InsertTaskView): Promise<TaskView> {
+  async createTaskView(insertTaskView: InsertTaskView, userId: string, companyId: string): Promise<TaskView> {
     const id = randomUUID();
     const now = new Date();
     const taskView: TaskView = {
-      ...insertTaskView,
       id,
-      ownerId: insertTaskView.ownerId ?? null,
-      viewType: insertTaskView.viewType || "kanban",
+      userId,
+      companyId,
+      name: insertTaskView.name,
+      viewType: insertTaskView.viewType || "board",
       filters: insertTaskView.filters || {},
+      groupBy: insertTaskView.groupBy || "none",
       columnConfig: insertTaskView.columnConfig || {},
       isDefault: insertTaskView.isDefault ?? false,
       createdAt: now,
@@ -2773,20 +2777,29 @@ export class MemStorage implements IStorage {
     return taskView;
   }
 
-  async updateTaskView(id: string, updateData: Partial<InsertTaskView>): Promise<TaskView | undefined> {
-    const existingView = this.taskViews.get(id);
-    if (!existingView) return undefined;
+  async updateTaskView(id: string, updateData: Partial<InsertTaskView>, companyId: string): Promise<TaskView | undefined> {
+    const view = this.taskViews.get(id);
+    if (!view || view.companyId !== companyId) {
+      return undefined;
+    }
 
     const updatedView: TaskView = {
-      ...existingView,
+      ...view,
       ...updateData,
+      id: view.id,
+      userId: view.userId,
+      companyId: view.companyId,
       updatedAt: new Date(),
     };
     this.taskViews.set(id, updatedView);
     return updatedView;
   }
 
-  async deleteTaskView(id: string): Promise<boolean> {
+  async deleteTaskView(id: string, companyId: string): Promise<boolean> {
+    const view = this.taskViews.get(id);
+    if (!view || view.companyId !== companyId) {
+      return false;
+    }
     return this.taskViews.delete(id);
   }
 
@@ -6339,11 +6352,92 @@ export class DbStorage implements IStorage {
       return false;
     }
   }
-  async getTaskViews(ownerId?: string): Promise<TaskView[]> { return []; }
-  async getTaskView(id: string): Promise<TaskView | undefined> { return undefined; }
-  async createTaskView(view: InsertTaskView): Promise<TaskView> { throw new Error("Not implemented"); }
-  async updateTaskView(id: string, view: Partial<InsertTaskView>): Promise<TaskView | undefined> { return undefined; }
-  async deleteTaskView(id: string): Promise<boolean> { return false; }
+  async getTaskViews(companyId: string, userId?: string): Promise<TaskView[]> {
+    try {
+      let query = db.select().from(schema.taskViews)
+        .where(eq(schema.taskViews.companyId, companyId));
+      
+      if (userId) {
+        query = query.where(eq(schema.taskViews.userId, userId)) as any;
+      }
+      
+      const views = await query.orderBy(desc(schema.taskViews.createdAt));
+      return views;
+    } catch (error) {
+      console.error("Database error in getTaskViews:", error);
+      return [];
+    }
+  }
+
+  async getTaskView(id: string, companyId: string): Promise<TaskView | undefined> {
+    try {
+      const result = await db.select().from(schema.taskViews)
+        .where(and(
+          eq(schema.taskViews.id, id),
+          eq(schema.taskViews.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTaskView:", error);
+      return undefined;
+    }
+  }
+
+  async createTaskView(insertTaskView: InsertTaskView, userId: string, companyId: string): Promise<TaskView> {
+    try {
+      const result = await db.insert(schema.taskViews)
+        .values({
+          ...insertTaskView,
+          userId,
+          companyId,
+          viewType: insertTaskView.viewType || "board",
+          filters: insertTaskView.filters || {},
+          groupBy: insertTaskView.groupBy || "none",
+          columnConfig: insertTaskView.columnConfig || {},
+          isDefault: insertTaskView.isDefault ?? false,
+        })
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createTaskView:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskView(id: string, updateData: Partial<InsertTaskView>, companyId: string): Promise<TaskView | undefined> {
+    try {
+      const result = await db.update(schema.taskViews)
+        .set({
+          ...updateData,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(schema.taskViews.id, id),
+          eq(schema.taskViews.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateTaskView:", error);
+      return undefined;
+    }
+  }
+
+  async deleteTaskView(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.taskViews)
+        .where(and(
+          eq(schema.taskViews.id, id),
+          eq(schema.taskViews.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteTaskView:", error);
+      return false;
+    }
+  }
   async getSubtasks(parentTaskId: string): Promise<Task[]> { return []; }
   async createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task> { throw new Error("Not implemented"); }
   async getEstimates(projectId?: string): Promise<Estimate[]> {

@@ -21,6 +21,7 @@ import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { TaskCalendar } from "@/components/TaskCalendar";
+import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
@@ -30,11 +31,12 @@ import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
 
 export default function BusinessTasks() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("board");
+  const [activeTab, setActiveTab] = useState<"board" | "list" | "calendar">("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee'>('none');
   const [filters, setFilters] = useState<FilterState>({});
+  const [selectedViewId, setSelectedViewId] = useState<string | undefined>(undefined);
   const [cardDisplaySettings, setCardDisplaySettings] = useState({
     showPriority: true,
     showStatus: true,
@@ -355,7 +357,7 @@ export default function BusinessTasks() {
           </DropdownMenu>
         </div>
 
-        {/* Right: Navigation + New Task + Settings */}
+        {/* Right: Navigation + Saved Views + New Task + Settings */}
         <div className="flex items-center gap-1.5">
           {activeTab === "board" && showNavigation && (
             <>
@@ -375,6 +377,18 @@ export default function BusinessTasks() {
               </button>
             </>
           )}
+          <TaskViewsManager 
+            currentViewType={activeTab}
+            currentFilters={filters as TaskViewFilters}
+            currentGroupBy={groupBy}
+            onViewSelect={(view: TaskView) => {
+              setActiveTab(view.viewType);
+              setFilters(view.filters as FilterState);
+              setGroupBy(view.groupBy);
+              setSelectedViewId(view.id);
+            }}
+            selectedViewId={selectedViewId}
+          />
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}

@@ -532,18 +532,22 @@ export type Project = typeof projects.$inferSelect;
 // Task Views (saved filters and view settings)
 export const taskViews = pgTable("task_views", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // Owner of the view
   name: text("name").notNull(),
-  viewType: text("view_type").notNull().default("kanban"), // "kanban" | "list" | "calendar"
-  filters: json("filters").default({}), // Filter settings
+  viewType: text("view_type").notNull().default("board"), // "board" | "list" | "calendar"
+  filters: json("filters").default({}), // Filter settings (status, priority, assignee, labels, etc.)
+  groupBy: text("group_by").default("none"), // "none" | "status" | "priority" | "assignee"
   columnConfig: json("column_config").default({}), // Column visibility and order for list view
   isDefault: boolean("is_default").notNull().default(false),
-  ownerId: varchar("owner_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertTaskViewSchema = createInsertSchema(taskViews).omit({
   id: true,
+  userId: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 });

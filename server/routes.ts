@@ -1416,30 +1416,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task Views API Routes
-  app.get("/api/task-views", async (req, res) => {
+  app.get("/api/task-views", requireAuth, async (req, res) => {
     try {
-      const { ownerId } = req.query;
-      const taskViews = await storage.getTaskViews(ownerId as string | undefined);
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const taskViews = await storage.getTaskViews(req.user.companyId, req.user.id);
       res.json(taskViews);
     } catch (error) {
+      console.error("Failed to fetch task views:", error);
       res.status(500).json({ error: "Failed to fetch task views" });
     }
   });
 
-  app.get("/api/task-views/:id", async (req, res) => {
+  app.get("/api/task-views/:id", requireAuth, async (req, res) => {
     try {
-      const taskView = await storage.getTaskView(req.params.id);
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const taskView = await storage.getTaskView(req.params.id, req.user.companyId);
       if (!taskView) {
         return res.status(404).json({ error: "Task view not found" });
       }
       res.json(taskView);
     } catch (error) {
+      console.error("Failed to fetch task view:", error);
       res.status(500).json({ error: "Failed to fetch task view" });
     }
   });
 
-  app.post("/api/task-views", async (req, res) => {
+  app.post("/api/task-views", requireAuth, async (req, res) => {
     try {
+      if (!req.user?.companyId || !req.user?.id) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const validationResult = insertTaskViewSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -1448,15 +1458,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const taskView = await storage.createTaskView(validationResult.data);
+      const taskView = await storage.createTaskView(
+        validationResult.data, 
+        req.user.id, 
+        req.user.companyId
+      );
       res.status(201).json(taskView);
     } catch (error) {
+      console.error("Failed to create task view:", error);
       res.status(500).json({ error: "Failed to create task view" });
     }
   });
 
-  app.patch("/api/task-views/:id", async (req, res) => {
+  app.patch("/api/task-views/:id", requireAuth, async (req, res) => {
     try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const updateSchema = insertTaskViewSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -1466,24 +1484,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const taskView = await storage.updateTaskView(req.params.id, validationResult.data);
+      const taskView = await storage.updateTaskView(
+        req.params.id, 
+        validationResult.data, 
+        req.user.companyId
+      );
       if (!taskView) {
         return res.status(404).json({ error: "Task view not found" });
       }
       res.json(taskView);
     } catch (error) {
+      console.error("Failed to update task view:", error);
       res.status(500).json({ error: "Failed to update task view" });
     }
   });
 
-  app.delete("/api/task-views/:id", async (req, res) => {
+  app.delete("/api/task-views/:id", requireAuth, async (req, res) => {
     try {
-      const success = await storage.deleteTaskView(req.params.id);
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const success = await storage.deleteTaskView(req.params.id, req.user.companyId);
       if (!success) {
         return res.status(404).json({ error: "Task view not found" });
       }
       res.status(204).send();
     } catch (error) {
+      console.error("Failed to delete task view:", error);
       res.status(500).json({ error: "Failed to delete task view" });
     }
   });
