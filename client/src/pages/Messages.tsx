@@ -414,7 +414,7 @@ export default function Messages() {
     return fullName.includes(mentionSearch) || (u.email || '').toLowerCase().includes(mentionSearch);
   });
 
-  const typingUsers = typingUserIds
+  const typingUsers = (Array.isArray(typingUserIds) ? typingUserIds : [])
     .map((id: string) => allUsers.find((u: any) => u.id === id))
     .filter(Boolean)
     .map((u: any) => u.firstName || u.email || 'Someone');
