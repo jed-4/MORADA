@@ -7,13 +7,7 @@ import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,9 +26,9 @@ export default function Timesheets() {
   const { toast } = useToast();
   const { projectId } = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedProject, setSelectedProject] = useState<string>(projectId || "all");
-  const [selectedUser, setSelectedUser] = useState<string>("all");
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
@@ -149,9 +143,15 @@ export default function Timesheets() {
   const filteredTimesheets = timesheets.filter((timesheet) => {
     const matchesSearch = searchTerm === "" || 
       timesheet.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesProject = selectedProject === "all" || timesheet.projectId === selectedProject;
-    const matchesUser = selectedUser === "all" || timesheet.userId === selectedUser;
-    const matchesStatus = selectedStatus === "all" || timesheet.status === selectedStatus;
+    const matchesProject = !projectId && selectedProjects.length > 0 
+      ? selectedProjects.includes(timesheet.projectId) 
+      : true;
+    const matchesUser = selectedUsers.length > 0 
+      ? selectedUsers.includes(timesheet.userId) 
+      : true;
+    const matchesStatus = selectedStatuses.length > 0 
+      ? selectedStatuses.includes(timesheet.status) 
+      : true;
     const matchesInvoiced = !showInvoicedOnly || timesheet.invoiced;
 
     // Date range filter
@@ -273,118 +273,195 @@ export default function Timesheets() {
       </div>
 
       {/* Row 2: Filters */}
-      <div className="flex items-center gap-2 h-9 px-3 border-b border-border/50">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search description..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            data-testid="input-search-timesheets"
-            className="h-7 pl-8 text-sm"
-          />
-        </div>
-
-        {!projectId && (
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger data-testid="select-filter-project" className="h-7 w-[180px] text-sm">
-              <SelectValue placeholder="All Projects" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        <Select value={selectedUser} onValueChange={setSelectedUser}>
-          <SelectTrigger data-testid="select-filter-user" className="h-7 w-[160px] text-sm">
-            <SelectValue placeholder="All Users" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Users</SelectItem>
-            {users.map((user) => (
-              <SelectItem key={user.id} value={user.id}>
-                {`${user.firstName} ${user.lastName}`.trim() || user.username}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-          <SelectTrigger data-testid="select-filter-status" className="h-7 w-[140px] text-sm">
-            <SelectValue placeholder="All Statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="submitted">Submitted</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={dateRangeType} onValueChange={(value) => {
-          setDateRangeType(value);
-          if (value !== "custom") {
-            setCustomStartDate(undefined);
-            setCustomEndDate(undefined);
-          }
-        }}>
-          <SelectTrigger data-testid="select-filter-date-range" className="h-7 w-[140px] text-sm">
-            <SelectValue placeholder="All Time" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Time</SelectItem>
-            <SelectItem value="this-week">This Week</SelectItem>
-            <SelectItem value="last-week">Last Week</SelectItem>
-            <SelectItem value="custom">Custom Range</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {dateRangeType === "custom" && (
-          <div className="flex items-center gap-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="text-sm" data-testid="button-start-date">
-                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
-                  {customStartDate ? format(customStartDate, "dd MMM") : "Start"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={customStartDate}
-                  onSelect={setCustomStartDate}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-
-            <span className="text-xs text-muted-foreground">to</span>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="text-sm" data-testid="button-end-date">
-                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
-                  {customEndDate ? format(customEndDate, "dd MMM") : "End"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={customEndDate}
-                  onSelect={setCustomEndDate}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
+      <div className="flex items-center gap-1.5 h-9 px-2 border-b border-border flex-shrink-0">
+        {/* Left: Search + Filter Chips */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              data-testid="input-search-timesheets"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+            />
           </div>
-        )}
+
+          {/* Project Filter (only if not in project context) */}
+          {!projectId && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-project">
+                  <span>Project</span>
+                  {selectedProjects.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      {selectedProjects.length}
+                    </Badge>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {projects.map((project) => (
+                  <DropdownMenuItem key={project.id} className="flex items-center">
+                    <Checkbox
+                      checked={selectedProjects.includes(project.id)}
+                      onCheckedChange={() => {
+                        const newProjects = selectedProjects.includes(project.id)
+                          ? selectedProjects.filter(p => p !== project.id)
+                          : [...selectedProjects, project.id];
+                        setSelectedProjects(newProjects);
+                      }}
+                      className="mr-2"
+                    />
+                    {project.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* User Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-user">
+                <span>User</span>
+                {selectedUsers.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {selectedUsers.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {users.map((user) => (
+                <DropdownMenuItem key={user.id} className="flex items-center">
+                  <Checkbox
+                    checked={selectedUsers.includes(user.id)}
+                    onCheckedChange={() => {
+                      const newUsers = selectedUsers.includes(user.id)
+                        ? selectedUsers.filter(u => u !== user.id)
+                        : [...selectedUsers, user.id];
+                      setSelectedUsers(newUsers);
+                    }}
+                    className="mr-2"
+                  />
+                  {`${user.firstName} ${user.lastName}`.trim() || user.username}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Status Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-status">
+                <span>Status</span>
+                {selectedStatuses.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    {selectedStatuses.length}
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {[
+                { key: "draft", name: "Draft" },
+                { key: "submitted", name: "Submitted" },
+                { key: "approved", name: "Approved" },
+                { key: "rejected", name: "Rejected" },
+              ].map((status) => (
+                <DropdownMenuItem key={status.key} className="flex items-center">
+                  <Checkbox
+                    checked={selectedStatuses.includes(status.key)}
+                    onCheckedChange={() => {
+                      const newStatuses = selectedStatuses.includes(status.key)
+                        ? selectedStatuses.filter(s => s !== status.key)
+                        : [...selectedStatuses, status.key];
+                      setSelectedStatuses(newStatuses);
+                    }}
+                    className="mr-2"
+                  />
+                  {status.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Date Range Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-date">
+                <CalendarRange className="w-3 h-3" />
+                <span>
+                  {dateRangeType === "all" ? "All Time" : 
+                   dateRangeType === "this-week" ? "This Week" :
+                   dateRangeType === "last-week" ? "Last Week" :
+                   "Custom"}
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => {
+                setDateRangeType("all");
+                setCustomStartDate(undefined);
+                setCustomEndDate(undefined);
+              }}>
+                All Time
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDateRangeType("this-week")}>
+                This Week
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDateRangeType("last-week")}>
+                Last Week
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDateRangeType("custom")}>
+                Custom Range
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Custom Date Range Pickers */}
+          {dateRangeType === "custom" && (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-start-date">
+                    <CalendarIcon className="w-3 h-3" />
+                    <span>{customStartDate ? format(customStartDate, "dd MMM") : "Start"}</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={customStartDate}
+                    onSelect={setCustomStartDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <span className="text-xs text-muted-foreground">to</span>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-end-date">
+                    <CalendarIcon className="w-3 h-3" />
+                    <span>{customEndDate ? format(customEndDate, "dd MMM") : "End"}</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={customEndDate}
+                    onSelect={setCustomEndDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Timesheets Grid */}
