@@ -195,248 +195,226 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   };
 
   const hasChildren = children.length > 0;
+  const itemTotal = (item.quantity || 0) * (item.rate || 0);
 
   return (
-    <div ref={setNodeRef} style={style} className={`mb-2 ${level > 0 ? 'ml-8' : ''} group`}>
-      <Card 
-        className={`transition-all duration-200 border-l-4 ${isSelected ? 'ring-2 ring-primary' : 'hover:shadow-xl hover:-translate-y-1'}`}
+    <div ref={setNodeRef} style={style} className={`${level > 0 ? 'ml-8' : ''}`}>
+      {/* Grid Row - h-10, ultra-compact */}
+      <div 
+        className={`h-10 grid items-center gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
+          isSelected ? 'bg-[#bba7db]/5 border-[#bba7db]/30' : ''
+        }`}
         style={{ 
-          minHeight: isCollapsed ? '40px' : 'auto',
-          borderLeftColor: CASVA_LILAC,
+          gridTemplateColumns: '40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 80px 100px 120px 24px',
         }}
+        data-testid={`scope-item-row-${item.id}`}
       >
-        <CardContent className="px-3 py-0 flex flex-col justify-center" style={{ minHeight: '40px' }}>
-          {/* Row 1: Everything in one neat row */}
-          <div className="flex items-center gap-2 py-1">
-            {/* Drag Handle */}
-            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
-              <GripVertical className="h-4 w-4 text-muted-foreground" />
-            </div>
+        {/* Checkbox - 40px */}
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect(item.id)}
+            data-testid={`checkbox-select-${item.id}`}
+            className="h-4 w-4"
+          />
+        </div>
 
-            {/* Expand/Collapse button */}
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={() => {
-                // If has children, toggle child expansion
-                if (hasChildren) {
-                  setIsExpanded(!isExpanded);
-                }
-                // Always toggle description collapse
-                if (onToggleCollapse) {
-                  onToggleCollapse(item.id);
-                }
-              }}
-              data-testid={`button-toggle-scope-${item.id}`}
+        {/* Drag - 24px */}
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing flex items-center justify-center">
+          <GripVertical className="h-3 w-3 text-muted-foreground" />
+        </div>
+
+        {/* Item Name - minmax(200px, 1fr) */}
+        <input
+          value={item.title}
+          onChange={(e) => onUpdate(item.id, { title: e.target.value })}
+          className="h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+          placeholder="Item name"
+          data-testid={`input-scope-title-${item.id}`}
+        />
+
+        {/* Type - 100px */}
+        <div className="flex items-center">
+          {getTypeLabel && (
+            <span 
+              className="h-4 px-1.5 text-[10px] font-semibold rounded bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/20 truncate"
+              data-testid={`badge-type-${item.id}`}
             >
-              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </Button>
+              {getTypeLabel(item.itemType)}
+            </span>
+          )}
+        </div>
 
-            {/* Selection Checkbox */}
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={() => onToggleSelect(item.id)}
-              data-testid={`checkbox-select-${item.id}`}
-            />
-
-            {/* Title - Inter 16px */}
-            <Input
-              value={item.title}
-              onChange={(e) => onUpdate(item.id, { title: e.target.value })}
-              className="h-7 text-base font-semibold border-0 focus-visible:ring-1 px-2 flex-1"
-              style={{ fontFamily: 'Inter, sans-serif' }}
-              placeholder="Item title"
-              data-testid={`input-scope-title-${item.id}`}
-            />
-
-            {/* Type Badge - Scope chip */}
-            {getTypeLabel && (
-              <Badge 
-                variant="secondary"
-                className="h-5 px-1.5 text-xs font-semibold rounded shrink-0"
-                style={{
-                  backgroundColor: CASVA_LILAC,
-                  color: 'white',
-                }}
-                data-testid={`badge-type-${item.id}`}
-              >
-                {getTypeLabel(item.itemType)}
-              </Badge>
+        {/* Description - minmax(150px, 2fr) */}
+        <div className="flex items-center gap-1">
+          <div 
+            className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground flex-1"
+            onClick={() => setIsEditingDescription(true)}
+            title={item.description ? item.description.replace(/<[^>]*>/g, '') : 'Add description...'}
+          >
+            {item.description ? (
+              <span dangerouslySetInnerHTML={{ __html: item.description }} className="line-clamp-1" />
+            ) : (
+              <span className="italic">-</span>
             )}
-
-            {/* Smart Links */}
-            {item.needsRfq && (
-              <Badge variant="outline" className="h-5 text-xs bg-yellow-100 text-yellow-800 shrink-0">
-                RFQ
-              </Badge>
-            )}
-            {item.estimateItemId && (
-              <Badge 
-                variant="outline" 
-                className="h-5 text-xs bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 shrink-0"
-                onClick={() => window.location.href = `/projects/${item.projectId}/estimates`}
-                data-testid={`link-estimate-${item.id}`}
-              >
-                <DollarSign className="h-3 w-3 mr-1" />
-                Est →
-              </Badge>
-            )}
-            {item.poId && (
-              <Badge 
-                variant="outline" 
-                className="h-5 text-xs bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200 shrink-0"
-                onClick={() => window.location.href = `/projects/${item.projectId}/purchase-orders`}
-                data-testid={`link-po-${item.id}`}
-              >
-                <Package className="h-3 w-3 mr-1" />
-                PO →
-              </Badge>
-            )}
-
-            {/* 3 dots menu - shown on hover */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                  data-testid={`button-menu-scope-${item.id}`}
-                >
-                  <span className="text-lg leading-none">⋯</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={() => {
-                    if (onToggleCollapse) onToggleCollapse(item.id);
-                  }}
-                  data-testid={`menu-toggle-description-${item.id}`}
-                >
-                  {isCollapsed ? 'Expand Description' : 'Collapse Description'}
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => setIsEditingDescription(true)}
-                  data-testid={`menu-edit-description-${item.id}`}
-                >
-                  Edit Description
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onDelete(item.id)}
-                  className="text-destructive"
-                  data-testid={`menu-delete-scope-${item.id}`}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
-
-          {/* Row 2: Description (when expanded) */}
-          {!isCollapsed && (
-            <div className="mt-2 ml-12">
-              {isEditingDescription && editor ? (
-                <div className="border rounded-md p-2 bg-background" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                  <EditorContent editor={editor} className="prose prose-sm max-w-none" />
-                  <Button
-                    size="sm"
-                    onClick={() => setIsEditingDescription(false)}
-                    className="mt-2"
-                  >
-                    Done
-                  </Button>
-                </div>
-              ) : item.description ? (
-                <div
-                  className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
-                  style={{ fontFamily: 'Manrope, sans-serif' }}
-                  onClick={() => setIsEditingDescription(true)}
-                  dangerouslySetInnerHTML={{ __html: item.description }}
-                />
-              ) : (
-                <div
-                  className="text-sm text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1 italic"
-                  style={{ fontFamily: 'Manrope, sans-serif' }}
-                  onClick={() => setIsEditingDescription(true)}
-                >
-                  Click to add description...
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Gear Checklist (separate section) */}
           {gearList.length > 0 && (
-            <div className="mt-2 ml-12">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowGearList(!showGearList)}
-                className="h-7"
-              >
-                <CheckSquare className="h-3 w-3 mr-1" />
-                Gear ({gearList.filter(g => g.checked).length}/{gearList.length})
-                {showGearList ? <ChevronDown className="h-3 w-3 ml-1" /> : <ChevronRight className="h-3 w-3 ml-1" />}
-              </Button>
-              {showGearList && (
-                <div className="ml-6 mt-1 space-y-1">
-                  {gearList.map((gear, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <Checkbox
-                        checked={gear.checked}
-                        onCheckedChange={() => handleToggleGearItem(idx)}
-                        data-testid={`checkbox-gear-${item.id}-${idx}`}
-                      />
-                      <span className={`text-sm ${gear.checked ? 'line-through text-muted-foreground' : ''}`}>
-                        {gear.name}
-                      </span>
-                      {gear.photoUrl && (
-                        <Badge variant="outline" className="h-5 text-xs bg-green-100 text-green-800">
-                          Photo
-                        </Badge>
-                      )}
-                      <label className="ml-auto cursor-pointer">
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-6"
-                          disabled={uploadingGearIndex === idx}
-                          asChild
-                        >
-                          <span>
-                            <Upload className="h-3 w-3" />
-                            {uploadingGearIndex === idx && <span className="ml-1 text-xs">...</span>}
-                          </span>
-                        </Button>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleGearPhotoUpload(idx, file);
-                          }}
-                          data-testid={`input-gear-photo-${item.id}-${idx}`}
-                        />
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => setShowGearList(true)}
+              className="h-4 px-1.5 text-[10px] font-semibold rounded bg-green-100 text-green-800 border border-green-200 hover-elevate flex items-center gap-0.5"
+              title={`${gearList.filter(g => g.checked).length}/${gearList.length} gear items checked`}
+              data-testid={`button-gear-${item.id}`}
+            >
+              <CheckSquare className="h-2.5 w-2.5" />
+              <span>{gearList.filter(g => g.checked).length}/{gearList.length}</span>
+            </button>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Render children recursively */}
-      {hasChildren && isExpanded && (
-        <div className="mt-1">
+        {/* Quantity - 80px */}
+        <input
+          type="number"
+          value={item.quantity || ''}
+          onChange={(e) => onUpdate(item.id, { quantity: parseFloat(e.target.value) || null })}
+          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+          placeholder="0"
+          data-testid={`input-quantity-${item.id}`}
+        />
+
+        {/* Rate - 100px */}
+        <input
+          type="number"
+          value={item.rate || ''}
+          onChange={(e) => onUpdate(item.id, { rate: parseFloat(e.target.value) || null })}
+          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+          placeholder="$0"
+          data-testid={`input-rate-${item.id}`}
+        />
+
+        {/* Total - 120px */}
+        <div className="text-sm font-semibold text-right">
+          {itemTotal > 0 ? `$${itemTotal.toLocaleString()}` : '-'}
+        </div>
+
+        {/* Menu - 24px */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity hover-elevate"
+              data-testid={`button-menu-scope-${item.id}`}
+            >
+              <span className="text-sm leading-none">⋯</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem 
+              onClick={() => setIsEditingDescription(true)}
+              data-testid={`menu-edit-description-${item.id}`}
+            >
+              <Pen className="h-3 w-3 mr-2" />
+              Edit Description
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => onDelete(item.id)}
+              className="text-destructive"
+              data-testid={`menu-delete-scope-${item.id}`}
+            >
+              <Trash2 className="h-3 w-3 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Description Editor Dialog */}
+      {isEditingDescription && editor && (
+        <Dialog open={isEditingDescription} onOpenChange={setIsEditingDescription}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Description</DialogTitle>
+              <DialogDescription>
+                Add or edit the description for {item.title}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="border rounded-md p-3 bg-background min-h-[200px]">
+              <EditorContent editor={editor} className="prose prose-sm max-w-none" />
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setIsEditingDescription(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Gear Checklist Dialog */}
+      {gearList.length > 0 && (
+        <Dialog open={showGearList} onOpenChange={setShowGearList}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Gear Checklist</DialogTitle>
+              <DialogDescription>
+                Track gear items for {item.title}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {gearList.map((gear, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 rounded hover:bg-muted/50">
+                  <Checkbox
+                    checked={gear.checked}
+                    onCheckedChange={() => handleToggleGearItem(idx)}
+                    data-testid={`checkbox-gear-${item.id}-${idx}`}
+                  />
+                  <span className={`text-sm flex-1 ${gear.checked ? 'line-through text-muted-foreground' : ''}`}>
+                    {gear.name}
+                  </span>
+                  {gear.photoUrl && (
+                    <Badge variant="outline" className="h-5 text-xs bg-green-100 text-green-800">
+                      Photo
+                    </Badge>
+                  )}
+                  <label className="cursor-pointer">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="h-6"
+                      disabled={uploadingGearIndex === idx}
+                      asChild
+                    >
+                      <span>
+                        <Upload className="h-3 w-3" />
+                        {uploadingGearIndex === idx && <span className="ml-1 text-xs">...</span>}
+                      </span>
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleGearPhotoUpload(idx, file);
+                      }}
+                      data-testid={`input-gear-photo-${item.id}-${idx}`}
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowGearList(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Render nested child items */}
+      {hasChildren && (
+        <div className="ml-8">
           {children.map((child) => {
-            // Scope 2.0: Get collapse state from parent's collapsed set if provided
-            const childCollapsed = onToggleCollapse && getTypeLabel 
-              ? (collapsedItems?.has(child.id) ?? false) 
-              : false;
-            
+            const childCollapsed = collapsedItems?.has(child.id) ?? false;
             return (
               <SortableScopeItem
                 key={child.id}
@@ -446,13 +424,13 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 onToggleSelect={onToggleSelect}
                 isSelected={selectedItems.has(child.id)}
                 level={level + 1}
-                children={allItems.filter(i => i.parentId === child.id)}
+                children={allItems?.filter(i => i.parentId === child.id) || []}
                 allItems={allItems}
                 selectedItems={selectedItems}
-                isCollapsed={childCollapsed} // Scope 2.0: use actual collapse state
-                onToggleCollapse={onToggleCollapse} // Scope 2.0
-                getTypeLabel={getTypeLabel} // Scope 2.0
-                collapsedItems={collapsedItems} // Scope 2.0: pass down collapsed items set
+                isCollapsed={childCollapsed}
+                onToggleCollapse={onToggleCollapse}
+                getTypeLabel={getTypeLabel}
+                collapsedItems={collapsedItems}
               />
             );
           })}
