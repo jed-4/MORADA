@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, Send, CalendarRange, Download } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, Send, CalendarRange, Download, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -15,13 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -166,13 +164,6 @@ export default function Timesheets() {
     return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesInvoiced && matchesDateRange;
   });
 
-  // Get date range display text
-  const getDateRangeText = (): string => {
-    const range = getDateRange();
-    if (!range) return "";
-    return `${format(range.start, "dd MMM yyyy")} - ${format(range.end, "dd MMM yyyy")}`;
-  };
-
   // Get project name
   const getProjectName = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
@@ -183,22 +174,6 @@ export default function Timesheets() {
   const getUserName = (userId: string) => {
     const user = users.find((u) => u.id === userId);
     return user ? `${user.firstName} ${user.lastName}`.trim() || user.username : "Unknown User";
-  };
-
-  // Get status badge variant
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "secondary";
-      case "submitted":
-        return "default";
-      case "approved":
-        return "default";
-      case "rejected":
-        return "destructive";
-      default:
-        return "secondary";
-    }
   };
 
   // Format duration (decimal hours to HH:MM)
@@ -262,386 +237,312 @@ export default function Timesheets() {
     });
   };
 
+  // Grid template with minimum widths
+  const gridTemplate = "minmax(100px, 0.6fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(80px, 0.4fr) minmax(100px, 0.5fr) minmax(100px, 0.5fr) minmax(100px, 0.5fr) minmax(100px, 0.5fr) minmax(180px, 1fr) minmax(120px, 0.6fr)";
+
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="heading-timesheets">
-            {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
-          </h1>
-          <p className="text-muted-foreground">Track and manage time entries</p>
-        </div>
+    <div className="flex flex-col h-full">
+      {/* Row 1: Title */}
+      <div className="flex items-center justify-between h-9 px-3 border-b border-border/50">
+        <h1 className="text-sm font-semibold">
+          {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
+        </h1>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
             data-testid="button-export-timesheets"
+            className="h-7"
           >
-            <Download className="w-4 h-4 mr-2" />
+            <Download className="w-3.5 h-3.5 mr-1.5" />
             Export
           </Button>
           <Button
+            size="sm"
             onClick={() => {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
             data-testid="button-add-timesheet"
+            className="h-7 bg-[#bba7db] hover:bg-[#a890cb] text-white"
           >
-            <Clock className="w-4 h-4 mr-2" />
+            <Clock className="w-3.5 h-3.5 mr-1.5" />
             Clock In
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="space-y-4">
-            <div className={`grid gap-4 ${projectId ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-5'}`}>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search description..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    data-testid="input-search-timesheets"
-                  />
-                </div>
-              </div>
+      {/* Row 2: Filters */}
+      <div className="flex items-center gap-2 h-9 px-3 border-b border-border/50">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search description..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            data-testid="input-search-timesheets"
+            className="h-7 pl-8 text-sm"
+          />
+        </div>
 
-              {/* Only show project filter when not in project context */}
-              {!projectId && (
-                <div className="space-y-2">
-                  <Select value={selectedProject} onValueChange={setSelectedProject}>
-                    <SelectTrigger data-testid="select-filter-project">
-                      <SelectValue placeholder="All Projects" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Projects</SelectItem>
-                      {projects.map((project) => (
-                        <SelectItem key={project.id} value={project.id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+        {!projectId && (
+          <Select value={selectedProject} onValueChange={setSelectedProject}>
+            <SelectTrigger data-testid="select-filter-project" className="h-7 w-[180px] text-sm">
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
-              <div className="space-y-2">
-                <Select value={selectedUser} onValueChange={setSelectedUser}>
-                  <SelectTrigger data-testid="select-filter-user">
-                    <SelectValue placeholder="All Users" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Users</SelectItem>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {`${user.firstName} ${user.lastName}`.trim() || user.username}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        <Select value={selectedUser} onValueChange={setSelectedUser}>
+          <SelectTrigger data-testid="select-filter-user" className="h-7 w-[160px] text-sm">
+            <SelectValue placeholder="All Users" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Users</SelectItem>
+            {users.map((user) => (
+              <SelectItem key={user.id} value={user.id}>
+                {`${user.firstName} ${user.lastName}`.trim() || user.username}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-              <div className="space-y-2">
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger data-testid="select-filter-status">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="submitted">Submitted</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+          <SelectTrigger data-testid="select-filter-status" className="h-7 w-[140px] text-sm">
+            <SelectValue placeholder="All Statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="submitted">Submitted</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
 
-              <div className="space-y-2">
-                <Select value={dateRangeType} onValueChange={(value) => {
-                  setDateRangeType(value);
-                  if (value !== "custom") {
-                    setCustomStartDate(undefined);
-                    setCustomEndDate(undefined);
-                  }
-                }}>
-                  <SelectTrigger data-testid="select-filter-date-range">
-                    <SelectValue placeholder="All Time" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Time</SelectItem>
-                    <SelectItem value="this-week">This Week</SelectItem>
-                    <SelectItem value="last-week">Last Week</SelectItem>
-                    <SelectItem value="custom">Custom Range</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+        <Select value={dateRangeType} onValueChange={(value) => {
+          setDateRangeType(value);
+          if (value !== "custom") {
+            setCustomStartDate(undefined);
+            setCustomEndDate(undefined);
+          }
+        }}>
+          <SelectTrigger data-testid="select-filter-date-range" className="h-7 w-[140px] text-sm">
+            <SelectValue placeholder="All Time" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Time</SelectItem>
+            <SelectItem value="this-week">This Week</SelectItem>
+            <SelectItem value="last-week">Last Week</SelectItem>
+            <SelectItem value="custom">Custom Range</SelectItem>
+          </SelectContent>
+        </Select>
 
-            {/* Custom Date Range Pickers */}
-            {dateRangeType === "custom" && (
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <CalendarRange className="w-4 h-4 text-muted-foreground" />
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="justify-start" data-testid="button-start-date">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customStartDate ? format(customStartDate, "dd MMM yyyy") : "Start Date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={customStartDate}
-                        onSelect={setCustomStartDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+        {dateRangeType === "custom" && (
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-sm" data-testid="button-start-date">
+                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
+                  {customStartDate ? format(customStartDate, "dd MMM") : "Start"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={customStartDate}
+                  onSelect={setCustomStartDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
 
-                  <span className="text-muted-foreground">to</span>
+            <span className="text-xs text-muted-foreground">to</span>
 
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="justify-start" data-testid="button-end-date">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customEndDate ? format(customEndDate, "dd MMM yyyy") : "End Date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={customEndDate}
-                        onSelect={setCustomEndDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            )}
-
-            {/* Date Range Display */}
-            {dateRangeType !== "all" && dateRangeType !== "custom" && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CalendarRange className="w-4 h-4" />
-                <span>{getDateRangeText()}</span>
-              </div>
-            )}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-sm" data-testid="button-end-date">
+                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
+                  {customEndDate ? format(customEndDate, "dd MMM") : "End"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={customEndDate}
+                  onSelect={setCustomEndDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
-      {/* Timesheets Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>Break</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loadingTimesheets ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center py-8">
-                    Loading timesheets...
-                  </TableCell>
-                </TableRow>
-              ) : filteredTimesheets.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center py-8">
-                    No timesheets found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredTimesheets.map((timesheet) => (
-                  <TableRow
-                    key={timesheet.id}
-                    data-testid={`row-timesheet-${timesheet.id}`}
-                    className="hover-elevate"
-                  >
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-muted-foreground" />
-                        {format(new Date(timesheet.date), "dd/MM/yyyy")}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-muted-foreground" />
-                        {getUserName(timesheet.userId)}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      {getProjectName(timesheet.projectId)}
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      {timesheet.startTime && timesheet.endTime
-                        ? `${timesheet.startTime} - ${timesheet.endTime}`
-                        : "-"}
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer font-medium"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      {formatDuration(parseFloat(timesheet.duration))}
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(2) : "0.00"}/hr
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer font-medium"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      <Badge
-                        variant={getStatusBadgeVariant(timesheet.status)}
-                        data-testid={`badge-status-${timesheet.status}`}
-                        className={
-                          timesheet.status === "submitted"
-                            ? "bg-blue-500 hover:bg-blue-600"
-                            : timesheet.status === "approved"
-                            ? "bg-green-500 hover:bg-green-600"
-                            : ""
-                        }
-                      >
-                        {timesheet.status.charAt(0).toUpperCase() + timesheet.status.slice(1)}
+      {/* Timesheets Grid */}
+      <div className="flex-1 overflow-auto p-3">
+        {loadingTimesheets ? (
+          <Card className="p-8">
+            <div className="text-center text-muted-foreground">Loading timesheets...</div>
+          </Card>
+        ) : filteredTimesheets.length === 0 ? (
+          <Card className="p-8">
+            <div className="text-center text-muted-foreground">No timesheets found</div>
+          </Card>
+        ) : (
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              {/* Header Row */}
+              <div 
+                className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
+                style={{ gridTemplateColumns: gridTemplate }}
+              >
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">User</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Project</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Time</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Break</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Duration</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Rate</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Total</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Actions</div>
+              </div>
+
+              {/* Data Rows */}
+              {filteredTimesheets.map((timesheet) => (
+                <div 
+                  key={timesheet.id}
+                  className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                  style={{ gridTemplateColumns: gridTemplate }}
+                  onClick={() => {
+                    setSelectedTimesheet(timesheet);
+                    setIsDialogOpen(true);
+                  }}
+                  data-testid={`row-timesheet-${timesheet.id}`}
+                >
+                  {/* Date */}
+                  <div className="text-sm text-gray-900 dark:text-gray-100">
+                    {format(new Date(timesheet.date), "dd/MM/yy")}
+                  </div>
+
+                  {/* User */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                    {getUserName(timesheet.userId)}
+                  </div>
+
+                  {/* Project */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                    {getProjectName(timesheet.projectId)}
+                  </div>
+
+                  {/* Time */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    {timesheet.startTime && timesheet.endTime
+                      ? `${timesheet.startTime}-${timesheet.endTime}`
+                      : "-"}
+                  </div>
+
+                  {/* Break */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
+                  </div>
+
+                  {/* Duration */}
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {formatDuration(parseFloat(timesheet.duration))}
+                  </div>
+
+                  {/* Rate */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(2) : "0.00"}/hr
+                  </div>
+
+                  {/* Total */}
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    {timesheet.status === "approved" ? (
+                      <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 h-4 px-2 text-[10px]">
+                        Approved
                       </Badge>
-                    </TableCell>
-                    <TableCell
-                      className="cursor-pointer max-w-xs truncate"
-                      onClick={() => {
-                        setSelectedTimesheet(timesheet);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      {timesheet.description || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {timesheet.status === "draft" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              submitMutation.mutate(timesheet.id);
-                            }}
-                            data-testid={`button-submit-${timesheet.id}`}
-                          >
-                            <Send className="w-3 h-3 mr-1" />
-                            Submit
-                          </Button>
-                        )}
-                        {timesheet.status === "submitted" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                approveMutation.mutate(timesheet.id);
-                              }}
-                              data-testid={`button-approve-${timesheet.id}`}
-                              className="text-green-600 hover:text-green-700"
-                            >
-                              <Check className="w-3 h-3 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                rejectMutation.mutate(timesheet.id);
-                              }}
-                              data-testid={`button-reject-${timesheet.id}`}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <X className="w-3 h-3 mr-1" />
-                              Reject
-                            </Button>
-                          </>
-                        )}
+                    ) : timesheet.status === "submitted" ? (
+                      <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 h-4 px-2 text-[10px]">
+                        Submitted
+                      </Badge>
+                    ) : timesheet.status === "rejected" ? (
+                      <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 h-4 px-2 text-[10px]">
+                        Rejected
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="h-4 px-2 text-[10px]">
+                        Draft
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                    {timesheet.description || "-"}
+                  </div>
+
+                  {/* Actions */}
+                  <div onClick={(e) => e.stopPropagation()}>
+                    {timesheet.status === "draft" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => submitMutation.mutate(timesheet.id)}
+                        data-testid={`button-submit-${timesheet.id}`}
+                        className="h-7 text-xs"
+                      >
+                        <Send className="w-3 h-3 mr-1" />
+                        Submit
+                      </Button>
+                    )}
+                    {timesheet.status === "submitted" && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => approveMutation.mutate(timesheet.id)}
+                          data-testid={`button-approve-${timesheet.id}`}
+                          className="h-7 text-xs text-green-600 hover:text-green-700 border-green-200 hover:bg-green-50"
+                        >
+                          <Check className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => rejectMutation.mutate(timesheet.id)}
+                          data-testid={`button-reject-${timesheet.id}`}
+                          className="h-7 text-xs text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
 
       <TimesheetDialog
         open={isDialogOpen}
