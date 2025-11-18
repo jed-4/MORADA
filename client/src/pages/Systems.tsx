@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { FolderTree, type FolderTreeHandle } from "@/components/systems/FolderTree";
-import { TaskLibrary } from "@/components/systems/TaskLibrary";
-import { WorkflowBuilder } from "@/components/systems/WorkflowBuilder";
+import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
+import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 
 export default function Systems() {
   const [activeTab, setActiveTab] = useState("folders");
@@ -13,6 +13,8 @@ export default function Systems() {
   
   // Refs for accessing child component functions
   const folderTreeRef = useRef<FolderTreeHandle>(null);
+  const taskLibraryRef = useRef<TaskLibraryHandle>(null);
+  const workflowBuilderRef = useRef<WorkflowBuilderHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -70,6 +72,8 @@ export default function Systems() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         folderTreeRef={folderTreeRef}
+        taskLibraryRef={taskLibraryRef}
+        workflowBuilderRef={workflowBuilderRef}
       />
 
       {/* Content Area */}
@@ -81,12 +85,12 @@ export default function Systems() {
         )}
         {activeTab === "tasks" && (
           <div className="h-full">
-            <TaskLibrary searchQuery={searchQuery} />
+            <TaskLibrary ref={taskLibraryRef} searchQuery={searchQuery} />
           </div>
         )}
         {activeTab === "workflows" && (
           <div className="h-full">
-            <WorkflowBuilder searchQuery={searchQuery} />
+            <WorkflowBuilder ref={workflowBuilderRef} searchQuery={searchQuery} />
           </div>
         )}
       </div>
@@ -99,12 +103,16 @@ function SystemsControlBar({
   activeTab, 
   searchQuery,
   setSearchQuery,
-  folderTreeRef
+  folderTreeRef,
+  taskLibraryRef,
+  workflowBuilderRef
 }: { 
   activeTab: string;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   folderTreeRef: React.RefObject<FolderTreeHandle>;
+  taskLibraryRef: React.RefObject<TaskLibraryHandle>;
+  workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
 }) {
   return (
     <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
@@ -126,10 +134,10 @@ function SystemsControlBar({
           <FoldersControls folderTreeRef={folderTreeRef} />
         )}
         {activeTab === "tasks" && (
-          <TasksControls />
+          <TasksControls taskLibraryRef={taskLibraryRef} />
         )}
         {activeTab === "workflows" && (
-          <WorkflowsControls />
+          <WorkflowsControls workflowBuilderRef={workflowBuilderRef} />
         )}
       </div>
     </div>
@@ -165,7 +173,7 @@ function FoldersControls({ folderTreeRef }: { folderTreeRef: React.RefObject<Fol
 }
 
 // Tasks tab controls
-function TasksControls() {
+function TasksControls({ taskLibraryRef }: { taskLibraryRef: React.RefObject<TaskLibraryHandle> }) {
   return (
     <>
       <div className="flex items-center gap-1">
@@ -182,6 +190,7 @@ function TasksControls() {
         size="sm"
         variant="outline"
         className="h-6 px-2 text-xs gap-1"
+        onClick={() => taskLibraryRef.current?.generateRecurringTasks()}
         data-testid="button-generate-recurring"
       >
         <CalendarIcon className="w-3 h-3" />
@@ -190,6 +199,7 @@ function TasksControls() {
       <Button
         size="sm"
         className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        onClick={() => taskLibraryRef.current?.openNewTemplateDialog()}
         data-testid="button-new-template"
       >
         <Plus className="w-3 h-3" />
@@ -200,7 +210,7 @@ function TasksControls() {
 }
 
 // Workflows tab controls
-function WorkflowsControls() {
+function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.RefObject<WorkflowBuilderHandle> }) {
   return (
     <>
       <div className="flex items-center gap-1">
@@ -216,6 +226,7 @@ function WorkflowsControls() {
       <Button
         size="sm"
         className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        onClick={() => workflowBuilderRef.current?.openNewWorkflowDialog()}
         data-testid="button-new-workflow"
       >
         <Plus className="w-3 h-3" />

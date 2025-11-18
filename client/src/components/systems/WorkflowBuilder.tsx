@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,15 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowTemplate, TaskTemplate } from "@shared/schema";
 
-export function WorkflowBuilder() {
+export interface WorkflowBuilderHandle {
+  openNewWorkflowDialog: () => void;
+}
+
+interface WorkflowBuilderProps {
+  searchQuery?: string;
+}
+
+export const WorkflowBuilder = forwardRef<WorkflowBuilderHandle, WorkflowBuilderProps>(({ searchQuery }, ref) => {
   const [showDialog, setShowDialog] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<WorkflowTemplate | null>(null);
   const { toast } = useToast();
@@ -153,6 +161,11 @@ export function WorkflowBuilder() {
     });
     setShowDialog(true);
   };
+
+  // Expose dialog opening function to parent via ref
+  useImperativeHandle(ref, () => ({
+    openNewWorkflowDialog,
+  }));
 
   const handleSaveWorkflow = () => {
     if (editingWorkflow) {
@@ -468,4 +481,6 @@ export function WorkflowBuilder() {
       </Dialog>
     </div>
   );
-}
+});
+
+WorkflowBuilder.displayName = "WorkflowBuilder";
