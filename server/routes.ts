@@ -2998,6 +2998,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Add a scope item to a template
+  app.post("/api/scope-templates/:id/add-item", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { scopeItem } = req.body;
+      
+      if (!scopeItem) {
+        return res.status(400).json({ error: "Scope item is required" });
+      }
+
+      const updatedTemplate = await storage.addItemToScopeTemplate(
+        req.params.id, 
+        scopeItem, 
+        companyId
+      );
+      
+      if (!updatedTemplate) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      console.error("Error adding item to scope template:", error);
+      if (error.message?.includes("not found")) {
+        return res.status(404).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to add item to template" });
+    }
+  });
+
   // ============================================================
   // SCOPE GEAR PHOTOS
   // ============================================================

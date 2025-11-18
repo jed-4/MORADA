@@ -320,6 +320,7 @@ export interface IStorage {
   updateScopeTemplate(id: string, template: Partial<InsertScopeTemplate>, companyId: string): Promise<ScopeTemplate | undefined>;
   deleteScopeTemplate(id: string, companyId: string): Promise<boolean>;
   applyScopeTemplate(templateId: string, projectId: string): Promise<ScopeItem[]>;
+  addItemToScopeTemplate(templateId: string, scopeItem: any, companyId: string): Promise<ScopeTemplate | undefined>;
   
   // Scope Gear Photos CRUD
   getScopeGearPhotos(scopeItemId: string): Promise<ScopeGearPhoto[]>;
@@ -7973,6 +7974,61 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in applyScopeTemplate:", error);
       return [];
+    }
+  }
+
+  async addItemToScopeTemplate(templateId: string, scopeItem: any, companyId: string): Promise<ScopeTemplate | undefined> {
+    try {
+      // Get the template
+      const [template] = await db.select().from(schema.scopeTemplates)
+        .where(and(
+          eq(schema.scopeTemplates.id, templateId),
+          eq(schema.scopeTemplates.companyId, companyId)
+        ))
+        .limit(1);
+      
+      if (!template) {
+        throw new Error("Template not found");
+      }
+
+      // Parse existing template data
+      const existingData = (template.templateData as any[]) || [];
+      
+      // Smart stage matching logic:
+      // Check if a stage with the same name already exists in the template
+      const itemStage = scopeItem.stage;
+      const stageExists = existingData.some((item: any) => item.stage === itemStage);
+      
+      // Create the new item to add (clean data, remove IDs and project references)
+      const newItem = {
+        title: scopeItem.title,
+        description: scopeItem.description,
+        itemType: scopeItem.itemType,
+        quantity: scopeItem.quantity,
+        rate: scopeItem.rate,
+        gearChecklist: scopeItem.gearChecklist,
+        stage: scopeItem.stage, // Keep the stage name for matching later
+      };
+      
+      // Add the new item to the template data
+      const updatedData = [...existingData, newItem];
+      
+      // Update the template
+      const [updatedTemplate] = await db.update(schema.scopeTemplates)
+        .set({ 
+          templateData: updatedData,
+          updatedAt: new Date() 
+        })
+        .where(and(
+          eq(schema.scopeTemplates.id, templateId),
+          eq(schema.scopeTemplates.companyId, companyId)
+        ))
+        .returning();
+      
+      return updatedTemplate;
+    } catch (error) {
+      console.error("Database error in addItemToScopeTemplate:", error);
+      return undefined;
     }
   }
 
