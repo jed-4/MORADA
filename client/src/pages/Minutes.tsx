@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { useParams } from "wouter";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -30,24 +31,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   ClipboardList,
   Plus,
   Search,
   MoreVertical,
   Edit3,
   Trash2,
-  Calendar,
+  Calendar as CalendarIcon,
   MapPin,
-  Users,
+  Users as UsersIcon,
   Building2,
+  Pencil,
 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -203,21 +197,41 @@ export default function Minutes() {
   });
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Meeting Minutes</h1>
-          <p className="text-muted-foreground mt-2">
-            Record and track meeting minutes with AI-powered summaries
-          </p>
+    <div className="flex flex-col h-full">
+      {/* Single h-9 Header Row */}
+      <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: Title + Count */}
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold">Meeting Minutes</h2>
+          <Badge variant="secondary" className="text-xs">
+            {filteredMinutes.length} {filteredMinutes.length === 1 ? 'minute' : 'minutes'}
+          </Badge>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => { setEditingMinute(null); form.reset(); }} data-testid="button-create-minute">
-              <Plus className="h-4 w-4 mr-2" />
-              New Meeting Minutes
-            </Button>
-          </DialogTrigger>
+
+        {/* Right: Search + Add Button */}
+        <div className="flex items-center gap-1.5">
+          <div className="relative w-64">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input
+              placeholder="Search minutes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-6 pl-7 text-xs border rounded-md"
+              data-testid="input-search"
+            />
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                onClick={() => { setEditingMinute(null); form.reset(); }}
+                size="sm"
+                className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-0.5"
+                data-testid="button-create-minute"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Add Minutes</span>
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingMinute ? "Edit Meeting Minutes" : "New Meeting Minutes"}</DialogTitle>
@@ -328,105 +342,151 @@ export default function Minutes() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search minutes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-                data-testid="input-search"
+      {/* Content Area - Card Grid */}
+      <div className="flex-1 overflow-auto p-3">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            Loading...
+          </div>
+        ) : filteredMinutes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <ClipboardList className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No meeting minutes found</h3>
+            <p className="text-muted-foreground text-sm">
+              {searchQuery ? "Try adjusting your search" : "Get started by creating your first meeting minutes"}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {filteredMinutes.map((minute) => (
+              <MinuteCard
+                key={minute.id}
+                minute={minute}
+                getProjectName={getProjectName}
+                contextProjectId={contextProjectId}
+                handleEdit={handleEdit}
+                handleDelete={handleDelete}
               />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Minute Card Component
+function MinuteCard({ 
+  minute, 
+  getProjectName, 
+  contextProjectId, 
+  handleEdit, 
+  handleDelete 
+}: {
+  minute: Minute;
+  getProjectName: (projectId: string | null) => string;
+  contextProjectId: string | null;
+  handleEdit: (minute: Minute) => void;
+  handleDelete: (id: string) => void;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const attendees = (minute.attendees as string[]) || [];
+  
+  return (
+    <Card
+      className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
+        isHovered ? 'shadow-xl scale-[1.01]' : 'shadow-sm'
+      }`}
+      onClick={() => window.location.href = `/minutes/${minute.id}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      data-testid={`minute-card-${minute.id}`}
+    >
+      <CardContent className="p-2 h-full flex flex-col justify-between">
+        {/* Top row: Title + Date Badge */}
+        <div className="flex items-start gap-1.5">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-1">
+              <h3 className="text-sm leading-5 truncate flex-1 text-foreground font-medium" data-testid={`minute-title-${minute.id}`}>
+                {minute.title}
+              </h3>
+              
+              {/* Date badge */}
+              <Badge 
+                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                style={{
+                  backgroundColor: '#bba7db15',
+                  color: '#bba7db',
+                  borderColor: '#bba7db30'
+                }}
+              >
+                <CalendarIcon className="h-2 w-2 mr-0.5" />
+                {format(new Date(minute.meetingDate), 'MMM d')}
+              </Badge>
+            </div>
+
+            {/* Metadata line below title */}
+            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+              {minute.location && (
+                <span className="flex items-center gap-0.5 truncate">
+                  <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
+                  {minute.location}
+                </span>
+              )}
+              {attendees.length > 0 && (
+                <span className="flex items-center gap-0.5">
+                  <UsersIcon className="h-2.5 w-2.5" />
+                  {attendees.length} {attendees.length === 1 ? 'attendee' : 'attendees'}
+                </span>
+              )}
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="text-center py-12 text-muted-foreground">Loading...</div>
-          ) : filteredMinutes.length === 0 ? (
-            <div className="text-center py-12">
-              <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No meeting minutes found</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery ? "Try adjusting your search" : "Get started by creating your first meeting minutes"}
-              </p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Meeting Title</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Attendees</TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredMinutes.map((minute) => (
-                  <TableRow key={minute.id} className="cursor-pointer hover-elevate" onClick={() => window.location.href = `/minutes/${minute.id}`}>
-                    <TableCell className="font-medium" data-testid={`minute-title-${minute.id}`}>{minute.title}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        {format(new Date(minute.meetingDate), "PPp")}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Building2 className="h-4 w-4" />
-                        {getProjectName(minute.projectId)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {minute.location && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <MapPin className="h-4 w-4" />
-                          {minute.location}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {((minute.attendees as string[]) || []).length > 0 && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Users className="h-4 w-4" />
-                          {((minute.attendees as string[]) || []).slice(0, 2).join(", ")}
-                          {((minute.attendees as string[]) || []).length > 2 && ` +${((minute.attendees as string[]) || []).length - 2}`}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" data-testid={`button-actions-${minute.id}`}>
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(minute)} data-testid={`menu-edit-${minute.id}`}>
-                            <Edit3 className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDelete(minute.id)} data-testid={`menu-delete-${minute.id}`} className="text-destructive">
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+
+          {/* Pencil icon on hover */}
+          {isHovered && (
+            <Pencil className="h-3 w-3 text-[#bba7db] shrink-0" />
           )}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+
+        {/* Bottom row: Project Badge + Actions */}
+        <div className="flex items-center justify-between">
+          {/* Project badge */}
+          {!contextProjectId && (
+            <Badge 
+              variant="outline" 
+              className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate truncate max-w-[180px]"
+            >
+              <Building2 className="h-2 w-2 mr-0.5" />
+              <span className="truncate">{getProjectName(minute.projectId)}</span>
+            </Badge>
+          )}
+          {contextProjectId && <div />}
+
+          {/* Actions dropdown */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-5 w-5 rounded-md hover-elevate active-elevate-2 flex items-center justify-center" data-testid={`button-actions-${minute.id}`}>
+                  <MoreVertical className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleEdit(minute)} data-testid={`menu-edit-${minute.id}`}>
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDelete(minute.id)} data-testid={`menu-delete-${minute.id}`} className="text-destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
