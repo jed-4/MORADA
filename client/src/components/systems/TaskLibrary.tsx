@@ -3,14 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { 
   Plus, 
   MoreVertical, 
@@ -453,145 +445,160 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             </div>
           </Card>
         ) : (
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[250px]">Title & Goal</TableHead>
-                  <TableHead className="w-[200px]">Info</TableHead>
-                  <TableHead className="w-[150px]">Role</TableHead>
-                  <TableHead className="w-[150px]">Frequency</TableHead>
-                  <TableHead className="w-[100px]">Status</TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {templates.map((template) => {
-                  const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
-                  const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
-                  const hasGoal = !!template.goal;
-                  
-                  return (
-                    <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
-                      <TableCell>
-                        <div className="font-medium">{template.title}</div>
-                        {hasGoal && (
-                          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                            <Target className="h-3 w-3" />
-                            {template.goal}
-                          </div>
+          <Card className="overflow-hidden">
+            {/* Header Row */}
+            <div 
+              className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
+              style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 100px 32px" }}
+            >
+              <div></div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Title & Goal</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Info</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Role</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Frequency</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+              <div></div>
+            </div>
+
+            {/* Template Rows */}
+            {templates.map((template) => {
+              const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
+              const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
+              const hasGoal = !!template.goal;
+              
+              return (
+                <div 
+                  key={template.id}
+                  className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                  style={{ gridTemplateColumns: "32px 1fr 180px 140px 140px 100px 32px" }}
+                  onClick={() => openEditTemplateDialog(template)}
+                  data-testid={`template-row-${template.id}`}
+                >
+                  {/* Leading space for consistency */}
+                  <div></div>
+
+                  {/* Title & Goal */}
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{template.title}</div>
+                    {hasGoal && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate flex items-center gap-1 mt-0.5">
+                        <Target className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{template.goal}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info Badges */}
+                  <div className="flex items-center gap-1 flex-wrap min-w-0">
+                    {template.category && (() => {
+                      const categoryInfo = getCategoryInfo(template.category);
+                      return (
+                        <Badge 
+                          variant="outline" 
+                          className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0"
+                          style={{ 
+                            borderColor: categoryInfo?.color || '#6B7280',
+                            color: categoryInfo?.color || '#6B7280'
+                          }}
+                        >
+                          {categoryInfo?.name || template.category}
+                        </Badge>
+                      );
+                    })()}
+                    {checklistCount > 0 && (
+                      <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                        <CheckSquare className="h-3 w-3" />
+                        {checklistCount}
+                      </Badge>
+                    )}
+                    {linksCount > 0 && (
+                      <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                        <Link className="h-3 w-3" />
+                        {linksCount}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Role */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                    {getRoleName(template.defaultRoleId)}
+                  </div>
+
+                  {/* Frequency */}
+                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                    {getFrequencyLabel(template)}
+                  </div>
+
+                  {/* Active Status */}
+                  <div className="flex items-center gap-1.5">
+                    {template.isActive ? (
+                      <>
+                        <Power className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                        <span className="capitalize text-sm text-gray-700 dark:text-gray-300">Active</span>
+                      </>
+                    ) : (
+                      <>
+                        <PowerOff className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                        <span className="capitalize text-sm text-gray-500 dark:text-gray-400">Inactive</span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`template-menu-${template.id}`}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => toggleActiveMutation.mutate({ 
+                            id: template.id, 
+                            isActive: !template.isActive 
+                          })}
+                          data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
+                        >
+                          {template.isActive ? (
+                            <>
+                              <PowerOff className="h-4 w-4 mr-2" />
+                              Deactivate
+                            </>
+                          ) : (
+                            <>
+                              <Power className="h-4 w-4 mr-2" />
+                              Activate
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        {template.isRecurringTemplate && (
+                          <DropdownMenuItem
+                            onClick={() => regenerateTasksMutation.mutate(template.id)}
+                            data-testid="menu-regenerate-tasks"
+                          >
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Regenerate Tasks
+                          </DropdownMenuItem>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {template.status && (
-                            <Badge variant={template.status === 'active' ? 'default' : template.status === 'draft' ? 'secondary' : 'outline'}>
-                              {template.status}
-                            </Badge>
-                          )}
-                          {template.category && (() => {
-                            const categoryInfo = getCategoryInfo(template.category);
-                            return (
-                              <Badge 
-                                variant="outline" 
-                                style={{ 
-                                  borderColor: categoryInfo?.color || '#6B7280',
-                                  color: categoryInfo?.color || '#6B7280'
-                                }}
-                              >
-                                {categoryInfo?.name || template.category}
-                              </Badge>
-                            );
-                          })()}
-                          {checklistCount > 0 && (
-                            <Badge variant="outline" className="gap-1">
-                              <CheckSquare className="h-3 w-3" />
-                              {checklistCount}
-                            </Badge>
-                          )}
-                          {linksCount > 0 && (
-                            <Badge variant="outline" className="gap-1">
-                              <Link className="h-3 w-3" />
-                              {linksCount}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {getRoleName(template.defaultRoleId)}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {getFrequencyLabel(template)}
-                      </TableCell>
-                      <TableCell>
-                        {template.isActive ? (
-                          <Badge variant="outline" className="gap-1">
-                            <Power className="h-3 w-3 text-green-600" />
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="gap-1">
-                            <PowerOff className="h-3 w-3" />
-                            Inactive
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`template-menu-${template.id}`}>
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => toggleActiveMutation.mutate({ 
-                                id: template.id, 
-                                isActive: !template.isActive 
-                              })}
-                              data-testid={template.isActive ? "menu-deactivate-template" : "menu-activate-template"}
-                            >
-                              {template.isActive ? (
-                                <>
-                                  <PowerOff className="h-4 w-4 mr-2" />
-                                  Deactivate
-                                </>
-                              ) : (
-                                <>
-                                  <Power className="h-4 w-4 mr-2" />
-                                  Activate
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            {template.isRecurringTemplate && (
-                              <DropdownMenuItem
-                                onClick={() => regenerateTasksMutation.mutate(template.id)}
-                                data-testid="menu-regenerate-tasks"
-                              >
-                                <RefreshCw className="h-4 w-4 mr-2" />
-                                Regenerate Tasks
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() => deleteTemplateMutation.mutate(template.id)}
-                              className="text-destructive"
-                              data-testid="menu-delete-template"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        <DropdownMenuItem
+                          onClick={() => deleteTemplateMutation.mutate(template.id)}
+                          className="text-destructive"
+                          data-testid="menu-delete-template"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              );
+            })}
           </Card>
         )}
       </div>
