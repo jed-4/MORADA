@@ -6,8 +6,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { User } from "@shared/schema";
 import ComingSoonPage from "./ComingSoonPage";
 
-// Tab components (to be built)
+// Tab components
 import UserOverview from "@/components/user-workspace/UserOverview";
+import UserCalendar from "@/components/user-workspace/UserCalendar";
 import UserTasks from "@/components/user-workspace/UserTasks";
 import UserSchedule from "@/components/user-workspace/UserSchedule";
 import UserTime from "@/components/user-workspace/UserTime";
@@ -15,6 +16,7 @@ import UserNotes from "@/components/user-workspace/UserNotes";
 
 const USER_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "" },
+  { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "calendar" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
   { id: "schedule", label: "Schedule", icon: CalendarIcon, path: "schedule" },
   { id: "time", label: "Time", icon: Timer, path: "time" },
@@ -62,6 +64,8 @@ export default function UserWorkspace() {
     switch (activeTab) {
       case "overview":
         return <UserOverview user={user} isOwnPage={isOwnPage} />;
+      case "calendar":
+        return <UserCalendar user={user} isOwnPage={isOwnPage} />;
       case "tasks":
         return <UserTasks user={user} isOwnPage={isOwnPage} />;
       case "schedule":
