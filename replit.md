@@ -3,7 +3,18 @@
 ## Overview
 BuildPro is a project management software for Australian residential builders, offering a dashboard-centric interface for managing construction projects, tasks, schedules, and teams. It aims to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking. Key capabilities include a customizable widget-based dashboard and comprehensive task management with Kanban boards and calendar integration. The business vision is to simplify complex construction project management, improving efficiency and profitability for builders.
 
-## Recent Changes (November 17, 2025)
+## Recent Changes (November 18, 2025)
+- **Task Library Assignee Column** (COMPLETED): Enhanced task template assignment with specific user assignment capability
+  - Added `assigneeType` field (default: "role") to distinguish between role-based and user-specific assignments
+  - Added `assigneeUserId` (FK to users.id) and `assigneeUserName` (cached) fields to taskTemplates schema
+  - Assignee column (140px) inserted between Frequency and Status columns in TaskLibrary grid
+  - Display logic: user assignments show badge with username, role assignments show role name, both fallback to "-"
+  - Edit modal features toggle buttons (Role/Specific User) with respective dropdowns for selection
+  - Backend enforces multi-tenant security: user lookups filtered by companyId to prevent cross-tenant data leaks
+  - Sorting logic mirrors display logic for consistent UX (assigneeUserName OR "-" for users, role name OR "-" for roles)
+  - All edge cases handled: missing usernames, missing roles, and data consistency maintained
+
+## Previous Changes (November 17, 2025)
 - **Projects Board UX Enhancement** (COMPLETED): ClickUp 2025 aesthetic consistency and smart column widths
   - Changed groupBy icon from Users to Layers for clearer grouping representation
   - Updated column styling to match Tasks board: rounded-xl, bg-muted/20, border-border/50 for softer appearance
