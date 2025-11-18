@@ -22,6 +22,7 @@ import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { TaskCalendar } from "@/components/TaskCalendar";
 import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
+import { Views } from "react-big-calendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
@@ -50,6 +51,10 @@ export default function BusinessTasks() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showNavigation, setShowNavigation] = useState(false);
+  
+  // Calendar state
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [calendarView, setCalendarView] = useState<typeof Views[keyof typeof Views]>(Views.WEEK);
 
   // Scroll navigation functions
   const scrollLeft = () => {
@@ -210,19 +215,103 @@ export default function BusinessTasks() {
           </button>
         </div>
 
-        {/* Right: Saved Views */}
-        <TaskViewsManager 
-          currentViewType={activeTab}
-          currentFilters={filters as TaskViewFilters}
-          currentGroupBy={groupBy}
-          onViewSelect={(view: TaskView) => {
-            setActiveTab(view.viewType);
-            setFilters(view.filters as FilterState);
-            setGroupBy(view.groupBy);
-            setSelectedViewId(view.id);
-          }}
-          selectedViewId={selectedViewId}
-        />
+        {/* Right: Calendar Controls OR Saved Views */}
+        {activeTab === "calendar" ? (
+          <div className="flex items-center gap-1.5">
+            {/* Calendar Navigation */}
+            <button
+              onClick={() => {
+                const newDate = new Date(calendarDate);
+                if (calendarView === Views.DAY) {
+                  newDate.setDate(newDate.getDate() - 1);
+                } else if (calendarView === Views.WEEK) {
+                  newDate.setDate(newDate.getDate() - 7);
+                } else {
+                  newDate.setMonth(newDate.getMonth() - 1);
+                }
+                setCalendarDate(newDate);
+              }}
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-calendar-prev"
+            >
+              <ChevronLeft className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setCalendarDate(new Date())}
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+              data-testid="button-calendar-today"
+            >
+              Today
+            </button>
+            <button
+              onClick={() => {
+                const newDate = new Date(calendarDate);
+                if (calendarView === Views.DAY) {
+                  newDate.setDate(newDate.getDate() + 1);
+                } else if (calendarView === Views.WEEK) {
+                  newDate.setDate(newDate.getDate() + 7);
+                } else {
+                  newDate.setMonth(newDate.getMonth() + 1);
+                }
+                setCalendarDate(newDate);
+              }}
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-calendar-next"
+            >
+              <ChevronRight className="w-3 h-3" />
+            </button>
+
+            {/* View Switcher */}
+            <div className="flex items-center gap-0.5 ml-2">
+              <button
+                onClick={() => setCalendarView(Views.DAY)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  calendarView === Views.DAY
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-view-day"
+              >
+                Day
+              </button>
+              <button
+                onClick={() => setCalendarView(Views.WEEK)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  calendarView === Views.WEEK
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-view-week"
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setCalendarView(Views.MONTH)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  calendarView === Views.MONTH
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-view-month"
+              >
+                Month
+              </button>
+            </div>
+          </div>
+        ) : (
+          <TaskViewsManager 
+            currentViewType={activeTab}
+            currentFilters={filters as TaskViewFilters}
+            currentGroupBy={groupBy}
+            onViewSelect={(view: TaskView) => {
+              setActiveTab(view.viewType);
+              setFilters(view.filters as FilterState);
+              setGroupBy(view.groupBy);
+              setSelectedViewId(view.id);
+            }}
+            selectedViewId={selectedViewId}
+          />
+        )}
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
@@ -456,6 +545,10 @@ export default function BusinessTasks() {
                 setEditingTask(task);
                 setShowCreateTaskDialog(true);
               }}
+              currentDate={calendarDate}
+              currentView={calendarView}
+              onNavigate={setCalendarDate}
+              onViewChange={setCalendarView}
             />
           </div>
         )}

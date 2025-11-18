@@ -1,11 +1,8 @@
 import { Calendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
-import { useState, useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, User } from "lucide-react";
+import { User } from "lucide-react";
 import type { Task, FieldCategoryWithOptions } from "@shared/schema";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -18,6 +15,10 @@ interface TaskCalendarProps {
   tasks: Task[];
   projectId: string;
   onTaskClick: (task: Task) => void;
+  currentDate: Date;
+  currentView: typeof Views[keyof typeof Views];
+  onNavigate: (date: Date) => void;
+  onViewChange: (view: typeof Views[keyof typeof Views]) => void;
 }
 
 interface CalendarEvent {
@@ -129,9 +130,15 @@ const TaskCalendarEvent = ({ event }: { event: CalendarEvent }) => {
   );
 };
 
-export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [currentView, setCurrentView] = useState(Views.WEEK);
+export function TaskCalendar({ 
+  tasks, 
+  projectId, 
+  onTaskClick,
+  currentDate,
+  currentView,
+  onNavigate,
+  onViewChange,
+}: TaskCalendarProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -183,71 +190,6 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
     });
   };
 
-  const handleNavigate = (date: Date) => {
-    setCurrentDate(date);
-  };
-
-  const handleViewChange = (view: any) => {
-    setCurrentView(view);
-  };
-
-  // Custom toolbar
-  const CustomToolbar = ({ label, onNavigate, onView }: any) => (
-    <div className="flex items-center justify-between mb-4 p-4 border-b">
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onNavigate("PREV")}
-          data-testid="button-calendar-prev"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onNavigate("TODAY")}
-          data-testid="button-calendar-today"
-        >
-          Today
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onNavigate("NEXT")}
-          data-testid="button-calendar-next"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <CalendarIcon className="h-5 w-5" />
-          {label}
-        </h2>
-      </div>
-
-      <div className="flex items-center gap-1">
-        {[
-          { key: "month", value: Views.MONTH },
-          { key: "week", value: Views.WEEK },
-          { key: "day", value: Views.DAY }
-        ].map(({ key, value }) => (
-          <Button
-            key={key}
-            variant={currentView === value ? "default" : "outline"}
-            size="sm"
-            onClick={() => onView(value)}
-            data-testid={`button-view-${key}`}
-          >
-            {key.charAt(0).toUpperCase() + key.slice(1)}
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
     <div className="h-full w-full flex flex-col" data-testid="task-calendar">
       <div className="flex-1 min-h-0">
@@ -259,17 +201,17 @@ export function TaskCalendar({ tasks, projectId, onTaskClick }: TaskCalendarProp
           style={{ height: "100%" }}
           view={currentView}
           date={currentDate}
-          onNavigate={handleNavigate}
-          onView={handleViewChange}
+          onNavigate={onNavigate}
+          onView={onViewChange}
           onSelectEvent={handleSelectEvent}
           onEventDrop={handleEventDrop as any}
           onEventResize={handleEventDrop as any}
           draggableAccessor={() => true}
           resizable
           popup
+          toolbar={false}
           components={{
             event: TaskCalendarEvent,
-            toolbar: CustomToolbar,
           }}
           formats={{
             timeGutterFormat: "HH:mm",
