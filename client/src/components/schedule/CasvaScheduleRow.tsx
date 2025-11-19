@@ -43,8 +43,8 @@ export function CasvaScheduleRow({
   return (
     <>
       {/* Title Column with Drag Handle & Collapse */}
-      <TableCell className="h-10 py-1" style={{ paddingLeft: isSubtask ? '24px' : '8px' }}>
-        <div className="flex items-center gap-2">
+      <TableCell className="h-9 py-0" style={{ paddingLeft: isSubtask ? '20px' : '8px' }}>
+        <div className="flex items-center gap-1.5">
           {isDraggable && (
             <div 
               className="drag-handle-enhanced cursor-grab active:cursor-grabbing" 
@@ -52,7 +52,7 @@ export function CasvaScheduleRow({
               {...dragListeners}
               data-testid="drag-handle"
             >
-              <GripVertical className="h-4 w-4 text-muted-foreground" />
+              <GripVertical className="h-3 w-3 text-muted-foreground" />
             </div>
           )}
           
@@ -62,23 +62,19 @@ export function CasvaScheduleRow({
                 e.stopPropagation();
                 onToggleCollapse();
               }}
-              className="p-0.5 hover-elevate rounded transition-transform duration-200"
+              className="p-0.5 hover-elevate rounded transition-transform"
               data-testid="button-toggle-collapse"
             >
               {isCollapsed ? (
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
               ) : (
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-3 h-3 text-muted-foreground" />
               )}
             </button>
           )}
           
           <span 
-            className="font-medium text-sm truncate" 
-            style={{ 
-              fontFamily: isParent ? 'Clash Grotesk, sans-serif' : 'Manrope, sans-serif',
-              fontSize: isParent ? '14px' : '13px'
-            }}
+            className="font-medium text-xs truncate" 
             data-testid="schedule-item-title"
           >
             {item.name}
@@ -87,15 +83,15 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Assignee & Role Column */}
-      <TableCell className="w-48 h-10 py-1">
-        <div className="flex items-center gap-1.5">
+      <TableCell className="w-48 h-9 py-0">
+        <div className="flex items-center gap-1">
           {item.assignedToName && (
-            <span className="text-xs text-muted-foreground truncate" data-testid="schedule-item-assignee">
+            <span className="text-[10px] text-muted-foreground truncate" data-testid="schedule-item-assignee">
               {item.assignedToName}
             </span>
           )}
           {item.type && (
-            <Badge variant="outline" className="text-xs h-5 px-1.5">
+            <Badge variant="outline" className="text-[10px] h-4 px-1">
               {item.type}
             </Badge>
           )}
@@ -103,19 +99,19 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Due Date & Duration Column */}
-      <TableCell className="w-40 h-10 py-1">
-        <div className="flex flex-col">
-          <span className="text-xs text-muted-foreground" data-testid="schedule-item-date-range">
+      <TableCell className="w-40 h-9 py-0">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground" data-testid="schedule-item-date-range">
             {dateRange}
           </span>
-          <span className="text-xs text-muted-foreground/70">
-            {duration} {duration === 1 ? 'day' : 'days'}
+          <span className="text-[10px] text-muted-foreground/70">
+            · {duration}d
           </span>
         </div>
       </TableCell>
 
       {/* Chips Column (RFQ/PO) */}
-      <TableCell className="w-32 h-10 py-1">
+      <TableCell className="w-32 h-9 py-0">
         <div className="flex items-center gap-1 flex-wrap">
           {item.status && (
             <ColorChip type="status" value={item.status} />
@@ -128,15 +124,15 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Actions Column */}
-      <TableCell className="w-12 h-10 py-1">
+      <TableCell className="w-12 h-9 py-0">
         <Button
           variant="ghost"
           size="icon"
-          className="casva-edit-icon h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="casva-edit-icon h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={onEdit}
           data-testid={`button-edit-schedule-${item.id}`}
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Pencil className="h-3 w-3" />
         </Button>
       </TableCell>
     </>
