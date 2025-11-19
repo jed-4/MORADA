@@ -478,84 +478,71 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
 
   return (
     <div className="flex flex-col h-full" data-testid="notes-page">
-      {/* Single Row Header - ClickUp 2025 Pattern */}
-      <div className="h-9 px-4 flex items-center gap-2 border-b bg-background">
-        {/* Title */}
-        <h2 className="text-sm font-semibold">
-          {effectiveProjectId === null ? 'Business Notes' : effectiveProjectId ? 'Project Notes' : 'All Notes'}
-        </h2>
-
-        {/* Search */}
-        <div className="relative w-48">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search notes..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-6 pl-7 text-xs"
-            data-testid="notes-search-input"
-          />
+      {/* 2-Row Header - ClickUp 2025 Pattern */}
+      <div className="border-b bg-background">
+        {/* Row 1: Title */}
+        <div className="h-9 px-4 flex items-center">
+          <h2 className="text-sm font-semibold">
+            {effectiveProjectId === null ? 'Business Notes' : effectiveProjectId ? 'Project Notes' : 'All Notes'}
+          </h2>
         </div>
 
-        {/* Category Filter Chips */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+        {/* Row 2: Controls & Filters */}
+        <div className="h-9 px-4 flex items-center gap-2">
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search notes..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-6 pl-7 text-xs"
+              data-testid="notes-search-input"
+            />
+          </div>
+
+          {/* Category Filter */}
+          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <SelectTrigger className="h-6 w-40 text-xs gap-1" data-testid="notes-category-filter">
               <Filter className="h-3 w-3" />
-              <span>{selectedCategory === "All" ? "Category" : selectedCategory}</span>
-              {selectedCategory !== "All" && (
-                <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                  1
-                </Badge>
-              )}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => setSelectedCategory("All")}>
-              All Categories
-            </DropdownMenuItem>
-            {Array.from(new Set(notes.map(note => note.category))).map((category) => (
-              <DropdownMenuItem key={category} onClick={() => setSelectedCategory(category)}>
-                {category}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Categories</SelectItem>
+              {Array.from(new Set(notes.map(note => note.category))).map((category) => (
+                <SelectItem key={category} value={category}>
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        {/* Sort Filter Chip */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+          {/* Sort */}
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="h-6 w-36 text-xs gap-1" data-testid="notes-sort-filter">
               <ArrowUpDown className="h-3 w-3" />
-              <span>
-                {sortBy === "newest" ? "Newest" : sortBy === "oldest" ? "Oldest" : "A-Z"}
-              </span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => setSortBy("newest")}>
-              Newest First
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setSortBy("oldest")}>
-              Oldest First
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setSortBy("alphabetical")}>
-              Alphabetical
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="alphabetical">Alphabetical</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <div className="flex-1" />
+          <div className="flex-1" />
 
-        {/* Add Note Button - Matches Tasks Page */}
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setIsAddingNote(true)} 
-          data-testid="add-note-button"
-        >
-          <Plus className="w-3 h-3" />
-          <span>Add Note</span>
-        </button>
+          {/* Add Note Button */}
+          <Button 
+            size="sm"
+            onClick={() => setIsAddingNote(true)} 
+            className="h-6 px-2 text-xs gap-1"
+            data-testid="add-note-button"
+          >
+            <Plus className="h-3 w-3" />
+            Add Note
+          </Button>
+        </div>
       </div>
 
       {/* Notes Display */}
