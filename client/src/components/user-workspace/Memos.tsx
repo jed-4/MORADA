@@ -97,12 +97,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
-      toast({ title: "Note created successfully" });
+      toast({ title: "Memo created successfully" });
       handleCloseDialog();
     },
     onError: () => {
       toast({ 
-        title: "Failed to create note",
+        title: "Failed to create memo",
         variant: "destructive" 
       });
     },
@@ -115,12 +115,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
-      toast({ title: "Note updated successfully" });
+      toast({ title: "Memo updated successfully" });
       handleCloseDialog();
     },
     onError: () => {
       toast({ 
-        title: "Failed to update note",
+        title: "Failed to update memo",
         variant: "destructive" 
       });
     },
@@ -133,11 +133,11 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
-      toast({ title: "Note deleted successfully" });
+      toast({ title: "Memo deleted successfully" });
     },
     onError: () => {
       toast({ 
-        title: "Failed to delete note",
+        title: "Failed to delete memo",
         variant: "destructive" 
       });
     },
@@ -153,7 +153,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
     },
     onError: (error: any) => {
       toast({ 
-        title: error?.message || "Failed to update note",
+        title: error?.message || "Failed to update memo",
         variant: "destructive" 
       });
     },
@@ -210,7 +210,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this note?")) {
+    if (confirm("Are you sure you want to delete this memo?")) {
       deleteMutation.mutate(id);
     }
   };
@@ -229,21 +229,21 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
 
   if (!isOwnPage) {
     return (
-      <div className="p-4" data-testid="user-notes">
+      <div className="p-4" data-testid="memos-private">
         <div className="text-center py-8 text-muted-foreground">
-          Personal notes are private
+          Personal memos are private
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full" data-testid="user-notes">
+    <div className="flex flex-col h-full" data-testid="memos">
       {/* 2-Row Header - BuildPro Pattern */}
       <div className="border-b bg-background">
         {/* Row 1: Title */}
         <div className="h-9 px-4 flex items-center">
-          <h2 className="text-sm font-semibold">Personal Notes</h2>
+          <h2 className="text-sm font-semibold">Memos</h2>
         </div>
 
         {/* Row 2: Controls & Filters */}
@@ -252,11 +252,11 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="Search notes..."
+              placeholder="Search memos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="h-6 pl-7 text-xs"
-              data-testid="input-search-notes"
+              data-testid="input-search-memos"
             />
           </div>
 
@@ -326,10 +326,10 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
             size="sm"
             onClick={() => handleOpenDialog()}
             className="h-6 px-2 text-xs gap-1"
-            data-testid="button-add-note"
+            data-testid="button-add-memo"
           >
             <Plus className="h-3 w-3" />
-            New Note
+            New Memo
           </Button>
         </div>
       </div>
@@ -338,13 +338,13 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
       <div className="flex-1 overflow-auto p-4">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
-            Loading notes...
+            Loading memos...
           </div>
         ) : sortedNotes.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             {notes.length === 0 
-              ? "No notes yet. Create your first note to get started!"
-              : "No notes match your filters."}
+              ? "No memos yet. Create your first memo to get started!"
+              : "No memos match your filters."}
           </div>
         ) : (
           <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
@@ -352,14 +352,14 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
               <div
                 key={note.id}
                 className="group border rounded-md p-3 bg-card hover-elevate transition-all"
-                data-testid={`note-card-${note.id}`}
+                data-testid={`memo-card-${note.id}`}
               >
                 {/* Note Header */}
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-sm truncate">{note.title}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {format(new Date(note.createdAt), "MMM d, yyyy")}
+                      {format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a")}
                     </p>
                   </div>
                   
@@ -434,12 +434,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
         <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
-              {editingNote ? "Edit Note" : "New Personal Note"}
+              {editingNote ? "Edit Memo" : "New Personal Memo"}
             </DialogTitle>
             <DialogDescription>
               {editingNote 
-                ? "Update your personal note" 
-                : "Create a new personal note for quick capture"}
+                ? "Update your personal memo" 
+                : "Create a new personal memo for quick capture"}
             </DialogDescription>
           </DialogHeader>
 
@@ -452,9 +452,9 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
               <Input
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
-                placeholder="Note title..."
+                placeholder="Memo title..."
                 className="h-9"
-                data-testid="input-note-title"
+                data-testid="input-memo-title"
               />
             </div>
 
@@ -467,7 +467,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
                 <RichTextEditor
                   content={noteContent}
                   onChange={setNoteContent}
-                  placeholder="Write your note here..."
+                  placeholder="Write your memo here..."
                 />
               </div>
             </div>
@@ -477,18 +477,18 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
             <Button
               variant="ghost"
               onClick={handleCloseDialog}
-              data-testid="button-cancel-note"
+              data-testid="button-cancel-memo"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
               disabled={createMutation.isPending || updateMutation.isPending}
-              data-testid="button-save-note"
+              data-testid="button-save-memo"
             >
               {createMutation.isPending || updateMutation.isPending 
                 ? "Saving..." 
-                : editingNote ? "Update Note" : "Create Note"}
+                : editingNote ? "Update Memo" : "Create Memo"}
             </Button>
           </div>
         </DialogContent>

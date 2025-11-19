@@ -571,11 +571,11 @@ export default function Notes() {
           {filteredNotes.map((note) => (
             <div 
               key={note.id} 
-              className="group border rounded-md p-3 bg-card hover-elevate transition-all cursor-pointer"
+              className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
               data-testid={`note-card-${note.id}`}
               onDoubleClick={() => handleEditNote(note)}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-2">
                 {/* Pin indicator */}
                 {note.pinned && (
                   <div className="flex-shrink-0 pt-0.5">
