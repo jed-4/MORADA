@@ -1073,12 +1073,12 @@ export default function Tasks() {
       {/* Content Area with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <div className="flex-1 overflow-auto">
-          <TabsContent value="kanban" className="h-full m-0 data-[state=active]:flex">
+          <TabsContent value="kanban" className="h-full m-0 p-2 data-[state=active]:flex">
             <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
           </TabsContent>
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <div className="flex-1 overflow-auto p-1">
+            <div className="flex-1 overflow-auto p-2">
               <CasvaTaskList
                 tasks={effectivelyFilteredTasks}
                 onEditTask={(task: Task) => setEditingTask(task)}
@@ -1095,7 +1095,7 @@ export default function Tasks() {
             </div>
           </TabsContent>
 
-          <TabsContent value="calendar" className="h-full m-0 data-[state=active]:flex">
+          <TabsContent value="calendar" className="h-full m-0 p-2 data-[state=active]:flex">
             <EnhancedCalendar
               events={tasksToCalendarEvents(effectivelyFilteredTasks)}
               date={calendarDate}
@@ -1119,7 +1119,7 @@ export default function Tasks() {
             const viewFilteredTasks = applyTaskFilters(allTasks, combinedFilters);
             
             return (
-              <TabsContent key={view.id} value={view.id} className="h-full m-0 data-[state=active]:flex">
+              <TabsContent key={view.id} value={view.id} className="h-full m-0 p-2 data-[state=active]:flex">
                 {view.viewType === "kanban" ? (
                   <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
                 ) : view.viewType === "calendar" ? (
@@ -1137,7 +1137,7 @@ export default function Tasks() {
                     onEventResize={handleTaskResize}
                   />
                 ) : (
-                  <div className="flex-1 overflow-auto p-4">
+                  <div className="flex-1 overflow-auto">
                     <TaskListCompact tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
                   </div>
                 )}
