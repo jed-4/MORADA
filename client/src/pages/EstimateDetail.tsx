@@ -538,6 +538,41 @@ export default function EstimateDetail() {
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<any>("");
 
+  // State to track collapsed parent items
+  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
+
+  // State for bulk selection
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  
+  // Bulk action dialogs
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
+  const [isBulkGroupDialogOpen, setIsBulkGroupDialogOpen] = useState(false);
+  const [bulkActionStatus, setBulkActionStatus] = useState<string>('');
+  const [bulkActionGroup, setBulkActionGroup] = useState<string>('');
+  
+  // RFQ dialog
+  const [isCreateRFQOpen, setIsCreateRFQOpen] = useState(false);
+  
+  // Single item delete dialog
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  
+  // Group delete dialog
+  const [isDeleteGroupDialogOpen, setIsDeleteGroupDialogOpen] = useState(false);
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  
+  // Group action handlers
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
+  const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
+
+  // Edit item dialog state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
   // Column configuration state
   type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
   const defaultColumns: ColumnConfig[] = [
@@ -2473,37 +2508,6 @@ export default function EstimateDetail() {
     });
   };
 
-  // State to track collapsed parent items
-  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
-
-  // State for bulk selection
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
-  
-  // Bulk action dialogs
-  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
-  const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
-  const [isBulkGroupDialogOpen, setIsBulkGroupDialogOpen] = useState(false);
-  const [bulkActionStatus, setBulkActionStatus] = useState<string>('');
-  const [bulkActionGroup, setBulkActionGroup] = useState<string>('');
-  
-  // RFQ dialog
-  const [isCreateRFQOpen, setIsCreateRFQOpen] = useState(false);
-  
-  // Single item delete dialog
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
-  
-  // Group delete dialog
-  const [isDeleteGroupDialogOpen, setIsDeleteGroupDialogOpen] = useState(false);
-  const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
-  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
-  
-  // Group action handlers
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-  const [parentGroupForNewSubgroup, setParentGroupForNewSubgroup] = useState<string | null>(null);
-  const [preselectedGroupId, setPreselectedGroupId] = useState<string | null>(null);
-
   // Calculate group totals (memoized for performance)
   const groupTotalsMap = useMemo(() => {
     const totalsMap: Record<string, ReturnType<typeof calculateGroupTotals>> = {};
@@ -2537,10 +2541,6 @@ export default function EstimateDetail() {
       });
     }
   }, [isAddItemOpen, preselectedGroupId, form]);
-
-  // Edit item dialog state
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   // Populate edit form when editing item changes
   React.useEffect(() => {
