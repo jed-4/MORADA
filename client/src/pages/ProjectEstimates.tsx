@@ -5,7 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { 
   Plus, 
@@ -16,7 +16,9 @@ import {
   MoreHorizontal,
   DollarSign,
   Search,
-  Trash2
+  Trash2,
+  LayoutGrid,
+  Columns3
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -26,12 +28,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +43,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { type Estimate, type EstimateSummary, type Project, type FieldOption } from "@shared/schema";
+import { usePageTitle } from "@/hooks/usePageTitle";
 
 interface ProjectEstimatesParams {
   projectId: string;
@@ -56,6 +57,7 @@ export default function ProjectEstimates() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<'grid' | 'kanban'>('grid');
 
   if (!projectId) {
     return <div>Invalid project ID</div>;
@@ -64,7 +66,6 @@ export default function ProjectEstimates() {
   const handleNewEstimate = () => {
     setLocation(`/projects/${projectId}/estimates/new`);
   };
-
 
   // Fetch project details
   const { data: project } = useQuery<Project>({
@@ -80,6 +81,10 @@ export default function ProjectEstimates() {
     },
     enabled: !!projectId,
   });
+
+  // Set page title
+  const pageTitle = project ? `${project.name} · Estimates` : 'Project · Estimates';
+  usePageTitle(pageTitle);
 
   // Fetch estimates for this specific project
   const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
@@ -160,7 +165,6 @@ export default function ProjectEstimates() {
 
   const formatCurrency = (amount: number) => {
     const dollars = amount / 100;
-    // Check if it's a whole number
     const isWholeNumber = dollars % 1 === 0;
     
     return new Intl.NumberFormat('en-AU', {
@@ -177,18 +181,18 @@ export default function ProjectEstimates() {
       return (
         <Badge 
           variant="secondary" 
+          className="h-4 text-[10px] px-1.5"
           style={{ 
             backgroundColor: `${statusOption.color}20`,
             color: statusOption.color,
-            borderColor: statusOption.color
+            borderColor: `${statusOption.color}40`
           }}
         >
           {statusOption.name}
         </Badge>
       );
     }
-    // Fallback for estimates without status or color
-    return <Badge variant="outline">{statusOption?.name || estimate.status || 'Unknown'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-[10px] px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
   // Filter estimates based on search and filters
@@ -202,16 +206,6 @@ export default function ProjectEstimates() {
       return matchesSearch && matchesStatus;
     });
   }, [estimates, searchTerm, selectedStatus]);
-
-  // Calculate status counts
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    estimates.forEach(est => {
-      const status = est.status || 'draft';
-      counts[status] = (counts[status] || 0) + 1;
-    });
-    return counts;
-  }, [estimates]);
 
   const EstimateCard = ({ estimate }: { estimate: Estimate }) => {
     // Fetch summary for this estimate
@@ -229,218 +223,256 @@ export default function ProjectEstimates() {
       enabled: !!estimate.id,
     });
 
+    const handleEstimateClick = () => {
+      setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
+    };
+
     return (
       <Card 
         key={estimate.id} 
-        className="hover-elevate cursor-pointer"
-        onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
-        data-testid={`card-estimate-${estimate.id}`}
+        className="hover-elevate p-3 cursor-pointer border rounded-xl"
+        data-testid={`estimate-card-${estimate.id}`}
+        onClick={handleEstimateClick}
       >
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0 pb-4">
+        <div className="flex items-center gap-3">
+          {/* Left: Estimate Name */}
           <div className="flex-1 min-w-0">
-            <CardTitle 
-              className="text-lg truncate" 
-              data-testid={`link-estimate-title-${estimate.id}`}
-            >
+            <h3 className="font-medium text-sm line-clamp-1">
               {estimate.name}
-            </CardTitle>
+            </h3>
           </div>
-          <div className="flex flex-wrap items-center gap-6">
-            {summary && (
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground">Total Value</p>
-                <p className="text-lg font-semibold" data-testid={`text-estimate-total-${estimate.id}`}>
-                  {formatCurrency(summary.total)}
-                </p>
-              </div>
-            )}
-            {!summary && (
-              <div className="text-muted-foreground text-sm">Loading...</div>
-            )}
-            <div className="flex items-center gap-2">
-              {getStatusBadge(estimate)}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="icon" data-testid={`button-estimate-menu-${estimate.id}`}>
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem 
-                    data-testid={`button-open-estimate-${estimate.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
-                    }}
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Open estimate
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem 
-                    data-testid={`button-clone-estimate-${estimate.id}`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Copy className="w-4 h-4 mr-2" />
-                    Create Version
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    data-testid={`button-toggle-lock-${estimate.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked });
-                    }}
-                    disabled={toggleLockMutation.isPending}
-                  >
-                    {estimate.isLocked ? (
-                      <>
-                        <Unlock className="w-4 h-4 mr-2" />
-                        Unlock
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-4 h-4 mr-2" />
-                        Lock
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem 
-                    data-testid={`button-delete-estimate-${estimate.id}`}
-                    className="text-destructive focus:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEstimateToDelete(estimate.id);
-                      setDeleteDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+          
+          {/* Right: Status Badge (fixed width for alignment) */}
+          <div className="flex-shrink-0 w-24 flex justify-end">
+            {getStatusBadge(estimate)}
           </div>
-        </CardHeader>
+          
+          {/* Right: Total Value */}
+          <div className="flex-shrink-0 text-right w-28">
+            <p className="font-semibold text-sm" data-testid={`text-estimate-total-${estimate.id}`}>
+              {summary ? formatCurrency(summary.total) : 'Loading...'}
+            </p>
+          </div>
+
+          {/* Menu */}
+          <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-estimate-menu-${estimate.id}`}>
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  data-testid={`button-open-estimate-${estimate.id}`}
+                  onClick={() => setLocation(`/projects/${projectId}/estimates/${estimate.id}`)}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Open estimate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  data-testid={`button-clone-estimate-${estimate.id}`}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Create Version
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  data-testid={`button-toggle-lock-${estimate.id}`}
+                  onClick={() => toggleLockMutation.mutate({ estimateId: estimate.id, isLocked: estimate.isLocked })}
+                  disabled={toggleLockMutation.isPending}
+                >
+                  {estimate.isLocked ? (
+                    <>
+                      <Unlock className="w-4 h-4 mr-2" />
+                      Unlock
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4 mr-2" />
+                      Lock
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  data-testid={`button-delete-estimate-${estimate.id}`}
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    setEstimateToDelete(estimate.id);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
       </Card>
     );
   };
 
   return (
-    <div className="p-6 space-y-6" data-testid="project-estimates-page">
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">
-              {project ? `${project.name} Estimates` : 'Project Estimates'}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage estimates for this project
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
-              <Plus className="w-4 h-4 mr-2" />
-              New Estimate
-            </Button>
-          </div>
+    <div className="flex flex-col h-full" data-testid="project-estimates-page">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Title + Count */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            {pageTitle}
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-estimate-count">
+            {filteredEstimates.length} estimates
+          </Badge>
         </div>
-        
-        {/* Section separator */}
-        <div className="border-b border-border"></div>
 
-        {/* Stats and Filters */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Badge variant="secondary" data-testid="text-estimate-count">
-              {estimates.length} Total
-            </Badge>
-            {estimateStatuses
-              .filter(status => status.isActive)
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .slice(0, 3)
-              .map(status => {
-                const count = statusCounts[status.key] || 0;
-                return (
-                  <Badge 
-                    key={status.key} 
-                    variant="outline" 
-                    style={{ 
-                      borderColor: status.color || '#6B7280',
-                      color: status.color || '#6B7280'
-                    }}
-                    data-testid={`text-status-count-${status.key}`}
-                  >
-                    {count} {status.name}
-                  </Badge>
-                );
-              })}
+        {/* Right: New Estimate Button */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleNewEstimate}
+            data-testid="button-new-estimate"
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Estimate</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2 - View Tabs (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setCurrentView('grid')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              currentView === 'grid' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-grid-view"
+          >
+            <LayoutGrid className="w-3 h-3" />
+            <span>Grid</span>
+          </button>
+          <button
+            onClick={() => setCurrentView('kanban')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              currentView === 'kanban' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-kanban-view"
+          >
+            <Columns3 className="w-3 h-3" />
+            <span>Kanban</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Row 3 - Search & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search + Filter */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="estimates-search-input"
+            />
           </div>
-
-          <div className="flex items-center gap-4">
-            <div className="relative max-w-sm">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search estimates..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-                data-testid="project-estimates-search-input"
-              />
-            </div>
-            
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="w-48" data-testid="project-estimates-status-filter">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All Status</SelectItem>
+          
+          {/* Status Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="filter-status-popover"
+              >
+                <span>Status</span>
+                {selectedStatus !== "All" && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="start">
+              <div className="space-y-1">
+                <button
+                  onClick={() => setSelectedStatus("All")}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    selectedStatus === "All" ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="filter-status-all"
+                >
+                  All Status
+                </button>
                 {estimateStatuses
                   .filter(status => status.isActive)
                   .sort((a, b) => a.sortOrder - b.sortOrder)
                   .map(status => (
-                    <SelectItem key={status.key} value={status.key}>
+                    <button
+                      key={status.key}
+                      onClick={() => setSelectedStatus(status.key)}
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                        selectedStatus === status.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      }`}
+                      data-testid={`filter-status-${status.key}`}
+                    >
                       {status.name}
-                    </SelectItem>
+                    </button>
                   ))}
-              </SelectContent>
-            </Select>
-          </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
-      {/* Estimates Display */}
-      {estimatesLoading ? (
-        <div className="text-center py-8">
-          <div className="text-muted-foreground">Loading estimates...</div>
-        </div>
-      ) : filteredEstimates.length === 0 ? (
-        <Card className="p-8 text-center mt-6">
-          <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">
-            {searchTerm || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
-          </h3>
-          <p className="text-muted-foreground mb-4">
-            {searchTerm || selectedStatus !== "All" 
-              ? "Try adjusting your search or filter criteria"
-              : `Start by creating your first estimate for ${project?.name || 'this project'}`
-            }
-          </p>
-          {!searchTerm && selectedStatus === "All" && (
-            <Button onClick={handleNewEstimate} data-testid="button-create-first-project-estimate">
-              <Plus className="h-4 w-4 mr-2" />
-              Create First Estimate
-            </Button>
-          )}
-        </Card>
-      ) : (
-        <div className="mt-6 space-y-4">
-          {filteredEstimates.map((estimate) => (
-            <EstimateCard key={estimate.id} estimate={estimate} />
-          ))}
-        </div>
-      )}
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-2">
+        {/* Estimates Display */}
+        {estimatesLoading ? (
+          <div className="text-center py-8">
+            <div className="text-muted-foreground">Loading estimates...</div>
+          </div>
+        ) : filteredEstimates.length === 0 ? (
+          <Card className="p-8 text-center mt-6 rounded-xl">
+            <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">
+              {searchTerm || selectedStatus !== "All" ? "No estimates found" : "No estimates yet"}
+            </h3>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm || selectedStatus !== "All" 
+                ? "Try adjusting your search or filter criteria"
+                : `Start by creating your first estimate for ${project?.name || 'this project'}`
+              }
+            </p>
+            {!searchTerm && selectedStatus === "All" && (
+              <button
+                onClick={handleNewEstimate}
+                className="h-8 w-auto px-3 text-sm border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1 mx-auto"
+                data-testid="button-create-first-project-estimate"
+              >
+                <Plus className="h-4 w-4" />
+                Create First Estimate
+              </button>
+            )}
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {filteredEstimates.map((estimate) => (
+              <EstimateCard key={estimate.id} estimate={estimate} />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Delete Estimate Confirmation Dialog */}
       <AlertDialog 
