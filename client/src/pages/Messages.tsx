@@ -82,9 +82,10 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
 
 interface MessagesProps {
   channelTypeFilter?: "channel" | "dm" | "all";
+  projectId?: string;
 }
 
-export default function Messages({ channelTypeFilter = "all" }: MessagesProps) {
+export default function Messages({ channelTypeFilter = "all", projectId }: MessagesProps) {
   const { user } = useAuth();
   const { socket, isConnected, joinChannel, leaveChannel, sendMessage, startTyping, stopTyping, markAsRead } = useSocket();
   
@@ -117,14 +118,24 @@ export default function Messages({ channelTypeFilter = "all" }: MessagesProps) {
   const [mentionStartPos, setMentionStartPos] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
-    queryKey: ["/api/channels"],
-  });
+  // Build query params for channel filtering
+  const channelQueryParams = new URLSearchParams();
+  if (channelTypeFilter !== "all") {
+    channelQueryParams.append("type", channelTypeFilter);
+  }
+  if (projectId) {
+    channelQueryParams.append("projectId", projectId);
+  }
+  const channelQueryString = channelQueryParams.toString();
 
-  // Filter channels based on type
-  const filteredChannels = channels.filter(channel => {
-    if (channelTypeFilter === "all") return true;
-    return channel.type === channelTypeFilter;
+  const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
+    queryKey: ["/api/channels", channelQueryString],
+    queryFn: async () => {
+      const url = `/api/channels${channelQueryString ? `?${channelQueryString}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to fetch channels");
+      return response.json();
+    },
   });
 
   const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
@@ -456,10 +467,10 @@ export default function Messages({ channelTypeFilter = "all" }: MessagesProps) {
   };
 
   useEffect(() => {
-    if (filteredChannels.length > 0 && !selectedChannelId) {
-      setSelectedChannelId(filteredChannels[0].id);
+    if (channels.length > 0 && !selectedChannelId) {
+      setSelectedChannelId(channels[0].id);
     }
-  }, [filteredChannels, selectedChannelId]);
+  }, [channels, selectedChannelId]);
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
 
@@ -588,12 +599,12 @@ export default function Messages({ channelTypeFilter = "all" }: MessagesProps) {
                 <div className="flex items-center justify-center p-4">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : filteredChannels.length === 0 ? (
+              ) : channels.length === 0 ? (
                 <div className="text-center text-xs text-muted-foreground p-4">
                   {channelTypeFilter === "dm" ? "No direct messages yet" : channelTypeFilter === "channel" ? "No channels yet" : "No channels yet"}
                 </div>
               ) : (
-                filteredChannels.map((channel) => {
+                channels.map((channel) => {
                   const unreadCount = unreadCounts[channel.id] || 0;
                   const isActive = selectedChannelId === channel.id;
                   
