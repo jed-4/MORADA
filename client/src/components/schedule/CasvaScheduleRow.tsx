@@ -43,7 +43,7 @@ export function CasvaScheduleRow({
   return (
     <>
       {/* Title Column with Drag Handle & Collapse */}
-      <TableCell className="h-9 py-0" style={{ paddingLeft: isSubtask ? '20px' : '8px' }}>
+      <TableCell className="h-8 py-0" style={{ paddingLeft: isSubtask ? '20px' : '8px' }}>
         <div className="flex items-center gap-1.5">
           {isDraggable && (
             <div 
@@ -83,7 +83,7 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Assignee & Role Column */}
-      <TableCell className="w-48 h-9 py-0">
+      <TableCell className="w-48 h-8 py-0">
         <div className="flex items-center gap-1">
           {item.assignedToName && (
             <span className="text-[10px] text-muted-foreground truncate" data-testid="schedule-item-assignee">
@@ -99,7 +99,7 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Due Date & Duration Column */}
-      <TableCell className="w-40 h-9 py-0">
+      <TableCell className="w-40 h-8 py-0">
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-muted-foreground" data-testid="schedule-item-date-range">
             {dateRange}
@@ -111,7 +111,7 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Chips Column (RFQ/PO) */}
-      <TableCell className="w-32 h-9 py-0">
+      <TableCell className="w-32 h-8 py-0">
         <div className="flex items-center gap-1 flex-wrap">
           {item.status && (
             <ColorChip type="status" value={item.status} />
@@ -124,7 +124,7 @@ export function CasvaScheduleRow({
       </TableCell>
 
       {/* Actions Column */}
-      <TableCell className="w-12 h-9 py-0">
+      <TableCell className="w-12 h-8 py-0">
         <Button
           variant="ghost"
           size="icon"

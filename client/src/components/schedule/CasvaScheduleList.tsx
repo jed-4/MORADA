@@ -104,13 +104,13 @@ export function CasvaScheduleList({
     <div className="border rounded-lg bg-card overflow-hidden">
       <ScrollArea style={{ maxHeight }} className="w-full">
         <Table>
-          <TableHeader className="sticky top-0 bg-muted/20 z-10">
-            <TableRow className="hover:bg-transparent border-b h-9">
-              <TableHead className="font-semibold h-9 py-0 text-xs">Item</TableHead>
-              <TableHead className="font-semibold w-48 h-9 py-0 text-xs">Assignee & Role</TableHead>
-              <TableHead className="font-semibold w-40 h-9 py-0 text-xs">Due Date & Duration</TableHead>
-              <TableHead className="font-semibold w-32 h-9 py-0 text-xs">Status</TableHead>
-              <TableHead className="w-12 h-9 py-0"></TableHead>
+          <TableHeader className="sticky top-0 bg-white z-10">
+            <TableRow className="hover:bg-transparent border-b h-8">
+              <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>
+              <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>
+              <TableHead className="font-semibold w-40 h-8 py-0 text-xs">Due Date & Duration</TableHead>
+              <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>
+              <TableHead className="w-12 h-8 py-0"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -124,7 +124,7 @@ export function CasvaScheduleList({
                   {/* Parent Row */}
                   <TableRow 
                     key={item.id} 
-                    className="group casva-row h-9 transition-colors border-b cursor-pointer relative overflow-hidden hover-elevate"
+                    className="group casva-row h-8 transition-colors border-b cursor-pointer relative overflow-hidden hover:bg-gray-50"
                     data-testid={`schedule-row-${item.id}`}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
@@ -162,7 +162,7 @@ export function CasvaScheduleList({
                   {!isCollapsed && subtasks.map((subtask) => (
                     <TableRow 
                       key={subtask.id} 
-                      className="group casva-row h-9 transition-colors border-b cursor-pointer relative overflow-hidden hover-elevate bg-muted/20"
+                      className="group casva-row h-8 transition-colors border-b cursor-pointer relative overflow-hidden hover:bg-gray-50 bg-gray-50"
                       data-testid={`schedule-subtask-row-${subtask.id}`}
                       onClick={(e) => handleRowClick(e, subtask.id)}
                       onTouchStart={(e) => handleTouchStart(e, subtask)}
@@ -200,7 +200,7 @@ export function CasvaScheduleList({
       </ScrollArea>
       
       {/* Item Count Footer */}
-      <div className="px-2 h-9 border-t bg-muted/20 text-[10px] text-muted-foreground flex items-center justify-between">
+      <div className="px-2 h-8 border-t bg-white text-[10px] text-muted-foreground flex items-center justify-between">
         <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
       </div>
     </div>
