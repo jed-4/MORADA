@@ -9859,9 +9859,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Messages
   app.get("/api/channels/:channelId/messages", requireAuth, async (req, res) => {
     try {
+      const userId = req.user!.id;
+      const companyId = req.user!.companyId!;
+      const channelId = req.params.channelId;
+      
+      // Verify channel exists and user has access
+      const channel = await storage.getChannel(channelId, companyId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+      
+      // Verify user is a member of the channel
+      const members = await storage.getChannelMembers(channelId);
+      const isMember = members.some(m => m.userId === userId);
+      if (!isMember) {
+        return res.status(403).json({ error: "You are not a member of this channel" });
+      }
+      
       const { limit, before } = req.query;
       const messages = await storage.getMessages(
-        req.params.channelId,
+        channelId,
         limit ? parseInt(limit as string) : undefined,
         before as string | undefined
       );
