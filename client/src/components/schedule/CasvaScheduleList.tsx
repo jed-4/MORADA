@@ -2,7 +2,7 @@ import { ScheduleItem } from "@shared/schema";
 import { CasvaScheduleRow } from "./CasvaScheduleRow";
 import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState } from "react";
+import { useState, Fragment } from "react";
 
 export interface CasvaScheduleListProps {
   items: ScheduleItem[];
@@ -120,7 +120,7 @@ export function CasvaScheduleList({
               const hasSubtasks = subtasks.length > 0;
 
               return (
-                <>
+                <Fragment key={item.id}>
                   {/* Parent Row */}
                   <TableRow 
                     key={item.id} 
@@ -192,7 +192,7 @@ export function CasvaScheduleList({
                       ))}
                     </TableRow>
                   ))}
-                </>
+                </Fragment>
               );
             })}
           </TableBody>
