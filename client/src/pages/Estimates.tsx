@@ -281,7 +281,7 @@ export default function Estimates() {
     return (
       <Card 
         key={estimate.id} 
-        className="hover-elevate p-3 cursor-pointer border"
+        className="hover-elevate p-3 cursor-pointer border rounded-xl"
         data-testid={`estimate-card-${estimate.id}`}
         onClick={handleEstimateClick}
       >
