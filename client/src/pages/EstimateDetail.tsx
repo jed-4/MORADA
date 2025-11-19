@@ -616,6 +616,60 @@ export default function EstimateDetail() {
     }
   }, [columnPreferences, preferencesError]);
 
+  // Fetch estimate details
+  const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
+    queryKey: ["/api/estimates", effectiveEstimateId],
+    enabled: !isNewEstimate,
+  });
+
+  // Fetch estimate items
+  const { data: items = [], isLoading: itemsLoading } = useQuery<EstimateItem[]>({
+    queryKey: ["/api/estimates", effectiveEstimateId, "items"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
+  });
+
+  // Fetch estimate summary
+  const { data: summary } = useQuery<EstimateSummary>({
+    queryKey: ["/api/estimates", effectiveEstimateId, "summary"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
+  });
+
+  // Fetch project details
+  const projectId = isNewEstimate ? effectiveProjectId : estimate?.projectId;
+  const { data: project } = useQuery<Project>({
+    queryKey: ["/api/projects", projectId],
+    enabled: !!projectId,
+  });
+
+  // Fetch estimate groups
+  const { data: groups = [], isLoading: groupsLoading } = useQuery<EstimateGroup[]>({
+    queryKey: ["/api/estimates", effectiveEstimateId, "groups"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
+  });
+
+  // Fetch estimate item status field category options
+  const { data: estimateItemStatusCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate_item.status"],
+  });
+
+  // Fetch estimate item unit field category options
+  const { data: estimateItemUnitCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate_item.unit"],
+  });
+
+  // Fetch company settings for tax rate
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Fetch cost codes
+  const { data: costCodes = [], isLoading: isLoadingCostCodes } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
+  // Get tax rate from company settings (default to 10% if not set)
+  const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
+
   // Save column preferences mutation
   const saveColumnPreferencesMutation = useMutation({
     mutationFn: async (columnConfig: ColumnConfig[]) => {
@@ -2339,60 +2393,6 @@ export default function EstimateDetail() {
       document.body.style.cursor = '';
     };
   }, [resizingColumn, resizeStartX, resizeStartWidth]);
-
-  // Fetch estimate details
-  const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
-    queryKey: ["/api/estimates", effectiveEstimateId],
-    enabled: !isNewEstimate,
-  });
-
-  // Fetch estimate items
-  const { data: items = [], isLoading: itemsLoading } = useQuery<EstimateItem[]>({
-    queryKey: ["/api/estimates", effectiveEstimateId, "items"],
-    enabled: !!effectiveEstimateId && !isNewEstimate,
-  });
-
-  // Fetch estimate summary
-  const { data: summary } = useQuery<EstimateSummary>({
-    queryKey: ["/api/estimates", effectiveEstimateId, "summary"],
-    enabled: !!effectiveEstimateId && !isNewEstimate,
-  });
-
-  // Fetch project details
-  const projectId = isNewEstimate ? effectiveProjectId : estimate?.projectId;
-  const { data: project } = useQuery<Project>({
-    queryKey: ["/api/projects", projectId],
-    enabled: !!projectId,
-  });
-
-  // Fetch estimate groups
-  const { data: groups = [], isLoading: groupsLoading } = useQuery<EstimateGroup[]>({
-    queryKey: ["/api/estimates", effectiveEstimateId, "groups"],
-    enabled: !!effectiveEstimateId && !isNewEstimate,
-  });
-
-  // Fetch estimate item status field category options
-  const { data: estimateItemStatusCategory } = useQuery<FieldCategoryWithOptions>({
-    queryKey: ["/api/field-categories/by-key/estimate_item.status"],
-  });
-
-  // Fetch estimate item unit field category options
-  const { data: estimateItemUnitCategory } = useQuery<FieldCategoryWithOptions>({
-    queryKey: ["/api/field-categories/by-key/estimate_item.unit"],
-  });
-
-  // Fetch company settings for tax rate
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
-  });
-
-  // Fetch cost codes
-  const { data: costCodes = [], isLoading: isLoadingCostCodes } = useQuery<CostCode[]>({
-    queryKey: ["/api/cost-codes"],
-  });
-
-  // Get tax rate from company settings (default to 10% if not set)
-  const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
 
   const formatCurrency = (amount: number) => {
     const dollars = amount / 100;
