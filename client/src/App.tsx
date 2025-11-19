@@ -117,6 +117,7 @@ function Router() {
       <Route path="/business/minutes" component={Business} />
       <Route path="/business/minutes/:id" component={MinuteDetail} />
       <Route path="/business/messages" component={Business} />
+      <Route path="/business/notes" component={Business} />
       <Route path="/business/leave" component={Business} />
       <Route path="/my-calendar" component={PersonalCalendar} />
       <Route path="/systems" component={Business} />
