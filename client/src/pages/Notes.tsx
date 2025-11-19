@@ -101,7 +101,11 @@ interface NotesParams {
   projectId?: string;
 }
 
-export default function Notes() {
+interface NotesProps {
+  projectId?: string | null;
+}
+
+export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -114,9 +118,9 @@ export default function Notes() {
   const { currentProject } = useProject();
   const params = useParams<NotesParams>();
   
-  // Use projectId from URL params only - don't fallback to currentProject
-  // This allows /notes to show all notes, and /projects/:projectId/notes to show project-specific notes
-  const effectiveProjectId = params.projectId;
+  // Priority: prop projectId > URL params > undefined (show all)
+  // null prop explicitly means business/company-wide notes
+  const effectiveProjectId = propProjectId !== undefined ? propProjectId : params.projectId;
 
   // Fetch custom field definitions and templates
   const { data: customFieldDefsRaw = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
@@ -196,7 +200,12 @@ export default function Notes() {
   const { data: notes = [], isLoading } = useQuery<Note[]>({
     queryKey: ["/api/notes", effectiveProjectId],
     queryFn: async () => {
-      const url = effectiveProjectId 
+      // null means business/company-wide notes
+      // undefined means all notes
+      // string means specific project notes
+      const url = effectiveProjectId === null
+        ? '/api/notes?projectId=null'
+        : effectiveProjectId 
         ? `/api/notes?projectId=${effectiveProjectId}` 
         : '/api/notes';
       const response = await fetch(url, {
@@ -474,7 +483,7 @@ export default function Notes() {
         {/* Row 1: Title */}
         <div className="h-9 px-4 flex items-center">
           <h2 className="text-sm font-semibold">
-            {effectiveProjectId ? 'Project Notes' : 'All Notes'}
+            {effectiveProjectId === null ? 'Business Notes' : effectiveProjectId ? 'Project Notes' : 'All Notes'}
           </h2>
         </div>
 

@@ -149,7 +149,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
-      const notes = await storage.getNotes(projectId as string | undefined, companyId);
+      // Handle "null" string to indicate business/company-wide notes
+      const effectiveProjectId = projectId === "null" ? null : projectId as string | undefined;
+      
+      const notes = await storage.getNotes(effectiveProjectId, companyId);
       res.json(notes);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch notes" });

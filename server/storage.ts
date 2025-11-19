@@ -156,7 +156,7 @@ export interface IStorage {
   acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
   // Notes CRUD operations
-  getNotes(projectId?: string, companyId?: string): Promise<Note[]>;
+  getNotes(projectId?: string | null, companyId?: string): Promise<Note[]>;
   getNote(id: string, companyId?: string): Promise<Note | undefined>;
   getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]>;
   createNote(note: InsertNote): Promise<Note>;
@@ -6074,11 +6074,12 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async getNotes(projectId?: string, companyId?: string): Promise<Note[]> {
+  async getNotes(projectId?: string | null, companyId?: string): Promise<Note[]> {
     // Build query to join with projects table for company filtering
     let query = db
       .select({
         id: schema.notes.id,
+        companyId: schema.notes.companyId,
         title: schema.notes.title,
         content: schema.notes.content,
         contentHtml: schema.notes.contentHtml,
@@ -6114,13 +6115,29 @@ export class DbStorage implements IStorage {
     const conditions = [eq(schema.notes.type, "note")];
     
     // Filter by specific project if provided
-    if (projectId) {
+    // null means business/company-wide notes (projectId IS NULL)
+    // undefined means all notes (no project filter)
+    if (projectId === null) {
+      conditions.push(isNull(schema.notes.projectId));
+      if (companyId) {
+        conditions.push(eq(schema.notes.companyId, companyId));
+      }
+    } else if (projectId !== undefined) {
       conditions.push(eq(schema.notes.projectId, projectId));
-    }
-    
-    // Filter by company - notes must belong to projects in the user's company
-    if (companyId) {
-      conditions.push(eq(schema.projects.companyId, companyId));
+      // Project notes are filtered by project's company through join
+      if (companyId) {
+        conditions.push(eq(schema.projects.companyId, companyId));
+      }
+    } else {
+      // Show all notes - filter by company through both direct companyId and project's company
+      if (companyId) {
+        conditions.push(
+          or(
+            eq(schema.notes.companyId, companyId),
+            eq(schema.projects.companyId, companyId)
+          )!
+        );
+      }
     }
     
     const notes = await query
