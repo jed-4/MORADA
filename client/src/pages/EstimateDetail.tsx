@@ -290,20 +290,20 @@ function SortableGroupRow({
         style={{
           ...style,
         }}
-        className={`group-row-shell ${group.isCollapsed ? 'group-collapsed' : 'group-expanded'} transition-all ${isDragging ? 'opacity-40' : ''}`}
+        className={`group-row-shell h-8 ${group.isCollapsed ? 'group-collapsed' : 'group-expanded'} transition-all ${isDragging ? 'opacity-40' : ''} ${isGroupSelected ? 'bg-[#f6f3ff]' : ''}`}
         data-testid={`row-group-${group.id}`}
       >
-        <TableCell className="py-2" style={{ width: '32px' }}>
+        <TableCell className="py-1" style={{ width: '32px' }}>
           <div
             {...attributes}
             {...listeners}
             className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
             data-testid={`drag-handle-group-${group.id}`}
           >
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
+            <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
         </TableCell>
-        <TableCell className="py-2" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
+        <TableCell className="py-1" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}
@@ -319,11 +319,10 @@ function SortableGroupRow({
             // Custom rendering for item/name column with group name and toggle
             // Base padding 32px (to match pl-8 used by items) + indentation for nested groups
             const cellPaddingLeft = 32 + indentPixels;
-            console.log(`[GROUP ${group.name}] Nesting level:`, nestingLevel, 'Indent pixels:', indentPixels, 'Total padding:', cellPaddingLeft);
             return (
               <TableCell 
                 key={column.id}
-                className="py-2"
+                className="py-1"
                 style={{ width: column.widthPx, paddingLeft: `${cellPaddingLeft}px` }}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -340,7 +339,7 @@ function SortableGroupRow({
                       <ChevronDown className="h-4 w-4" />
                     )}
                   </Button>
-                  <span className="font-semibold text-sm truncate">{group.name}</span>
+                  <span className="font-semibold text-xs truncate">{group.name}</span>
                   {group.description && (
                     <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
                   )}
@@ -368,7 +367,7 @@ function SortableGroupRow({
           return (
             <TableCell 
               key={column.id} 
-              className="py-2 text-sm font-semibold"
+              className="py-1 text-xs font-semibold"
               style={{ width: column.widthPx }}
               data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
             >
@@ -378,7 +377,7 @@ function SortableGroupRow({
         })}
         
         {/* Actions column - group menu */}
-        <TableCell className="py-2" style={{ width: '80px' }}>
+        <TableCell className="py-1" style={{ width: '80px' }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
@@ -2999,8 +2998,6 @@ export default function EstimateDetail() {
     const isLastInGroup = groupContext?.isLastInGroup || false;
     
     const visibleColumns = columns.filter(col => col.visible);
-    console.log('[RENDER ROW] Visible columns:', visibleColumns.map(c => c.id));
-    console.log('[RENDER ROW] Item column visible?', visibleColumns.some(c => c.id === 'item'));
     
     // Build className for visual containment
     let itemClassName = "min-h-8";
@@ -3009,6 +3006,12 @@ export default function EstimateDetail() {
       if (isLastInGroup && subItems.length === 0) {
         itemClassName += " item-in-group-last";
       }
+    }
+    
+    // Add lilac background for selected items
+    const isItemSelected = selectedItems.has(item.id);
+    if (isItemSelected) {
+      itemClassName += " bg-[#f6f3ff]";
     }
     
     const rows = [
@@ -3858,7 +3861,7 @@ export default function EstimateDetail() {
   // Helper function to get status badge
   const getStatusBadge = (estimate: Estimate) => {
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-700"><Lock className="w-3 h-3 mr-1" />Locked v{estimate.version}</Badge>;
+      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20"><Lock className="w-3 h-3 mr-1" />Locked v{estimate.version}</Badge>;
     }
     
     // Use field settings for status
@@ -3867,10 +3870,11 @@ export default function EstimateDetail() {
       return (
         <Badge 
           variant="secondary" 
+          className="h-6 px-2 text-xs"
           style={{ 
             backgroundColor: `${statusOption.color}20`,
             color: statusOption.color,
-            borderColor: statusOption.color
+            borderColor: `${statusOption.color}40`
           }}
         >
           {statusOption.name} v{estimate.version}
@@ -3879,7 +3883,7 @@ export default function EstimateDetail() {
     }
     
     // Fallback
-    return <Badge variant="outline">{statusOption?.name || estimate.status || 'Draft'} v{estimate.version}</Badge>;
+    return <Badge variant="outline" className="h-6 px-2 text-xs">{statusOption?.name || estimate.status || 'Draft'} v{estimate.version}</Badge>;
   };
 
   // Handle new estimate creation
@@ -3951,79 +3955,321 @@ export default function EstimateDetail() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-950 border-b border-border p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" onClick={() => setLocation("/estimates")} data-testid="button-back-to-estimates" aria-label="Back to Estimates">
+      {/* BuildPro 3-Row Header */}
+      <div className="bg-white dark:bg-gray-950 border-b border-border">
+        {/* Row 1: Breadcrumb + Status */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => setLocation("/estimates")} 
+              data-testid="button-back-to-estimates" 
+              aria-label="Back to Estimates"
+            >
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Project:</span>
+              <span className="font-medium" data-testid="text-project-name">{project?.name || 'Loading...'}</span>
+              <span className="text-muted-foreground">/</span>
               {isEditingName ? (
                 <Input
                   value={editingName}
                   onChange={(e) => setEditingName(e.target.value)}
                   onKeyDown={handleNameKeyDown}
                   onBlur={handleNameSave}
-                  className="text-2xl font-semibold bg-transparent border-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  className="h-6 text-sm font-semibold bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
                   data-testid="input-estimate-name"
                   autoFocus
                 />
               ) : (
-                <h1 
-                  className="text-2xl font-semibold cursor-pointer hover:text-blue-600 transition-colors" 
+                <span 
+                  className="font-semibold cursor-pointer hover:text-[#bba7db] transition-colors" 
                   data-testid="text-estimate-title"
                   onClick={handleNameEdit}
                   title="Click to edit estimate name"
                 >
                   {estimate?.name || 'Loading...'}
-                </h1>
+                </span>
               )}
-              <p className="text-sm text-muted-foreground" data-testid="text-project-name">
-                Project: {project?.name || 'Loading...'}
-              </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             {estimate && getStatusBadge(estimate)}
+          </div>
+        </div>
+
+        {/* Row 2: Filters + Actions */}
+        <div className="flex items-center justify-between px-4 py-2 gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            {/* Group Expand/Collapse */}
+            {groups.length > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  onClick={handleToggleAllGroups}
+                  data-testid="button-toggle-all-groups"
+                >
+                  {groups.some(group => !group.isCollapsed) ? (
+                    <>
+                      <ChevronDown className="h-3 w-3" />
+                      <span>Collapse All</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronRight className="h-3 w-3" />
+                      <span>Expand All</span>
+                    </>
+                  )}
+                </Button>
+                <Separator orientation="vertical" className="h-4" />
+              </>
+            )}
+            
+            {/* Filter by Type */}
+            <Filter className="h-3 w-3 text-muted-foreground" />
+            <Select value={filterType} onValueChange={setFilterType}>
+              <SelectTrigger className="h-6 w-auto min-w-[100px] px-2 text-xs border rounded-md" data-testid="filter-type">
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {Array.from(new Set(items.map(item => item.type))).map(type => (
+                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Filter by Status */}
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="h-6 w-auto min-w-[100px] px-2 text-xs border rounded-md" data-testid="filter-status">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                  <SelectItem key={option.key} value={option.key}>{option.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Filter by Group */}
+            {groups.length > 0 && (
+              <Select value={filterGroup} onValueChange={setFilterGroup}>
+                <SelectTrigger className="h-6 w-auto min-w-[100px] px-2 text-xs border rounded-md" data-testid="filter-group">
+                  <SelectValue placeholder="All Groups" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Groups</SelectItem>
+                  {groups.map(group => (
+                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setIsImportOpen(true)}
+                    disabled={estimate?.isLocked}
+                    data-testid="button-import-estimate"
+                  >
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Import items</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleExportEstimate}
+                    disabled={!items || items.length === 0}
+                    data-testid="button-export-estimate"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Export estimate</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setIsCatalogOpen(true)}
+                    disabled={estimate?.isLocked}
+                    data-testid="button-catalog"
+                  >
+                    <Package className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Open catalog</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-8 px-3 text-sm"
+                  data-testid="button-column-visibility"
+                >
+                  <Eye className="h-4 w-4 mr-1" />
+                  Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
+                {columns.map(column => (
+                  <DropdownMenuItem 
+                    key={column.id}
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <Checkbox
+                      checked={column.visible}
+                      onCheckedChange={() => toggleColumn(column.id)}
+                      className="mr-2"
+                    />
+                    {column.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button 
-              variant="outline" 
-              size="icon" 
-              onClick={() => setIsImportOpen(true)}
+              className="h-8 px-3 text-sm"
+              data-testid="button-add-group" 
+              onClick={handleAddGroup}
               disabled={estimate?.isLocked}
-              data-testid="button-import-estimate"
-              aria-label="Import items"
+              variant="outline"
             >
-              <Upload className="w-4 h-4" />
+              <FolderPlus className="w-4 h-4 mr-1" />
+              Group
             </Button>
+
             <Button 
-              variant="outline" 
-              size="icon" 
-              onClick={handleExportEstimate}
-              disabled={!items || items.length === 0}
-              data-testid="button-export-estimate"
-              aria-label="Export estimate"
+              className="h-8 px-3 text-sm bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
+              data-testid="button-add-item" 
+              onClick={handleAddItem}
+              disabled={estimate?.isLocked}
             >
-              <Download className="w-4 h-4" />
+              <Plus className="w-4 h-4 mr-1" />
+              New Item
             </Button>
+
             {estimate && (
-              <Button 
-                variant={estimate.isLocked ? "destructive" : "outline"} 
-                size="icon" 
-                data-testid="button-toggle-lock"
-                onClick={handleToggleLock}
-                disabled={toggleLockMutation.isPending}
-                aria-label={estimate.isLocked ? "Unlock estimate" : "Lock estimate"}
-              >
-                {estimate.isLocked ? (
-                  <Unlock className="w-4 h-4" />
-                ) : (
-                  <Lock className="w-4 h-4" />
-                )}
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={estimate.isLocked ? "destructive" : "outline"} 
+                      size="icon"
+                      className="h-8 w-8"
+                      data-testid="button-toggle-lock"
+                      onClick={handleToggleLock}
+                      disabled={toggleLockMutation.isPending}
+                    >
+                      {estimate.isLocked ? (
+                        <Unlock className="w-4 h-4" />
+                      ) : (
+                        <Lock className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{estimate.isLocked ? "Unlock estimate" : "Lock estimate"}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
         </div>
+
+        {/* Row 3: Bulk Actions Toolbar (conditional) */}
+        {(selectedItems.size > 0 || selectedGroups.size > 0) && (
+          <div className="flex items-center justify-between px-4 py-2 bg-[#bba7db]/10 border-t border-[#bba7db]/20">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-[#bba7db]">
+                {selectedItems.size + selectedGroups.size} selected
+              </span>
+              <Separator orientation="vertical" className="h-4" />
+              <Button
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                onClick={() => {
+                  setSelectedItems(new Set());
+                  setSelectedGroups(new Set());
+                }}
+                data-testid="button-clear-selection"
+              >
+                Clear
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedItems.size > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setIsBulkStatusDialogOpen(true)}
+                    disabled={estimate?.isLocked}
+                    data-testid="button-bulk-change-status"
+                  >
+                    Change Status
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setIsBulkGroupDialogOpen(true)}
+                    disabled={estimate?.isLocked}
+                    data-testid="button-bulk-move-group"
+                  >
+                    Move to Group
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setIsCreateRFQOpen(true)}
+                    disabled={estimate?.isLocked}
+                    data-testid="button-create-rfq"
+                  >
+                    <Package className="w-3 h-3 mr-1" />
+                    Create RFQ
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="destructive"
+                className="h-6 px-2 text-xs"
+                onClick={() => setIsBulkDeleteDialogOpen(true)}
+                disabled={estimate?.isLocked}
+                data-testid="button-bulk-delete"
+              >
+                <Trash2 className="w-3 h-3 mr-1" />
+                Delete
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
@@ -4031,28 +4277,28 @@ export default function EstimateDetail() {
         <div className="space-y-6 min-w-0">
           {/* Collapsible Summary */}
           {summary && (
-            <Card>
-              <CardHeader className="cursor-pointer hover-elevate py-3" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
+            <Card className="rounded-xl">
+              <CardHeader className="cursor-pointer hover-elevate py-2.5" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-5 w-5"
+                      className="h-6 w-6"
                       data-testid="button-toggle-summary"
                     >
                       {isSummaryExpanded ? (
-                        <ChevronDown className="h-3 w-3" />
+                        <ChevronDown className="h-3.5 w-3.5" />
                       ) : (
-                        <ChevronRight className="h-3 w-3" />
+                        <ChevronRight className="h-3.5 w-3.5" />
                       )}
                     </Button>
-                    <CardTitle className="flex items-center text-sm font-medium">
-                      <Calculator className="w-4 h-4 mr-1" />
+                    <CardTitle className="flex items-center text-sm font-semibold">
+                      <Calculator className="w-4 h-4 mr-1.5" />
                       Estimate Total
                     </CardTitle>
                   </div>
-                  <div className="text-xl font-bold text-primary" data-testid="text-total">
+                  <div className="text-lg font-bold text-[#bba7db]" data-testid="text-total">
                     {formatCurrency(summary.total)}
                   </div>
                 </div>
@@ -4139,186 +4385,7 @@ export default function EstimateDetail() {
           )}
 
           {/* Items Table */}
-          <div className="min-w-0 border border-border rounded-lg overflow-hidden">
-            <div className="bg-card flex flex-row items-center justify-between px-6 py-4 border-b">
-              <h3 className="text-lg font-semibold flex items-center">
-                <FileText className="w-5 h-5 mr-2" />
-                Estimate Items ({items.length})
-              </h3>
-              <div className="flex items-center space-x-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      data-testid="button-column-visibility"
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Columns
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
-                    {columns.map(column => (
-                      <DropdownMenuItem 
-                        key={column.id}
-                        onClick={(e) => {
-                          e.preventDefault();
-                        }}
-                      >
-                        <Checkbox
-                          checked={column.visible}
-                          onCheckedChange={() => toggleColumn(column.id)}
-                          className="mr-2"
-                        />
-                        {column.label}
-                      </DropdownMenuItem>
-                    ))}
-                    <Separator className="my-2" />
-                    <div className="px-2 py-1.5 text-sm font-semibold">Reorder columns</div>
-                    {columns.map((column, index) => (
-                      <DropdownMenuItem 
-                        key={`reorder-${column.id}`}
-                        onClick={(e) => e.preventDefault()}
-                        className="flex items-center justify-between"
-                      >
-                        <span className="text-sm">{column.label}</span>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveColumnUp(column.id);
-                            }}
-                            disabled={index === 0}
-                            data-testid={`button-move-up-${column.id}`}
-                          >
-                            <ChevronUp className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveColumnDown(column.id);
-                            }}
-                            disabled={index === columns.length - 1}
-                            data-testid={`button-move-down-${column.id}`}
-                          >
-                            <ChevronDown className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button 
-                  size="sm" 
-                  data-testid="button-add-group" 
-                  onClick={handleAddGroup}
-                  disabled={estimate?.isLocked}
-                  variant={estimate?.isLocked ? "secondary" : "outline"}
-                >
-                  <FolderPlus className="w-4 h-4 mr-2" />
-                  Add Group
-                </Button>
-                <Button 
-                  size="sm" 
-                  data-testid="button-add-item" 
-                  onClick={handleAddItem}
-                  disabled={estimate?.isLocked}
-                  variant={estimate?.isLocked ? "secondary" : "default"}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  New item
-                </Button>
-              </div>
-            </div>
-            
-            {/* Filter Bar */}
-            <div className="bg-card px-6 py-3 border-b flex items-center gap-3">
-              {groups.length > 0 && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8"
-                    onClick={handleToggleAllGroups}
-                    data-testid="button-toggle-all-groups"
-                  >
-                    {groups.some(group => !group.isCollapsed) ? (
-                      <>
-                        <ChevronDown className="h-4 w-4 mr-2" />
-                        Collapse All
-                      </>
-                    ) : (
-                      <>
-                        <ChevronRight className="h-4 w-4 mr-2" />
-                        Expand All
-                      </>
-                    )}
-                  </Button>
-                  <Separator orientation="vertical" className="h-6" />
-                </>
-              )}
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[140px] h-8" data-testid="filter-type">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {Array.from(new Set(items.map(item => item.type))).map(type => (
-                    <SelectItem key={type} value={type}>{type}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-[140px] h-8" data-testid="filter-status">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((opt: any) => (
-                    <SelectItem key={opt.key} value={opt.key}>{opt.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Select value={filterGroup} onValueChange={setFilterGroup}>
-                <SelectTrigger className="w-[140px] h-8" data-testid="filter-group">
-                  <SelectValue placeholder="Group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Groups</SelectItem>
-                  <SelectItem value="ungrouped">Ungrouped</SelectItem>
-                  {groups.map(group => (
-                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              {(filterType !== 'all' || filterStatus !== 'all' || filterGroup !== 'all') && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-8"
-                  onClick={() => {
-                    setFilterType('all');
-                    setFilterStatus('all');
-                    setFilterGroup('all');
-                  }}
-                  data-testid="button-clear-filters"
-                >
-                  Clear All
-                </Button>
-              )}
-            </div>
-            
+          <div className="min-w-0 border border-border rounded-xl overflow-hidden">
             <div className="p-0 overflow-x-auto">
               <div className="p-6 bg-muted/30">
                 {itemsLoading || groupsLoading ? (
@@ -4622,7 +4689,7 @@ export default function EstimateDetail() {
 
       {/* Add Item Dialog */}
       <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 rounded-xl">
           <DialogHeader className="px-6 pt-6 pb-0">
             <DialogTitle>Add Estimate Item</DialogTitle>
           </DialogHeader>
@@ -5202,7 +5269,7 @@ export default function EstimateDetail() {
               setEditingItemId(null);
             }
           }}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl">
               <DialogHeader>
                 <DialogTitle>Edit Estimate Item</DialogTitle>
               </DialogHeader>
@@ -5787,7 +5854,7 @@ export default function EstimateDetail() {
 
       {/* Add Group Dialog */}
       <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-xl">
           <DialogHeader>
             <DialogTitle>{parentGroupForNewSubgroup ? 'Add Subgroup' : 'Add Estimate Group'}</DialogTitle>
           </DialogHeader>
@@ -5904,7 +5971,7 @@ export default function EstimateDetail() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl rounded-xl">
           <DialogHeader>
             <DialogTitle>Edit Description</DialogTitle>
           </DialogHeader>
@@ -5962,7 +6029,7 @@ export default function EstimateDetail() {
 
       {/* Group Delete Confirmation Dialog */}
       <Dialog open={isDeleteGroupDialogOpen} onOpenChange={setIsDeleteGroupDialogOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Delete Group</DialogTitle>
           </DialogHeader>
@@ -5994,7 +6061,7 @@ export default function EstimateDetail() {
 
       {/* Single Item Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Delete Item</DialogTitle>
           </DialogHeader>
@@ -6025,7 +6092,7 @@ export default function EstimateDetail() {
 
       {/* Bulk Delete Confirmation Dialog */}
       <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Delete {selectedGroups.size > 0 ? 'Groups and Items' : 'Items'}</DialogTitle>
           </DialogHeader>
@@ -6047,7 +6114,7 @@ export default function EstimateDetail() {
 
       {/* Bulk Change Status Dialog */}
       <Dialog open={isBulkStatusDialogOpen} onOpenChange={setIsBulkStatusDialogOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Change Status</DialogTitle>
           </DialogHeader>
@@ -6087,7 +6154,7 @@ export default function EstimateDetail() {
 
       {/* Bulk Change Group Dialog */}
       <Dialog open={isBulkGroupDialogOpen} onOpenChange={setIsBulkGroupDialogOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle>Move to Group</DialogTitle>
           </DialogHeader>
