@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { useParams } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -117,6 +118,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const { toast } = useToast();
   const { currentProject } = useProject();
   const params = useParams<NotesParams>();
+  const pageTitle = usePageTitle({ pageName: "Notes" });
   
   // Priority: prop projectId > URL params > undefined (show all)
   // null prop explicitly means business/company-wide notes
@@ -483,7 +485,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
         {/* Row 1: Title */}
         <div className="h-9 px-4 flex items-center">
           <h2 className="text-sm font-semibold">
-            {effectiveProjectId === null ? 'Business Notes' : effectiveProjectId ? 'Project Notes' : 'All Notes'}
+            {pageTitle}
           </h2>
         </div>
 

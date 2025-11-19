@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useProject } from "@/contexts/ProjectContext";
 import { useParams } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,7 @@ export default function Minutes() {
   const [editingMinute, setEditingMinute] = useState<Minute | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Minutes" });
 
   // Determine context: use URL projectId, or current project context, or null for business
   const contextProjectId = projectId || currentProject?.id || null;
@@ -202,7 +204,7 @@ export default function Minutes() {
       <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: Title + Count */}
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">Meeting Minutes</h2>
+          <h2 className="text-sm font-semibold">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs">
             {filteredMinutes.length} {filteredMinutes.length === 1 ? 'minute' : 'minutes'}
           </Badge>

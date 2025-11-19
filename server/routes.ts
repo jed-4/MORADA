@@ -3324,13 +3324,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const safeUser = toSafeUser(user);
+      
+      // Fetch company nickname if user has a company
+      let companyNickname = null;
+      if (user.companyId) {
+        const company = await storage.getCompany(user.companyId);
+        companyNickname = company?.nickname || company?.name || null;
+      }
+      
       console.log('✅ [GET /api/auth/user] Returning user:', {
         id: safeUser.id,
         email: safeUser.email,
         companyId: safeUser.companyId,
         roleId: safeUser.roleId,
+        companyNickname,
       });
-      res.json(safeUser);
+      res.json({ ...safeUser, companyNickname });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
