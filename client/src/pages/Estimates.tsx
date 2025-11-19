@@ -7,6 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { 
   Plus, 
   FileText, 
@@ -15,7 +20,8 @@ import {
   DollarSign,
   LayoutGrid,
   Columns3,
-  Download
+  Download,
+  ChevronDown
 } from "lucide-react";
 import {
   Select,
@@ -309,30 +315,21 @@ export default function Estimates() {
 
 
   return (
-    <div className="p-6 space-y-6" data-testid="estimates-page">
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">{pageTitle}</h1>
-            <p className="text-muted-foreground mt-1">
-              View and manage estimates across all your projects
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
-              <Plus className="h-4 w-4 mr-2" />
-              New Estimate
-            </Button>
-          </div>
-        </div>
-        
-        {/* Section separator */}
-        <div className="border-b border-border"></div>
+    <div className="pt-6 px-6 space-y-4" data-testid="estimates-page">
+      {/* Header Row 1: Title + New Button */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">{pageTitle}</h1>
+        <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
+          <Plus className="h-4 w-4 mr-2" />
+          New Estimate
+        </Button>
+      </div>
 
-        {/* Filters and Search */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 max-w-sm">
+      {/* Header Row 2: Search + Filter + View Toggle */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Left: Search + Filter */}
+        <div className="flex items-center gap-2">
+          <div className="relative w-64">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground h-3.5 w-3.5" />
             <Input
               placeholder="Search estimates..."
@@ -343,111 +340,80 @@ export default function Estimates() {
             />
           </div>
           
-          {/* Project Filter Chips */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setSelectedProject("All")}
-              className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors ${
-                selectedProject === "All" 
-                  ? "bg-[#bba7db] text-white border-[#bba7db]" 
-                  : "bg-white hover:bg-gray-50 border-gray-200"
-              }`}
-              data-testid="filter-all-projects"
-            >
-              All Projects
-            </button>
-            {projects.slice(0, 5).map((project) => (
+          {/* Status Filter Chip with Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
               <button
-                key={project.id}
-                onClick={() => setSelectedProject(project.id)}
-                className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors flex items-center gap-1 ${
-                  selectedProject === project.id 
-                    ? "bg-[#bba7db] text-white border-[#bba7db]" 
-                    : "bg-white hover:bg-gray-50 border-gray-200"
-                }`}
-                data-testid={`filter-project-${project.id}`}
+                className="h-8 px-3 text-sm rounded-md border border-gray-200 bg-white hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
+                data-testid="filter-status-popover"
               >
-                <ProjectIcon 
-                  icon={project.icon} 
-                  color={selectedProject === project.id ? "#ffffff" : project.color} 
-                  className="w-3 h-3 flex-shrink-0" 
-                />
-                <span className="truncate max-w-[100px]">{project.name}</span>
+                <span className="text-muted-foreground">Status:</span>
+                <span className="font-medium">
+                  {selectedStatus === "All" 
+                    ? "All" 
+                    : estimateStatuses.find(s => s.key === selectedStatus)?.name || "All"}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
-            ))}
-            {projects.length > 5 && (
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="h-6 w-auto px-2 text-xs border-gray-200" data-testid="estimates-project-filter-more">
-                  <SelectValue placeholder="More..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">All Projects</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      <div className="flex items-center gap-2">
-                        <ProjectIcon 
-                          icon={project.icon} 
-                          color={project.color} 
-                          className="w-4 h-4 flex-shrink-0" 
-                        />
-                        <span className="truncate">{project.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          {/* Status Filter Chips */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setSelectedStatus("All")}
-              className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors ${
-                selectedStatus === "All" 
-                  ? "bg-[#bba7db] text-white border-[#bba7db]" 
-                  : "bg-white hover:bg-gray-50 border-gray-200"
-              }`}
-              data-testid="filter-all-statuses"
-            >
-              All Status
-            </button>
-            {estimateStatuses
-              .filter(status => status.isActive)
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .map(status => (
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="start">
+              <div className="space-y-1">
                 <button
-                  key={status.key}
-                  onClick={() => setSelectedStatus(status.key)}
-                  className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors ${
-                    selectedStatus === status.key 
-                      ? "bg-[#bba7db] text-white border-[#bba7db]" 
-                      : "bg-white hover:bg-gray-50 border-gray-200"
+                  onClick={() => setSelectedStatus("All")}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    selectedStatus === "All" ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
                   }`}
-                  data-testid={`filter-status-${status.key}`}
+                  data-testid="filter-status-all"
                 >
-                  {status.name}
+                  All Status
                 </button>
-              ))}
-          </div>
+                {estimateStatuses
+                  .filter(status => status.isActive)
+                  .sort((a, b) => a.sortOrder - b.sortOrder)
+                  .map(status => (
+                    <button
+                      key={status.key}
+                      onClick={() => setSelectedStatus(status.key)}
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                        selectedStatus === status.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      }`}
+                      data-testid={`filter-status-${status.key}`}
+                    >
+                      {status.name}
+                    </button>
+                  ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Right: View Toggle */}
+        <div className="flex items-center gap-1 border border-gray-200 rounded-md p-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-7 px-3 ${currentView === 'grid' ? 'bg-white shadow-sm' : ''}`}
+            onClick={() => setCurrentView('grid')}
+            data-testid="button-grid-view"
+          >
+            <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
+            Grid
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-7 px-3 ${currentView === 'kanban' ? 'bg-white shadow-sm' : ''}`}
+            onClick={() => setCurrentView('kanban')}
+            data-testid="button-kanban-view"
+          >
+            <Columns3 className="h-3.5 w-3.5 mr-1.5" />
+            Kanban
+          </Button>
         </div>
       </div>
 
-      {/* View Tabs */}
-      <Tabs value={currentView} onValueChange={(value) => setCurrentView(value as 'grid' | 'kanban')}>
-        <div className="border-b border-border">
-          <TabsList data-testid="tabs-estimate-views">
-            <TabsTrigger value="grid" data-testid="tab-grid-view">
-              <LayoutGrid className="h-4 w-4 mr-2" />
-              Grid View
-            </TabsTrigger>
-            <TabsTrigger value="kanban" data-testid="tab-kanban-view">
-              <Columns3 className="h-4 w-4 mr-2" />
-              Kanban
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
+      {/* Content */}
+      <div className="pt-4">
         {/* Estimates Display */}
         {estimatesLoading ? (
           <div className="text-center py-8">
@@ -475,16 +441,16 @@ export default function Estimates() {
         ) : (
           <>
             {/* Grid View */}
-            <TabsContent value="grid" className="pt-4">
+            {currentView === 'grid' && (
               <div className="w-full space-y-2">
                 {filteredEstimates.map((estimate) => (
                   <EstimateCard key={estimate.id} estimate={estimate} />
                 ))}
               </div>
-            </TabsContent>
+            )}
 
             {/* Kanban View */}
-            <TabsContent value="kanban" className="pt-4">
+            {currentView === 'kanban' && (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCorners}
@@ -521,10 +487,10 @@ export default function Estimates() {
                   ) : null}
                 </DragOverlay>
               </DndContext>
-            </TabsContent>
+            )}
           </>
         )}
-      </Tabs>
+      </div>
     </div>
   );
 }
