@@ -7,6 +7,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  DndContext,
+  DragOverlay,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  KeyboardSensor,
+  closestCorners,
+  DragStartEvent,
+  DragEndEvent,
+  useDroppable,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { 
   Plus, 
   FileText, 
@@ -18,7 +37,8 @@ import {
   Search,
   Trash2,
   LayoutGrid,
-  Columns3
+  Columns3,
+  ChevronDown
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -58,6 +78,8 @@ export default function ProjectEstimates() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'grid' | 'kanban'>('grid');
+  const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   if (!projectId) {
     return <div>Invalid project ID</div>;
@@ -66,6 +88,14 @@ export default function ProjectEstimates() {
   const handleNewEstimate = () => {
     setLocation(`/projects/${projectId}/estimates/new`);
   };
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Fetch project details
   const { data: project } = useQuery<Project>({
@@ -149,6 +179,64 @@ export default function ProjectEstimates() {
     },
   });
 
+  // Mutation to update estimate status
+  const updateEstimateStatusMutation = useMutation({
+    mutationFn: async ({ estimateId, status }: { estimateId: string; status: string }) => {
+      return await apiRequest(`/api/estimates/${estimateId}`, 'PATCH', { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Status Updated",
+        description: "Estimate status has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update estimate status.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (!over) {
+      setActiveId(null);
+      return;
+    }
+
+    const estimate = estimates.find(e => e.id === active.id);
+    if (!estimate) {
+      setActiveId(null);
+      return;
+    }
+
+    // Get the container ID (status) from the drop target
+    // If dropping on a column directly, use over.id
+    // If dropping on a card, use the container ID from sortable data
+    const overId = over.id;
+    const overData = over.data.current;
+    const targetStatus = overData?.sortable?.containerId || overId;
+
+    // Only update if dropping into a different status
+    if (typeof targetStatus === 'string' && targetStatus !== estimate.status) {
+      updateEstimateStatusMutation.mutate({
+        estimateId: estimate.id,
+        status: targetStatus,
+      });
+    }
+    
+    setActiveId(null);
+  };
+
   // Fetch estimate statuses from field settings
   const { data: estimateStatuses = [] } = useQuery<FieldOption[]>({
     queryKey: ["/api/field-categories/estimate.status/options"],
@@ -162,6 +250,15 @@ export default function ProjectEstimates() {
       return response.json();
     },
   });
+
+  // Calculate status counts
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    estimates.forEach(estimate => {
+      counts[estimate.status] = (counts[estimate.status] || 0) + 1;
+    });
+    return counts;
+  }, [estimates]);
 
   const formatCurrency = (amount: number) => {
     const dollars = amount / 100;
@@ -370,6 +467,52 @@ export default function ProjectEstimates() {
             <span>Kanban</span>
           </button>
         </div>
+
+        {/* Right: Card Width Toggle (only visible in kanban view) */}
+        {currentView === 'kanban' && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-card-width-toggle"
+              >
+                <span className="capitalize">{cardWidth}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-40 p-2" align="end">
+              <div className="space-y-1">
+                <button
+                  onClick={() => setCardWidth('compact')}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    cardWidth === 'compact' ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="button-width-compact"
+                >
+                  Compact
+                </button>
+                <button
+                  onClick={() => setCardWidth('comfortable')}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    cardWidth === 'comfortable' ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="button-width-comfortable"
+                >
+                  Comfortable
+                </button>
+                <button
+                  onClick={() => setCardWidth('spacious')}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    cardWidth === 'spacious' ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="button-width-spacious"
+                >
+                  Spacious
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
@@ -466,11 +609,57 @@ export default function ProjectEstimates() {
             )}
           </Card>
         ) : (
-          <div className="space-y-2">
-            {filteredEstimates.map((estimate) => (
-              <EstimateCard key={estimate.id} estimate={estimate} />
-            ))}
-          </div>
+          <>
+            {/* Grid View */}
+            {currentView === 'grid' && (
+              <div className="space-y-2">
+                {filteredEstimates.map((estimate) => (
+                  <EstimateCard key={estimate.id} estimate={estimate} />
+                ))}
+              </div>
+            )}
+
+            {/* Kanban View */}
+            {currentView === 'kanban' && (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="flex gap-4 overflow-x-auto pb-4">
+                  {estimateStatuses
+                    .filter(status => status.isActive)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map(status => {
+                      const columnEstimates = filteredEstimates.filter(est => est.status === status.key);
+                      
+                      return (
+                        <KanbanColumn
+                          key={status.key}
+                          status={status}
+                          estimates={columnEstimates}
+                          count={statusCounts[status.key] || 0}
+                          estimateStatuses={estimateStatuses}
+                          projectId={projectId}
+                          cardWidth={cardWidth}
+                        />
+                      );
+                    })}
+                </div>
+
+                <DragOverlay>
+                  {activeId ? (
+                    <div className="bg-card border border-border/50 rounded-xl p-2 shadow-lg opacity-90">
+                      <div className="font-medium text-sm">
+                        {estimates.find(e => e.id === activeId)?.name || 'Dragging...'}
+                      </div>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )}
+          </>
         )}
       </div>
 
@@ -509,6 +698,161 @@ export default function ProjectEstimates() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// Kanban Column Component
+function KanbanColumn({ status, estimates, count, estimateStatuses, projectId, cardWidth }: { 
+  status: FieldOption; 
+  estimates: Estimate[]; 
+  count: number;
+  estimateStatuses: FieldOption[];
+  projectId: string;
+  cardWidth: 'compact' | 'comfortable' | 'spacious';
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: status.key,
+  });
+
+  const getWidthClass = () => {
+    switch (cardWidth) {
+      case 'compact': return 'w-64';
+      case 'comfortable': return 'w-80';
+      case 'spacious': return 'w-96';
+      default: return 'w-80';
+    }
+  };
+
+  return (
+    <div className={`flex-shrink-0 ${getWidthClass()}`}>
+      <div
+        className={`rounded-xl border transition-all duration-200 ${
+          isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
+        }`}
+      >
+        <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-foreground">{status.name}</h3>
+            <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold">
+              {count}
+            </Badge>
+          </div>
+        </div>
+
+        <div
+          ref={setNodeRef}
+          className="min-h-[200px] p-2"
+        >
+          <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
+            {estimates.map(estimate => (
+              <SortableEstimateCard 
+                key={estimate.id} 
+                estimate={estimate}
+                estimateStatuses={estimateStatuses}
+                projectId={projectId}
+              />
+            ))}
+          </SortableContext>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sortable Estimate Card Component for Kanban
+function SortableEstimateCard({ estimate, estimateStatuses, projectId }: { 
+  estimate: Estimate;
+  estimateStatuses: FieldOption[];
+  projectId: string;
+}) {
+  const [, setLocation] = useLocation();
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: estimate.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  // Fetch summary for this estimate
+  const { data: summary } = useQuery<EstimateSummary>({
+    queryKey: ["/api/estimates", estimate.id, "summary"],
+    queryFn: async () => {
+      const response = await fetch(`/api/estimates/${estimate.id}/summary`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
+    enabled: !!estimate.id,
+  });
+
+  const handleEstimateClick = () => {
+    setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
+  };
+
+  const formatCurrency = (amount: number) => {
+    const dollars = amount / 100;
+    const isWholeNumber = dollars % 1 === 0;
+    
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      minimumFractionDigits: isWholeNumber ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(dollars);
+  };
+
+  const getStatusBadge = (estimate: Estimate) => {
+    const statusOption = estimateStatuses.find(s => s.key === estimate.status);
+    if (statusOption && statusOption.color) {
+      return (
+        <Badge 
+          variant="secondary"
+          className="h-4 text-[10px] px-1.5 rounded-full"
+          style={{
+            backgroundColor: `${statusOption.color}20`,
+            color: statusOption.color,
+            borderColor: `${statusOption.color}40`
+          }}
+        >
+          {statusOption.name}
+        </Badge>
+      );
+    }
+    if (estimate.isLocked) {
+      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 rounded-full bg-blue-100 text-blue-700"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
+    }
+    return <Badge variant="outline" className="h-4 text-[10px] px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={handleEstimateClick}
+      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-move hover-elevate shadow-sm"
+      data-testid={`kanban-estimate-card-${estimate.id}`}
+    >
+      <h4 className="font-medium text-sm mb-2 line-clamp-1">{estimate.name}</h4>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold">
+          {summary ? formatCurrency(summary.total) : 'Loading...'}
+        </span>
+        {getStatusBadge(estimate)}
+      </div>
     </div>
   );
 }

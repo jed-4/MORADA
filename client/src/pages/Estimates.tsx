@@ -64,6 +64,7 @@ export default function Estimates() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [currentView, setCurrentView] = useState<'grid' | 'kanban'>('grid');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
 
   const handleNewEstimate = () => {
     setLocation('/estimates/new');
@@ -369,6 +370,52 @@ export default function Estimates() {
             <span>Kanban</span>
           </button>
         </div>
+
+        {/* Right: Card Width Toggle (only visible in kanban view) */}
+        {currentView === 'kanban' && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-card-width-toggle"
+              >
+                <span className="capitalize">{cardWidth}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-40 p-2" align="end">
+              <div className="space-y-1">
+                <button
+                  onClick={() => setCardWidth('compact')}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    cardWidth === 'compact' ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="button-width-compact"
+                >
+                  Compact
+                </button>
+                <button
+                  onClick={() => setCardWidth('comfortable')}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    cardWidth === 'comfortable' ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="button-width-comfortable"
+                >
+                  Comfortable
+                </button>
+                <button
+                  onClick={() => setCardWidth('spacious')}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors ${
+                    cardWidth === 'spacious' ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="button-width-spacious"
+                >
+                  Spacious
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
@@ -494,6 +541,7 @@ export default function Estimates() {
                           count={statusCounts[status.key] || 0}
                           estimateStatuses={estimateStatuses}
                           projects={projects}
+                          cardWidth={cardWidth}
                         />
                       );
                     })}
@@ -518,19 +566,29 @@ export default function Estimates() {
 }
 
 // Kanban Column Component
-function KanbanColumn({ status, estimates, count, estimateStatuses, projects }: { 
+function KanbanColumn({ status, estimates, count, estimateStatuses, projects, cardWidth }: { 
   status: FieldOption; 
   estimates: Estimate[]; 
   count: number;
   estimateStatuses: FieldOption[];
   projects: Project[];
+  cardWidth: 'compact' | 'comfortable' | 'spacious';
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: status.key,
   });
 
+  const getWidthClass = () => {
+    switch (cardWidth) {
+      case 'compact': return 'w-64';
+      case 'comfortable': return 'w-80';
+      case 'spacious': return 'w-96';
+      default: return 'w-80';
+    }
+  };
+
   return (
-    <div className="flex-shrink-0 w-80">
+    <div className={`flex-shrink-0 ${getWidthClass()}`}>
       <div
         className={`rounded-xl border transition-all duration-200 ${
           isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
