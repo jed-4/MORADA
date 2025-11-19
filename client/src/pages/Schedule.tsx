@@ -923,7 +923,7 @@ export default function Schedule() {
 
         {/* Content - conditional rendering based on activeView */}
         {activeView === "list" && (
-          <div className="flex-1 overflow-auto px-4 pb-4">
+          <div className="flex-1 overflow-auto p-4">
             {filteredItems.length === 0 ? (
               <Card className="p-12 text-center">
                 <CardTitle className="mb-2">No Schedule Items</CardTitle>
