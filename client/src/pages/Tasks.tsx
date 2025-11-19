@@ -577,42 +577,20 @@ export default function Tasks() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
+      {/* COMPACT 2-ROW HEADER - ClickUp 2025 Pattern */}
       
-      {/* Row 1 - Project Controls (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Project Name + Task Count */}
-        <div className="flex items-center gap-3">
+      {/* Row 1 - Title + Views + Actions */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-2 flex-shrink-0">
+        {/* Left: Project Title + Task Count */}
+        <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">{currentProject.name} Tasks</h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-task-count">
-            {effectivelyFilteredTasks.length} tasks
+          <Badge variant="secondary" className="h-4 text-[10px] px-1.5" data-testid="text-task-count">
+            {effectivelyFilteredTasks.length}
           </Badge>
         </div>
 
-        {/* Right: Action Buttons */}
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setShowCreateTaskDialog(true)}
-            data-testid="button-add-task"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Add Task</span>
-          </button>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowViewSettings(true)}
-            data-testid="button-settings"
-          >
-            <Settings className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* Row 2 - Views & Options (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Tabs */}
-        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
+        {/* Center: View Tabs */}
+        <div className="flex items-center gap-0.5 flex-1 justify-center" data-testid="tabs-task-views">
           {allViews.map((view) => {
             const canDelete = isCustomView(view);
             return (
@@ -657,30 +635,47 @@ export default function Tasks() {
           </button>
         </div>
 
-        {/* Right: More Options */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button 
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-view-menu"
-            >
-              <MoreHorizontal className="w-3 h-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setShowCreateViewDialog(true)} data-testid="menu-save-view">
-              <Plus className="h-4 w-4 mr-2" />
-              Save View
-            </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menu-manage-views">
-              <Settings className="h-4 w-4 mr-2" />
-              Manage Views
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowCreateTaskDialog(true)}
+            data-testid="button-add-task"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Task</span>
+          </button>
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowViewSettings(true)}
+            data-testid="button-settings"
+          >
+            <Settings className="w-3 h-3" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-view-menu"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowCreateViewDialog(true)} data-testid="menu-save-view">
+                <Plus className="h-4 w-4 mr-2" />
+                Save View
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid="menu-manage-views">
+                <Settings className="h-4 w-4 mr-2" />
+                Manage Views
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {/* Row 3 - Search & Filters (36px) */}
+      {/* Row 2 - Search & Filters */}
       <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter Dropdowns */}
         <div className="flex items-center gap-1.5 flex-1">
