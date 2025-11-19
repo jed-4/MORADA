@@ -285,28 +285,27 @@ export default function Estimates() {
         data-testid={`estimate-card-${estimate.id}`}
         onClick={handleEstimateClick}
       >
-        <div className="flex items-center gap-4">
-          {/* Estimate Name and Project */}
+        <div className="flex items-center gap-3">
+          {/* Left: Estimate Name and Project */}
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-sm mb-1 line-clamp-1">
+            <h3 className="font-medium text-sm line-clamp-1">
               {estimate.name}
             </h3>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground mt-0.5">
               {getProjectName(estimate.projectId)}
             </p>
           </div>
           
-          {/* Total Value */}
-          <div className="flex-shrink-0 text-right">
-            <p className="text-[10px] text-muted-foreground">Total Value</p>
+          {/* Right: Status Badge (fixed width for alignment) */}
+          <div className="flex-shrink-0 w-24 flex justify-end">
+            {getStatusBadge(estimate)}
+          </div>
+          
+          {/* Right: Total Value */}
+          <div className="flex-shrink-0 text-right w-28">
             <p className="font-semibold text-sm" data-testid={`text-estimate-total-${estimate.id}`}>
               {summary ? formatCurrency(summary.total) : 'Loading...'}
             </p>
-          </div>
-          
-          {/* Status Badge */}
-          <div className="flex-shrink-0">
-            {getStatusBadge(estimate)}
           </div>
         </div>
       </Card>
