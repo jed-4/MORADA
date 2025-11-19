@@ -315,45 +315,92 @@ export default function Estimates() {
 
 
   return (
-    <div className="pt-6 px-6 space-y-4" data-testid="estimates-page">
-      {/* Header Row 1: Title + New Button */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{pageTitle}</h1>
-        <Button onClick={handleNewEstimate} data-testid="button-new-estimate">
-          <Plus className="h-4 w-4 mr-2" />
-          New Estimate
-        </Button>
+    <div className="flex flex-col h-full" data-testid="estimates-page">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Title + Count */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            {pageTitle}
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-estimate-count">
+            {filteredEstimates.length} estimates
+          </Badge>
+        </div>
+
+        {/* Right: New Estimate Button */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleNewEstimate}
+            data-testid="button-new-estimate"
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Estimate</span>
+          </button>
+        </div>
       </div>
 
-      {/* Header Row 2: Search + Filter + View Toggle */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Row 2 - View Tabs (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setCurrentView('grid')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              currentView === 'grid' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-grid-view"
+          >
+            <LayoutGrid className="w-3 h-3" />
+            <span>Grid</span>
+          </button>
+          <button
+            onClick={() => setCurrentView('kanban')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              currentView === 'kanban' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-kanban-view"
+          >
+            <Columns3 className="w-3 h-3" />
+            <span>Kanban</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Row 3 - Search & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter */}
-        <div className="flex items-center gap-2">
-          <div className="relative w-64">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground h-3.5 w-3.5" />
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
-              placeholder="Search estimates..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8 pl-8 text-sm"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
               data-testid="estimates-search-input"
             />
           </div>
           
-          {/* Status Filter Chip with Popover */}
+          {/* Status Filter */}
           <Popover>
             <PopoverTrigger asChild>
-              <button
-                className="h-8 px-3 text-sm rounded-md border border-gray-200 bg-white hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
                 data-testid="filter-status-popover"
               >
-                <span className="text-muted-foreground">Status:</span>
-                <span className="font-medium">
-                  {selectedStatus === "All" 
-                    ? "All" 
-                    : estimateStatuses.find(s => s.key === selectedStatus)?.name || "All"}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Status</span>
+                {selectedStatus !== "All" && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-2" align="start">
@@ -386,34 +433,10 @@ export default function Estimates() {
             </PopoverContent>
           </Popover>
         </div>
-
-        {/* Right: View Toggle */}
-        <div className="flex items-center gap-1 border border-gray-200 rounded-md p-0.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-7 px-3 ${currentView === 'grid' ? 'bg-white shadow-sm' : ''}`}
-            onClick={() => setCurrentView('grid')}
-            data-testid="button-grid-view"
-          >
-            <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
-            Grid
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-7 px-3 ${currentView === 'kanban' ? 'bg-white shadow-sm' : ''}`}
-            onClick={() => setCurrentView('kanban')}
-            data-testid="button-kanban-view"
-          >
-            <Columns3 className="h-3.5 w-3.5 mr-1.5" />
-            Kanban
-          </Button>
-        </div>
       </div>
 
       {/* Content */}
-      <div className="pt-4">
+      <div className="flex-1 overflow-auto p-2">
         {/* Estimates Display */}
         {estimatesLoading ? (
           <div className="text-center py-8">
