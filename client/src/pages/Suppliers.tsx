@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,6 +58,7 @@ export default function Suppliers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Suppliers" });
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -186,7 +188,7 @@ export default function Suppliers() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Suppliers</h1>
+          <h1 className="text-2xl font-bold">{pageTitle}</h1>
           <p className="text-muted-foreground">Manage your suppliers and their contact information</p>
         </div>
         <Button onClick={handleAddSupplier} data-testid="button-add-supplier">

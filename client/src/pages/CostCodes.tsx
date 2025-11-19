@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ import MergeCategoryDialog from "@/components/MergeCategoryDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Cost Codes" });
   const [searchTerm, setSearchTerm] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -304,7 +306,7 @@ export default function CostCodes() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Cost Codes</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
           <p className="text-muted-foreground mt-1">
             Manage cost categories and codes for estimates, bills, and timesheets
           </p>

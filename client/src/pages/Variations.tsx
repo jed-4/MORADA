@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -31,6 +32,7 @@ export default function Variations() {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
+  const pageTitle = usePageTitle({ pageName: "Variations" });
 
   const [activeTab, setActiveTab] = useState("table");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -295,7 +297,7 @@ export default function Variations() {
       <div className="flex-none p-6 border-b">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            Variations
+            {pageTitle}
           </h1>
           <Button onClick={handleAddVariation} data-testid="button-add-variation">
             <Plus className="h-4 w-4 mr-2" />

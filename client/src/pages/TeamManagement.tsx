@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ import InviteUserDialog from "@/components/InviteUserDialog";
 
 export default function TeamManagement() {
   const [, navigate] = useLocation();
+  const pageTitle = usePageTitle({ pageName: "Team" });
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
@@ -60,7 +62,7 @@ export default function TeamManagement() {
       <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: Title + Count */}
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">Team</h2>
+          <h2 className="text-sm font-semibold">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs">
             {filteredUsers.length} {filteredUsers.length === 1 ? 'member' : 'members'}
           </Badge>

@@ -1,6 +1,7 @@
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function BudgetPage() {
   const { projectId } = useParams();
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Budget" });
   const [activeTab, setActiveTab] = useState("costs");
 
   // Fetch budget for this project
@@ -176,7 +178,7 @@ export default function BudgetPage() {
     <div className="container mx-auto p-6 space-y-6" data-testid="page-budget">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-budget-title">Budget</h1>
+          <h1 className="text-3xl font-bold" data-testid="text-budget-title">{pageTitle}</h1>
           <p className="text-muted-foreground mt-1">
             Track project costs and financial performance
           </p>

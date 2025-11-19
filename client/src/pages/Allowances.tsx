@@ -1,6 +1,7 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ export default function Allowances() {
   const { projectId } = useParams<{ projectId: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Allowances" });
   const { statusOptions, getStatusInfo } = useAllowanceStatusOptions();
   const [editingMarkup, setEditingMarkup] = useState<string | null>(null);
   const [markupValue, setMarkupValue] = useState<string>("");
@@ -166,7 +168,7 @@ export default function Allowances() {
       <div className="flex-1 overflow-auto">
         <div className="container mx-auto p-6">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-semibold">Allowances</h1>
+            <h1 className="text-3xl font-semibold">{pageTitle}</h1>
           </div>
           <div className="space-y-4">
             <Card className="p-6">
@@ -186,7 +188,7 @@ export default function Allowances() {
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-semibold">Allowances</h1>
+            <h1 className="text-3xl font-semibold">{pageTitle}</h1>
             <p className="text-muted-foreground mt-1">
               Track Prime Cost and Provisional Sum items from estimates
             </p>

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -51,6 +52,7 @@ import { logActivity } from "@/lib/activityLogger";
 export default function Estimates() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Estimates" });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
@@ -311,7 +313,7 @@ export default function Estimates() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">All Estimates</h1>
+            <h1 className="text-3xl font-bold">{pageTitle}</h1>
             <p className="text-muted-foreground mt-1">
               View and manage estimates across all your projects
             </p>

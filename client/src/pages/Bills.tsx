@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch, useParams } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -55,6 +56,7 @@ export default function Bills() {
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const statusFromUrl = searchParams.get("status") || "all";
   const projectIdFromUrl = params.projectId || "";
+  const pageTitle = usePageTitle({ pageName: "Bills" });
 
   const [selectedStatus, setSelectedStatus] = useState<string>(statusFromUrl);
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
@@ -249,7 +251,7 @@ export default function Bills() {
     <div className="flex flex-col h-full overflow-hidden" data-testid="page-bills">
       <div className="flex-none p-6 border-b">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Bills</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-page-title">{pageTitle}</h1>
           <div className="flex items-center gap-2">
             <Popover>
               <PopoverTrigger asChild>

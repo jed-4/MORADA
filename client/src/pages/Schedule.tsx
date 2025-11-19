@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
 import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "@shared/schema";
@@ -77,6 +78,7 @@ const localizer = momentLocalizer(moment);
 export default function Schedule() {
   const { currentProject } = useProject();
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Schedule" });
   const params = useParams<ScheduleParams>();
   const projectId = params.projectId || currentProject?.id;
 
@@ -622,7 +624,7 @@ export default function Schedule() {
         <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
           {/* Left: Project Name + Online/Offline Toggle */}
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold">{currentProject?.name ? `${currentProject.name} Schedule` : 'Loading...'}</h2>
+            <h2 className="text-sm font-semibold">{pageTitle}</h2>
             <button
               onClick={() => {
                 if (schedule?.status === "offline") {

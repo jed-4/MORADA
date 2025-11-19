@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function Proposals() {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
+  const pageTitle = usePageTitle({ pageName: "Proposals" });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
@@ -243,7 +245,7 @@ export default function Proposals() {
         <div className="p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold" data-testid="text-proposals-heading">Proposals</h1>
+              <h1 className="text-2xl font-semibold" data-testid="text-proposals-heading">{pageTitle}</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Create and manage project proposals
               </p>
