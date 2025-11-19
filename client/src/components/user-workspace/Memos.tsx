@@ -29,7 +29,7 @@ interface UserNotesProps {
   isOwnPage: boolean;
 }
 
-export default function UserNotes({ user, isOwnPage }: UserNotesProps) {
+export default function Memos({ user, isOwnPage }: UserNotesProps) {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);

@@ -12,7 +12,7 @@ import UserCalendar from "@/components/user-workspace/UserCalendar";
 import UserTasks from "@/components/user-workspace/UserTasks";
 import UserSchedule from "@/components/user-workspace/UserSchedule";
 import UserTime from "@/components/user-workspace/UserTime";
-import UserNotes from "@/components/user-workspace/UserNotes";
+import Memos from "@/components/user-workspace/Memos";
 import Messages from "./Messages";
 
 const USER_TABS = [
@@ -22,7 +22,7 @@ const USER_TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarIcon, path: "schedule" },
   { id: "time", label: "Time", icon: Timer, path: "time" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
-  { id: "notes", label: "Notes", icon: FileText, path: "notes" },
+  { id: "notes", label: "Memos", icon: FileText, path: "notes" },
 ] as const;
 
 export default function UserWorkspace() {
@@ -77,7 +77,7 @@ export default function UserWorkspace() {
       case "messages":
         return <Messages channelTypeFilter="dm" />;
       case "notes":
-        return <UserNotes user={user} isOwnPage={isOwnPage} />;
+        return <Memos user={user} isOwnPage={isOwnPage} />;
       default:
         return <UserOverview user={user} isOwnPage={isOwnPage} />;
     }

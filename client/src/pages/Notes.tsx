@@ -468,38 +468,34 @@ export default function Notes() {
 
 
   return (
-    <div className="p-6 space-y-6" data-testid="notes-page">
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">{effectiveProjectId ? 'Project Notes' : 'All Notes'}</h1>
-          </div>
-          <Button onClick={() => setIsAddingNote(true)} data-testid="add-note-button">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Note
-          </Button>
+    <div className="flex flex-col h-full" data-testid="notes-page">
+      {/* 2-Row Header - ClickUp 2025 Pattern */}
+      <div className="border-b bg-background">
+        {/* Row 1: Title */}
+        <div className="h-9 px-4 flex items-center">
+          <h2 className="text-sm font-semibold">
+            {effectiveProjectId ? 'Project Notes' : 'All Notes'}
+          </h2>
         </div>
-        
-        {/* Section separator */}
-        <div className="border-b border-border"></div>
 
-        {/* Filters and Search */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+        {/* Row 2: Controls & Filters */}
+        <div className="h-9 px-4 flex items-center gap-2">
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Search notes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="h-6 pl-7 text-xs"
               data-testid="notes-search-input"
             />
           </div>
-          
+
+          {/* Category Filter */}
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-48" data-testid="notes-category-filter">
-              <Filter className="h-4 w-4 mr-2" />
+            <SelectTrigger className="h-6 w-40 text-xs gap-1" data-testid="notes-category-filter">
+              <Filter className="h-3 w-3" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -511,10 +507,11 @@ export default function Notes() {
               ))}
             </SelectContent>
           </Select>
-          
+
+          {/* Sort */}
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-48" data-testid="notes-sort-filter">
-              <ArrowUpDown className="h-4 w-4 mr-2" />
+            <SelectTrigger className="h-6 w-36 text-xs gap-1" data-testid="notes-sort-filter">
+              <ArrowUpDown className="h-3 w-3" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -523,104 +520,116 @@ export default function Notes() {
               <SelectItem value="alphabetical">Alphabetical</SelectItem>
             </SelectContent>
           </Select>
-          
+
+          <div className="flex-1" />
+
+          {/* Add Note Button */}
+          <Button 
+            size="sm"
+            onClick={() => setIsAddingNote(true)} 
+            className="h-6 px-2 text-xs gap-1"
+            data-testid="add-note-button"
+          >
+            <Plus className="h-3 w-3" />
+            Add Note
+          </Button>
         </div>
       </div>
 
-
       {/* Notes Display */}
+      <div className="flex-1 overflow-auto p-4">
       {isLoading ? (
-        <div className="text-center py-8">
-          <div className="text-muted-foreground">Loading notes...</div>
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          Loading notes...
         </div>
       ) : filteredNotes.length === 0 ? (
-        <Card className="p-8 text-center">
+        <div className="text-center py-8">
           <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">
+          <h3 className="text-sm font-medium mb-2">
             {searchTerm || selectedCategory !== "All" ? "No notes found" : "No notes yet"}
           </h3>
-          <p className="text-muted-foreground mb-4">
+          <p className="text-xs text-muted-foreground mb-4">
             {searchTerm || selectedCategory !== "All" 
               ? "Try adjusting your search or filter criteria"
-              : "Start by adding your first project note"
+              : "Start by adding your first note"
             }
           </p>
           {!searchTerm && selectedCategory === "All" && (
-            <Button onClick={() => setIsAddingNote(true)} data-testid="add-first-note-button">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button 
+              size="sm"
+              onClick={() => setIsAddingNote(true)} 
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="add-first-note-button"
+            >
+              <Plus className="h-3 w-3" />
               Add Your First Note
             </Button>
           )}
-        </Card>
+        </div>
       ) : (
-        <div className="w-full space-y-3">
+        <div className="space-y-2">
           {filteredNotes.map((note) => (
-            <Card 
+            <div 
               key={note.id} 
-              className="hover-elevate p-4 cursor-pointer"
+              className="group border rounded-md p-3 bg-card hover-elevate transition-all cursor-pointer"
               data-testid={`note-card-${note.id}`}
               onDoubleClick={() => handleEditNote(note)}
             >
-              <div className="flex items-start gap-6">
+              <div className="flex items-start gap-3">
                 {/* Pin indicator */}
                 {note.pinned && (
-                  <div className="flex-shrink-0">
-                    <Pin className="h-4 w-4 text-primary" data-testid={`note-pinned-indicator-${note.id}`} />
+                  <div className="flex-shrink-0 pt-0.5">
+                    <Pin className="h-3 w-3 text-[#bba7db]" data-testid={`note-pinned-indicator-${note.id}`} />
                   </div>
                 )}
                 
                 {/* Title and Content */}
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-base mb-2 line-clamp-1">
+                  <h3 className="font-semibold text-sm mb-1 line-clamp-1">
                     {note.title}
                   </h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                    {note.content}
+                  <p className="text-xs text-muted-foreground line-clamp-2">
+                    {note.contentText || note.content}
                   </p>
                 </div>
                 
-                {/* Project (only show when viewing all items) */}
-                {!effectiveProjectId && (
-                  <div className="flex-shrink-0">
-                    <Badge variant="default" className="text-xs" data-testid={`note-project-${note.id}`}>
+                {/* Metadata Column */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Project (only show when viewing all items) */}
+                  {!effectiveProjectId && note.projectId && (
+                    <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`note-project-${note.id}`}>
                       {getProjectName(note.projectId)}
                     </Badge>
-                  </div>
-                )}
+                  )}
 
-                {/* Category */}
-                <div className="flex-shrink-0">
-                  <Badge variant="secondary" className="text-xs" data-testid={`note-category-${note.id}`}>
+                  {/* Category */}
+                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px]" data-testid={`note-category-${note.id}`}>
                     {note.category}
                   </Badge>
-                </div>
-                
-                {/* Visibility */}
-                <div className="flex-shrink-0">
-                  <Badge variant="outline" className="text-xs" data-testid={`note-visibility-${note.id}`}>
+                  
+                  {/* Visibility */}
+                  <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`note-visibility-${note.id}`}>
                     {getVisibilityLabel(note.visibility || "team_only")}
                   </Badge>
-                </div>
-                
-                {/* Date */}
-                <div className="flex-shrink-0 flex items-center gap-1 text-xs text-muted-foreground min-w-[140px]">
-                  <Clock className="h-3 w-3" />
-                  <span data-testid={`note-date-${note.id}`}>
-                    {format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                  </span>
-                </div>
-                
-                {/* Author */}
-                <div className="flex-shrink-0 flex items-center gap-1 text-xs text-muted-foreground min-w-[100px]">
-                  <User className="h-3 w-3" />
-                  <span>{note.author}</span>
-                </div>
-                
-                {/* Actions */}
-                <div className="flex-shrink-0">
+                  
+                  {/* Date */}
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    <span data-testid={`note-date-${note.id}`}>
+                      {format(new Date(note.createdAt), "MMM d, yyyy")}
+                    </span>
+                  </div>
+                  
+                  {/* Author */}
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <User className="h-3 w-3" />
+                    <span>{note.author}</span>
+                  </div>
+                  
+                  {/* Actions */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`note-menu-trigger-${note.id}`}>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`note-menu-trigger-${note.id}`}>
                         <MoreVertical className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -658,10 +667,11 @@ export default function Notes() {
                   </DropdownMenu>
                 </div>
               </div>
-            </Card>
+            </div>
           ))}
         </div>
       )}
+      </div>
 
       {/* Dialog */}
       <Dialog 
