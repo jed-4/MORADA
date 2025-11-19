@@ -9589,7 +9589,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const companyId = req.user!.companyId!;
       const userId = req.user!.id;
-      const channels = await storage.getChannels(companyId, userId);
+      const { type, projectId } = req.query;
+      
+      const filters: { type?: string; projectId?: string } = {};
+      if (type && typeof type === 'string') {
+        filters.type = type;
+      }
+      if (projectId && typeof projectId === 'string') {
+        filters.projectId = projectId;
+      }
+      
+      const channels = await storage.getChannels(companyId, userId, filters);
       res.json(channels);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch channels" });

@@ -708,7 +708,7 @@ export interface IStorage {
   deleteProjectWorkflow(id: string): Promise<boolean>;
 
   // Messaging - Channels
-  getChannels(companyId: string, userId?: string): Promise<Channel[]>;
+  getChannels(companyId: string, userId?: string, filters?: { type?: string; projectId?: string }): Promise<Channel[]>;
   getChannel(id: string, companyId: string): Promise<Channel | undefined>;
   createChannel(channel: InsertChannel & { companyId: string }): Promise<Channel>;
   updateChannel(id: string, channel: Partial<InsertChannel>, companyId: string): Promise<Channel | undefined>;
@@ -12277,15 +12277,25 @@ export class DbStorage implements IStorage {
   // ============================================================================
 
   // Channels
-  async getChannels(companyId: string, userId?: string): Promise<Channel[]> {
+  async getChannels(companyId: string, userId?: string, filters?: { type?: string; projectId?: string }): Promise<Channel[]> {
     try {
+      const conditions = [
+        eq(schema.channels.companyId, companyId),
+        eq(schema.channels.isArchived, false)
+      ];
+
+      // Add type filter if provided
+      if (filters?.type) {
+        conditions.push(eq(schema.channels.type, filters.type));
+      }
+
+      // Add projectId filter if provided
+      if (filters?.projectId) {
+        conditions.push(eq(schema.channels.projectId, filters.projectId));
+      }
+
       const query = db.select().from(schema.channels)
-        .where(
-          and(
-            eq(schema.channels.companyId, companyId),
-            eq(schema.channels.isArchived, false)
-          )
-        )
+        .where(and(...conditions))
         .orderBy(asc(schema.channels.name));
       
       const channels = await query;
