@@ -795,6 +795,36 @@ export default function EstimateDetail() {
     })
   );
   
+  // Item action handlers
+  const handleDuplicateItem = async (itemId: string) => {
+    if (!effectiveEstimateId) return;
+    
+    try {
+      const result = await apiRequest(`/api/estimate-items/${itemId}/duplicate`, 'POST', {});
+      
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
+      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
+      
+      // Track for undo
+      undoStack.pushAction('Duplicate Item', { 
+        originalItemId: itemId,
+        newItemId: result?.id,
+        timestamp: Date.now() 
+      });
+      
+      toast({
+        title: "Item duplicated",
+        description: "Successfully duplicated the item",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate item",
+        variant: "destructive",
+      });
+    }
+  };
+  
   // Keyboard shortcuts (G = group, U = ungroup, D = duplicate)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2754,36 +2784,6 @@ export default function EstimateDetail() {
   const handleAddItemToGroup = (groupId: string) => {
     setPreselectedGroupId(groupId);
     setIsAddItemOpen(true);
-  };
-  
-  // Item action handlers
-  const handleDuplicateItem = async (itemId: string) => {
-    if (!effectiveEstimateId) return;
-    
-    try {
-      const result = await apiRequest(`/api/estimate-items/${itemId}/duplicate`, 'POST', {});
-      
-      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
-      await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
-      
-      // Track for undo
-      undoStack.pushAction('Duplicate Item', { 
-        originalItemId: itemId,
-        newItemId: result?.id,
-        timestamp: Date.now() 
-      });
-      
-      toast({
-        title: "Item duplicated",
-        description: "Successfully duplicated the item",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to duplicate item",
-        variant: "destructive",
-      });
-    }
   };
   
   const handleCopyItem = (itemId: string) => {
