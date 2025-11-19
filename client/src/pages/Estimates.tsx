@@ -501,7 +501,7 @@ export default function Estimates() {
 
                 <DragOverlay>
                   {activeId ? (
-                    <div className="bg-card border rounded-lg p-3 shadow-lg opacity-90">
+                    <div className="bg-card border border-border/50 rounded-xl p-2 shadow-lg opacity-90">
                       <div className="font-medium text-sm">
                         {estimates.find(e => e.id === activeId)?.name || 'Dragging...'}
                       </div>
@@ -531,35 +531,35 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects }: 
 
   return (
     <div className="flex-shrink-0 w-80">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: status.color || '#6B7280' }}
-          />
-          <h3 className="font-medium text-sm">{status.name}</h3>
-          <Badge variant="secondary" className="h-4 text-[10px] px-1.5">
-            {count}
-          </Badge>
-        </div>
-      </div>
-
       <div
-        ref={setNodeRef}
-        className={`min-h-[200px] rounded-lg p-2 transition-colors ${
-          isOver ? 'bg-[#bba7db]/20' : 'bg-muted/10'
+        className={`rounded-xl border transition-all duration-200 ${
+          isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
         }`}
       >
-        <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
-          {estimates.map(estimate => (
-            <SortableEstimateCard 
-              key={estimate.id} 
-              estimate={estimate}
-              estimateStatuses={estimateStatuses}
-              projects={projects}
-            />
-          ))}
-        </SortableContext>
+        <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-foreground">{status.name}</h3>
+            <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold">
+              {count}
+            </Badge>
+          </div>
+        </div>
+
+        <div
+          ref={setNodeRef}
+          className="min-h-[200px] p-2"
+        >
+          <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
+            {estimates.map(estimate => (
+              <SortableEstimateCard 
+                key={estimate.id} 
+                estimate={estimate}
+                estimateStatuses={estimateStatuses}
+                projects={projects}
+              />
+            ))}
+          </SortableContext>
+        </div>
       </div>
     </div>
   );
@@ -625,15 +625,15 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
 
   const getStatusBadge = (estimate: Estimate) => {
     const statusOption = estimateStatuses.find(s => s.key === estimate.status);
-    if (statusOption) {
+    if (statusOption && statusOption.color) {
       return (
         <Badge 
-          variant="outline"
-          className="h-4 text-[10px] px-1.5"
+          variant="secondary"
+          className="h-4 text-[10px] px-1.5 rounded-full"
           style={{
-            backgroundColor: statusOption.color || '#6B7280',
-            color: '#FFFFFF',
-            borderColor: statusOption.color || '#6B7280'
+            backgroundColor: `${statusOption.color}20`,
+            color: statusOption.color,
+            borderColor: `${statusOption.color}40`
           }}
         >
           {statusOption.name}
@@ -641,9 +641,9 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       );
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 bg-blue-100 text-blue-700"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 rounded-full bg-blue-100 text-blue-700"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
     }
-    return <Badge variant="outline" className="h-4 text-[10px] px-1.5"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-[10px] px-1.5 rounded-full"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
   return (
@@ -653,15 +653,15 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       {...attributes}
       {...listeners}
       onClick={handleEstimateClick}
-      className="bg-card border rounded-lg p-2 mb-2 cursor-move hover-elevate"
+      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-move hover-elevate shadow-sm"
       data-testid={`kanban-estimate-card-${estimate.id}`}
     >
       <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
-      <p className="text-[10px] text-muted-foreground mb-1.5">
+      <p className="text-[10px] text-muted-foreground mb-2">
         {getProjectName(estimate.projectId)}
       </p>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold">
           {summary ? formatCurrency(summary.total) : 'Loading...'}
         </span>
         {getStatusBadge(estimate)}
