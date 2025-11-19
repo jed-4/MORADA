@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,6 +132,7 @@ function SortableRoleItem({
 export default function RolesPermissions() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const pageTitle = usePageTitle({ pageName: "Roles & Permissions" });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
@@ -395,7 +397,7 @@ export default function RolesPermissions() {
               Back to Settings
             </Button>
           </div>
-          <h1 className="text-xl font-semibold mb-4">Roles & Permissions</h1>
+          <h1 className="text-xl font-semibold mb-4">{pageTitle}</h1>
           
           {/* Add new role button */}
           <Button

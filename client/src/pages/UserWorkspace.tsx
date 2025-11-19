@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { User } from "@shared/schema";
