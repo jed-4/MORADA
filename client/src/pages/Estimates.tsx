@@ -217,6 +217,7 @@ export default function Estimates() {
       return (
         <Badge 
           variant="outline"
+          className="h-4 text-[10px] px-1.5"
           style={{
             backgroundColor: statusOption.color || '#6B7280',
             color: '#FFFFFF',
@@ -229,9 +230,9 @@ export default function Estimates() {
     }
     // Fallback to isLocked for backward compatibility
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-700"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 bg-blue-100 text-blue-700"><Lock className="w-3 h-3 mr-0.5" />Locked</Badge>;
     }
-    return <Badge variant="outline"><FileText className="w-3 h-3 mr-1" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-[10px] px-1.5"><FileText className="w-3 h-3 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
 
@@ -274,25 +275,25 @@ export default function Estimates() {
     return (
       <Card 
         key={estimate.id} 
-        className="hover-elevate p-4 cursor-pointer"
+        className="hover-elevate p-3 cursor-pointer border"
         data-testid={`estimate-card-${estimate.id}`}
         onClick={handleEstimateClick}
       >
-        <div className="flex items-start gap-6">
+        <div className="flex items-center gap-4">
           {/* Estimate Name and Project */}
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-base mb-2 line-clamp-1">
+            <h3 className="font-medium text-sm mb-1 line-clamp-1">
               {estimate.name}
             </h3>
-            <p className="text-sm text-muted-foreground mb-2">
-              Project: {getProjectName(estimate.projectId)}
+            <p className="text-xs text-muted-foreground">
+              {getProjectName(estimate.projectId)}
             </p>
           </div>
           
           {/* Total Value */}
           <div className="flex-shrink-0 text-right">
-            <p className="text-sm text-muted-foreground">Total Value</p>
-            <p className="font-semibold text-lg" data-testid={`text-estimate-total-${estimate.id}`}>
+            <p className="text-[10px] text-muted-foreground">Total Value</p>
+            <p className="font-semibold text-sm" data-testid={`text-estimate-total-${estimate.id}`}>
               {summary ? formatCurrency(summary.total) : 'Loading...'}
             </p>
           </div>
@@ -474,8 +475,8 @@ export default function Estimates() {
         ) : (
           <>
             {/* Grid View */}
-            <TabsContent value="grid" className="mt-6">
-              <div className="w-full space-y-3">
+            <TabsContent value="grid" className="pt-4">
+              <div className="w-full space-y-2">
                 {filteredEstimates.map((estimate) => (
                   <EstimateCard key={estimate.id} estimate={estimate} />
                 ))}
@@ -483,7 +484,7 @@ export default function Estimates() {
             </TabsContent>
 
             {/* Kanban View */}
-            <TabsContent value="kanban" className="mt-6">
+            <TabsContent value="kanban" className="pt-4">
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCorners}
@@ -542,14 +543,14 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects }: 
 
   return (
     <div className="flex-shrink-0 w-80">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div
-            className="w-3 h-3 rounded-full"
+            className="w-2.5 h-2.5 rounded-full"
             style={{ backgroundColor: status.color || '#6B7280' }}
           />
           <h3 className="font-medium text-sm">{status.name}</h3>
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="h-4 text-[10px] px-1.5">
             {count}
           </Badge>
         </div>
@@ -557,8 +558,8 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects }: 
 
       <div
         ref={setNodeRef}
-        className={`min-h-[200px] rounded-lg p-3 transition-colors ${
-          isOver ? 'bg-accent/50' : 'bg-muted/20'
+        className={`min-h-[200px] rounded-lg p-2 transition-colors ${
+          isOver ? 'bg-[#bba7db]/20' : 'bg-muted/10'
         }`}
       >
         <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
@@ -640,6 +641,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       return (
         <Badge 
           variant="outline"
+          className="h-4 text-[10px] px-1.5"
           style={{
             backgroundColor: statusOption.color || '#6B7280',
             color: '#FFFFFF',
@@ -651,9 +653,9 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       );
     }
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-700"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
+      return <Badge variant="secondary" className="h-4 text-[10px] px-1.5 bg-blue-100 text-blue-700"><Lock className="w-2.5 h-2.5 mr-0.5" />Locked</Badge>;
     }
-    return <Badge variant="outline"><FileText className="w-3 h-3 mr-1" />{estimate.status || 'Draft'}</Badge>;
+    return <Badge variant="outline" className="h-4 text-[10px] px-1.5"><FileText className="w-2.5 h-2.5 mr-0.5" />{estimate.status || 'Draft'}</Badge>;
   };
 
   return (
@@ -663,11 +665,11 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       {...attributes}
       {...listeners}
       onClick={handleEstimateClick}
-      className="bg-card border rounded-lg p-3 mb-2 cursor-move hover-elevate"
+      className="bg-card border rounded-lg p-2 mb-2 cursor-move hover-elevate"
       data-testid={`kanban-estimate-card-${estimate.id}`}
     >
-      <h4 className="font-medium text-sm mb-1 line-clamp-1">{estimate.name}</h4>
-      <p className="text-xs text-muted-foreground mb-2">
+      <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
+      <p className="text-[10px] text-muted-foreground mb-1.5">
         {getProjectName(estimate.projectId)}
       </p>
       <div className="flex items-center justify-between">
