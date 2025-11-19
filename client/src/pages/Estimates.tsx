@@ -330,55 +330,105 @@ export default function Estimates() {
         <div className="border-b border-border"></div>
 
         {/* Filters and Search */}
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground h-3.5 w-3.5" />
             <Input
               placeholder="Search estimates..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="h-8 pl-8 text-sm"
               data-testid="estimates-search-input"
             />
           </div>
           
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-48" data-testid="estimates-project-filter">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Projects</SelectItem>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  <div className="flex items-center gap-2">
-                    <ProjectIcon 
-                      icon={project.icon} 
-                      color={project.color} 
-                      className="w-4 h-4 flex-shrink-0" 
-                    />
-                    <span className="truncate">{project.name}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Project Filter Chips */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setSelectedProject("All")}
+              className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors ${
+                selectedProject === "All" 
+                  ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                  : "bg-white hover:bg-gray-50 border-gray-200"
+              }`}
+              data-testid="filter-all-projects"
+            >
+              All Projects
+            </button>
+            {projects.slice(0, 5).map((project) => (
+              <button
+                key={project.id}
+                onClick={() => setSelectedProject(project.id)}
+                className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors flex items-center gap-1 ${
+                  selectedProject === project.id 
+                    ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
+                data-testid={`filter-project-${project.id}`}
+              >
+                <ProjectIcon 
+                  icon={project.icon} 
+                  color={selectedProject === project.id ? "#ffffff" : project.color} 
+                  className="w-3 h-3 flex-shrink-0" 
+                />
+                <span className="truncate max-w-[100px]">{project.name}</span>
+              </button>
+            ))}
+            {projects.length > 5 && (
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger className="h-6 w-auto px-2 text-xs border-gray-200" data-testid="estimates-project-filter-more">
+                  <SelectValue placeholder="More..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All Projects</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <div className="flex items-center gap-2">
+                        <ProjectIcon 
+                          icon={project.icon} 
+                          color={project.color} 
+                          className="w-4 h-4 flex-shrink-0" 
+                        />
+                        <span className="truncate">{project.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-            <SelectTrigger className="w-48" data-testid="estimates-status-filter">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Status</SelectItem>
-              {estimateStatuses
-                .filter(status => status.isActive)
-                .sort((a, b) => a.sortOrder - b.sortOrder)
-                .map(status => (
-                  <SelectItem key={status.key} value={status.key}>
-                    {status.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          {/* Status Filter Chips */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setSelectedStatus("All")}
+              className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors ${
+                selectedStatus === "All" 
+                  ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                  : "bg-white hover:bg-gray-50 border-gray-200"
+              }`}
+              data-testid="filter-all-statuses"
+            >
+              All Status
+            </button>
+            {estimateStatuses
+              .filter(status => status.isActive)
+              .sort((a, b) => a.sortOrder - b.sortOrder)
+              .map(status => (
+                <button
+                  key={status.key}
+                  onClick={() => setSelectedStatus(status.key)}
+                  className={`h-6 w-auto px-2 text-xs rounded-md border transition-colors ${
+                    selectedStatus === status.key 
+                      ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                      : "bg-white hover:bg-gray-50 border-gray-200"
+                  }`}
+                  data-testid={`filter-status-${status.key}`}
+                >
+                  {status.name}
+                </button>
+              ))}
+          </div>
         </div>
       </div>
 
