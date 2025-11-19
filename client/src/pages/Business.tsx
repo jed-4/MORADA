@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
-import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, Settings as SettingsIcon } from "lucide-react";
+import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, Settings as SettingsIcon, FileText } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
 import BusinessProjects from "./BusinessProjects";
 import BusinessTasks from "./BusinessTasks";
@@ -10,6 +10,7 @@ import Minutes from "./Minutes";
 import TeamManagement from "./TeamManagement";
 import Systems from "./Systems";
 import Messages from "./Messages";
+import Notes from "./Notes";
 import ComingSoonPage from "./ComingSoonPage";
 
 const BUSINESS_TABS = [
@@ -21,6 +22,7 @@ const BUSINESS_TABS = [
   { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
   { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/business/minutes" },
+  { id: "notes", label: "Notes", icon: FileText, path: "/business/notes" },
   { id: "leave", label: "Leave", icon: CalendarIcon, path: "/business/leave" },
   { id: "team", label: "Team", icon: Users, path: "/business-team" },
   { id: "systems", label: "Systems", icon: SettingsIcon, path: "/systems" },
@@ -59,6 +61,8 @@ export default function Business() {
         return <Messages channelTypeFilter="channel" />;
       case "minutes":
         return <Minutes />;
+      case "notes":
+        return <Notes projectId={null} />;
       case "leave":
         return <ComingSoonPage section="business-leave" />;
       case "team":
