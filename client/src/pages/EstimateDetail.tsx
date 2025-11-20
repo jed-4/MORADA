@@ -50,7 +50,10 @@ import {
   Filter,
   Download,
   Upload,
-  Copy
+  Copy,
+  Columns,
+  Layers,
+  Flag
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -4065,206 +4068,151 @@ export default function EstimateDetail() {
 
       {/* Row 2 - Filters + Controls (36px) */}
       <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-2 flex-1">
-            {/* Group Expand/Collapse */}
-            {groups.length > 0 && (
-              <>
-                <Button
-                  variant="outline"
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                  onClick={handleToggleAllGroups}
-                  data-testid="button-toggle-all-groups"
-                >
-                  {groups.some(group => !group.isCollapsed) ? (
-                    <>
-                      <ChevronDown className="h-3 w-3" />
-                      <span>Collapse All</span>
-                    </>
-                  ) : (
-                    <>
-                      <ChevronRight className="h-3 w-3" />
-                      <span>Expand All</span>
-                    </>
-                  )}
-                </Button>
-                <Separator orientation="vertical" className="h-4" />
-              </>
-            )}
-            
-            {/* Filter by Type */}
-            <Filter className="h-3 w-3 text-muted-foreground" />
-            <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="h-6 w-auto min-w-[100px] px-2 text-xs border rounded-md" data-testid="filter-type">
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {Array.from(new Set(items.map(item => item.type))).map(type => (
-                  <SelectItem key={type} value={type}>{type}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {/* Left: Filter Chips */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Group Expand/Collapse */}
+          {groups.length > 0 && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              onClick={handleToggleAllGroups}
+              data-testid="button-toggle-all-groups"
+            >
+              {groups.some(group => !group.isCollapsed) ? (
+                <>
+                  <ChevronDown className="h-3 w-3" />
+                  <span>Collapse All</span>
+                </>
+              ) : (
+                <>
+                  <ChevronRight className="h-3 w-3" />
+                  <span>Expand All</span>
+                </>
+              )}
+            </button>
+          )}
+          
+          {/* Filter by Type - Chip Style */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-0.5 ${
+                  filterType !== 'all' 
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="filter-type"
+              >
+                <Filter className="h-3 w-3" />
+                <span>{filterType === 'all' ? 'All Types' : filterType}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setFilterType('all')}>All Types</DropdownMenuItem>
+              {Array.from(new Set(items.map(item => item.type))).map(type => (
+                <DropdownMenuItem key={type} onClick={() => setFilterType(type)}>{type}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-            {/* Filter by Status */}
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="h-6 w-auto min-w-[100px] px-2 text-xs border rounded-md" data-testid="filter-status">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
-                  <SelectItem key={option.key} value={option.key}>{option.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Filter by Status - Chip Style */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-0.5 ${
+                  filterStatus !== 'all' 
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="filter-status"
+              >
+                <Flag className="h-3 w-3" />
+                <span>{filterStatus === 'all' ? 'All Status' : estimateItemStatusCategory?.options?.find((opt: any) => opt.key === filterStatus)?.name || filterStatus}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setFilterStatus('all')}>All Status</DropdownMenuItem>
+              {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                <DropdownMenuItem key={option.key} onClick={() => setFilterStatus(option.key)}>{option.name}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-            {/* Filter by Group */}
-            {groups.length > 0 && (
-              <Select value={filterGroup} onValueChange={setFilterGroup}>
-                <SelectTrigger className="h-6 w-auto min-w-[100px] px-2 text-xs border rounded-md" data-testid="filter-group">
-                  <SelectValue placeholder="All Groups" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Groups</SelectItem>
-                  {groups.map(group => (
-                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setIsImportOpen(true)}
-                    disabled={estimate?.isLocked}
-                    data-testid="button-import-estimate"
-                  >
-                    <Upload className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Import items</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleExportEstimate}
-                    disabled={!items || items.length === 0}
-                    data-testid="button-export-estimate"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Export estimate</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setIsCatalogOpen(true)}
-                    disabled={estimate?.isLocked}
-                    data-testid="button-catalog"
-                  >
-                    <Package className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Open catalog</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
+          {/* Filter by Group - Chip Style */}
+          {groups.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="h-8 px-3 text-sm"
-                  data-testid="button-column-visibility"
+                <button 
+                  className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-0.5 ${
+                    filterGroup !== 'all' 
+                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                      : 'hover-elevate'
+                  } active-elevate-2`}
+                  data-testid="filter-group"
                 >
-                  <Eye className="h-4 w-4 mr-1" />
-                  Columns
-                </Button>
+                  <Layers className="h-3 w-3" />
+                  <span>{filterGroup === 'all' ? 'All Groups' : groups.find(g => g.id === filterGroup)?.name || 'Group'}</span>
+                </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
-                {columns.map(column => (
-                  <DropdownMenuItem 
-                    key={column.id}
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <Checkbox
-                      checked={column.visible}
-                      onCheckedChange={() => toggleColumn(column.id)}
-                      className="mr-2"
-                    />
-                    {column.label}
-                  </DropdownMenuItem>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => setFilterGroup('all')}>All Groups</DropdownMenuItem>
+                {groups.map(group => (
+                  <DropdownMenuItem key={group.id} onClick={() => setFilterGroup(group.id)}>{group.name}</DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <Button 
-              className="h-8 px-3 text-sm"
-              data-testid="button-add-group" 
-              onClick={handleAddGroup}
-              disabled={estimate?.isLocked}
-              variant="outline"
-            >
-              <FolderPlus className="w-4 h-4 mr-1" />
-              Group
-            </Button>
-
-            <Button 
-              className="h-8 px-3 text-sm bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
-              data-testid="button-add-item" 
-              onClick={handleAddItem}
-              disabled={estimate?.isLocked}
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              New Item
-            </Button>
-
-            {estimate && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant={estimate.isLocked ? "destructive" : "outline"} 
-                      size="icon"
-                      className="h-8 w-8"
-                      data-testid="button-toggle-lock"
-                      onClick={handleToggleLock}
-                      disabled={toggleLockMutation.isPending}
-                    >
-                      {estimate.isLocked ? (
-                        <Unlock className="w-4 h-4" />
-                      ) : (
-                        <Lock className="w-4 h-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{estimate.isLocked ? "Unlock estimate" : "Lock estimate"}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
+          )}
         </div>
+
+        {/* Right: Controls */}
+        <div className="flex items-center gap-1.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-column-visibility"
+              >
+                <Columns className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
+              {columns.map(column => (
+                <DropdownMenuItem 
+                  key={column.id}
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <Checkbox
+                    checked={column.visible}
+                    onCheckedChange={() => toggleColumn(column.id)}
+                    className="mr-2"
+                  />
+                  {column.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <button 
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+            data-testid="button-add-group" 
+            onClick={handleAddGroup}
+            disabled={estimate?.isLocked}
+          >
+            <FolderPlus className="w-3 h-3" />
+            <span>Group</span>
+          </button>
+
+          <button 
+            className="h-6 w-auto px-2 text-xs bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            data-testid="button-add-item" 
+            onClick={handleAddItem}
+            disabled={estimate?.isLocked}
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Item</span>
+          </button>
+        </div>
+      </div>
 
       {/* Row 3: Bulk Actions Toolbar (conditional) */}
       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
