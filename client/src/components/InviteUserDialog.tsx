@@ -61,12 +61,12 @@ export default function InviteUserDialog({
   const [copied, setCopied] = useState(false);
 
   // Fetch available roles
-  const { data: roles = [] } = useQuery({
+  const { data: roles = [] } = useQuery<any[]>({
     queryKey: ["/api/user-roles"],
   });
 
   // Fetch available projects
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
   });
 
@@ -94,7 +94,7 @@ export default function InviteUserDialog({
         ...data,
         userCategory: "team",
         invitedBy: user?.id,
-        company: user?.company,
+        companyId: user?.companyId,
       });
     },
     onSuccess: (data) => {

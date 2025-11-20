@@ -4245,7 +4245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User Invitation Routes
-  app.get("/api/invitations", requireTeamMember, requirePermission("admin.suppliers", "view"), async (req, res) => {
+  app.get("/api/invitations", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
       const { status } = req.query;
       const invitations = await storage.getUserInvitations(status as string);
@@ -4255,7 +4255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invitations/:id", requireTeamMember, requirePermission("admin.suppliers", "view"), async (req, res) => {
+  app.get("/api/invitations/:id", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
       const invitation = await storage.getUserInvitation(req.params.id);
       if (!invitation) {
@@ -4267,7 +4267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/invitations", requireTeamMember, requirePermission("admin.suppliers", "add"), async (req, res) => {
+  app.post("/api/invitations", requireTeamMember, requirePermission("admin.users", "add"), async (req, res) => {
     try {
       const validationResult = insertUserInvitationSchema.safeParse(req.body);
       if (!validationResult.success) {
