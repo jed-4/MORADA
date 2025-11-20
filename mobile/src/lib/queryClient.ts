@@ -1,2 +1,2 @@
-// Re-export shared API client for web app
+// Re-export shared API client for mobile app
 export { apiRequest, getQueryFn, queryClient, getApiBaseUrl } from "@shared/api";

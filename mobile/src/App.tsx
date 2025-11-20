@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@lib/queryClient";
 
-export default function App() {
+function MobileApp() {
   const [activeTab, setActiveTab] = useState("dashboard");
 
   return (
@@ -27,6 +29,9 @@ export default function App() {
               </div>
               <div className="bg-primary/10 p-3 rounded-md">
                 <p className="text-sm font-medium">✅ Android Platform Added</p>
+              </div>
+              <div className="bg-primary/10 p-3 rounded-md">
+                <p className="text-sm font-medium">✅ Shared API Client Ready</p>
               </div>
               <div className="bg-primary/10 p-3 rounded-md">
                 <p className="text-sm font-medium">✅ Mobile Build System Ready</p>
@@ -62,5 +67,13 @@ export default function App() {
         </div>
       </nav>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MobileApp />
+    </QueryClientProvider>
   );
 }
