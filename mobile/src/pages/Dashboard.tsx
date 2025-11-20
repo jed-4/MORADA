@@ -2,17 +2,19 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { useQuery } from "@tanstack/react-query";
 import type { Project, Task, Activity } from "@shared/schema";
 import { Loader2 } from "lucide-react";
+import { PullToRefreshIndicator } from "@/components/PullToRefresh";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 
 export function Dashboard() {
-  const { data: projects = [], isLoading: isLoadingProjects } = useQuery<Project[]>({
+  const { data: projects = [], isLoading: isLoadingProjects, refetch: refetchProjects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
   });
 
-  const { data: activities = [], isLoading: isLoadingActivities } = useQuery<Activity[]>({
+  const { data: activities = [], isLoading: isLoadingActivities, refetch: refetchActivities } = useQuery<Activity[]>({
     queryKey: ["/api/activities"],
     queryFn: async () => {
       const response = await fetch("/api/activities?limit=10", {
@@ -20,6 +22,17 @@ export function Dashboard() {
       });
       if (!response.ok) throw new Error("Failed to fetch activities");
       return response.json();
+    },
+  });
+
+  const pullToRefresh = usePullToRefresh({
+    onRefresh: async () => {
+      // Invalidate and wait for all queries to refetch
+      await Promise.all([
+        refetchProjects().then(() => undefined),
+        refetchTasks().then(() => undefined),
+        refetchActivities().then(() => undefined),
+      ]);
     },
   });
 
@@ -37,8 +50,19 @@ export function Dashboard() {
     <div className="flex flex-col h-full">
       <MobileHeader title="Dashboard" />
       
-      <main className="flex-1 overflow-y-auto p-4 space-y-4">
-        {isLoading ? (
+      <main 
+        ref={pullToRefresh.containerRef}
+        className="flex-1 overflow-y-auto"
+        {...pullToRefresh.touchHandlers}
+      >
+        <PullToRefreshIndicator 
+          isRefreshing={pullToRefresh.isRefreshing}
+          pullDistance={pullToRefresh.pullDistance}
+          pullPercentage={pullToRefresh.pullPercentage}
+        />
+        
+        <div className="p-4 space-y-4">
+          {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
@@ -94,6 +118,7 @@ export function Dashboard() {
             </div>
           </>
         )}
+        </div>
       </main>
     </div>
   );

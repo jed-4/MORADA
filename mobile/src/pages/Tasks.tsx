@@ -5,6 +5,8 @@ import type { Task } from "@shared/schema";
 import { useState } from "react";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
+import { PullToRefreshIndicator } from "@/components/PullToRefresh";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { apiRequest, queryClient } from "@lib/queryClient";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 
@@ -14,9 +16,15 @@ export function Tasks() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading, refetch } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
     enabled: true,
+  });
+
+  const pullToRefresh = usePullToRefresh({
+    onRefresh: async () => {
+      await refetch().then(() => undefined);
+    },
   });
 
   const updateTaskMutation = useMutation({
@@ -102,7 +110,17 @@ export function Tasks() {
         </div>
       </div>
 
-      <main className="flex-1 overflow-y-auto">
+      <main 
+        ref={pullToRefresh.containerRef}
+        className="flex-1 overflow-y-auto"
+        {...pullToRefresh.touchHandlers}
+      >
+        <PullToRefreshIndicator 
+          isRefreshing={pullToRefresh.isRefreshing}
+          pullDistance={pullToRefresh.pullDistance}
+          pullPercentage={pullToRefresh.pullPercentage}
+        />
+        
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />

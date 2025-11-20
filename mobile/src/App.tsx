@@ -6,6 +6,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Tasks } from "@/pages/Tasks";
 import { Timesheets } from "@/pages/Timesheets";
 import { Messages } from "@/pages/Messages";
+import { ComingSoon } from "@/pages/ComingSoon";
 
 function MobileApp() {
   return (
@@ -17,6 +18,18 @@ function MobileApp() {
           <Route path="/tasks" component={Tasks} />
           <Route path="/timesheets" component={Timesheets} />
           <Route path="/messages" component={Messages} />
+          <Route path="/profile">
+            {() => <ComingSoon title="Profile" description="Manage your profile settings and preferences" />}
+          </Route>
+          <Route path="/team">
+            {() => <ComingSoon title="Team" description="View and manage your team members" />}
+          </Route>
+          <Route path="/settings">
+            {() => <ComingSoon title="Settings" description="Configure your app settings" />}
+          </Route>
+          <Route path="/help">
+            {() => <ComingSoon title="Help & Support" description="Get help and support for BuildPro" />}
+          </Route>
         </Switch>
       </main>
 

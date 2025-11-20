@@ -76,4 +76,36 @@
   .safe-right {
     padding-right: env(safe-area-inset-right);
   }
+
+  /* Mobile animations */
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+  }
+
+  .animate-slide-in-left {
+    animation: slide-in-left 0.3s ease-out;
+  }
+
+  /* Touch-friendly scrolling */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
 }

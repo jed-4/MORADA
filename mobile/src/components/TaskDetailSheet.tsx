@@ -4,7 +4,7 @@ import { MobileTextarea } from "./ui/MobileTextarea";
 import { MobileButton } from "./ui/MobileButton";
 import { X, Calendar, User } from "lucide-react";
 import type { Task } from "@shared/schema";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface TaskDetailSheetProps {
   task: Task | null;
@@ -18,6 +18,16 @@ export function TaskDetailSheet({ task, isOpen, onClose, onSave }: TaskDetailShe
   const [content, setContent] = useState(task?.content || "");
   const [status, setStatus] = useState(task?.status || "todo");
   const [priority, setPriority] = useState(task?.priority || "medium");
+
+  // Sync local state when task changes
+  useEffect(() => {
+    if (task) {
+      setTitle(task.title);
+      setContent(task.content || "");
+      setStatus(task.status);
+      setPriority(task.priority || "medium");
+    }
+  }, [task]);
 
   const handleSave = () => {
     onSave({

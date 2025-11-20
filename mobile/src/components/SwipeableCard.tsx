@@ -45,9 +45,23 @@ export function SwipeableCard({
     const swipeThreshold = 100;
     
     if (currentX > swipeThreshold && onSwipeRight) {
-      onSwipeRight();
+      // Animate completion before resetting
+      setCurrentX(200);
+      setTimeout(() => {
+        onSwipeRight();
+        setCurrentX(0);
+        setIsSwiping(false);
+      }, 200);
+      return;
     } else if (currentX < -swipeThreshold && onSwipeLeft) {
-      onSwipeLeft();
+      // Animate completion before resetting
+      setCurrentX(-200);
+      setTimeout(() => {
+        onSwipeLeft();
+        setCurrentX(0);
+        setIsSwiping(false);
+      }, 200);
+      return;
     }
     
     setCurrentX(0);
