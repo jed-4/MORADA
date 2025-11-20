@@ -22,6 +22,7 @@ Preferred communication style: Simple, everyday language.
 - **API Design**: RESTful API (`/api` prefix).
 - **Session Management**: Express sessions with PostgreSQL session store.
 - **Error Handling**: Centralized middleware.
+- **Email Service**: Resend for transactional emails (user invitations). Configured with RESEND_API_KEY environment secret.
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect.
