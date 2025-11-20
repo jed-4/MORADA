@@ -15,10 +15,10 @@ const mobileButtonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-11 px-4 text-base",
-        sm: "h-9 px-3 text-sm",
-        lg: "h-12 px-6 text-lg",
-        icon: "h-11 w-11",
+        default: "h-11 px-4 text-base min-h-11",
+        sm: "h-11 px-3 text-sm min-h-11",
+        lg: "h-12 px-6 text-lg min-h-12",
+        icon: "h-11 w-11 min-h-11 min-w-11",
       },
     },
     defaultVariants: {
