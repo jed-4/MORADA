@@ -137,6 +137,7 @@ export const userProjectAccess = pgTable("user_project_access", {
 // User invitations for suppliers and clients
 export const userInvitations = pgTable("user_invitations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
   email: text("email").notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
