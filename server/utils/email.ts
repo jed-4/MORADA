@@ -1,5 +1,10 @@
 import { Resend } from 'resend';
 
+// Check if API key is configured
+if (!process.env.RESEND_API_KEY) {
+  console.error('⚠️  RESEND_API_KEY is not set - email functionality will not work');
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface SendInvitationEmailParams {
@@ -17,6 +22,9 @@ export async function sendInvitationEmail({
   inviteUrl,
   recipientName,
 }: SendInvitationEmailParams) {
+  console.log(`📧 Attempting to send invitation email to ${to}`);
+  console.log(`   API Key configured: ${process.env.RESEND_API_KEY ? 'YES' : 'NO'}`);
+  
   const greeting = recipientName ? `Hi ${recipientName}` : 'Hi there';
   
   try {
@@ -102,14 +110,19 @@ export async function sendInvitationEmail({
     });
 
     if (error) {
-      console.error('Resend error:', error);
-      throw new Error(`Failed to send email: ${error.message}`);
+      console.error('❌ Resend API error:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to send email: ${error.message || 'Unknown error'}`);
     }
 
-    console.log('Invitation email sent successfully:', data?.id);
+    console.log('✅ Invitation email sent successfully!');
+    console.log(`   Email ID: ${data?.id}`);
+    console.log(`   Sent to: ${to}`);
     return data;
-  } catch (error) {
-    console.error('Error sending invitation email:', error);
+  } catch (error: any) {
+    console.error('❌ Error sending invitation email:');
+    console.error(`   Error type: ${error.constructor.name}`);
+    console.error(`   Error message: ${error.message}`);
+    console.error(`   Full error:`, error);
     throw error;
   }
 }
