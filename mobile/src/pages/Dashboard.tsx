@@ -1,20 +1,9 @@
 import { MobileHeader } from "@/components/MobileHeader";
-import { Plus } from "lucide-react";
 
 export function Dashboard() {
   return (
     <div className="flex flex-col h-full">
-      <MobileHeader 
-        title="Dashboard"
-        action={
-          <button
-            className="p-2 hover-elevate active-elevate-2 rounded-md"
-            data-testid="button-add-widget"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        }
-      />
+      <MobileHeader title="Dashboard" />
       
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="bg-card rounded-xl p-6 border">

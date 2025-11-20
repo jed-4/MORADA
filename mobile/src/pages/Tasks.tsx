@@ -12,17 +12,7 @@ export function Tasks() {
 
   return (
     <div className="flex flex-col h-full">
-      <MobileHeader 
-        title="Tasks"
-        action={
-          <button
-            className="p-2 hover-elevate active-elevate-2 rounded-md"
-            data-testid="button-add-task"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        }
-      />
+      <MobileHeader title="Tasks" />
       
       {/* Search and Filter Bar */}
       <div className="bg-card border-b px-4 py-3 space-y-3">

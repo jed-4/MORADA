@@ -1,11 +1,11 @@
 import { useLocation } from "wouter";
-import { Home, CheckSquare, FolderKanban, Menu } from "lucide-react";
+import { Home, CheckSquare, Clock, MessageSquare } from "lucide-react";
 
 const tabs = [
   { path: "/", label: "Dashboard", Icon: Home },
   { path: "/tasks", label: "Tasks", Icon: CheckSquare },
-  { path: "/projects", label: "Projects", Icon: FolderKanban },
-  { path: "/more", label: "More", Icon: Menu },
+  { path: "/timesheets", label: "Timesheets", Icon: Clock },
+  { path: "/messages", label: "Messages", Icon: MessageSquare },
 ];
 
 export function BottomNav() {

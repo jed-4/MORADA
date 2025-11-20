@@ -4,8 +4,8 @@ import { queryClient } from "@lib/queryClient";
 import { BottomNav } from "@/components/BottomNav";
 import { Dashboard } from "@/pages/Dashboard";
 import { Tasks } from "@/pages/Tasks";
-import { Projects } from "@/pages/Projects";
-import { More } from "@/pages/More";
+import { Timesheets } from "@/pages/Timesheets";
+import { Messages } from "@/pages/Messages";
 
 function MobileApp() {
   return (
@@ -15,8 +15,8 @@ function MobileApp() {
         <Switch>
           <Route path="/" component={Dashboard} />
           <Route path="/tasks" component={Tasks} />
-          <Route path="/projects" component={Projects} />
-          <Route path="/more" component={More} />
+          <Route path="/timesheets" component={Timesheets} />
+          <Route path="/messages" component={Messages} />
         </Switch>
       </main>
 

@@ -1,12 +1,22 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Menu, Bell } from "lucide-react";
+import { useState } from "react";
 
 interface MobileHeaderProps {
   title: string;
   showBack?: boolean;
+  showMore?: boolean;
+  showNotifications?: boolean;
   action?: React.ReactNode;
 }
 
-export function MobileHeader({ title, showBack = false, action }: MobileHeaderProps) {
+export function MobileHeader({ 
+  title, 
+  showBack = false, 
+  showMore = true,
+  showNotifications = true,
+  action 
+}: MobileHeaderProps) {
+  const [, setShowMoreMenu] = useState(false);
 
   return (
     <header className="safe-top bg-card border-b px-4 py-3 flex items-center justify-between">
@@ -20,9 +30,29 @@ export function MobileHeader({ title, showBack = false, action }: MobileHeaderPr
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
+        {showMore && !showBack && (
+          <button
+            onClick={() => setShowMoreMenu(true)}
+            className="p-2 -ml-2 hover-elevate active-elevate-2 rounded-md"
+            data-testid="button-more-menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <h1 className="text-lg font-semibold">{title}</h1>
       </div>
-      {action && <div>{action}</div>}
+      <div className="flex items-center gap-2">
+        {action}
+        {showNotifications && (
+          <button
+            className="p-2 hover-elevate active-elevate-2 rounded-md relative"
+            data-testid="button-notifications"
+          >
+            <Bell className="w-5 h-5" />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
+          </button>
+        )}
+      </div>
     </header>
   );
 }
