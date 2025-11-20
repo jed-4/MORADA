@@ -228,9 +228,10 @@ export const insertUserInvitationSchema = createInsertSchema(userInvitations).om
   id: true,
   createdAt: true,
   updatedAt: true,
+  inviteToken: true,
+  expiresAt: true,
 }).extend({
   projectIds: z.array(z.string()).default([]),
-  expiresAt: z.coerce.date(),
 });
 
 export const insertUserColumnPreferencesSchema = createInsertSchema(userColumnPreferences).omit({

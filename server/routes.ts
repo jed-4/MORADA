@@ -4277,7 +4277,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const invitation = await storage.createUserInvitation(validationResult.data);
+      // Storage layer will auto-generate inviteToken and expiresAt
+      const invitation = await storage.createUserInvitation(validationResult.data as any);
       // TODO: Send email invitation here
       
       res.status(201).json({
