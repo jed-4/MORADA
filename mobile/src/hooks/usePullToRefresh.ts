@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { Haptics, ImpactStyle } from "@capacitor/haptics";
+import { ImpactStyle } from "@capacitor/haptics";
+import { getHaptics } from "@/lib/capacitor";
 
 interface UsePullToRefreshOptions {
   onRefresh: () => Promise<void>;
@@ -39,7 +40,8 @@ export function usePullToRefresh({ onRefresh, threshold = 80 }: UsePullToRefresh
   const handleTouchEnd = async () => {
     if (pullDistance >= threshold && !isRefreshing) {
       setIsRefreshing(true);
-      Haptics.impact({ style: ImpactStyle.Medium });
+      const Haptics = await getHaptics();
+      await Haptics.impact({ style: ImpactStyle.Medium });
       
       try {
         await onRefresh();

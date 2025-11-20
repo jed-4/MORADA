@@ -8,7 +8,8 @@ import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { apiRequest, queryClient } from "@lib/queryClient";
-import { Haptics, ImpactStyle } from "@capacitor/haptics";
+import { ImpactStyle } from "@capacitor/haptics";
+import { getHaptics } from "@/lib/capacitor";
 
 export function Tasks() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -31,9 +32,10 @@ export function Tasks() {
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
       return await apiRequest(`/api/tasks/${taskId}/status`, "PATCH", { status });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      Haptics.impact({ style: ImpactStyle.Medium });
+      const Haptics = await getHaptics();
+      await Haptics.impact({ style: ImpactStyle.Medium });
     },
   });
 
@@ -41,9 +43,10 @@ export function Tasks() {
     mutationFn: async (taskId: string) => {
       return await apiRequest(`/api/tasks/${taskId}`, "DELETE", {});
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      Haptics.impact({ style: ImpactStyle.Heavy });
+      const Haptics = await getHaptics();
+      await Haptics.impact({ style: ImpactStyle.Heavy });
     },
   });
 

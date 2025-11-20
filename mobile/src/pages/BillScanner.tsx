@@ -5,8 +5,9 @@ import { MobileButton } from "@/components/ui/MobileButton";
 import { MobileInput } from "@/components/ui/MobileInput";
 import { BottomSheet } from "@/components/BottomSheet";
 import { Camera as CameraIcon, Image, FileText, Check, X, AlertCircle } from "lucide-react";
-import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
-import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
+import { CameraResultType, CameraSource } from "@capacitor/camera";
+import { ImpactStyle, NotificationType } from "@capacitor/haptics";
+import { getCamera, getHaptics } from "@/lib/capacitor";
 import { apiRequest } from "@shared/api";
 import { queryClient } from "@lib/queryClient";
 import type { Project } from "@shared/schema";
@@ -46,20 +47,23 @@ export function BillScanner() {
   const processOCRMutation = useMutation({
     mutationFn: async (imageData: string) => {
       setError(null);
-      Haptics.impact({ style: ImpactStyle.Medium });
+      const Haptics = await getHaptics();
+      await Haptics.impact({ style: ImpactStyle.Medium });
       return await apiRequest<OCRResult>("/api/ocr/process-invoice", "POST", {
         fileData: imageData,
         fileName: `invoice_${Date.now()}.jpg`,
       });
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setOcrResult(data);
       setIsReviewSheetOpen(true);
-      Haptics.notification({ type: NotificationType.Success });
+      const Haptics = await getHaptics();
+      await Haptics.notification({ type: NotificationType.Success });
     },
-    onError: (err: any) => {
+    onError: async (err: any) => {
       setError(err.message || "Failed to process invoice. Please try again.");
-      Haptics.notification({ type: NotificationType.Error });
+      const Haptics = await getHaptics();
+      await Haptics.notification({ type: NotificationType.Error });
     },
   });
 
@@ -83,23 +87,26 @@ export function BillScanner() {
         status: "draft",
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       setIsReviewSheetOpen(false);
       setCapturedImage(null);
       setOcrResult(null);
       setSelectedProjectId("");
       setError(null);
-      Haptics.notification({ type: NotificationType.Success });
+      const Haptics = await getHaptics();
+      await Haptics.notification({ type: NotificationType.Success });
     },
-    onError: (err: any) => {
+    onError: async (err: any) => {
       setError(err.message || "Failed to create bill. Please try again.");
-      Haptics.notification({ type: NotificationType.Error });
+      const Haptics = await getHaptics();
+      await Haptics.notification({ type: NotificationType.Error });
     },
   });
 
   const handleTakePhoto = async () => {
     try {
+      const Camera = await getCamera();
       const photo = await Camera.getPhoto({
         resultType: CameraResultType.Base64,
         source: CameraSource.Camera,
@@ -116,12 +123,14 @@ export function BillScanner() {
     } catch (error: any) {
       console.error("Camera error:", error);
       setError(error.message || "Failed to access camera. Please check permissions.");
-      Haptics.notification({ type: NotificationType.Error });
+      const Haptics = await getHaptics();
+      await Haptics.notification({ type: NotificationType.Error });
     }
   };
 
   const handleSelectFromGallery = async () => {
     try {
+      const Camera = await getCamera();
       const photo = await Camera.getPhoto({
         resultType: CameraResultType.Base64,
         source: CameraSource.Photos,
@@ -137,7 +146,8 @@ export function BillScanner() {
     } catch (error: any) {
       console.error("Gallery error:", error);
       setError(error.message || "Failed to select photo. Please try again.");
-      Haptics.notification({ type: NotificationType.Error });
+      const Haptics = await getHaptics();
+      await Haptics.notification({ type: NotificationType.Error });
     }
   };
 
