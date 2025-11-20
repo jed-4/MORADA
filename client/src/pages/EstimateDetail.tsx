@@ -31,6 +31,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   ArrowLeft, 
   Lock, 
+  LockOpen,
   Unlock, 
   FileText, 
   Calculator,
@@ -3955,54 +3956,115 @@ export default function EstimateDetail() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* BuildPro 3-Row Header */}
-      <div className="bg-white dark:bg-gray-950 border-b border-border">
-        {/* Row 1: Breadcrumb + Status */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8"
-              onClick={() => setLocation("/estimates")} 
-              data-testid="button-back-to-estimates" 
-              aria-label="Back to Estimates"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Project:</span>
-              <span className="font-medium" data-testid="text-project-name">{project?.name || 'Loading...'}</span>
-              <span className="text-muted-foreground">/</span>
-              {isEditingName ? (
-                <Input
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onKeyDown={handleNameKeyDown}
-                  onBlur={handleNameSave}
-                  className="h-6 text-sm font-semibold bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                  data-testid="input-estimate-name"
-                  autoFocus
-                />
-              ) : (
-                <span 
-                  className="font-semibold cursor-pointer hover:text-[#bba7db] transition-colors" 
-                  data-testid="text-estimate-title"
-                  onClick={handleNameEdit}
-                  title="Click to edit estimate name"
-                >
-                  {estimate?.name || 'Loading...'}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {estimate && getStatusBadge(estimate)}
+      {/* UNIFIED 2-ROW HEADER - MATCHES TASKS */}
+      
+      {/* Row 1 - Breadcrumb + Actions (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Breadcrumb Navigation */}
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6"
+            onClick={() => setLocation(`/projects/${project?.id}/estimates`)} 
+            data-testid="button-back-to-estimates" 
+            aria-label="Back to Estimates"
+          >
+            <ArrowLeft className="w-3 h-3" />
+          </Button>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground">{project?.name || 'Project'}</span>
+            <span className="text-muted-foreground">/</span>
+            {isEditingName ? (
+              <Input
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onKeyDown={handleNameKeyDown}
+                onBlur={handleNameSave}
+                className="h-6 text-xs font-semibold bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                data-testid="input-estimate-name"
+                autoFocus
+              />
+            ) : (
+              <span 
+                className="font-semibold cursor-pointer hover:text-[#bba7db] transition-colors" 
+                data-testid="text-estimate-title"
+                onClick={handleNameEdit}
+                title="Click to edit estimate name"
+              >
+                {estimate?.name || 'Estimate'}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Row 2: Filters + Actions */}
-        <div className="flex items-center justify-between px-4 py-2 gap-3">
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          {estimate && getStatusBadge(estimate)}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  onClick={handleToggleLock}
+                  disabled={!canManageEstimates}
+                  data-testid="button-toggle-lock"
+                >
+                  {estimate?.isLocked ? <Lock className="w-3 h-3" /> : <LockOpen className="w-3 h-3" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  onClick={() => setIsImportOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-import-estimate"
+                >
+                  <Upload className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Import items</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  onClick={handleExportToExcel}
+                  data-testid="button-export-estimate"
+                >
+                  <Download className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Export to Excel</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  onClick={() => setIsCatalogOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-open-catalog"
+                >
+                  <Package className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Browse catalog</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      </div>
+
+      {/* Row 2 - Filters + Controls (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2 flex-1">
             {/* Group Expand/Collapse */}
             {groups.length > 0 && (
@@ -4204,8 +4266,9 @@ export default function EstimateDetail() {
           </div>
         </div>
 
-        {/* Row 3: Bulk Actions Toolbar (conditional) */}
-        {(selectedItems.size > 0 || selectedGroups.size > 0) && (
+      {/* Row 3: Bulk Actions Toolbar (conditional) */}
+      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
+        <div>
           <div className="flex items-center justify-between px-4 py-2 bg-[#bba7db]/10 border-t border-[#bba7db]/20">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-[#bba7db]">
@@ -4269,8 +4332,8 @@ export default function EstimateDetail() {
               </Button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
