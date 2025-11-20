@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import path from "path";
+import fs from "fs";
 
 const app = express();
 app.use(express.json());
@@ -69,6 +71,16 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     throw err;
   });
+
+  // Serve mobile app preview from built files
+  const mobileDistPath = path.resolve(import.meta.dirname, "..", "dist", "mobile");
+  if (fs.existsSync(mobileDistPath)) {
+    app.use("/mobile", express.static(mobileDistPath));
+    app.get("/mobile/*", (_req, res) => {
+      res.sendFile(path.join(mobileDistPath, "index.html"));
+    });
+    log("Mobile app preview available at /mobile");
+  }
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
