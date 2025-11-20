@@ -106,6 +106,7 @@
     "react-resizable-panels": "^2.1.7",
     "react-window": "^2.2.2",
     "recharts": "^2.15.2",
+    "resend": "^6.5.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^2.6.0",

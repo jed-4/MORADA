@@ -5,6 +5,7 @@ import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes } from "crypto";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./replitAuth";
+import { sendInvitationEmail } from "./utils/email";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -4279,13 +4280,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Storage layer will auto-generate inviteToken and expiresAt
       const invitation = await storage.createUserInvitation(validationResult.data as any);
-      // TODO: Send email invitation here
+      
+      // Get company and inviter information for the email
+      const company = await storage.getCompany(invitation.companyId);
+      const inviter = await storage.getUser(invitation.invitedBy);
+      
+      const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+      const host = req.get('host');
+      const inviteUrl = `${protocol}://${host}/accept-invite/${invitation.inviteToken}`;
+      
+      // Send invitation email
+      try {
+        await sendInvitationEmail({
+          to: invitation.email,
+          inviterName: inviter?.firstName && inviter?.lastName 
+            ? `${inviter.firstName} ${inviter.lastName}` 
+            : inviter?.email || 'A team member',
+          companyName: company?.name || 'the team',
+          inviteUrl,
+          recipientName: invitation.firstName || undefined,
+        });
+        
+        console.log(`Invitation email sent to ${invitation.email}`);
+      } catch (emailError) {
+        console.error('Failed to send invitation email:', emailError);
+        // Don't fail the whole request if email fails
+        // The user can still use the copy-paste link
+      }
       
       res.status(201).json({
         ...invitation,
-        inviteUrl: `${req.get('host')}/accept-invite/${invitation.inviteToken}`
+        inviteUrl,
       });
     } catch (error) {
+      console.error('Error creating invitation:', error);
       res.status(500).json({ error: "Failed to create invitation" });
     }
   });
