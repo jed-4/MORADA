@@ -6010,7 +6010,26 @@ export class DbStorage implements IStorage {
     }
   }
   
-  async createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation> { throw new Error("Not implemented"); }
+  async createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation> {
+    try {
+      const inviteToken = PasswordUtils.generateSecureToken();
+      const expiresAt = PasswordUtils.generateInviteExpiry();
+      
+      const [created] = await db.insert(schema.userInvitations)
+        .values({
+          ...invitation,
+          inviteToken,
+          expiresAt,
+          status: 'pending',
+        })
+        .returning();
+      
+      return created;
+    } catch (error) {
+      console.error("Database error in createUserInvitation:", error);
+      throw error;
+    }
+  }
   
   async updateUserInvitation(id: string, invitation: Partial<InsertUserInvitation>): Promise<UserInvitation | undefined> {
     try {
