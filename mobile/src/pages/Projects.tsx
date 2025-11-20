@@ -1,13 +1,22 @@
 import { MobileHeader } from "@/components/MobileHeader";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import type { Project } from "@shared/schema";
+import { useState } from "react";
 
 export function Projects() {
-  const projects = [
-    { id: 1, name: "Villa Renovation", client: "Smith Family", status: "In Progress", color: "#bba7db" },
-    { id: 2, name: "Office Fit-out", client: "TechCorp Ltd", status: "In Progress", color: "#60a5fa" },
-    { id: 3, name: "Beach House", client: "Johnson Estate", status: "Planning", color: "#34d399" },
-    { id: 4, name: "Retail Store", client: "Fashion Co", status: "On Hold", color: "#fbbf24" },
-  ];
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const { data: projects = [], isLoading } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const filteredProjects = projects.filter((project) => {
+    if (statusFilter !== "all" && project.status !== statusFilter) return false;
+    if (searchQuery && !project.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -23,49 +32,110 @@ export function Projects() {
         }
       />
       
-      {/* Search Bar */}
-      <div className="bg-card border-b px-4 py-3">
+      {/* Search and Filter Bar */}
+      <div className="bg-card border-b px-4 py-3 space-y-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search projects..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-9 pl-9 pr-3 rounded-md border bg-background text-sm"
             data-testid="input-search-projects"
           />
         </div>
+        
+        <div className="flex gap-2 overflow-x-auto">
+          {[
+            { label: "All", value: "all" },
+            { label: "Active", value: "active" },
+            { label: "On Hold", value: "on_hold" },
+            { label: "Completed", value: "completed" },
+          ].map((filter) => (
+            <button
+              key={filter.value}
+              onClick={() => setStatusFilter(filter.value)}
+              className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
+                statusFilter === filter.value
+                  ? "bg-[#bba7db] text-white"
+                  : "border hover-elevate"
+              }`}
+              data-testid={`filter-${filter.value}`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-3">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="bg-card rounded-xl p-4 border hover-elevate active-elevate-2"
-              data-testid={`project-card-${project.id}`}
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold"
-                  style={{ backgroundColor: project.color }}
-                >
-                  {project.name.charAt(0)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm mb-1">{project.name}</h3>
-                  <div className="text-xs text-muted-foreground mb-2">{project.client}</div>
-                  <span className={`inline-block px-2 py-1 rounded-md text-xs font-medium ${
-                    project.status === "In Progress" ? "bg-primary/10 text-primary" :
-                    project.status === "Planning" ? "bg-blue-500/10 text-blue-600" :
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="p-4 space-y-3">
+            {filteredProjects.map((project) => (
+              <div
+                key={project.id}
+                className="bg-card rounded-xl p-4 border hover-elevate active-elevate-2"
+                data-testid={`project-card-${project.id}`}
+              >
+                <div className="flex items-start gap-3 mb-3">
+                  <div
+                    className="w-10 h-10 rounded-lg flex-shrink-0"
+                    style={{ backgroundColor: project.color || "#bba7db" }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm mb-1">{project.name}</h3>
+                    {project.clientName && (
+                      <p className="text-xs text-muted-foreground">{project.clientName}</p>
+                    )}
+                  </div>
+                  <span className={`px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${
+                    project.status === "active" ? "bg-green-500/10 text-green-600" :
+                    project.status === "on_hold" ? "bg-yellow-500/10 text-yellow-600" :
                     "bg-muted text-muted-foreground"
                   }`}>
-                    {project.status}
+                    {project.status === "active" ? "Active" :
+                     project.status === "on_hold" ? "On Hold" :
+                     project.status === "completed" ? "Completed" : project.status}
                   </span>
                 </div>
+                
+                {project.address && (
+                  <div className="text-xs text-muted-foreground mb-2">
+                    {project.address}
+                  </div>
+                )}
+                
+                <div className="flex items-center gap-4 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Start: </span>
+                    <span className="font-medium">
+                      {project.startDate ? new Date(project.startDate).toLocaleDateString() : "Not set"}
+                    </span>
+                  </div>
+                  {project.endDate && (
+                    <div>
+                      <span className="text-muted-foreground">End: </span>
+                      <span className="font-medium">
+                        {new Date(project.endDate).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            
+            {filteredProjects.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">No projects found</p>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
