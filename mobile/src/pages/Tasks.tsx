@@ -1,14 +1,17 @@
 import { MobileHeader } from "@/components/MobileHeader";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import type { Task } from "@shared/schema";
+import { useState } from "react";
 
 export function Tasks() {
-  const tasks = [
-    { id: 1, title: "Install kitchen cabinets", project: "Villa Renovation", status: "In Progress", priority: "High" },
-    { id: 2, title: "Plumbing inspection", project: "Office Fit-out", status: "To Do", priority: "Medium" },
-    { id: 3, title: "Final cleanup", project: "Beach House", status: "In Progress", priority: "Low" },
-    { id: 4, title: "Paint exterior walls", project: "Villa Renovation", status: "To Do", priority: "High" },
-    { id: 5, title: "Electrical rough-in", project: "Office Fit-out", status: "Done", priority: "Medium" },
-  ];
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+    queryKey: ["/api/tasks"],
+    enabled: true,
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -21,59 +24,95 @@ export function Tasks() {
           <input
             type="text"
             placeholder="Search tasks..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-9 pl-9 pr-3 rounded-md border bg-background text-sm"
             data-testid="input-search-tasks"
           />
         </div>
         
         <div className="flex gap-2 overflow-x-auto">
-          {["All", "To Do", "In Progress", "Done"].map((filter) => (
+          {[
+            { label: "All", value: "all" },
+            { label: "To Do", value: "todo" },
+            { label: "In Progress", value: "in-progress" },
+            { label: "Done", value: "done" },
+          ].map((filter) => (
             <button
-              key={filter}
+              key={filter.value}
+              onClick={() => setStatusFilter(filter.value)}
               className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
-                filter === "All"
+                statusFilter === filter.value
                   ? "bg-[#bba7db] text-white"
                   : "border hover-elevate"
               }`}
-              data-testid={`filter-${filter.toLowerCase().replace(" ", "-")}`}
+              data-testid={`filter-${filter.value}`}
             >
-              {filter}
+              {filter.label}
             </button>
           ))}
         </div>
       </div>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-3">
-          {tasks.map((task) => (
-            <div
-              key={task.id}
-              className="bg-card rounded-xl p-4 border hover-elevate active-elevate-2"
-              data-testid={`task-card-${task.id}`}
-            >
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <h3 className="font-semibold text-sm flex-1">{task.title}</h3>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  task.priority === "High" ? "bg-destructive/10 text-destructive" :
-                  task.priority === "Medium" ? "bg-primary/10 text-primary" :
-                  "bg-muted text-muted-foreground"
-                }`}>
-                  {task.priority}
-                </span>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="p-4 space-y-3">
+            {tasks
+              .filter((task) => {
+                if (statusFilter !== "all" && task.status !== statusFilter) return false;
+                if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+                return true;
+              })
+              .map((task) => (
+                <div
+                  key={task.id}
+                  className="bg-card rounded-xl p-4 border hover-elevate active-elevate-2"
+                  data-testid={`task-card-${task.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <h3 className="font-semibold text-sm flex-1">{task.title}</h3>
+                    {task.priority && (
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        task.priority === "high" ? "bg-destructive/10 text-destructive" :
+                        task.priority === "medium" ? "bg-primary/10 text-primary" :
+                        "bg-muted text-muted-foreground"
+                      }`}>
+                        {task.priority}
+                      </span>
+                    )}
+                  </div>
+                  {task.content && (
+                    <div className="text-xs text-muted-foreground mb-2">{task.content}</div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${
+                      task.status === "done" ? "bg-green-500/10 text-green-600" :
+                      task.status === "in-progress" ? "bg-primary/10 text-primary" :
+                      "bg-muted text-muted-foreground"
+                    }`}>
+                      {task.status === "todo" ? "To Do" :
+                       task.status === "in-progress" ? "In Progress" :
+                       task.status === "done" ? "Done" : task.status}
+                    </span>
+                    {task.dueDate && (
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(task.dueDate).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            {tasks.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">No tasks found</p>
               </div>
-              <div className="text-xs text-muted-foreground mb-2">{task.project}</div>
-              <div className="flex items-center gap-2">
-                <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                  task.status === "Done" ? "bg-green-500/10 text-green-600" :
-                  task.status === "In Progress" ? "bg-primary/10 text-primary" :
-                  "bg-muted text-muted-foreground"
-                }`}>
-                  {task.status}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

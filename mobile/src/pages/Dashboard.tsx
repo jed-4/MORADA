@@ -1,56 +1,99 @@
 import { MobileHeader } from "@/components/MobileHeader";
+import { useQuery } from "@tanstack/react-query";
+import type { Project, Task, Activity } from "@shared/schema";
+import { Loader2 } from "lucide-react";
 
 export function Dashboard() {
+  const { data: projects = [], isLoading: isLoadingProjects } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
+    queryKey: ["/api/tasks"],
+  });
+
+  const { data: activities = [], isLoading: isLoadingActivities } = useQuery<Activity[]>({
+    queryKey: ["/api/activities"],
+    queryFn: async () => {
+      const response = await fetch("/api/activities?limit=10", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch activities");
+      return response.json();
+    },
+  });
+
+  const isLoading = isLoadingProjects || isLoadingTasks || isLoadingActivities;
+
+  const activeProjects = projects.filter((p) => p.status === "active").length;
+  const openTasks = tasks.filter((t) => t.status !== "done").length;
+  const dueToday = tasks.filter((t) => {
+    if (!t.dueDate) return false;
+    const today = new Date().toDateString();
+    return new Date(t.dueDate).toDateString() === today;
+  }).length;
+
   return (
     <div className="flex flex-col h-full">
       <MobileHeader title="Dashboard" />
       
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="bg-card rounded-xl p-6 border">
-          <h2 className="text-xl font-bold mb-2">Quick Stats</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Overview of your active projects and tasks
-          </p>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-primary/10 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-primary">12</div>
-              <div className="text-xs text-muted-foreground mt-1">Active Projects</div>
-            </div>
-            <div className="bg-primary/10 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-primary">47</div>
-              <div className="text-xs text-muted-foreground mt-1">Open Tasks</div>
-            </div>
-            <div className="bg-primary/10 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-primary">8</div>
-              <div className="text-xs text-muted-foreground mt-1">Pending Bills</div>
-            </div>
-            <div className="bg-primary/10 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-primary">3</div>
-              <div className="text-xs text-muted-foreground mt-1">Due Today</div>
-            </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
-        </div>
-
-        <div className="bg-card rounded-xl p-6 border">
-          <h3 className="font-semibold mb-3">Recent Activity</h3>
-          <div className="space-y-3">
-            {[
-              { title: "Task completed", project: "Villa Renovation", time: "2h ago" },
-              { title: "Bill approved", project: "Office Fit-out", time: "5h ago" },
-              { title: "New estimate", project: "Beach House", time: "1d ago" },
-            ].map((item, i) => (
-              <div key={i} className="flex items-start gap-3 pb-3 border-b last:border-0">
-                <div className="w-2 h-2 bg-primary rounded-full mt-2" />
-                <div className="flex-1">
-                  <div className="font-medium text-sm">{item.title}</div>
-                  <div className="text-xs text-muted-foreground">{item.project}</div>
+        ) : (
+          <>
+            <div className="bg-card rounded-xl p-6 border">
+              <h2 className="text-xl font-bold mb-2">Quick Stats</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Overview of your active projects and tasks
+              </p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-primary">{activeProjects}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Active Projects</div>
                 </div>
-                <div className="text-xs text-muted-foreground">{item.time}</div>
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-primary">{openTasks}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Open Tasks</div>
+                </div>
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-primary">{projects.length}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Total Projects</div>
+                </div>
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-primary">{dueToday}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Due Today</div>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+
+            <div className="bg-card rounded-xl p-6 border">
+              <h3 className="font-semibold mb-3">Recent Activity</h3>
+              <div className="space-y-3">
+                {activities.slice(0, 5).map((activity) => (
+                  <div key={activity.id} className="flex items-start gap-3 pb-3 border-b last:border-0">
+                    <div className="w-2 h-2 bg-primary rounded-full mt-2" />
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{activity.action}</div>
+                      <div className="text-xs text-muted-foreground">{activity.details}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(activity.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+                {activities.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No recent activity
+                  </p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
