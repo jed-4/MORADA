@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { X, Settings, User, Users, HelpCircle, LogOut } from "lucide-react";
+import { X, Settings, User, Users, HelpCircle, LogOut, Camera } from "lucide-react";
 import { useAuth } from "@shared/useAuth";
 import { useLocation } from "wouter";
 
@@ -22,6 +22,14 @@ export function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
   if (!isOpen) return null;
 
   const menuItems: MenuItem[] = [
+    {
+      icon: <Camera className="w-5 h-5" />,
+      label: "Scan Bill",
+      onClick: () => {
+        setLocation("/scan-bill");
+        onClose();
+      },
+    },
     {
       icon: <User className="w-5 h-5" />,
       label: "Profile",

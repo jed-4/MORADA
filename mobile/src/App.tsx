@@ -7,6 +7,7 @@ import { Tasks } from "@/pages/Tasks";
 import { Timesheets } from "@/pages/Timesheets";
 import { Messages } from "@/pages/Messages";
 import { ComingSoon } from "@/pages/ComingSoon";
+import { BillScanner } from "@/pages/BillScanner";
 
 function MobileApp() {
   return (
@@ -30,6 +31,7 @@ function MobileApp() {
           <Route path="/help">
             {() => <ComingSoon title="Help & Support" description="Get help and support for BuildPro" />}
           </Route>
+          <Route path="/scan-bill" component={BillScanner} />
         </Switch>
       </main>
 
