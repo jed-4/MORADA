@@ -5,6 +5,7 @@ import path from "path";
 export default defineConfig({
   plugins: [react()],
   root: path.resolve(__dirname),
+  base: "/mobile/",
   build: {
     outDir: path.resolve(__dirname, "../dist/mobile"),
     emptyOutDir: true,
