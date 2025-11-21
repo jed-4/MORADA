@@ -4038,20 +4038,6 @@ export default function EstimateDetail() {
               <TooltipTrigger asChild>
                 <button
                   className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  onClick={handleExportToExcel}
-                  data-testid="button-export-estimate"
-                >
-                  <Download className="w-3 h-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Export to Excel</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                   onClick={() => setIsCatalogOpen(true)}
                   disabled={estimate?.isLocked}
                   data-testid="button-open-catalog"
