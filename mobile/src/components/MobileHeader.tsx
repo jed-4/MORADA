@@ -1,12 +1,14 @@
 import { ArrowLeft, Menu, Bell } from "lucide-react";
 import { useState } from "react";
 import { MoreMenu } from "./MoreMenu";
+import { ProjectSelector } from "./ProjectSelector";
 
 interface MobileHeaderProps {
-  title: string;
+  title?: string;
   showBack?: boolean;
   showMore?: boolean;
   showNotifications?: boolean;
+  showProjectSelector?: boolean;
   action?: React.ReactNode;
 }
 
@@ -15,6 +17,7 @@ export function MobileHeader({
   showBack = false, 
   showMore = true,
   showNotifications = true,
+  showProjectSelector = false,
   action 
 }: MobileHeaderProps) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -32,7 +35,7 @@ export function MobileHeader({
               <ArrowLeft className="w-5 h-5" />
             </button>
           )}
-          {showMore && !showBack && (
+          {showMore && !showBack && !showProjectSelector && (
             <button
               onClick={() => setShowMoreMenu(true)}
               className="p-2 -ml-2 hover-elevate active-elevate-2 rounded-md"
@@ -41,7 +44,11 @@ export function MobileHeader({
               <Menu className="w-5 h-5" />
             </button>
           )}
-          <h1 className="text-lg font-semibold">{title}</h1>
+          {showProjectSelector ? (
+            <ProjectSelector />
+          ) : (
+            <h1 className="text-lg font-semibold">{title}</h1>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {action}

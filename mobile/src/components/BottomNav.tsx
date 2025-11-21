@@ -6,7 +6,7 @@ const tabs = [
   { path: "/messages", label: "Messages", Icon: MessageSquare },
   { path: "/", label: "Dashboard", Icon: Home },
   { path: "/timesheets", label: "Timesheets", Icon: Clock },
-  { path: "/tasks", label: "Tasks", Icon: CheckSquare },
+  { path: "/tasks", label: "My Tasks", Icon: CheckSquare },
 ];
 
 export function BottomNav() {

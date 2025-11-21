@@ -4,11 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@shared/schema";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useProject } from "@/contexts/ProjectContext";
 
 export function Projects() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [, setLocation] = useLocation();
+  const { setCurrentProject } = useProject();
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -81,7 +83,10 @@ export function Projects() {
             {filteredProjects.map((project) => (
               <button
                 key={project.id}
-                onClick={() => setLocation(`/projects/${project.id}`)}
+                onClick={() => {
+                  setCurrentProject(project);
+                  setLocation(`/projects/${project.id}/tasks`);
+                }}
                 className="w-full bg-card rounded-xl p-4 border hover-elevate active-elevate-2 text-left"
                 data-testid={`project-card-${project.id}`}
               >

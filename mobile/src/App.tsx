@@ -8,8 +8,7 @@ import { Tasks } from "@/pages/Tasks";
 import { Timesheets } from "@/pages/Timesheets";
 import { Messages } from "@/pages/Messages";
 import { Projects } from "@/pages/Projects";
-import { ProjectHome } from "@/pages/ProjectHome";
-import { ProjectTasks } from "@/pages/ProjectTasks";
+import { ProjectView } from "@/pages/ProjectView";
 import { ComingSoon } from "@/pages/ComingSoon";
 import { BillScanner } from "@/pages/BillScanner";
 
@@ -23,44 +22,7 @@ function MobileApp() {
             <Switch>
               <Route path="/" component={Dashboard} />
               <Route path="/projects" component={Projects} />
-              <Route path="/projects/:id" component={ProjectHome} />
-              <Route path="/projects/:id/tasks" component={ProjectTasks} />
-              <Route path="/projects/:id/scope">
-                {() => <ComingSoon title="Scope" description="View and manage project scope" />}
-              </Route>
-              <Route path="/projects/:id/messages">
-                {() => <ComingSoon title="Project Messages" description="Project-specific messages" />}
-              </Route>
-              <Route path="/projects/:id/schedule">
-                {() => <ComingSoon title="Schedule" description="Project schedule and timeline" />}
-              </Route>
-              <Route path="/projects/:id/estimates">
-                {() => <ComingSoon title="Estimates" description="Project estimates" />}
-              </Route>
-              <Route path="/projects/:id/rfq">
-                {() => <ComingSoon title="RFQ" description="Request for quotes" />}
-              </Route>
-              <Route path="/projects/:id/bills">
-                {() => <ComingSoon title="Bills" description="Project bills and invoices" />}
-              </Route>
-              <Route path="/projects/:id/allowances">
-                {() => <ComingSoon title="Allowances" description="Project allowances" />}
-              </Route>
-              <Route path="/projects/:id/notes">
-                {() => <ComingSoon title="Notes" description="Project notes" />}
-              </Route>
-              <Route path="/projects/:id/minutes">
-                {() => <ComingSoon title="Minutes" description="Meeting minutes" />}
-              </Route>
-              <Route path="/projects/:id/takeoff">
-                {() => <ComingSoon title="Take off" description="Quantity take off" />}
-              </Route>
-              <Route path="/projects/:id/files">
-                {() => <ComingSoon title="Files" description="Project files and documents" />}
-              </Route>
-              <Route path="/projects/:id/team">
-                {() => <ComingSoon title="Team" description="Project team members" />}
-              </Route>
+              <Route path="/projects/:id/:tab" component={ProjectView} />
               <Route path="/tasks" component={Tasks} />
               <Route path="/timesheets" component={Timesheets} />
               <Route path="/messages" component={Messages} />
