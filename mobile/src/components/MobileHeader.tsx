@@ -24,7 +24,7 @@ export function MobileHeader({
 
   return (
     <>
-      <header className="safe-top bg-card border-b px-4 py-3 flex items-center justify-between">
+      <header className="safe-top bg-card border-b px-4 py-3 flex items-center">
         <div className="flex items-center gap-3">
           {showBack && (
             <button
@@ -44,11 +44,12 @@ export function MobileHeader({
               <Menu className="w-5 h-5" />
             </button>
           )}
-          {showProjectSelector ? (
-            <ProjectSelector />
-          ) : (
+          {!showProjectSelector && (
             <h1 className="text-lg font-semibold">{title}</h1>
           )}
+        </div>
+        <div className="flex-1 flex justify-center">
+          {showProjectSelector && <ProjectSelector />}
         </div>
         <div className="flex items-center gap-2">
           {action}
