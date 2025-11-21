@@ -8,7 +8,7 @@ import { SwipeableCard } from "@/components/SwipeableCard";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
-import { apiRequest, queryClient } from "@lib/queryClient";
+import { apiRequest, queryClient, getApiBaseUrl } from "@lib/queryClient";
 import { ImpactStyle } from "@capacitor/haptics";
 import { getHaptics } from "@/lib/capacitor";
 
@@ -24,15 +24,45 @@ export function ProjectTasks() {
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
     queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}`);
-      if (!res.ok) throw new Error("Failed to fetch project");
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/projects/${projectId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error("Project not found");
+        }
+        if (res.status === 403) {
+          throw new Error("Access denied");
+        }
+        throw new Error("Failed to fetch project");
+      }
       return res.json();
     },
     enabled: !!projectId,
+    retry: false,
   });
 
-  const { data: allTasks = [], isLoading, refetch } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
+  const { data: tasks = [], isLoading, refetch } = useQuery<Task[]>({
+    queryKey: ["/api/tasks", { projectId }],
+    queryFn: async () => {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/tasks?projectId=${projectId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error("Tasks not found");
+        }
+        if (res.status === 403) {
+          throw new Error("Access denied");
+        }
+        throw new Error("Failed to fetch tasks");
+      }
+      return res.json();
+    },
+    enabled: !!projectId,
+    retry: false,
   });
 
   const pullToRefresh = usePullToRefresh({
@@ -46,7 +76,7 @@ export function ProjectTasks() {
       return await apiRequest(`/api/tasks/${taskId}/status`, "PATCH", { status });
     },
     onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { projectId }] });
       const Haptics = await getHaptics();
       await Haptics.impact({ style: ImpactStyle.Medium });
     },
@@ -57,7 +87,7 @@ export function ProjectTasks() {
       return await apiRequest(`/api/tasks/${taskId}`, "DELETE", {});
     },
     onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { projectId }] });
       const Haptics = await getHaptics();
       await Haptics.impact({ style: ImpactStyle.Heavy });
     },
@@ -85,10 +115,7 @@ export function ProjectTasks() {
     });
   };
 
-  // Filter tasks by project
-  const projectTasks = allTasks.filter(task => task.projectId === projectId);
-
-  const filteredTasks = projectTasks.filter((task) => {
+  const filteredTasks = tasks.filter((task) => {
     if (statusFilter !== "all" && task.status !== statusFilter) return false;
     if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;

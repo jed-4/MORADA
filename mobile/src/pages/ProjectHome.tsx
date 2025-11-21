@@ -3,6 +3,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useLocation, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { Project, Task } from "@shared/schema";
+import { getApiBaseUrl } from "@lib/queryClient";
 import { 
   Home, ListTree, MessageSquare, FileText, ClipboardList, 
   Clock, CheckSquare, Calculator, FileBarChart, FileSearch,
@@ -33,31 +34,77 @@ export function ProjectHome() {
   const { setCurrentProject } = useProject();
   const projectId = params?.id;
 
-  const { data: project, isLoading } = useQuery<Project>({
+  const { data: project, isLoading, error } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
     queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}`);
-      if (!res.ok) throw new Error("Failed to fetch project");
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/projects/${projectId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error("Project not found");
+        }
+        if (res.status === 403) {
+          throw new Error("Access denied");
+        }
+        throw new Error("Failed to fetch project");
+      }
       return res.json();
     },
     enabled: !!projectId,
+    retry: false,
   });
 
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { projectId }],
-    enabled: !!projectId,
+    queryFn: async () => {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/tasks?projectId=${projectId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to fetch tasks");
+      }
+      return res.json();
+    },
+    enabled: !!projectId && !!project,
+    retry: false,
   });
 
   useEffect(() => {
     if (project) {
       setCurrentProject(project);
     }
+    
+    // Clear project when component unmounts
+    return () => {
+      setCurrentProject(null);
+    };
   }, [project, setCurrentProject]);
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col h-full">
+        <MobileHeader title="Error" showBack />
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground mb-2">
+              {error instanceof Error ? error.message : "Failed to load project"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Please try again or contact support if the problem persists.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
