@@ -14,8 +14,20 @@ import { ProjectBillsTab } from "./ProjectBillsTab";
 import { ProjectBudgetTab } from "./ProjectBudgetTab";
 import { ProjectTeamTab } from "./ProjectTeamTab";
 import { ProjectFilesTab } from "./ProjectFilesTab";
+import { ProjectScopeTab } from "./ProjectScopeTab";
+import { ProjectNotesTab } from "./ProjectNotesTab";
+import { ProjectMinutesTab } from "./ProjectMinutesTab";
+import { ProjectRFQTab } from "./ProjectRFQTab";
+import { ProjectRFITab } from "./ProjectRFITab";
+import { ProjectSelectionsTab } from "./ProjectSelectionsTab";
+import { ProjectDefectsTab } from "./ProjectDefectsTab";
+import { ProjectPOsTab } from "./ProjectPOsTab";
+import { ProjectVariationsTab } from "./ProjectVariationsTab";
+import { ProjectClientInvoicesTab } from "./ProjectClientInvoicesTab";
+import { ProjectSiteDiaryTab } from "./ProjectSiteDiaryTab";
+import { ProjectComingSoonTab } from "./ProjectComingSoonTab";
 
-const tabKeys = ["tasks", "schedule", "bills", "budget", "team", "files"];
+const tabKeys = ["tasks", "schedule", "bills", "budget", "team", "files", "scope", "notes", "minutes", "rfq", "rfi", "selections", "allowances", "defects", "pos", "variations", "client-invoices", "site-diary"];
 
 export function ProjectView() {
   const routeParams = useProjectRoute();
@@ -60,6 +72,18 @@ export function ProjectView() {
     { key: "budget", content: <ProjectBudgetTab /> },
     { key: "team", content: <ProjectTeamTab /> },
     { key: "files", content: <ProjectFilesTab /> },
+    { key: "scope", content: <ProjectScopeTab /> },
+    { key: "notes", content: <ProjectNotesTab /> },
+    { key: "minutes", content: <ProjectMinutesTab /> },
+    { key: "rfq", content: <ProjectRFQTab /> },
+    { key: "rfi", content: <ProjectRFITab /> },
+    { key: "selections", content: <ProjectSelectionsTab /> },
+    { key: "allowances", content: <ProjectComingSoonTab title="Allowances" /> },
+    { key: "defects", content: <ProjectDefectsTab /> },
+    { key: "pos", content: <ProjectPOsTab /> },
+    { key: "variations", content: <ProjectVariationsTab /> },
+    { key: "client-invoices", content: <ProjectClientInvoicesTab /> },
+    { key: "site-diary", content: <ProjectSiteDiaryTab /> },
   ];
 
   // Show loading or empty state if no project

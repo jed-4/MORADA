@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { X, Settings, User, Users, HelpCircle, LogOut, Camera } from "lucide-react";
+import { X, Settings, User, Users, HelpCircle, LogOut, Camera, Tag } from "lucide-react";
 import { useAuth } from "@shared/useAuth";
 import { useLocation } from "wouter";
 
@@ -15,62 +15,85 @@ interface MenuItem {
   variant?: "default" | "destructive";
 }
 
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
+}
+
 export function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
 
   if (!isOpen) return null;
 
-  const menuItems: MenuItem[] = [
+  const sections: MenuSection[] = [
     {
-      icon: <Camera className="w-5 h-5" />,
-      label: "Scan Bill",
-      onClick: () => {
-        setLocation("/scan-bill");
-        onClose();
-      },
+      title: "Company",
+      items: [
+        {
+          icon: <Tag className="w-5 h-5" />,
+          label: "Cost Codes",
+          onClick: () => {
+            // Cost codes view
+            onClose();
+          },
+        },
+      ],
     },
     {
-      icon: <User className="w-5 h-5" />,
-      label: "Profile",
-      onClick: () => {
-        setLocation("/profile");
-        onClose();
-      },
-    },
-    {
-      icon: <Users className="w-5 h-5" />,
-      label: "Team",
-      onClick: () => {
-        setLocation("/team");
-        onClose();
-      },
-    },
-    {
-      icon: <Settings className="w-5 h-5" />,
-      label: "Settings",
-      onClick: () => {
-        setLocation("/settings");
-        onClose();
-      },
-    },
-    {
-      icon: <HelpCircle className="w-5 h-5" />,
-      label: "Help & Support",
-      onClick: () => {
-        setLocation("/help");
-        onClose();
-      },
-    },
-    {
-      icon: <LogOut className="w-5 h-5" />,
-      label: "Logout",
-      onClick: async () => {
-        await logout();
-        onClose();
-        setLocation("/");
-      },
-      variant: "destructive",
+      title: "General",
+      items: [
+        {
+          icon: <Camera className="w-5 h-5" />,
+          label: "Scan Bill",
+          onClick: () => {
+            setLocation("/scan-bill");
+            onClose();
+          },
+        },
+        {
+          icon: <User className="w-5 h-5" />,
+          label: "Profile",
+          onClick: () => {
+            setLocation("/profile");
+            onClose();
+          },
+        },
+        {
+          icon: <Users className="w-5 h-5" />,
+          label: "Team",
+          onClick: () => {
+            setLocation("/team");
+            onClose();
+          },
+        },
+        {
+          icon: <Settings className="w-5 h-5" />,
+          label: "Settings",
+          onClick: () => {
+            setLocation("/settings");
+            onClose();
+          },
+        },
+        {
+          icon: <HelpCircle className="w-5 h-5" />,
+          label: "Help & Support",
+          onClick: () => {
+            setLocation("/help");
+            onClose();
+          },
+        },
+        {
+          icon: <LogOut className="w-5 h-5" />,
+          label: "Logout",
+          onClick: async () => {
+            await logout();
+            onClose();
+            setLocation("/");
+          },
+          variant: "destructive",
+        },
+      ],
     },
   ];
 
@@ -106,21 +129,32 @@ export function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
         </div>
 
         {/* Menu Items */}
-        <div className="p-2">
-          {menuItems.map((item, index) => (
-            <button
-              key={index}
-              onClick={item.onClick}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg hover-elevate active-elevate-2 text-left ${
-                item.variant === "destructive"
-                  ? "text-destructive"
-                  : "text-foreground"
-              }`}
-              data-testid={`menu-item-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              {item.icon}
-              <span className="font-medium">{item.label}</span>
-            </button>
+        <div className="p-2 space-y-4">
+          {sections.map((section, sectionIndex) => (
+            <div key={sectionIndex}>
+              {section.title && (
+                <h3 className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {section.title}
+                </h3>
+              )}
+              <div className="space-y-1">
+                {section.items.map((item, index) => (
+                  <button
+                    key={index}
+                    onClick={item.onClick}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg hover-elevate active-elevate-2 text-left ${
+                      item.variant === "destructive"
+                        ? "text-destructive"
+                        : "text-foreground"
+                    }`}
+                    data-testid={`menu-item-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    {item.icon}
+                    <span className="font-medium">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
 

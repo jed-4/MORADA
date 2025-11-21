@@ -35,7 +35,7 @@ export function MobileHeader({
               <ArrowLeft className="w-5 h-5" />
             </button>
           )}
-          {showMore && !showBack && !showProjectSelector && (
+          {showMore && !showBack && (
             <button
               onClick={() => setShowMoreMenu(true)}
               className="p-2 -ml-2 hover-elevate active-elevate-2 rounded-md"
