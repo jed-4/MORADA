@@ -40,29 +40,32 @@ export function ProjectSelector() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 text-sm font-medium hover-elevate active-elevate-2 rounded-md px-2 py-1"
+        className="flex items-center gap-2 text-base font-semibold hover-elevate active-elevate-2 rounded-md px-3 py-1.5"
         data-testid="button-project-selector"
       >
-        <span className="truncate max-w-[180px]">
+        <span className="truncate max-w-[200px]">
           {currentProject?.name || "Select Project"}
         </span>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-card border rounded-md shadow-lg z-50 min-w-[200px]" data-testid="project-dropdown">
+        <div className="absolute top-full left-0 mt-1 bg-card border rounded-md shadow-lg z-50 min-w-[240px]" data-testid="project-dropdown">
           {projects.map((project) => (
             <button
               key={project.id}
               onClick={() => handleSelectProject(project)}
-              className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-accent/10 ${
+              className={`w-full text-left px-3 py-2.5 transition-colors hover:bg-accent/10 ${
                 currentProject?.id === project.id
                   ? "bg-[#bba7db]/10 text-foreground"
                   : "text-foreground"
               }`}
               data-testid={`project-option-${project.id}`}
             >
-              {project.name}
+              <div className="font-medium text-sm">{project.name}</div>
+              {project.address && (
+                <div className="text-xs text-muted-foreground mt-0.5">{project.address}</div>
+              )}
             </button>
           ))}
         </div>
