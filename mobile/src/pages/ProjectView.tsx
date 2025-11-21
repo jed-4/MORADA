@@ -38,7 +38,7 @@ export function ProjectView() {
   const [, setLocation] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
   const projectId = routeParams?.projectId;
-  const currentTab = routeParams?.tab || "tasks";
+  const currentTab = routeParams?.tab || "scope";
 
   // Fetch project if route ID doesn't match current project
   const needsFetch = !!projectId && (!currentProject || currentProject.id !== projectId);

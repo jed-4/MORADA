@@ -32,7 +32,7 @@ export function ProjectTabs() {
   const routeParams = useProjectRoute();
   
   const projectId = routeParams?.projectId;
-  const currentTab = routeParams?.tab || 'tasks';
+  const currentTab = routeParams?.tab || 'scope';
 
   return (
     <div className="bg-card border-b overflow-x-auto scrollbar-hide">
