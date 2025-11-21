@@ -190,9 +190,9 @@ export default function OnboardingPage() {
                       type="submit" 
                       size="lg"
                       disabled={updateUserMutation.isPending}
-                      data-testid="button-create-company"
+                      data-testid="button-continue"
                     >
-                      {updateUserMutation.isPending ? "Saving..." : "Create Your Company"}
+                      {updateUserMutation.isPending ? "Saving..." : "Continue"}
                     </Button>
                   </div>
                 </form>

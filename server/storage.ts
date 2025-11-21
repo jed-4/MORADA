@@ -2180,6 +2180,7 @@ export class MemStorage implements IStorage {
       company: invitation.company,
       userCategory: invitation.userCategory as UserCategory,
       roleId: invitation.roleId,
+      companyId: invitation.companyId, // CRITICAL: Assign user to the inviter's company
       isInvitePending: false,
       invitedBy: invitation.invitedBy,
       invitedAt: invitation.createdAt,
