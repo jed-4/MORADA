@@ -6,6 +6,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Tasks } from "@/pages/Tasks";
 import { Timesheets } from "@/pages/Timesheets";
 import { Messages } from "@/pages/Messages";
+import { Projects } from "@/pages/Projects";
 import { ComingSoon } from "@/pages/ComingSoon";
 import { BillScanner } from "@/pages/BillScanner";
 
@@ -17,6 +18,7 @@ function MobileApp() {
         <main className="flex-1 overflow-hidden">
           <Switch>
             <Route path="/" component={Dashboard} />
+            <Route path="/projects" component={Projects} />
             <Route path="/tasks" component={Tasks} />
             <Route path="/timesheets" component={Timesheets} />
             <Route path="/messages" component={Messages} />
