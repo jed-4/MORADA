@@ -2,6 +2,7 @@ import { ArrowLeft, Menu, Bell } from "lucide-react";
 import { useState } from "react";
 import { MoreMenu } from "./MoreMenu";
 import { ProjectSelector } from "./ProjectSelector";
+import { NotificationSheet } from "./NotificationSheet";
 
 interface MobileHeaderProps {
   title?: string;
@@ -21,6 +22,7 @@ export function MobileHeader({
   action 
 }: MobileHeaderProps) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [notificationSheetOpen, setNotificationSheetOpen] = useState(false);
 
   return (
     <>
@@ -55,6 +57,7 @@ export function MobileHeader({
           {action}
           {showNotifications && (
             <button
+              onClick={() => setNotificationSheetOpen(true)}
               className="p-2 hover-elevate active-elevate-2 rounded-md relative"
               data-testid="button-notifications"
             >
@@ -66,6 +69,7 @@ export function MobileHeader({
       </header>
       
       <MoreMenu isOpen={showMoreMenu} onClose={() => setShowMoreMenu(false)} />
+      <NotificationSheet isOpen={notificationSheetOpen} onClose={() => setNotificationSheetOpen(false)} />
     </>
   );
 }
