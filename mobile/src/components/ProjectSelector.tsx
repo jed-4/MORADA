@@ -40,7 +40,7 @@ export function ProjectSelector() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 text-base font-semibold hover-elevate active-elevate-2 rounded-md px-3 py-1.5"
+        className="flex items-center justify-center gap-2 text-base font-semibold hover-elevate active-elevate-2 rounded-md px-3 py-2 h-9"
         data-testid="button-project-selector"
       >
         <span className="truncate max-w-[200px]">
