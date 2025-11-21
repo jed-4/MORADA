@@ -26,8 +26,12 @@ import { ProjectVariationsTab } from "./ProjectVariationsTab";
 import { ProjectClientInvoicesTab } from "./ProjectClientInvoicesTab";
 import { ProjectSiteDiaryTab } from "./ProjectSiteDiaryTab";
 import { ProjectComingSoonTab } from "./ProjectComingSoonTab";
+import { ProjectMessagesTab } from "./ProjectMessagesTab";
+import { ProjectEstimatesTab } from "./ProjectEstimatesTab";
+import { ProjectProposalsTab } from "./ProjectProposalsTab";
+import { ProjectTimesheetsTab } from "./ProjectTimesheetsTab";
 
-const tabKeys = ["tasks", "schedule", "bills", "budget", "team", "files", "scope", "notes", "minutes", "rfq", "rfi", "selections", "allowances", "defects", "pos", "variations", "client-invoices", "site-diary"];
+const tabKeys = ["scope", "notes", "messages", "minutes", "tasks", "schedule", "estimates", "selections", "rfq", "rfi", "proposals", "allowances", "defects", "pos", "variations", "bills", "client-invoices", "site-diary", "timesheets", "budget", "files", "team"];
 
 export function ProjectView() {
   const routeParams = useProjectRoute();
@@ -66,24 +70,28 @@ export function ProjectView() {
   };
 
   const tabs = [
-    { key: "tasks", content: <ProjectTasksTab /> },
-    { key: "schedule", content: <ProjectScheduleTab /> },
-    { key: "bills", content: <ProjectBillsTab /> },
-    { key: "budget", content: <ProjectBudgetTab /> },
-    { key: "team", content: <ProjectTeamTab /> },
-    { key: "files", content: <ProjectFilesTab /> },
     { key: "scope", content: <ProjectScopeTab /> },
     { key: "notes", content: <ProjectNotesTab /> },
+    { key: "messages", content: <ProjectMessagesTab /> },
     { key: "minutes", content: <ProjectMinutesTab /> },
+    { key: "tasks", content: <ProjectTasksTab /> },
+    { key: "schedule", content: <ProjectScheduleTab /> },
+    { key: "estimates", content: <ProjectEstimatesTab /> },
+    { key: "selections", content: <ProjectSelectionsTab /> },
     { key: "rfq", content: <ProjectRFQTab /> },
     { key: "rfi", content: <ProjectRFITab /> },
-    { key: "selections", content: <ProjectSelectionsTab /> },
+    { key: "proposals", content: <ProjectProposalsTab /> },
     { key: "allowances", content: <ProjectComingSoonTab title="Allowances" /> },
     { key: "defects", content: <ProjectDefectsTab /> },
     { key: "pos", content: <ProjectPOsTab /> },
     { key: "variations", content: <ProjectVariationsTab /> },
+    { key: "bills", content: <ProjectBillsTab /> },
     { key: "client-invoices", content: <ProjectClientInvoicesTab /> },
     { key: "site-diary", content: <ProjectSiteDiaryTab /> },
+    { key: "timesheets", content: <ProjectTimesheetsTab /> },
+    { key: "budget", content: <ProjectBudgetTab /> },
+    { key: "files", content: <ProjectFilesTab /> },
+    { key: "team", content: <ProjectTeamTab /> },
   ];
 
   // Show loading or empty state if no project
