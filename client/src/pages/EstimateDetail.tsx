@@ -4010,7 +4010,6 @@ export default function EstimateDetail() {
                 <button
                   className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                   onClick={handleToggleLock}
-                  disabled={!canManageEstimates}
                   data-testid="button-toggle-lock"
                 >
                   {estimate?.isLocked ? <Lock className="w-3 h-3" /> : <LockOpen className="w-3 h-3" />}
