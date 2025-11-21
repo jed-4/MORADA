@@ -4364,12 +4364,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid or expired invitation" });
       }
 
-      // Never return password in API response
-      const { password: _, ...safeUser } = result.user;
-      res.status(201).json({
-        user: safeUser,
-        invitation: result.invitation,
-        message: "Account created successfully"
+      // Auto-login: Create session for the newly created user
+      (req.session as any).userId = result.user.id;
+      
+      // Force save session before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error after invitation acceptance:", err);
+          // Still return success - user can log in manually
+          const { password: _, ...safeUser } = result.user;
+          return res.status(201).json({
+            user: safeUser,
+            invitation: result.invitation,
+            message: "Account created successfully. Please log in."
+          });
+        }
+        
+        // Never return password in API response
+        const { password: _, ...safeUser } = result.user;
+        res.status(201).json({
+          user: safeUser,
+          invitation: result.invitation,
+          message: "Account created successfully"
+        });
       });
     } catch (error: any) {
       if (error.message?.includes("Password validation failed")) {

@@ -64,6 +64,7 @@ import UserWorkspace from "@/pages/UserWorkspace";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
+import AcceptInvitation from "@/pages/AcceptInvitation";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
@@ -227,8 +228,15 @@ function Router() {
 }
 
 function UnauthenticatedRoutes() {
-  // Replit Auth handles login/signup via /api/login
-  return <LandingPage />;
+  // Handle public routes for unauthenticated users
+  return (
+    <Switch>
+      <Route path="/accept-invite/:token" component={AcceptInvitation} />
+      {/* Replit Auth handles login/signup via /api/login */}
+      <Route path="/" component={LandingPage} />
+      <Route component={LandingPage} />
+    </Switch>
+  );
 }
 
 function AuthWrapper() {
