@@ -3,10 +3,12 @@ import { Plus, Search, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@shared/schema";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 export function Projects() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [, setLocation] = useLocation();
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -77,12 +79,13 @@ export function Projects() {
         ) : (
           <div className="p-4 space-y-3">
             {filteredProjects.map((project) => (
-              <div
+              <button
                 key={project.id}
-                className="bg-card rounded-xl p-4 border hover-elevate active-elevate-2"
+                onClick={() => setLocation(`/projects/${project.id}`)}
+                className="w-full bg-card rounded-xl p-4 border hover-elevate active-elevate-2 text-left"
                 data-testid={`project-card-${project.id}`}
               >
-                <div className="flex items-start gap-3 mb-3">
+                <div className="flex items-start gap-3 mb-2">
                   <div
                     className="w-10 h-10 rounded-lg flex-shrink-0"
                     style={{ backgroundColor: project.color || "#bba7db" }}
@@ -105,28 +108,11 @@ export function Projects() {
                 </div>
                 
                 {project.address && (
-                  <div className="text-xs text-muted-foreground mb-2">
+                  <div className="text-xs text-muted-foreground">
                     {project.address}
                   </div>
                 )}
-                
-                <div className="flex items-center gap-4 text-xs">
-                  <div>
-                    <span className="text-muted-foreground">Start: </span>
-                    <span className="font-medium">
-                      {project.startDate ? new Date(project.startDate).toLocaleDateString() : "Not set"}
-                    </span>
-                  </div>
-                  {project.endDate && (
-                    <div>
-                      <span className="text-muted-foreground">End: </span>
-                      <span className="font-medium">
-                        {new Date(project.endDate).toLocaleDateString()}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
+              </button>
             ))}
             
             {filteredProjects.length === 0 && (
