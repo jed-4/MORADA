@@ -4592,6 +4592,7 @@ export default function EstimateDetail() {
                       
                       return (
                         <div className="overflow-x-auto">
+                          <div style={{ minWidth: `${tableWidth}px` }}>
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* Sticky Header - Single shared header for all cards */}
                           <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl">
@@ -4695,6 +4696,7 @@ export default function EstimateDetail() {
                             ))}
                           </div>
                         </SortableContext>
+                          </div>
                         </div>
                       );
                     })()}
