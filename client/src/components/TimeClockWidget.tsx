@@ -29,10 +29,12 @@ export function TimeClockWidget() {
   // Fetch active timesheet
   const { data: activeTimesheet, isLoading: loadingActive } = useQuery<Timesheet | null>({
     queryKey: ["/api/timesheets/active"],
+    // Only poll occasionally to detect if clocked out from another device
+    // Timer updates happen locally via useEffect, so no need for frequent polling
     refetchInterval: (query) => {
-      // Only poll if there's an active timesheet
-      return query.state.data ? 1000 : false;
+      return query.state.data ? 5 * 60 * 1000 : false; // Poll every 5 min if active, never if inactive
     },
+    refetchOnWindowFocus: false, // Don't refetch when window regains focus
   });
 
   // Fetch projects
