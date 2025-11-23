@@ -4594,7 +4594,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           <div className="overflow-x-auto">
                           {/* Sticky Header - Single shared header for all cards */}
-                          <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl overflow-hidden">
+                          <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl overflow-visible">
                             <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                               <colgroup>
                                 <col style={{ width: '32px' }} />
@@ -4642,7 +4642,7 @@ export default function EstimateDetail() {
                           <div className="space-y-1.5">
                             {/* Ungrouped items card */}
                             {ungroupedItems.length > 0 && (
-                              <Card className="rounded-xl overflow-hidden">
+                              <Card className="rounded-xl overflow-visible">
                                 <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                                   <colgroup>
                                     <col style={{ width: '32px' }} />

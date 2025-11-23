@@ -110,7 +110,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     <Card 
       ref={setNodeRef}
       style={style}
-      className={`rounded-xl overflow-hidden ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
+      className={`rounded-xl overflow-visible ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
