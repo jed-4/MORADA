@@ -63,6 +63,7 @@ import { logActivity } from "@/lib/activityLogger";
 import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimateItemsDialog";
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
+import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { Package, Undo2 } from "lucide-react";
@@ -4590,99 +4591,112 @@ export default function EstimateDetail() {
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40 + 32;
                       
+                      // Get all subgroups for passing to EstimateGroupCard
+                      const allSubgroups = groups.filter(g => g.parentGroupId);
+                      
                       return (
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          {/* Single continuous table with inline group headers (Buildern-style) */}
-                          <Table style={{ 
-                            display: 'table',
-                            tableLayout: 'fixed',
-                            width: `${tableWidth}px`,
-                            minWidth: `${tableWidth}px`
-                          }} data-testid="table-estimate-items">
-                            <colgroup>
-                              <col style={{ width: '32px' }} />
-                              <col style={{ width: '24px' }} />
-                              {columns.filter(col => col.visible).map(column => (
-                                <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                              ))}
-                              <col style={{ width: '80px' }} />
-                            </colgroup>
-                            <TableHeader>
-                              <TableRow className="h-8">
-                                <TableHead className="py-1 text-xs font-medium" style={{ width: '32px' }}></TableHead>
-                                <TableHead className="py-1 text-xs font-medium" style={{ width: '24px' }}>
-                                  <Checkbox
-                                    checked={selectedItems.size > 0 && selectedItems.size === items.length}
-                                    onCheckedChange={handleSelectAll}
-                                    aria-label="Select all items"
-                                    data-testid="checkbox-select-all"
-                                    disabled={estimate?.isLocked}
-                                  />
-                                </TableHead>
+                          {/* Sticky Header - Single shared header for all cards */}
+                          <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl overflow-hidden">
+                            <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
+                              <colgroup>
+                                <col style={{ width: '32px' }} />
+                                <col style={{ width: '24px' }} />
                                 {columns.filter(col => col.visible).map(column => (
-                                  <TableHead 
-                                    key={column.id}
-                                    className="py-1 text-xs font-medium relative group"
-                                    style={{ width: `${column.widthPx}px` }}
-                                  >
-                                    <div className="flex items-center gap-1">
-                                      <span>{column.label}</span>
-                                    </div>
-                                    <div
-                                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                      style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                      onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                      data-testid={`resize-handle-${column.id}`}
+                                  <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                                ))}
+                                <col style={{ width: '80px' }} />
+                              </colgroup>
+                              <TableHeader>
+                                <TableRow className="h-9">
+                                  <TableHead className="py-1 text-xs font-semibold" style={{ width: '32px' }}></TableHead>
+                                  <TableHead className="py-1 text-xs font-semibold" style={{ width: '24px' }}>
+                                    <Checkbox
+                                      checked={selectedItems.size > 0 && selectedItems.size === items.length}
+                                      onCheckedChange={handleSelectAll}
+                                      aria-label="Select all items"
+                                      data-testid="checkbox-select-all"
+                                      disabled={estimate?.isLocked}
                                     />
                                   </TableHead>
-                                ))}
-                                <TableHead className="py-1 text-xs font-medium" style={{ width: '80px' }}>Actions</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {/* Render ungrouped items first */}
-                              {ungroupedItems.map((item) => (
-                                <React.Fragment key={`item-wrapper-${item.id}`}>
-                                  {renderItemWithSubItems(item)}
-                                </React.Fragment>
-                              ))}
-                              
-                              {/* Render groups with inline header rows and recursive hierarchical subgroups */}
-                              {sortedGroups.map((group) => {
-                                // Get all subgroups for recursive rendering
-                                const allSubgroups = groups.filter(g => g.parentGroupId);
-                                
-                                return (
-                                  <SortableGroupRow
-                                    key={`group-${group.id}`}
-                                    group={group}
-                                    groupedItems={groupedItems}
-                                    columns={columns}
-                                    handleToggleGroupCollapse={handleToggleGroupCollapse}
-                                    renderItemWithSubItems={renderItemWithSubItems}
-                                    onDeleteGroup={(groupId) => {
-                                      setGroupToDelete(groupId);
-                                      setIsDeleteGroupDialogOpen(true);
-                                    }}
-                                    onEditGroup={handleEditGroup}
-                                    onDuplicateGroup={handleDuplicateGroup}
-                                    onCopyGroup={handleCopyGroup}
-                                    onAddSubgroup={handleAddSubgroup}
-                                    onAddItemToGroup={handleAddItemToGroup}
-                                    isLocked={estimate?.isLocked || false}
-                                    selectedItems={selectedItems}
-                                    selectedGroups={selectedGroups}
-                                    onToggleGroupSelection={handleToggleGroupSelection}
-                                    nestingLevel={0}
-                                    groupTotals={groupTotalsMap[group.id]}
-                                    formatCurrency={formatCurrency}
-                                    subgroups={allSubgroups}
-                                    allGroups={groups}
-                                  />
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
+                                  {columns.filter(col => col.visible).map(column => (
+                                    <TableHead 
+                                      key={column.id}
+                                      className="py-1 text-xs font-semibold relative group"
+                                      style={{ width: `${column.widthPx}px` }}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        <span>{column.label}</span>
+                                      </div>
+                                      <div
+                                        className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                        style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                                        onMouseDown={(e) => handleResizeStart(e, column.id)}
+                                        data-testid={`resize-handle-${column.id}`}
+                                      />
+                                    </TableHead>
+                                  ))}
+                                  <TableHead className="py-1 text-xs font-semibold" style={{ width: '80px' }}>Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                            </Table>
+                          </div>
+                          
+                          <div className="space-y-1.5">
+                            {/* Ungrouped items card */}
+                            {ungroupedItems.length > 0 && (
+                              <Card className="rounded-xl overflow-hidden">
+                                <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
+                                  <colgroup>
+                                    <col style={{ width: '32px' }} />
+                                    <col style={{ width: '24px' }} />
+                                    {columns.filter(col => col.visible).map(column => (
+                                      <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                                    ))}
+                                    <col style={{ width: '80px' }} />
+                                  </colgroup>
+                                  <TableBody>
+                                    {ungroupedItems.map((item) => (
+                                      <React.Fragment key={`item-wrapper-${item.id}`}>
+                                        {renderItemWithSubItems(item)}
+                                      </React.Fragment>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </Card>
+                            )}
+                            
+                            {/* Grouped items using EstimateGroupCard */}
+                            {sortedGroups.map((group) => (
+                              <EstimateGroupCard
+                                key={`group-${group.id}`}
+                                group={group}
+                                groupedItems={groupedItems}
+                                columns={columns}
+                                handleToggleGroupCollapse={handleToggleGroupCollapse}
+                                renderItemRow={renderItemWithSubItems}
+                                onDeleteGroup={(groupId) => {
+                                  setGroupToDelete(groupId);
+                                  setIsDeleteGroupDialogOpen(true);
+                                }}
+                                onEditGroup={handleEditGroup}
+                                onDuplicateGroup={handleDuplicateGroup}
+                                onCopyGroup={handleCopyGroup}
+                                onAddSubgroup={handleAddSubgroup}
+                                onAddItemToGroup={handleAddItemToGroup}
+                                isLocked={estimate?.isLocked || false}
+                                selectedItems={selectedItems}
+                                selectedGroups={selectedGroups}
+                                onToggleGroupSelection={handleToggleGroupSelection}
+                                nestingLevel={0}
+                                groupTotals={groupTotalsMap[group.id]}
+                                formatCurrency={formatCurrency}
+                                subgroups={allSubgroups}
+                                allGroups={groups}
+                                onCreateFrom={() => toast({ title: "Create from Group", description: "Coming soon" })}
+                              />
+                            ))}
+                          </div>
                         </SortableContext>
                       );
                     })()}
