@@ -4443,9 +4443,8 @@ export default function EstimateDetail() {
           )}
 
           {/* Items Table */}
-          <div className="min-w-0 border border-border rounded-xl overflow-hidden">
+          <div className="min-w-0">
             <div className="p-0 overflow-x-auto">
-              <div className="p-6 bg-muted/30">
                 {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -4752,7 +4751,6 @@ export default function EstimateDetail() {
                   </DragOverlay>
                 </DndContext>
               )}
-              </div>
             </div>
           </div>
         </div>
