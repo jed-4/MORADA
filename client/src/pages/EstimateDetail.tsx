@@ -4591,10 +4591,10 @@ export default function EstimateDetail() {
                       const allSubgroups = groups.filter(g => g.parentGroupId);
                       
                       return (
+                        <div className="overflow-x-auto">
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          <div className="overflow-x-auto">
                           {/* Sticky Header - Single shared header for all cards */}
-                          <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl overflow-visible">
+                          <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl">
                             <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                               <colgroup>
                                 <col style={{ width: '32px' }} />
@@ -4694,8 +4694,8 @@ export default function EstimateDetail() {
                               />
                             ))}
                           </div>
-                          </div>
                         </SortableContext>
+                        </div>
                       );
                     })()}
                   </div>
