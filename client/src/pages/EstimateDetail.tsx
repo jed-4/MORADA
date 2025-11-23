@@ -4441,7 +4441,7 @@ export default function EstimateDetail() {
 
           {/* Items Table */}
           <div className="min-w-0">
-            <div className="p-0 overflow-x-auto">
+            <div className="p-0">
                 {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -4592,6 +4592,7 @@ export default function EstimateDetail() {
                       
                       return (
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
+                          <div className="overflow-x-auto">
                           {/* Sticky Header - Single shared header for all cards */}
                           <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl overflow-hidden">
                             <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
@@ -4692,6 +4693,7 @@ export default function EstimateDetail() {
                                 onCreateFrom={() => toast({ title: "Create from Group", description: "Coming soon" })}
                               />
                             ))}
+                          </div>
                           </div>
                         </SortableContext>
                       );
