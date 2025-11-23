@@ -2284,8 +2284,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reorder estimate items
-  app.patch("/api/estimate-items/reorder", async (req, res) => {
+  app.patch("/api/estimate-items/reorder", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const { items } = req.body;
       console.log('[REORDER] Received reorder request with items:', JSON.stringify(items, null, 2));
       
@@ -2298,6 +2299,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!item.id || typeof item.order !== 'number') {
           return res.status(400).json({ error: "Each item must have id and order" });
         }
+      }
+
+      // Security: Verify all items belong to estimates in the user's company (batched query)
+      const itemIds = items.map(({ id }) => id);
+      const verificationResult = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
+      if (!verificationResult.authorized) {
+        console.error(`[REORDER] Security violation: item ${verificationResult.invalidItemId} does not belong to company ${companyId}`);
+        return res.status(404).json({ error: `Estimate item not found: ${verificationResult.invalidItemId}` });
       }
 
       // Update each item's order and optionally groupId

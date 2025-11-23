@@ -233,6 +233,9 @@ export interface IStorage {
   updateEstimateItem(id: string, item: Partial<InsertEstimateItem>): Promise<EstimateItem | undefined>;
   deleteEstimateItem(id: string): Promise<boolean>;
   getProjectAllowances(projectId: string): Promise<any[]>;
+  
+  // Security helpers for multi-level company scoping
+  verifyEstimateItemsOwnership(itemIds: string[], companyId: string): Promise<{ authorized: boolean; invalidItemId?: string }>;
 
   // Estimate Groups CRUD
   getEstimateGroups(estimateId: string): Promise<EstimateGroup[]>;
@@ -3221,6 +3224,28 @@ export class MemStorage implements IStorage {
     }
 
     return this.estimateItems.delete(id);
+  }
+
+  async verifyEstimateItemsOwnership(itemIds: string[], companyId: string): Promise<{ authorized: boolean; invalidItemId?: string }> {
+    // In-memory version: check each item's ownership chain
+    for (const itemId of itemIds) {
+      const item = this.estimateItems.get(itemId);
+      if (!item) {
+        return { authorized: false, invalidItemId: itemId };
+      }
+
+      const estimate = this.estimates.get(item.estimateId);
+      if (!estimate) {
+        return { authorized: false, invalidItemId: itemId };
+      }
+
+      const project = this.projects.get(estimate.projectId);
+      if (!project || project.companyId !== companyId) {
+        return { authorized: false, invalidItemId: itemId };
+      }
+    }
+
+    return { authorized: true };
   }
 
   async getProjectAllowances(projectId: string): Promise<any[]> {
@@ -6815,6 +6840,40 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteEstimateItem:", error);
+      throw error;
+    }
+  }
+  
+  async verifyEstimateItemsOwnership(itemIds: string[], companyId: string): Promise<{ authorized: boolean; invalidItemId?: string }> {
+    try {
+      // Batched query: join items -> estimates -> projects to verify company ownership in ONE query
+      const itemsWithOwnership = await db
+        .select({
+          itemId: schema.estimateItems.id,
+          projectCompanyId: schema.projects.companyId,
+        })
+        .from(schema.estimateItems)
+        .innerJoin(schema.estimates, eq(schema.estimateItems.estimateId, schema.estimates.id))
+        .innerJoin(schema.projects, eq(schema.estimates.projectId, schema.projects.id))
+        .where(inArray(schema.estimateItems.id, itemIds));
+
+      // Check if all requested items were found and belong to the company
+      if (itemsWithOwnership.length !== itemIds.length) {
+        // Find which item is missing
+        const foundIds = new Set(itemsWithOwnership.map(i => i.itemId));
+        const missingId = itemIds.find(id => !foundIds.has(id));
+        return { authorized: false, invalidItemId: missingId };
+      }
+
+      // Verify all items belong to the user's company
+      const unauthorizedItem = itemsWithOwnership.find(i => i.projectCompanyId !== companyId);
+      if (unauthorizedItem) {
+        return { authorized: false, invalidItemId: unauthorizedItem.itemId };
+      }
+
+      return { authorized: true };
+    } catch (error) {
+      console.error("Database error in verifyEstimateItemsOwnership:", error);
       throw error;
     }
   }
