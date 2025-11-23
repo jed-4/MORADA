@@ -999,7 +999,7 @@ export const suppliers = pgTable("suppliers", {
   abn: text("abn"), // Australian Business Number
   address: text("address"),
   xeroContactId: text("xero_contact_id"), // For Xero integration linking
-  color: text("color").default("#bba7db"), // Gantt bar color, default lilac
+  // color: text("color").default("#bba7db"), // Gantt bar color, default lilac - Removed temporarily until migration
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

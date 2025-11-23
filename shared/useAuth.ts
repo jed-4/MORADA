@@ -39,11 +39,11 @@ export function useAuth() {
       }
     },
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
     gcTime: Infinity,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    refetchOnMount: false, // Don't refetch on every component mount
+    refetchOnWindowFocus: false, // Don't refetch on every tab focus
+    refetchOnReconnect: true, // Only refetch on network reconnect
   });
 
   const logout = async () => {

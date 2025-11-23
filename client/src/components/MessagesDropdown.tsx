@@ -40,7 +40,7 @@ export function MessagesDropdown() {
   // Calculate total unread count
   const { data: unreadCounts = {} } = useQuery<Record<string, number>>({
     queryKey: ["/api/channels/unread/counts"],
-    refetchInterval: 5000, // Poll every 5 seconds
+    refetchInterval: 30000, // Poll every 30 seconds (reduced from 5s to prevent browser overload)
   });
 
   const totalUnread = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
