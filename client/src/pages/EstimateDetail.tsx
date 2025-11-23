@@ -148,15 +148,16 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease-in-out',
-    opacity: isDragging ? 0.4 : 1,
+    transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
   };
 
   return (
     <TableRow
       ref={setNodeRef}
       style={style}
-      className={`${className} group`}
+      className={`${className} group ${isDragging ? 'shadow-lg' : ''}`}
       data-testid={`row-item-${id}`}
     >
       <TableCell className="py-0.5 px-1" style={{ width: '32px' }}>
@@ -194,12 +195,13 @@ function SortableGroup({ id, children, className }: SortableGroupProps) {
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease-in-out',
-    opacity: isDragging ? 0.4 : 1,
+    transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={className}>
+    <div ref={setNodeRef} style={style} className={`${className} ${isDragging ? 'shadow-lg' : ''}`}>
       {children({ attributes, listeners })}
     </div>
   );
@@ -790,7 +792,7 @@ export default function EstimateDetail() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Require 8px movement before drag starts
+        distance: 3, // Reduced to 3px for faster, more responsive drag activation
       },
     }),
     useSensor(KeyboardSensor, {
@@ -909,8 +911,9 @@ export default function EstimateDetail() {
       return apiRequest("/api/estimate-items/reorder", "PATCH", { items: validItems });
     },
     onMutate: async ({ items }) => {
-      // Cancel outgoing refetches
+      // Cancel outgoing refetches to prevent snap-back
       await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       
       // Snapshot previous value for rollback
       const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]) as EstimateItem[];
@@ -921,7 +924,7 @@ export default function EstimateDetail() {
         ?.filter(item => affectedItemIds.has(item.id))
         .map(item => ({ id: item.id, order: item.order, groupId: item.groupId }));
       
-      // Optimistically update
+      // Optimistically update to cache IMMEDIATELY - this prevents snap-back
       queryClient.setQueryData(
         ["/api/estimates", effectiveEstimateId, "items"],
         (old: any[]) => {
@@ -958,25 +961,21 @@ export default function EstimateDetail() {
         description: error?.message || "Could not update item order. Please try again.",
         variant: "destructive",
       });
+      
+      // Refetch on error to restore server state
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
     },
     onSuccess: (data, variables, context) => {
-      console.log('[REORDER MUTATION] Success');
-      // Push action to undo stack with previous state for restoration
+      // Push action to undo stack silently
       if (context?.previousState) {
         undoStack.pushAction('Drag Item', { 
           previousState: context.previousState,
           timestamp: Date.now() 
         });
       }
-      toast({
-        title: "Items reordered",
-        description: "Successfully updated item order",
-      });
-    },
-    onSettled: () => {
-      // Always refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      // NO TOAST - keeps drag operations fast and silent
+      // NO REFETCH - optimistic update is already applied, server confirms it's correct
     },
   });
 
@@ -986,24 +985,26 @@ export default function EstimateDetail() {
       return apiRequest("/api/estimate-groups/reorder", "PATCH", { groups });
     },
     onMutate: async ({ groups }) => {
-      // Capture previous state for undo
+      // Cancel outgoing refetches to prevent snap-back
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      
+      // Snapshot previous groups for rollback
       const previousGroups = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "groups"]) as any[];
+      
+      // Capture previous state for undo (only affected groups)
       const affectedGroupIds = new Set(groups.map(u => u.id));
       const previousState = previousGroups
         ?.filter(group => affectedGroupIds.has(group.id))
         .map(group => ({ id: group.id, order: group.order, parentGroupId: group.parentGroupId }));
       
-      return { previousState };
-    },
-    onSuccess: (data, variables, context) => {
-      // Update cache directly without refetching to avoid snap-back
+      // Optimistically update cache IMMEDIATELY - this prevents snap-back
       queryClient.setQueryData(
         ["/api/estimates", effectiveEstimateId, "groups"],
         (old: any) => {
           if (!Array.isArray(old)) return old;
           
           // Create a map of order changes
-          const orderMap = new Map(variables.groups.map(u => [u.id, u.order]));
+          const orderMap = new Map(groups.map(u => [u.id, u.order]));
           
           // Update the groups with new orders
           return old.map(group => {
@@ -1018,21 +1019,35 @@ export default function EstimateDetail() {
         }
       );
       
-      // Push action to undo stack
+      return { previousGroups, previousState };
+    },
+    onSuccess: (data, variables, context) => {
+      // Push action to undo stack silently
       if (context?.previousState) {
         undoStack.pushAction('Drag Group', { 
           previousState: context.previousState,
           timestamp: Date.now() 
         });
       }
+      // NO TOAST - keeps drag operations fast and silent
+      // NO REFETCH - optimistic update is already applied
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
+      // Rollback to previous state
+      if (context?.previousGroups) {
+        queryClient.setQueryData(
+          ["/api/estimates", effectiveEstimateId, "groups"],
+          context.previousGroups
+        );
+      }
+      
       toast({
         title: "Failed to reorder groups",
         description: error?.message || "Could not update group order. Please try again.",
         variant: "destructive",
       });
-      // Only refetch on error to restore correct state
+      
+      // Refetch on error to restore server state
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
@@ -1042,7 +1057,53 @@ export default function EstimateDetail() {
     mutationFn: async ({ groupId, updates }: { groupId: string; updates: { parentGroupId?: string | null; order?: number } }) => {
       return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", updates);
     },
+    onMutate: async ({ groupId, updates }) => {
+      // Cancel outgoing refetches to prevent snap-back
+      await queryClient.cancelQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      
+      // Snapshot previous groups for rollback
+      const previousGroups = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "groups"]) as any[];
+      
+      // Optimistically update cache IMMEDIATELY
+      queryClient.setQueryData(
+        ["/api/estimates", effectiveEstimateId, "groups"],
+        (old: any) => {
+          if (!Array.isArray(old)) return old;
+          
+          return old.map(group => {
+            if (group.id === groupId) {
+              return {
+                ...group,
+                ...updates
+              };
+            }
+            return group;
+          });
+        }
+      );
+      
+      return { previousGroups };
+    },
     onSuccess: () => {
+      // NO TOAST - keeps operations fast and silent
+      // NO REFETCH - optimistic update is already applied
+    },
+    onError: (error: any, variables, context) => {
+      // Rollback to previous state
+      if (context?.previousGroups) {
+        queryClient.setQueryData(
+          ["/api/estimates", effectiveEstimateId, "groups"],
+          context.previousGroups
+        );
+      }
+      
+      toast({
+        title: "Failed to update group",
+        description: error?.message || "Could not update group. Please try again.",
+        variant: "destructive",
+      });
+      
+      // Refetch on error to restore server state
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
     },
   });
