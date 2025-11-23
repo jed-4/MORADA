@@ -136,7 +136,7 @@ interface SortableRowProps {
   isDraggable?: boolean;
 }
 
-function SortableRow({ id, children, className, isDraggable = true }: SortableRowProps) {
+const SortableRow = React.memo(({ id, children, className, isDraggable = true }: SortableRowProps) => {
   const {
     attributes,
     listeners,
@@ -146,12 +146,12 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
     isDragging,
   } = useSortable({ id, disabled: !isDraggable });
 
-  const style = {
+  const style = React.useMemo(() => ({
     transform: CSS.Transform.toString(transform),
     transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
-  };
+  }), [transform, transition, isDragging]);
 
   return (
     <TableRow
@@ -174,7 +174,7 @@ function SortableRow({ id, children, className, isDraggable = true }: SortableRo
       {children}
     </TableRow>
   );
-}
+});
 
 // Sortable Group Component for drag & drop groups
 interface SortableGroupProps {
@@ -183,7 +183,7 @@ interface SortableGroupProps {
   className?: string;
 }
 
-function SortableGroup({ id, children, className }: SortableGroupProps) {
+const SortableGroup = React.memo(({ id, children, className }: SortableGroupProps) => {
   const {
     attributes,
     listeners,
@@ -193,19 +193,19 @@ function SortableGroup({ id, children, className }: SortableGroupProps) {
     isDragging,
   } = useSortable({ id });
 
-  const style = {
+  const style = React.useMemo(() => ({
     transform: CSS.Transform.toString(transform),
     transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
-  };
+  }), [transform, transition, isDragging]);
 
   return (
     <div ref={setNodeRef} style={style} className={`${className} ${isDragging ? 'shadow-lg' : ''}`}>
       {children({ attributes, listeners })}
     </div>
   );
-}
+});
 
 // Separate component for sortable group row to comply with Rules of Hooks
 function SortableGroupRow({ 
