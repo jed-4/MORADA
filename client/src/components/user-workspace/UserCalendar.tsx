@@ -77,7 +77,15 @@ interface UserCalendarProps {
 export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [filters, setFilters] = useState<CalendarFiltersType>({});
+  
+  // Initialize with all event types selected by default
+  const defaultEventTypes = isOwnPage 
+    ? ["task", "schedule", "google-calendar"] 
+    : ["task", "schedule"];
+  
+  const [filters, setFilters] = useState<CalendarFiltersType>({
+    eventTypes: defaultEventTypes,
+  });
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
@@ -157,7 +165,9 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       await apiRequest("/api/calendar-views", "POST", {
         name: "All Events",
         calendarType: "personal",
-        filters: {},
+        filters: {
+          eventTypes: defaultEventTypes,
+        },
       });
       queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
     } catch (error) {
@@ -171,10 +181,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       const view = savedViews.find((v: CalendarView) => v.id === selectedViewId);
       if (view && view.filters) {
         const normalizedFilters = normalizeFilterDates(view.filters as CalendarFiltersType);
+        // If view doesn't have eventTypes defined, use default (all selected)
+        if (!normalizedFilters.eventTypes) {
+          normalizedFilters.eventTypes = defaultEventTypes;
+        }
         setFilters(normalizedFilters);
       }
     }
-  }, [selectedViewId, savedViews]);
+  }, [selectedViewId, savedViews, defaultEventTypes]);
 
   // Convert tasks, schedule items, and Google Calendar events to calendar events
   const calendarEvents: CalendarEvent[] = useMemo(() => {
@@ -329,11 +343,12 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     ...(isOwnPage ? [{ key: "google-calendar", label: "Google Calendar" }] : []),
   ];
 
-  // Count active filters
+  // Count active filters (don't count eventTypes if all are selected - that's the default)
+  const allEventTypesSelected = filters.eventTypes?.length === eventTypeOptions.length;
   const activeFilterCount = 
     (filters.projectIds?.length || 0) +
     (filters.statuses?.length || 0) +
-    (filters.eventTypes?.length || 0) +
+    (!allEventTypesSelected && filters.eventTypes?.length ? 1 : 0) +
     (filters.dateFrom || filters.dateTo ? 1 : 0);
 
   // View management
@@ -575,7 +590,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                   data-testid="button-filter-event-types"
                 >
                   <span>Event Types</span>
-                  {filters.eventTypes && filters.eventTypes.length > 0 && (
+                  {!allEventTypesSelected && filters.eventTypes && filters.eventTypes.length > 0 && (
                     <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
                       {filters.eventTypes.length}
                     </Badge>
@@ -586,12 +601,12 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold">Event Types</div>
-                    {filters.eventTypes && filters.eventTypes.length > 0 && (
+                    {!allEventTypesSelected && (
                       <button
                         className="text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => setFilters({...filters, eventTypes: undefined})}
+                        onClick={() => setFilters({...filters, eventTypes: eventTypeOptions.map(t => t.key)})}
                       >
-                        Clear
+                        Select All
                       </button>
                     )}
                   </div>
@@ -601,11 +616,11 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                         <Checkbox
                           checked={filters.eventTypes?.includes(type.key) || false}
                           onCheckedChange={() => {
-                            const current = filters.eventTypes || [];
+                            const current = filters.eventTypes || defaultEventTypes;
                             const updated = current.includes(type.key)
                               ? current.filter(t => t !== type.key)
                               : [...current, type.key];
-                            setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                            setFilters({...filters, eventTypes: updated});
                           }}
                         />
                         <span className="text-xs">{type.label}</span>
