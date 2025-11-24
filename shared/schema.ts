@@ -1023,6 +1023,7 @@ export const primaryContactEnum = pgEnum("primary_contact", ["self", "spouse"]);
 // Contacts (Team, Suppliers, Clients)
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
   name: text("name").notNull(), // Full name (computed from firstName + lastName for display)
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -1079,6 +1080,7 @@ export const contacts = pgTable("contacts", {
 
 export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({

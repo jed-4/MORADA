@@ -8639,25 +8639,32 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getContacts(contactType?: "team" | "supplier" | "client"): Promise<Contact[]> {
+  async getContacts(companyId: string, contactType?: "team" | "supplier" | "client"): Promise<Contact[]> {
     try {
+      const conditions = [eq(schema.contacts.companyId, companyId)];
+      
       if (contactType) {
-        return await db.select()
-          .from(schema.contacts)
-          .where(eq(schema.contacts.contactType, contactType));
+        conditions.push(eq(schema.contacts.contactType, contactType));
       }
-      return await db.select().from(schema.contacts);
+      
+      return await db.select()
+        .from(schema.contacts)
+        .where(and(...conditions))
+        .orderBy(schema.contacts.name);
     } catch (error) {
       console.error("Database error in getContacts:", error);
       throw error;
     }
   }
 
-  async getContact(id: string): Promise<Contact | undefined> {
+  async getContact(id: string, companyId: string): Promise<Contact | undefined> {
     try {
       const contacts = await db.select()
         .from(schema.contacts)
-        .where(eq(schema.contacts.id, id));
+        .where(and(
+          eq(schema.contacts.id, id),
+          eq(schema.contacts.companyId, companyId)
+        ));
       return contacts[0];
     } catch (error) {
       console.error("Database error in getContact:", error);
@@ -8665,7 +8672,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createContact(contact: InsertContact): Promise<Contact> {
+  async createContact(contact: InsertContact & { companyId: string }): Promise<Contact> {
     try {
       // Auto-generate name from firstName and lastName if not provided
       const name = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || "";
@@ -8680,14 +8687,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined> {
+  async updateContact(id: string, contact: Partial<InsertContact>, companyId: string): Promise<Contact | undefined> {
     try {
       // Auto-generate name from firstName and lastName if either is being updated with a non-empty value
       let updateData = { ...contact, updatedAt: new Date() };
       
       if (contact.firstName !== undefined || contact.lastName !== undefined) {
         // Get existing contact to merge firstName/lastName
-        const existing = await this.getContact(id);
+        const existing = await this.getContact(id, companyId);
         if (existing) {
           const firstName = contact.firstName !== undefined ? contact.firstName : existing.firstName;
           const lastName = contact.lastName !== undefined ? contact.lastName : existing.lastName;
@@ -8705,7 +8712,10 @@ export class DbStorage implements IStorage {
       
       const updatedContacts = await db.update(schema.contacts)
         .set(updateData)
-        .where(eq(schema.contacts.id, id))
+        .where(and(
+          eq(schema.contacts.id, id),
+          eq(schema.contacts.companyId, companyId)
+        ))
         .returning();
       return updatedContacts[0];
     } catch (error) {
@@ -8714,11 +8724,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async archiveContact(id: string): Promise<Contact | undefined> {
+  async archiveContact(id: string, companyId: string): Promise<Contact | undefined> {
     try {
       const archivedContacts = await db.update(schema.contacts)
         .set({ isArchived: true, updatedAt: new Date() })
-        .where(eq(schema.contacts.id, id))
+        .where(and(
+          eq(schema.contacts.id, id),
+          eq(schema.contacts.companyId, companyId)
+        ))
         .returning();
       return archivedContacts[0];
     } catch (error) {
@@ -8727,11 +8740,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async restoreContact(id: string): Promise<Contact | undefined> {
+  async restoreContact(id: string, companyId: string): Promise<Contact | undefined> {
     try {
       const restoredContacts = await db.update(schema.contacts)
         .set({ isArchived: false, updatedAt: new Date() })
-        .where(eq(schema.contacts.id, id))
+        .where(and(
+          eq(schema.contacts.id, id),
+          eq(schema.contacts.companyId, companyId)
+        ))
         .returning();
       return restoredContacts[0];
     } catch (error) {

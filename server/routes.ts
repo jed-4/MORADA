@@ -4658,19 +4658,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Contacts API Routes
-  app.get("/api/contacts", async (req, res) => {
+  app.get("/api/contacts", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const { contactType } = req.query;
-      const contacts = await storage.getContacts(contactType as "team" | "supplier" | "client" | undefined);
+      const contacts = await storage.getContacts(companyId, contactType as "team" | "supplier" | "client" | undefined);
       res.json(contacts);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch contacts" });
     }
   });
 
-  app.get("/api/contacts/:id", async (req, res) => {
+  app.get("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const contact = await storage.getContact(req.params.id);
+      const companyId = req.user!.companyId!;
+      const contact = await storage.getContact(req.params.id, companyId);
       if (!contact) {
         return res.status(404).json({ error: "Contact not found" });
       }
@@ -4680,8 +4682,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts", async (req, res) => {
+  app.post("/api/contacts", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const validationResult = insertContactSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -4690,15 +4693,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const contact = await storage.createContact(validationResult.data);
+      const contact = await storage.createContact({ ...validationResult.data, companyId });
       res.status(201).json(contact);
     } catch (error) {
       res.status(500).json({ error: "Failed to create contact" });
     }
   });
 
-  app.patch("/api/contacts/:id", async (req, res) => {
+  app.patch("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const validationResult = insertContactSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -4707,7 +4711,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const contact = await storage.updateContact(req.params.id, validationResult.data);
+      const contact = await storage.updateContact(req.params.id, validationResult.data, companyId);
       if (!contact) {
         return res.status(404).json({ error: "Contact not found" });
       }
@@ -4717,9 +4721,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/archive", async (req, res) => {
+  app.post("/api/contacts/:id/archive", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const contact = await storage.archiveContact(req.params.id);
+      const companyId = req.user!.companyId!;
+      const contact = await storage.archiveContact(req.params.id, companyId);
       if (!contact) {
         return res.status(404).json({ error: "Contact not found" });
       }
@@ -4729,9 +4734,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contacts/:id/restore", async (req, res) => {
+  app.post("/api/contacts/:id/restore", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const contact = await storage.restoreContact(req.params.id);
+      const companyId = req.user!.companyId!;
+      const contact = await storage.restoreContact(req.params.id, companyId);
       if (!contact) {
         return res.status(404).json({ error: "Contact not found" });
       }
