@@ -189,12 +189,22 @@ export class GoogleOAuthService {
   async getConnectionStatus(userId: string): Promise<{
     connected: boolean;
     email: string | null;
+    tokenExpiry: Date | null;
+    isExpired: boolean;
+    connectedAt: Date | null;
   }> {
     const user = await this.storage.getUser(userId);
     
+    const hasTokens = !!(user?.googleCalendarAccessToken && user?.googleCalendarRefreshToken);
+    const tokenExpiry = user?.googleCalendarTokenExpiry || null;
+    const isExpired = tokenExpiry ? tokenExpiry.getTime() < Date.now() : false;
+    
     return {
-      connected: !!(user?.googleCalendarAccessToken && user?.googleCalendarRefreshToken),
+      connected: hasTokens,
       email: user?.googleCalendarEmail || null,
+      tokenExpiry,
+      isExpired,
+      connectedAt: user?.googleCalendarConnectedAt || null,
     };
   }
 }

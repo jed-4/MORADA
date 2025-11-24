@@ -149,6 +149,9 @@ export default function UserProfile() {
 
   const isGoogleCalendarConnected = (calendarStatus as any)?.connected || false;
   const googleCalendarEmail = (calendarStatus as any)?.email || null;
+  const isTokenExpired = (calendarStatus as any)?.isExpired || false;
+  const tokenExpiry = (calendarStatus as any)?.tokenExpiry;
+  const connectedAt = (calendarStatus as any)?.connectedAt;
 
   return (
     <div className="flex flex-col h-full" data-testid="user-profile">
@@ -299,26 +302,51 @@ export default function UserProfile() {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{googleCalendarEmail}</span>
-                          <Badge variant="default" className="gap-1">
-                            <Check className="h-3 w-3" />
-                            Connected
-                          </Badge>
+                          {isTokenExpired ? (
+                            <Badge variant="destructive" className="gap-1">
+                              <X className="h-3 w-3" />
+                              Token Expired
+                            </Badge>
+                          ) : (
+                            <Badge variant="default" className="gap-1">
+                              <Check className="h-3 w-3" />
+                              Connected
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Syncing events to your Google Calendar
+                          {isTokenExpired 
+                            ? "Your connection has expired. Please reconnect to continue syncing."
+                            : "Syncing events to your Google Calendar"}
                         </p>
+                        {connectedAt && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Connected {format(new Date(connectedAt), "MMM d, yyyy")}
+                          </p>
+                        )}
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleDisconnectGoogleCalendar}
-                      disabled={disconnectGoogleCalendarMutation.isPending}
-                      data-testid="button-disconnect-google-calendar"
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Disconnect
-                    </Button>
+                    <div className="flex gap-2">
+                      {isTokenExpired && (
+                        <Button
+                          size="sm"
+                          onClick={handleConnectGoogleCalendar}
+                          data-testid="button-reconnect-google-calendar"
+                        >
+                          Reconnect
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDisconnectGoogleCalendar}
+                        disabled={disconnectGoogleCalendarMutation.isPending}
+                        data-testid="button-disconnect-google-calendar"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Disconnect
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">

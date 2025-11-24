@@ -52,12 +52,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { type Estimate, type EstimateSummary, type Project, type FieldCategoryWithOptions, type FieldOption } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { logActivity } from "@/lib/activityLogger";
 
 export default function Estimates() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const pageTitle = usePageTitle({ pageName: "Estimates" });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState("All");
@@ -144,19 +146,21 @@ export default function Estimates() {
           description = `User rejected estimate '${estimate.name}'`;
         }
 
-        logActivity({
-          projectId: estimate.projectId,
-          userId: "current-user",
-          activityType: "estimate",
-          action,
-          description,
-          entityId: estimate.id,
-          entityName: estimate.name,
-          metadata: {
-            oldStatus: estimate.status,
-            newStatus: variables.status
-          }
-        });
+        if (user?.id) {
+          logActivity({
+            projectId: estimate.projectId,
+            userId: user.id,
+            activityType: "estimate",
+            action,
+            description,
+            entityId: estimate.id,
+            entityName: estimate.name,
+            metadata: {
+              oldStatus: estimate.status,
+              newStatus: variables.status
+            }
+          });
+        }
       }
     },
     onError: () => {

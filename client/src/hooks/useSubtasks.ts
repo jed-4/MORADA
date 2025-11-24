@@ -12,7 +12,7 @@ export function useSubtasks(parentTaskId: string | undefined) {
 }
 
 // Hook to create a new subtask
-export function useCreateSubtask() {
+export function useCreateSubtask(userId?: string) {
   return useMutation({
     mutationFn: async ({ parentTaskId, subtask }: { parentTaskId: string; subtask: InsertTask }) => {
       const response = await apiRequest(`/api/tasks/${parentTaskId}/subtasks`, "POST", subtask);
@@ -24,11 +24,11 @@ export function useCreateSubtask() {
       // Also invalidate the main tasks list to reflect any changes
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       
-      // Log activity if we have task details
-      if (task && task.projectId) {
+      // Log activity if we have task details and user ID
+      if (task && task.projectId && userId) {
         logActivity({
           projectId: task.projectId,
-          userId: "current-user",
+          userId: userId,
           activityType: "task",
           action: "created",
           description: `User created task '${task.title}'`,
@@ -42,7 +42,7 @@ export function useCreateSubtask() {
 }
 
 // Hook to update a subtask (uses existing task update API)
-export function useUpdateSubtask() {
+export function useUpdateSubtask(userId?: string) {
   return useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
       const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
@@ -56,12 +56,12 @@ export function useUpdateSubtask() {
       // Also invalidate the main tasks list
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       
-      // Log activity if we have task details
-      if (updatedTask && updatedTask.projectId) {
+      // Log activity if we have task details and user ID
+      if (updatedTask && updatedTask.projectId && userId) {
         const action = updatedTask.status === "done" ? "completed" : "updated";
         logActivity({
           projectId: updatedTask.projectId,
-          userId: "current-user",
+          userId: userId,
           activityType: "task",
           action,
           description: `User ${action} task '${updatedTask.title}'`,
@@ -75,7 +75,7 @@ export function useUpdateSubtask() {
 }
 
 // Hook to delete a subtask (uses existing task delete API)
-export function useDeleteSubtask() {
+export function useDeleteSubtask(userId?: string) {
   return useMutation({
     mutationFn: async ({ taskId, parentTaskId, task }: { taskId: string; parentTaskId?: string; task?: Task }) => {
       await apiRequest(`/api/tasks/${taskId}`, "DELETE");
@@ -89,12 +89,12 @@ export function useDeleteSubtask() {
       // Also invalidate the main tasks list to reflect any changes
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       
-      // Log activity if we have task details
-      if (task && task.projectId) {
+      // Log activity if we have task details and user ID
+      if (task && task.projectId && userId) {
         const userName = task.author || "User";
         logActivity({
           projectId: task.projectId,
-          userId: "current-user",
+          userId: userId,
           activityType: "task",
           action: "deleted",
           description: `${userName} deleted task '${task.title}'`,

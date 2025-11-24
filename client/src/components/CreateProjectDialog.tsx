@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertProjectSchema, InsertProject, Project } from "@shared/schema";
+import { insertProjectSchema, InsertProject, Project, type FieldCategoryWithOptions } from "@shared/schema";
 import { useProject } from "@/contexts/ProjectContext";
 
 type CreateProjectDialogProps = {
@@ -29,11 +30,22 @@ type FormData = {
   color: string;
   isActive: boolean;
   invoicingMethod: "progress_payments" | "cost_plus";
+  projectSubStatus: string;
 };
 
 export default function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
   const { toast } = useToast();
   const { setCurrentProject } = useProject();
+  
+  // Fetch status options
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+
+  const projectStatusCategory = fieldCategories.find(cat => cat.key === "project.status");
+  const statusOptions = projectStatusCategory?.options || [];
+  // Get all child (detailed) status options
+  const detailedStatusOptions = statusOptions.filter(opt => opt.parentId !== null && opt.parentId !== undefined);
   
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -43,6 +55,7 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
       color: "#3b82f6",
       isActive: true,
       invoicingMethod: "progress_payments",
+      projectSubStatus: "lead_new",
     },
   });
 
@@ -76,10 +89,17 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
   });
 
   const onSubmit = (data: FormData) => {
+    // Find the selected status to get its parent (phase)
+    const selectedStatus = statusOptions.find(opt => opt.key === data.projectSubStatus);
+    const parentStatus = selectedStatus?.parentId 
+      ? statusOptions.find(opt => opt.id === selectedStatus.parentId)
+      : null;
+    
     createProjectMutation.mutate({
       ...data,
       icon: "building",
       status: "active",
+      projectStatus: parentStatus?.key || "lead",
     } as InsertProject);
   };
 
@@ -133,6 +153,32 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
                       {...field}
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Project Status */}
+            <FormField
+              control={form.control}
+              name="projectSubStatus"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status *</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-project-status">
+                        <SelectValue placeholder="Select a status" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {detailedStatusOptions.map((status) => (
+                        <SelectItem key={status.id} value={status.key}>
+                          {status.label || status.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

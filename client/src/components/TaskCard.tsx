@@ -15,6 +15,7 @@ import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 import { useDeleteSubtask, useSubtasks } from "@/hooks/useSubtasks";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,7 +58,8 @@ export default function TaskCard({
 }: TaskCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { toast } = useToast();
-  const deleteTaskMutation = useDeleteSubtask();
+  const { user } = useAuth();
+  const deleteTaskMutation = useDeleteSubtask(user?.id);
   
   // Fetch field categories to get completed status option
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({

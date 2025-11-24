@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { ChevronDown, ChevronRight, Plus, MoreHorizontal, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useSubtasks, useCreateSubtask, useUpdateSubtask, useDeleteSubtask } from "@/hooks/useSubtasks";
@@ -20,11 +21,12 @@ export default function SubtaskList({ parentTask, compact = false }: SubtaskList
   const [isAdding, setIsAdding] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data: subtasks = [], isLoading } = useSubtasks(parentTask.id);
-  const createSubtaskMutation = useCreateSubtask();
-  const updateSubtaskMutation = useUpdateSubtask();
-  const deleteSubtaskMutation = useDeleteSubtask();
+  const createSubtaskMutation = useCreateSubtask(user?.id);
+  const updateSubtaskMutation = useUpdateSubtask(user?.id);
+  const deleteSubtaskMutation = useDeleteSubtask(user?.id);
 
   const completedCount = subtasks.filter(subtask => subtask.status === "done").length;
   const totalCount = subtasks.length;

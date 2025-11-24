@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type InsertTask, type FieldCategoryWithOptions } from "@shared/schema";
 import { z } from "zod";
@@ -96,6 +97,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
   const [tagInput, setTagInput] = useState("");
   const [activeTab, setActiveTab] = useState("basic");
   const { toast } = useToast();
+  const { user } = useAuth();
   const { currentProject } = useProject();
   
   // Fetch task status options from field categories
@@ -276,16 +278,18 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       toast({ title: "Task created successfully" });
       
       const userName = createdTask.author || "User";
-      logActivity({
-        projectId: createdTask.projectId || projectId,
-        userId: "current-user",
-        activityType: "task",
-        action: "created",
-        description: `${userName} created task '${createdTask.title}'`,
-        entityId: createdTask.id,
-        entityName: createdTask.title,
-        metadata: {},
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: createdTask.projectId || projectId,
+          userId: user.id,
+          activityType: "task",
+          action: "created",
+          description: `${userName} created task '${createdTask.title}'`,
+          entityId: createdTask.id,
+          entityName: createdTask.title,
+          metadata: {},
+        });
+      }
       
       onOpenChange(false);
       form.reset();
@@ -345,16 +349,18 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       const actionText = isCompletion ? "completed" : "updated";
       const userName = updatedTask.author || "User";
       
-      logActivity({
-        projectId: updatedTask.projectId || projectId,
-        userId: "current-user",
-        activityType: "task",
-        action,
-        description: `${userName} ${actionText} task '${updatedTask.title}'`,
-        entityId: updatedTask.id,
-        entityName: updatedTask.title,
-        metadata: {},
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: updatedTask.projectId || projectId,
+          userId: user.id,
+          activityType: "task",
+          action,
+          description: `${userName} ${actionText} task '${updatedTask.title}'`,
+          entityId: updatedTask.id,
+          entityName: updatedTask.title,
+          metadata: {},
+        });
+      }
       
       onOpenChange(false);
     },

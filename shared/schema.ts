@@ -469,9 +469,9 @@ export const projects = pgTable("projects", {
   location: text("location"), // Project address/location (displayed as "Address")
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
   
-  // New hierarchical status fields (nullable to support existing production data)
+  // New hierarchical status fields
   projectStatus: text("project_status").default("lead"), // High-level status: Lead, Pre-Construction, Construction, Post Construction
-  projectSubStatus: text("project_sub_status").default("lead_new"), // Low-level status tied to projectStatus
+  projectSubStatus: text("project_sub_status").notNull().default("lead_new"), // Low-level status tied to projectStatus - REQUIRED
   
   // Client and financial fields
   clientId: varchar("client_id").references(() => contacts.id),
@@ -505,6 +505,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   status: z.enum(["active", "on_hold", "completed"]).default("active"),
   color: z.string().default("#3b82f6"),
   icon: z.string().default("Building2"),
+  projectSubStatus: z.string().min(1, "Status is required"), // Required - must select a status
 });
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;

@@ -56,6 +56,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { logActivity } from "@/lib/activityLogger";
@@ -92,6 +93,7 @@ export default function VariationDetail() {
   }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   
   // Normalize variation ID - prioritize variationId (from project-scoped routes), fall back to id (from global routes)
   const effectiveVariationId = variationId || id;
@@ -271,16 +273,18 @@ export default function VariationDetail() {
         description: "Variation created successfully",
       });
       
-      logActivity({
-        projectId: newVariation.projectId,
-        userId: "current-user",
-        activityType: "variation",
-        action: "created",
-        description: `User created variation '${newVariation.name}'`,
-        entityId: newVariation.id,
-        entityName: newVariation.name,
-        metadata: {}
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: newVariation.projectId,
+          userId: user.id,
+          activityType: "variation",
+          action: "created",
+          description: `User created variation '${newVariation.name}'`,
+          entityId: newVariation.id,
+          entityName: newVariation.name,
+          metadata: {}
+        });
+      }
       
       handleCancel();
     },
@@ -346,16 +350,18 @@ export default function VariationDetail() {
         description: "Variation updated successfully",
       });
       
-      logActivity({
-        projectId: updatedVariation.projectId,
-        userId: "current-user",
-        activityType: "variation",
-        action: "updated",
-        description: `User updated variation '${updatedVariation.name}'`,
-        entityId: updatedVariation.id,
-        entityName: updatedVariation.name,
-        metadata: {}
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: updatedVariation.projectId,
+          userId: user.id,
+          activityType: "variation",
+          action: "updated",
+          description: `User updated variation '${updatedVariation.name}'`,
+          entityId: updatedVariation.id,
+          entityName: updatedVariation.name,
+          metadata: {}
+        });
+      }
       
       handleCancel();
     },
@@ -420,7 +426,7 @@ export default function VariationDetail() {
     mutationFn: async () => {
       const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
         status: "approved",
-        approvedBy: "current-user-id",
+        approvedBy: user?.id || "unknown-user",
         approvedDate: new Date().toISOString(),
       });
       return response.json();
@@ -434,16 +440,18 @@ export default function VariationDetail() {
         description: "Variation approved successfully",
       });
       
-      logActivity({
-        projectId: approvedVariation.projectId,
-        userId: "current-user",
-        activityType: "variation",
-        action: "approved",
-        description: `User approved variation '${approvedVariation.name}'`,
-        entityId: approvedVariation.id,
-        entityName: approvedVariation.name,
-        metadata: {}
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: approvedVariation.projectId,
+          userId: user.id,
+          activityType: "variation",
+          action: "approved",
+          description: `User approved variation '${approvedVariation.name}'`,
+          entityId: approvedVariation.id,
+          entityName: approvedVariation.name,
+          metadata: {}
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -472,16 +480,18 @@ export default function VariationDetail() {
         description: "Variation rejected",
       });
       
-      logActivity({
-        projectId: rejectedVariation.projectId,
-        userId: "current-user",
-        activityType: "variation",
-        action: "rejected",
-        description: `User rejected variation '${rejectedVariation.name}'`,
-        entityId: rejectedVariation.id,
-        entityName: rejectedVariation.name,
-        metadata: {}
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: rejectedVariation.projectId,
+          userId: user.id,
+          activityType: "variation",
+          action: "rejected",
+          description: `User rejected variation '${rejectedVariation.name}'`,
+          entityId: rejectedVariation.id,
+          entityName: rejectedVariation.name,
+          metadata: {}
+        });
+      }
     },
     onError: (error: Error) => {
       toast({

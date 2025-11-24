@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   DndContext,
   closestCenter,
@@ -507,6 +508,7 @@ export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   
   // Normalize estimate ID - prioritize estimateId (from project-scoped routes), fall back to id (from global routes)
   const effectiveEstimateId = estimateId || id;
@@ -1487,16 +1489,18 @@ export default function EstimateDetail() {
         description: "New estimate created successfully.",
       });
 
-      logActivity({
-        projectId: newEstimate.projectId,
-        userId: "current-user",
-        activityType: "estimate",
-        action: "created",
-        description: `User created estimate '${newEstimate.name}'`,
-        entityId: newEstimate.id,
-        entityName: newEstimate.name,
-        metadata: {}
-      });
+      if (user?.id) {
+        logActivity({
+          projectId: newEstimate.projectId,
+          userId: user.id,
+          activityType: "estimate",
+          action: "created",
+          description: `User created estimate '${newEstimate.name}'`,
+          entityId: newEstimate.id,
+          entityName: newEstimate.name,
+          metadata: {}
+        });
+      }
 
       // Redirect to the newly created estimate
       setLocation(`/estimates/${newEstimate.id}`);
@@ -1586,10 +1590,10 @@ export default function EstimateDetail() {
         description: "Estimate name updated successfully.",
       });
 
-      if (updatedEstimate.projectId) {
+      if (updatedEstimate.projectId && user?.id) {
         logActivity({
           projectId: updatedEstimate.projectId,
-          userId: "current-user",
+          userId: user.id,
           activityType: "estimate",
           action: "updated",
           description: `User updated estimate '${updatedEstimate.name}'`,

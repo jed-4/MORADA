@@ -3525,9 +3525,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { GoogleOAuthService } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
       
+      console.log('🔍 [Google Calendar] Fetching events for user:', req.user.id);
+      
       const status = await oauthService.getConnectionStatus(req.user.id);
+      console.log('🔍 [Google Calendar] Connection status:', {
+        connected: status.connected,
+        email: status.email,
+        isExpired: status.isExpired,
+        tokenExpiry: status.tokenExpiry,
+      });
+      
       if (!status.connected) {
+        console.log('⚠️ [Google Calendar] Not connected, returning empty events');
         return res.json([]);
+      }
+
+      if (status.isExpired) {
+        console.log('⚠️ [Google Calendar] Token is expired, needs reconnection');
+        return res.status(401).json({ 
+          error: 'token_expired',
+          message: 'Your Google Calendar connection has expired. Please reconnect to continue syncing events.' 
+        });
       }
 
       const calendar = await oauthService.getCalendarClient(req.user.id);
@@ -3538,6 +3556,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeMax = new Date();
       timeMax.setMonth(timeMax.getMonth() + 3);
 
+      console.log('🔍 [Google Calendar] Fetching events from Google API...', {
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+      });
+
       const response = await calendar.events.list({
         calendarId: 'primary',
         timeMin: timeMin.toISOString(),
@@ -3546,6 +3569,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         orderBy: 'startTime',
         maxResults: 250,
       });
+
+      const eventCount = response.data.items?.length || 0;
+      console.log(`✅ [Google Calendar] Retrieved ${eventCount} events from Google API`);
 
       const events = (response.data.items || []).map((event: any) => {
         const start = event.start?.dateTime || event.start?.date;
@@ -3592,8 +3618,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json(events);
-    } catch (error) {
-      console.error("Error fetching Google Calendar events:", error);
+    } catch (error: any) {
+      console.error("❌ [Google Calendar] Error fetching events:", {
+        error: error.message,
+        stack: error.stack,
+        code: error.code,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      
+      // Check if it's a token expiration error
+      if (error.response?.status === 401 || error.code === 'invalid_grant') {
+        return res.status(401).json({ 
+          error: 'token_expired',
+          message: 'Your Google Calendar connection has expired. Please reconnect to continue syncing events.' 
+        });
+      }
+      
+      // Return empty array for other errors to avoid breaking the UI
       res.json([]);
     }
   });
