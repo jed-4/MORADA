@@ -14,12 +14,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const DEFAULT_PREFERENCES: ViewPreferences = {
-  groupBy: "parent",
+  groupBy: "phase",
   columnWidth: "medium",
   visibleFields: {
     client: true,
     budget: true,
-    stage: true,
+    phase: true,
     dueDate: true,
     progress: true,
     foreman: true,
@@ -128,10 +128,10 @@ export default function BusinessProjects() {
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => updatePreference('groupBy', preferences.groupBy === 'parent' ? 'substatus' : 'parent')}
-            className={`h-6 w-6 ${preferences.groupBy === 'substatus' ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
+            onClick={() => updatePreference('groupBy', preferences.groupBy === 'phase' ? 'status' : 'phase')}
+            className={`h-6 w-6 ${preferences.groupBy === 'status' ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
             data-testid="button-group-by"
-            title={preferences.groupBy === 'parent' ? 'Grouped by Parent Status' : 'Grouped by Sub-Status'}
+            title={preferences.groupBy === 'phase' ? 'Grouped by Phase' : 'Grouped by Status'}
           >
             <Layers className="h-3 w-3" />
           </Button>

@@ -15,7 +15,7 @@ interface ProjectCardCompactProps {
   visibleFields?: {
     client?: boolean;
     budget?: boolean;
-    stage?: boolean;
+    phase?: boolean;
     dueDate?: boolean;
     progress?: boolean;
     foreman?: boolean;
@@ -152,13 +152,13 @@ export default function ProjectCardCompact({
 
         {/* Bottom row: Due date/Stage & Foreman */}
         <div className="flex items-center justify-between mt-1">
-          {/* Due date or Stage chip */}
+          {/* Due date or Phase chip */}
           {visibleFields.dueDate && project.endDate ? (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
               <Calendar className="h-2 w-2 mr-0.5" />
               {format(new Date(project.endDate), 'MMM d')}
             </Badge>
-          ) : visibleFields.stage && statusOption ? (
+          ) : visibleFields.phase && statusOption ? (
             <Badge 
               variant="outline" 
               className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate truncate max-w-[120px]"
