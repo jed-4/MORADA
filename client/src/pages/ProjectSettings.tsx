@@ -84,18 +84,25 @@ export default function ProjectSettings() {
     },
   });
 
-  // Filter high-level and low-level status options
-  const parentStatusOptions = useMemo(() => 
+  // Filter high-level (phase) and detailed (status) options
+  const phaseOptions = useMemo(() => 
     allFieldOptions.filter(opt => !opt.parentId),
     [allFieldOptions]
   );
 
-  const subStatusOptions = useMemo(() => {
-    if (!formData.projectStatus) return [];
-    const parentStatus = allFieldOptions.find(opt => opt.key === formData.projectStatus);
-    if (!parentStatus) return [];
-    return allFieldOptions.filter(opt => opt.parentId === parentStatus.id);
-  }, [allFieldOptions, formData.projectStatus]);
+  const statusOptions = useMemo(() => 
+    allFieldOptions.filter(opt => opt.parentId),
+    [allFieldOptions]
+  );
+
+  // Get the phase for a given status
+  const getPhaseForStatus = (statusKey: string | null) => {
+    if (!statusKey) return null;
+    const status = allFieldOptions.find(opt => opt.key === statusKey);
+    if (!status?.parentId) return null;
+    const phase = allFieldOptions.find(opt => opt.id === status.parentId);
+    return phase?.key || null;
+  };
 
   // Load custom project types from localStorage
   useEffect(() => {
@@ -453,19 +460,21 @@ export default function ProjectSettings() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="project-status">Status</Label>
+              <Label htmlFor="project-sub-status">Status</Label>
               {isEditing ? (
                 <Select
-                  value={formData.projectStatus || ""}
+                  value={formData.projectSubStatus || ""}
                   onValueChange={(value) => {
-                    setFormData({ ...formData, projectStatus: value, projectSubStatus: null });
+                    // Auto-set phase based on selected status
+                    const phaseKey = getPhaseForStatus(value);
+                    setFormData({ ...formData, projectSubStatus: value, projectStatus: phaseKey });
                   }}
                 >
                   <SelectTrigger data-testid="select-project-status">
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {parentStatusOptions.map((status) => (
+                    {statusOptions.map((status) => (
                       <SelectItem key={status.id} value={status.key}>
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#gray' }} />
@@ -477,38 +486,18 @@ export default function ProjectSettings() {
                 </Select>
               ) : (
                 <div className="p-2 bg-muted rounded-md" data-testid="text-project-status">
-                  {parentStatusOptions.find(s => s.key === currentProject.projectStatus)?.name || "Not set"}
+                  {allFieldOptions.find(s => s.key === currentProject.projectSubStatus)?.name || "Not set"}
                 </div>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="project-sub-status">Sub-Status</Label>
-              {isEditing ? (
-                <Select
-                  value={formData.projectSubStatus || ""}
-                  onValueChange={(value) => setFormData({ ...formData, projectSubStatus: value })}
-                  disabled={!formData.projectStatus}
-                >
-                  <SelectTrigger data-testid="select-project-sub-status">
-                    <SelectValue placeholder={formData.projectStatus ? "Select sub-status" : "Select status first"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subStatusOptions.map((status) => (
-                      <SelectItem key={status.id} value={status.key}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#gray' }} />
-                          {status.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="p-2 bg-muted rounded-md" data-testid="text-project-sub-status">
-                  {allFieldOptions.find(s => s.key === currentProject.projectSubStatus)?.name || "Not set"}
-                </div>
-              )}
+              <Label htmlFor="project-phase">Phase (auto-set)</Label>
+              <div className="p-2 bg-muted rounded-md text-muted-foreground" data-testid="text-project-phase">
+                {formData.projectStatus 
+                  ? phaseOptions.find(s => s.key === formData.projectStatus)?.name || "Not set"
+                  : "Not set"}
+              </div>
             </div>
           </div>
         </CardContent>
