@@ -12,7 +12,6 @@ import {
   insertCustomFieldDefSchema,
   insertCustomFieldOptionSchema,
   insertNoteTemplateSchema,
-  insertClientSchema,
   insertProjectSchema,
   insertTaskViewSchema,
   insertEstimateSchema,
@@ -1140,123 +1139,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete note template" });
-    }
-  });
-
-  // Clients API Routes
-  app.get("/api/clients", async (req, res) => {
-    try {
-      const userId = (req.session as any).userId;
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user || !user.companyId) {
-        return res.json([]);
-      }
-
-      const allClients = await storage.getClients();
-      const companyClients = allClients.filter(c => c.companyId === user.companyId);
-      
-      res.json(companyClients);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch clients" });
-    }
-  });
-
-  app.post("/api/clients", async (req, res) => {
-    try {
-      const userId = (req.session as any).userId;
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user || !user.companyId) {
-        return res.status(403).json({ error: "User must belong to a company" });
-      }
-
-      // Validate without companyId since it's set by the backend
-      const createClientSchema = insertClientSchema.omit({ companyId: true, isActive: true });
-      const validationResult = createClientSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const clientData = {
-        ...validationResult.data,
-        companyId: user.companyId,
-        isActive: true,
-      };
-
-      const client = await storage.createClient(clientData);
-      res.status(201).json(client);
-    } catch (error) {
-      console.error("Error creating client:", error);
-      res.status(500).json({ error: "Failed to create client" });
-    }
-  });
-
-  app.patch("/api/clients/:id", async (req, res) => {
-    try {
-      const userId = (req.session as any).userId;
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user || !user.companyId) {
-        return res.status(403).json({ error: "User must belong to a company" });
-      }
-
-      // Verify client belongs to user's company
-      const existingClient = await storage.getClient(req.params.id);
-      if (!existingClient || existingClient.companyId !== user.companyId) {
-        return res.status(404).json({ error: "Client not found" });
-      }
-
-      const updateSchema = insertClientSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const client = await storage.updateClient(req.params.id, validationResult.data);
-      res.json(client);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update client" });
-    }
-  });
-
-  app.delete("/api/clients/:id", async (req, res) => {
-    try {
-      const userId = (req.session as any).userId;
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user || !user.companyId) {
-        return res.status(403).json({ error: "User must belong to a company" });
-      }
-
-      // Verify client belongs to user's company
-      const existingClient = await storage.getClient(req.params.id);
-      if (!existingClient || existingClient.companyId !== user.companyId) {
-        return res.status(404).json({ error: "Client not found" });
-      }
-
-      await storage.deleteClient(req.params.id);
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete client" });
     }
   });
 

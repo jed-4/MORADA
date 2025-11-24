@@ -16,7 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate, FieldCategoryWithOptions, Contact, Company } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, FieldOption, Estimate, FieldCategoryWithOptions, Contact, Company } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import AddContactDialog from "@/components/AddContactDialog";
 import * as LucideIcons from "lucide-react";
@@ -190,7 +190,6 @@ export default function ProjectSettings() {
 
   const handleContactCreated = () => {
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/clients'] });
   };
 
   const handleAddProjectType = () => {

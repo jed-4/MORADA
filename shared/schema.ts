@@ -32,29 +32,6 @@ export const companies = pgTable("companies", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Clients table for storing customer/client information
-export const clients = pgTable("clients", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  email: text("email"),
-  phone: text("phone"),
-  company: text("company"),
-  address: text("address"),
-  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const insertClientSchema = createInsertSchema(clients).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type InsertClient = z.infer<typeof insertClientSchema>;
-export type Client = typeof clients.$inferSelect;
-
 // User roles (Admin, Project Manager, Carpenter, Subcontractor, Client, etc.)
 export const userRoles = pgTable("user_roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -497,7 +474,7 @@ export const projects = pgTable("projects", {
   projectSubStatus: text("project_sub_status").default("lead_new"), // Low-level status tied to projectStatus
   
   // Client and financial fields
-  clientId: varchar("client_id").references(() => clients.id),
+  clientId: varchar("client_id").references(() => contacts.id),
   clientBudget: integer("client_budget"), // Client's budget in cents
   contractCost: integer("contract_cost"), // Agreed contract cost in cents
   selectedEstimateId: varchar("selected_estimate_id"), // Reference to the estimate used for costing
