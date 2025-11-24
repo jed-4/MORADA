@@ -1365,24 +1365,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/projects/:id", async (req, res) => {
+  app.patch("/api/projects/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      console.log("[PATCH /api/projects/:id] Project ID:", req.params.id);
+      console.log("[PATCH /api/projects/:id] Request body:", JSON.stringify(req.body, null, 2));
+      
       const updateSchema = insertProjectSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.error("[PATCH /api/projects/:id] Validation failed:", fromZodError(validationResult.error).toString());
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
         });
       }
 
+      console.log("[PATCH /api/projects/:id] Validated data:", JSON.stringify(validationResult.data, null, 2));
+
       const project = await storage.updateProject(req.params.id, validationResult.data);
       if (!project) {
+        console.error("[PATCH /api/projects/:id] Project not found:", req.params.id);
         return res.status(404).json({ error: "Project not found" });
       }
+      
+      console.log("[PATCH /api/projects/:id] Project updated successfully");
       res.json(project);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update project" });
+    } catch (error: any) {
+      console.error("[PATCH /api/projects/:id] Error updating project:", error);
+      console.error("[PATCH /api/projects/:id] Error stack:", error.stack);
+      res.status(500).json({ 
+        error: "Failed to update project",
+        details: error.message 
+      });
     }
   });
 
