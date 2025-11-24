@@ -231,7 +231,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           title: event.summary || "Untitled Event",
           start: new Date(event.start.dateTime || event.start.date),
           end: new Date(event.end.dateTime || event.end.date),
-          type: "google",
+          type: "google-calendar",
           resource: event,
         });
       });
@@ -326,7 +326,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const eventTypeOptions = [
     { key: "task", label: "Tasks" },
     { key: "schedule", label: "Schedule Items" },
-    ...(isOwnPage ? [{ key: "google", label: "Google Calendar" }] : []),
+    ...(isOwnPage ? [{ key: "google-calendar", label: "Google Calendar" }] : []),
   ];
 
   // Count active filters
