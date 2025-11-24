@@ -9416,8 +9416,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/systems/task-templates", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      console.log("[POST /api/systems/task-templates] Request body:", JSON.stringify(req.body, null, 2));
+      
       const validationResult = insertTaskTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.error("[POST /api/systems/task-templates] Validation failed:", fromZodError(validationResult.error).toString());
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
@@ -9428,15 +9431,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const createdBy = req.user!.id;
       const createdByName = `${req.user!.firstName} ${req.user!.lastName}`;
 
+      console.log("[POST /api/systems/task-templates] Creating template with companyId:", companyId, "createdBy:", createdBy);
+
       const template = await storage.createTaskTemplate({
         ...validationResult.data,
         companyId,
         createdBy,
         createdByName,
       });
+      
+      console.log("[POST /api/systems/task-templates] Template created successfully:", template.id);
       res.status(201).json(template);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create task template" });
+    } catch (error: any) {
+      console.error("[POST /api/systems/task-templates] Error creating task template:", error);
+      console.error("[POST /api/systems/task-templates] Error stack:", error.stack);
+      res.status(500).json({ 
+        error: "Failed to create task template",
+        details: error.message 
+      });
     }
   });
 
