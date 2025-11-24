@@ -61,23 +61,28 @@ export default function ProjectCardCompact({
 }: ProjectCardCompactProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  // Fetch project status field options
-  const { data: statusOptions = [] } = useQuery<FieldOption[]>({
-    queryKey: ['/api/field-options', 'project.substatus'],
+  // Fetch all status field options (both parent phases and child statuses)
+  // The project.status category contains the hierarchical structure with both
+  const { data: allStatusOptions = [] } = useQuery<FieldOption[]>({
+    queryKey: ['/api/field-options', 'project.status'],
     queryFn: async () => {
-      const response = await fetch('/api/field-categories/by-key/project.substatus');
+      const response = await fetch('/api/field-categories/by-key/project.status');
       if (!response.ok) return [];
       const category = await response.json();
       if (!category?.id) return [];
       
+      // Fetch all options - this includes both parent (phase) and child (status) options
       const optionsResponse = await fetch(`/api/field-categories/${category.id}/options`);
       if (!optionsResponse.ok) return [];
       return await optionsResponse.json();
     },
   });
 
-  const statusOption = statusOptions.find(opt => opt.key === project.projectSubStatus);
-  const statusColor = getStatusColor(project.projectSubStatus, statusOptions);
+  // Get the detailed status (substatus) - child option with parentId
+  const statusOption = allStatusOptions.find(opt => opt.key === project.projectSubStatus);
+  // Get the phase (parent status) - parent option without parentId
+  const phaseOption = allStatusOptions.find(opt => opt.key === project.projectStatus);
+  const statusColor = getStatusColor(project.projectSubStatus, allStatusOptions);
 
   return (
     <Card
@@ -158,17 +163,17 @@ export default function ProjectCardCompact({
               <Calendar className="h-2 w-2 mr-0.5" />
               {format(new Date(project.endDate), 'MMM d')}
             </Badge>
-          ) : visibleFields.phase && statusOption ? (
+          ) : visibleFields.phase && phaseOption ? (
             <Badge 
               variant="outline" 
               className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate truncate max-w-[120px]"
               style={{
-                backgroundColor: `${statusOption.color}10`,
-                borderColor: `${statusOption.color}30`,
-                color: statusOption.color
+                backgroundColor: `${phaseOption.color}10`,
+                borderColor: `${phaseOption.color}30`,
+                color: phaseOption.color
               }}
             >
-              <span className="truncate">{statusOption.name}</span>
+              <span className="truncate">{phaseOption.name}</span>
             </Badge>
           ) : (
             <div />
