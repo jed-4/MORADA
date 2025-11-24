@@ -16,7 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate, FieldCategoryWithOptions, Contact } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate, FieldCategoryWithOptions, Contact, Company } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import AddContactDialog from "@/components/AddContactDialog";
 import * as LucideIcons from "lucide-react";
@@ -58,6 +58,12 @@ export default function ProjectSettings() {
   
   // Filter to only show client-type contacts
   const clients = allContacts.filter(contact => contact.contactType === 'client');
+  
+  // Fetch company name for display
+  const { data: company } = useQuery<Company>({
+    queryKey: ['/api/companies', currentProject?.companyId],
+    enabled: !!currentProject?.companyId,
+  });
 
   // Fetch field categories for project status (hierarchical)
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -888,11 +894,11 @@ export default function ProjectSettings() {
             </div>
           </div>
 
-          {currentProject.ownerId && (
+          {currentProject.companyId && (
             <div className="space-y-2">
-              <Label>Owner ID</Label>
-              <div className="p-2 bg-muted rounded-md font-mono text-sm" data-testid="text-owner-id">
-                {currentProject.ownerId}
+              <Label>Company</Label>
+              <div className="p-2 bg-muted rounded-md text-sm" data-testid="text-company-name">
+                {company?.name || company?.nickname || currentProject.companyId}
               </div>
             </div>
           )}
