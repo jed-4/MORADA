@@ -16,9 +16,9 @@ import { Separator } from "@/components/ui/separator";
 import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate, FieldCategoryWithOptions } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate, FieldCategoryWithOptions, Contact } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import CreateClientDialog from "@/components/CreateClientDialog";
+import AddContactDialog from "@/components/AddContactDialog";
 import * as LucideIcons from "lucide-react";
 
 export default function ProjectSettings() {
@@ -28,7 +28,7 @@ export default function ProjectSettings() {
   const [isAddingProjectType, setIsAddingProjectType] = useState(false);
   const [newProjectType, setNewProjectType] = useState("");
   const [customProjectTypes, setCustomProjectTypes] = useState<string[]>([]);
-  const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
+  const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   
   // Form state for editing project details
   const [formData, setFormData] = useState({
@@ -51,10 +51,13 @@ export default function ProjectSettings() {
     invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
   });
 
-  // Fetch clients for dropdown
-  const { data: clients = [] } = useQuery<Client[]>({
-    queryKey: ['/api/clients'],
+  // Fetch clients for dropdown (from contacts table with contactType="client")
+  const { data: allContacts = [] } = useQuery<Contact[]>({
+    queryKey: ['/api/contacts'],
   });
+  
+  // Filter to only show client-type contacts
+  const clients = allContacts.filter(contact => contact.contactType === 'client');
 
   // Fetch field categories for project status (hierarchical)
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -179,9 +182,9 @@ export default function ProjectSettings() {
     setIsEditing(false);
   };
 
-  const handleClientCreated = (client: Client) => {
+  const handleContactCreated = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
     queryClient.invalidateQueries({ queryKey: ['/api/clients'] });
-    setFormData({ ...formData, clientId: client.id });
   };
 
   const handleAddProjectType = () => {
@@ -361,7 +364,7 @@ export default function ProjectSettings() {
                   value={formData.clientId || ""}
                   onValueChange={(value) => {
                     if (value === "__create_new__") {
-                      setIsCreateClientOpen(true);
+                      setIsAddContactOpen(true);
                     } else {
                       setFormData({ ...formData, clientId: value });
                     }
@@ -972,11 +975,16 @@ export default function ProjectSettings() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Client Dialog */}
-      <CreateClientDialog 
-        open={isCreateClientOpen}
-        onOpenChange={setIsCreateClientOpen}
-        onClientCreated={handleClientCreated}
+      {/* Add Contact Dialog */}
+      <AddContactDialog 
+        open={isAddContactOpen}
+        onOpenChange={(open) => {
+          setIsAddContactOpen(open);
+          if (!open) {
+            handleContactCreated();
+          }
+        }}
+        defaultContactType="client"
       />
     </div>
   );
