@@ -60,13 +60,13 @@ interface ProjectBoardProps {
   preferences?: ViewPreferences;
 }
 
-export type GroupBy = "parent" | "substatus";
+export type GroupBy = "phase" | "status";
 export type ColumnWidth = 'small' | 'medium' | 'wide';
 
 export interface VisibleFields {
   client: boolean;
   budget: boolean;
-  stage: boolean;
+  phase: boolean;
   dueDate: boolean;
   progress: boolean;
   foreman: boolean;
@@ -79,12 +79,12 @@ export interface ViewPreferences {
 }
 
 const DEFAULT_PREFERENCES: ViewPreferences = {
-  groupBy: "parent",
+  groupBy: "phase",
   columnWidth: "medium",
   visibleFields: {
     client: true,
     budget: true,
-    stage: true,
+    phase: true,
     dueDate: true,
     progress: true,
     foreman: true,
@@ -104,7 +104,7 @@ interface CardField {
 const DEFAULT_CARD_FIELDS: CardField[] = [
   { id: "client", label: "Client", visible: true, order: 0 },
   { id: "budget", label: "Budget", visible: true, order: 1 },
-  { id: "stage", label: "Stage", visible: true, order: 2 },
+  { id: "phase", label: "Phase", visible: true, order: 2 },
   { id: "dueDate", label: "Due Date", visible: true, order: 3 },
   { id: "progress", label: "Progress %", visible: false, order: 4 },
   { id: "foreman", label: "Foreman", visible: true, order: 5 },
@@ -470,7 +470,7 @@ export function ProjectBoard({
 
   // Build columns based on grouping preference
   const columns = useMemo(() => {
-    const mainColumns = preferences.groupBy === "parent"
+    const mainColumns = preferences.groupBy === "phase"
       ? parentStatuses.map(status => ({
           id: status.key,
           title: status.name,
@@ -525,7 +525,7 @@ export function ProjectBoard({
       newStatus?: string;
       newSubStatus?: string;
     }) => {
-      const updateData = preferences.groupBy === "parent" 
+      const updateData = preferences.groupBy === "phase" 
         ? { projectStatus: newStatus }
         : { projectSubStatus: newSubStatus };
       
@@ -601,7 +601,7 @@ export function ProjectBoard({
     const newVisibleFields: VisibleFields = {
       client: cardFields.find(f => f.id === "client")?.visible ?? false,
       budget: cardFields.find(f => f.id === "budget")?.visible ?? false,
-      stage: cardFields.find(f => f.id === "stage")?.visible ?? false,
+      phase: cardFields.find(f => f.id === "phase")?.visible ?? false,
       dueDate: cardFields.find(f => f.id === "dueDate")?.visible ?? false,
       progress: cardFields.find(f => f.id === "progress")?.visible ?? false,
       foreman: cardFields.find(f => f.id === "foreman")?.visible ?? false,
@@ -635,7 +635,7 @@ export function ProjectBoard({
     if (over.data.current?.type === "column") {
       const columnId = over.data.current.column.id;
       
-      if (preferences.groupBy === "parent") {
+      if (preferences.groupBy === "phase") {
         if (activeProject.projectStatus !== columnId) {
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
@@ -654,7 +654,7 @@ export function ProjectBoard({
     // If dropped over another project, move to that project's column
     else if (over.data.current?.type === "project") {
       const overProject = over.data.current.project;
-      if (preferences.groupBy === "parent") {
+      if (preferences.groupBy === "phase") {
         if (activeProject.projectStatus !== overProject.projectStatus) {
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
