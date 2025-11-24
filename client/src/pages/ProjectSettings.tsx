@@ -16,7 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate } from "@shared/schema";
+import { Project, PROJECT_TYPES, ProjectType, PROJECT_ICONS, Client, FieldOption, Estimate, FieldCategoryWithOptions } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import CreateClientDialog from "@/components/CreateClientDialog";
 import * as LucideIcons from "lucide-react";
@@ -56,16 +56,13 @@ export default function ProjectSettings() {
     queryKey: ['/api/clients'],
   });
 
-  // Fetch field options for project status (hierarchical)
-  const { data: allFieldOptions = [] } = useQuery<FieldOption[]>({
-    queryKey: ['/api/field-options', 'project.status'],
-    queryFn: async () => {
-      const categories = await apiRequest('/api/field-categories', 'GET') as any[];
-      const statusCategory = categories.find((c: any) => c.key === 'project.status');
-      if (!statusCategory) return [];
-      return await apiRequest(`/api/field-options?categoryId=${statusCategory.id}`, 'GET') as FieldOption[];
-    },
+  // Fetch field categories for project status (hierarchical)
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ['/api/field-categories'],
   });
+  
+  const projectStatusCategory = fieldCategories.find(cat => cat.key === 'project.status');
+  const allFieldOptions = projectStatusCategory?.options || [];
 
   // Fetch estimates for the current project
   const { data: estimates = [] } = useQuery<Estimate[]>({
