@@ -3619,7 +3619,7 @@ export default function EstimateDetail() {
           <TableCell className="py-0.5 text-sm" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
             <Badge
               variant="outline"
-              className={`h-5 px-2 text-xs capitalize cursor-pointer hover-elevate ${shownAsChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`h-5 w-16 px-2 text-xs capitalize cursor-pointer hover-elevate justify-center ${shownAsChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through options
@@ -3655,7 +3655,7 @@ export default function EstimateDetail() {
           <TableCell className="py-0.5 text-sm" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <Badge
               variant="outline"
-              className={`h-5 px-2 text-xs cursor-pointer hover-elevate ${allowanceChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`h-5 w-8 px-2 text-xs cursor-pointer hover-elevate justify-center ${allowanceChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through: None -> Prime Cost -> Provisional Sum -> None
