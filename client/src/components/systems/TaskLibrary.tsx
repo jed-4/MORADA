@@ -48,6 +48,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useTaskTemplateCategoryOptions } from "@/hooks/useTaskTemplateCategoryOptions";
+import { UserSelect } from "@/components/UserSelect";
 import type { TaskTemplate, UserRole } from "@shared/schema";
 
 const DAYS_OF_WEEK = [
@@ -859,21 +860,13 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Select
+                    <UserSelect
                       value={templateForm.assigneeUserId}
                       onValueChange={(value) => setTemplateForm({ ...templateForm, assigneeUserId: value })}
-                    >
-                      <SelectTrigger data-testid="select-assignee-user">
-                        <SelectValue placeholder="Select a user" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {users.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.firstName} {user.lastName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder="Select a user"
+                      allowNone={false}
+                      data-testid="select-assignee-user"
+                    />
                   )}
                 </div>
 

@@ -66,6 +66,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
+import { ContactSelect } from "@/components/ContactSelect";
 import Gantt from "./Gantt";
 
 interface ScheduleParams {
@@ -1163,22 +1164,12 @@ export default function Schedule() {
 
               <div className="space-y-2">
                 <Label htmlFor="item-assignee">Assignee</Label>
-                <Select
-                  value={formData.assignedToId || "unassigned"}
-                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value === "unassigned" ? "" : value })}
-                >
-                  <SelectTrigger id="item-assignee" data-testid="select-item-assignee">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned">None</SelectItem>
-                    {contacts.map((contact) => (
-                      <SelectItem key={contact.id} value={contact.id}>
-                        {contact.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ContactSelect
+                  value={formData.assignedToId || ""}
+                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value || "" })}
+                  placeholder="None"
+                  data-testid="select-item-assignee"
+                />
               </div>
             </div>
 

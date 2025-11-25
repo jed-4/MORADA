@@ -23,6 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ProjectSelect } from "@/components/ProjectSelect";
+import { UserSelect } from "@/components/UserSelect";
 import {
   Dialog,
   DialogContent,
@@ -579,20 +581,15 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Project</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="task-project-select">
-                              <SelectValue placeholder="Select project" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {allProjects.map((proj: any) => (
-                              <SelectItem key={proj.id} value={proj.id}>
-                                {proj.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <ProjectSelect
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select project"
+                            allowNone={false}
+                            data-testid="task-project-select"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -604,23 +601,15 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assignee</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="task-assignee-select">
-                              <SelectValue placeholder="Unassigned" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                            {companyUsers.map((user: any) => (
-                              <SelectItem key={user.id} value={user.id}>
-                                {user.firstName && user.lastName
-                                  ? `${user.firstName} ${user.lastName}`
-                                  : user.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <UserSelect
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select assignee"
+                            noneLabel="Unassigned"
+                            data-testid="task-assignee-select"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

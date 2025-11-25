@@ -43,6 +43,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { ProjectSelect } from "@/components/ProjectSelect";
+import { UserSelect } from "@/components/UserSelect";
 import {
   DndContext,
   closestCenter,
@@ -1409,21 +1411,13 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(({ searc
               </div>
               <div>
                 <Label>Project *</Label>
-                <Select
+                <ProjectSelect
                   value={taskForm.projectId}
                   onValueChange={(value) => setTaskForm({ ...taskForm, projectId: value })}
-                >
-                  <SelectTrigger data-testid="select-task-project">
-                    <SelectValue placeholder="Select project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project: any) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Select project"
+                  allowNone={false}
+                  data-testid="select-task-project"
+                />
               </div>
               <div>
                 <Label>Due Date (Optional)</Label>
@@ -1436,21 +1430,12 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(({ searc
               </div>
               <div>
                 <Label>Assign To (Optional)</Label>
-                <Select
+                <UserSelect
                   value={taskForm.assigneeId}
                   onValueChange={(value) => setTaskForm({ ...taskForm, assigneeId: value })}
-                >
-                  <SelectTrigger data-testid="select-task-assignee">
-                    <SelectValue placeholder="Unassigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((user: any) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.firstName} {user.lastName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Unassigned"
+                  data-testid="select-task-assignee"
+                />
               </div>
             </div>
           )}

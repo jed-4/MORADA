@@ -38,6 +38,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ProjectSelect } from "@/components/ProjectSelect";
+import { UserSelect } from "@/components/UserSelect";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import type { Timesheet, Project, User as UserType, CostCode, TimesheetCostCode, CompanySettings } from "@shared/schema";
 
 const timesheetSchema = z.object({
@@ -345,20 +348,15 @@ export function TimesheetDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Project</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-project">
-                          <SelectValue placeholder="Select project" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {projects.map((project) => (
-                          <SelectItem key={project.id} value={project.id}>
-                            {project.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <ProjectSelect
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Select project"
+                        allowNone={false}
+                        data-testid="select-project"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -370,20 +368,15 @@ export function TimesheetDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>User</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-user">
-                          <SelectValue placeholder="Select user" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {users.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {`${user.firstName} ${user.lastName}`.trim() || user.username}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <UserSelect
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Select user"
+                        allowNone={false}
+                        data-testid="select-user"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -605,20 +598,14 @@ export function TimesheetDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cost Code</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-cost-code">
-                          <SelectValue placeholder="Select cost code" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {costCodes.map((code) => (
-                          <SelectItem key={code.id} value={code.id}>
-                            {code.code} - {code.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <CostCodeSelect
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Select cost code"
+                        data-testid="select-cost-code"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -653,21 +640,13 @@ export function TimesheetDialog({
                         <div key={split.id} className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_auto] items-end">
                           <div className="space-y-2">
                             <Label>Cost Code</Label>
-                            <Select
+                            <CostCodeSelect
                               value={split.costCodeId}
                               onValueChange={(value) => updateCostCodeSplit(split.id, "costCodeId", value)}
-                            >
-                              <SelectTrigger data-testid={`select-cost-code-${split.id}`}>
-                                <SelectValue placeholder="Select cost code" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {costCodes.map((code) => (
-                                  <SelectItem key={code.id} value={code.id}>
-                                    {code.code} - {code.title}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              placeholder="Select cost code"
+                              allowNone={false}
+                              data-testid={`select-cost-code-${split.id}`}
+                            />
                           </div>
 
                           <div className="space-y-2">

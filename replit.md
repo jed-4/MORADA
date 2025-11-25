@@ -49,6 +49,13 @@ Preferred communication style: Simple, everyday language.
 - **User Column Preferences**: Persistent storage for user-specific table column order, visibility, and width across sessions (e.g., Gantt chart).
 - **Optimistic UI Updates**: Implemented for improved responsiveness.
 - **Estimate Enhancements**: Cost code dropdowns, loading states, cascading group selection, and improved bulk delete.
+- **Searchable Select Components**: Reusable typeahead components for dropdowns with many items:
+  - `SearchableSelect.tsx`: Base component with search filtering and keyboard navigation.
+  - `CostCodeSelect.tsx`: Searchable dropdown for 100+ cost codes, used in Estimates, Bills, Timesheets.
+  - `ProjectSelect.tsx`: Searchable project dropdown used in Tasks, Timesheets, FolderTree.
+  - `ContactSelect.tsx`: Searchable contact dropdown used in Schedule.
+  - `UserSelect.tsx`: Searchable user/assignee dropdown used in Tasks, Timesheets, TaskLibrary, FolderTree.
+  - `TaskTemplateSelect.tsx`: Searchable task template dropdown for task creation.
 - **Estimate Status Badges**: Consistent status display.
 - **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
 - **Google Calendar Integration**: Per-user OAuth for displaying read-only Google Calendar events.

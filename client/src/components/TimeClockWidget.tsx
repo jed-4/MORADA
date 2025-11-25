@@ -7,16 +7,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ProjectSelect } from "@/components/ProjectSelect";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import type { Timesheet, Project, CostCode } from "@shared/schema";
 
 export function TimeClockWidget() {
@@ -205,47 +200,27 @@ export function TimeClockWidget() {
                   <label className="text-sm font-medium mb-1.5 block">
                     Project <span className="text-destructive">*</span>
                   </label>
-                  <Select
+                  <ProjectSelect
                     value={selectedProjectId}
                     onValueChange={setSelectedProjectId}
+                    placeholder="Select a project"
                     disabled={loadingActive}
-                  >
-                    <SelectTrigger data-testid="select-project">
-                      <SelectValue placeholder="Select a project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projects.map((project) => (
-                        <SelectItem key={project.id} value={project.id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    allowNone={false}
+                    data-testid="select-project"
+                  />
                 </div>
 
                 <div>
                   <label className="text-sm font-medium mb-1.5 block">
                     Cost Code (Optional)
                   </label>
-                  <Select
-                    value={selectedCostCodeId || "none"}
-                    onValueChange={(value) => setSelectedCostCodeId(value === "none" ? "" : value)}
+                  <CostCodeSelect
+                    value={selectedCostCodeId}
+                    onValueChange={setSelectedCostCodeId}
+                    placeholder="Select a cost code"
                     disabled={loadingActive}
-                  >
-                    <SelectTrigger data-testid="select-cost-code">
-                      <SelectValue placeholder="Select a cost code" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {costCodes
-                        .filter(cc => cc.availableInTimesheets)
-                        .map((costCode) => (
-                          <SelectItem key={costCode.id} value={costCode.id}>
-                            {costCode.code} - {costCode.title}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                    data-testid="select-cost-code"
+                  />
                 </div>
               </div>
 

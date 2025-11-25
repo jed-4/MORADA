@@ -123,6 +123,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 
 interface EstimateDetailParams {
   id?: string;
@@ -3369,32 +3370,21 @@ export default function EstimateDetail() {
         if (isEditing) {
           return (
             <TableCell className="py-0.5">
-              <Select
-                value={editingValue || 'none'}
+              <CostCodeSelect
+                value={editingValue || ''}
                 onValueChange={(value) => {
-                  const newValue = value === 'none' ? undefined : value;
+                  const newValue = value || undefined;
                   setEditingValue(newValue || '');
-                  // Auto-save on selection
                   updateItemMutation.mutate({
                     itemId: item.id,
                     data: { costCode: newValue }
                   });
                   setEditingCell(null);
                 }}
+                placeholder="None"
+                className="h-7"
                 data-testid={`select-edit-costCode-${item.id}`}
-              >
-                <SelectTrigger className="h-7 text-sm border-primary">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {!isLoadingCostCodes && costCodes.map((code) => (
-                    <SelectItem key={code.id} value={code.id}>
-                      {code.code} - {code.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </TableCell>
           );
         }
@@ -4834,25 +4824,14 @@ export default function EstimateDetail() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Cost Code (Optional)</FormLabel>
-                      <Select 
-                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
-                        value={field.value || "none"}
-                        disabled={isLoadingCostCodes}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-item-costcode">
-                            <SelectValue placeholder={isLoadingCostCodes ? "Loading..." : "None"} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {!isLoadingCostCodes && costCodes.map((code) => (
-                            <SelectItem key={code.id} value={code.id}>
-                              {code.code} - {code.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <CostCodeSelect
+                          value={field.value || ''}
+                          onValueChange={(value) => field.onChange(value || undefined)}
+                          placeholder="None"
+                          data-testid="select-item-costcode"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -5423,25 +5402,14 @@ export default function EstimateDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Cost Code (Optional)</FormLabel>
-                          <Select 
-                            onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
-                            value={field.value || "none"}
-                            disabled={isLoadingCostCodes}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-edit-item-costcode">
-                                <SelectValue placeholder={isLoadingCostCodes ? "Loading..." : "None"} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {!isLoadingCostCodes && costCodes.map((code) => (
-                                <SelectItem key={code.id} value={code.id}>
-                                  {code.code} - {code.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <FormControl>
+                            <CostCodeSelect
+                              value={field.value || ''}
+                              onValueChange={(value) => field.onChange(value || undefined)}
+                              placeholder="None"
+                              data-testid="select-edit-item-costcode"
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -5977,25 +5945,14 @@ export default function EstimateDetail() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Default Cost Code (Optional)</FormLabel>
-                    <Select 
-                      onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
-                      value={field.value || "none"}
-                      disabled={isLoadingCostCodes}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-group-default-cost-code">
-                          <SelectValue placeholder={isLoadingCostCodes ? "Loading..." : "None"} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {!isLoadingCostCodes && costCodes.map((code) => (
-                          <SelectItem key={code.id} value={code.id}>
-                            {code.code} - {code.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <CostCodeSelect
+                        value={field.value || ''}
+                        onValueChange={(value) => field.onChange(value || undefined)}
+                        placeholder="None"
+                        data-testid="select-group-default-cost-code"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

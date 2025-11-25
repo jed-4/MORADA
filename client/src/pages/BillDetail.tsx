@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillLineItemAllowance, EstimateItem } from "@shared/schema";
 
 const billFormSchema = z.object({
@@ -1244,23 +1245,14 @@ export default function BillDetail() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Select
+                          <CostCodeSelect
                             value={item.costCodeId || ""}
                             onValueChange={(value) =>
                               updateLineItem(index, "costCodeId", value)
                             }
-                          >
-                            <SelectTrigger data-testid={`select-cost-code-${index}`}>
-                              <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {costCodes.map((code) => (
-                                <SelectItem key={code.id} value={code.id}>
-                                  {code.code} - {code.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            placeholder="Select..."
+                            data-testid={`select-cost-code-${index}`}
+                          />
                         </TableCell>
                         <TableCell>
                           <Input
