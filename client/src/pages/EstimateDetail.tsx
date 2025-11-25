@@ -3140,31 +3140,17 @@ export default function EstimateDetail() {
       itemClassName += " bg-[#f6f3ff]";
     } else {
       // Add subtle status-based color coding when not selected
+      // EstimateItem status values: "incomplete", "not relevant", "done"
       switch (item.status) {
-        case 'approved':
-          itemClassName += " bg-green-50/50";
+        case 'done':
+          itemClassName += " bg-green-50/70";
           break;
-        case 'pending':
-          // No special color for pending - default state
+        case 'not relevant':
+          itemClassName += " bg-gray-100/70";
           break;
-        case 'in_progress':
-          itemClassName += " bg-blue-50/50";
-          break;
-        case 'quoted':
-          itemClassName += " bg-amber-50/50";
-          break;
-        case 'ordered':
-          itemClassName += " bg-purple-50/50";
-          break;
-        case 'delivered':
-          itemClassName += " bg-teal-50/50";
-          break;
-        case 'completed':
-          itemClassName += " bg-emerald-50/50";
-          break;
-        case 'rejected':
-        case 'declined':
-          itemClassName += " bg-red-50/40";
+        case 'incomplete':
+        default:
+          // No special color for incomplete - default state
           break;
       }
     }
