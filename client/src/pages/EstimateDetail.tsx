@@ -4606,7 +4606,7 @@ export default function EstimateDetail() {
                       
                       const allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
                       
-                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40 + 32;
+                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24 + 32;
                       
                       // Get all subgroups for passing to EstimateGroupCard
                       const allSubgroups = groups.filter(g => g.parentGroupId);

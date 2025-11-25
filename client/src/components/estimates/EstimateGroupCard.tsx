@@ -104,7 +104,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     .filter(sg => sg.parentGroupId === group.id)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 40 + 32;
+  const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24 + 32;
 
   return (
     <Card 
