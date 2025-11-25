@@ -175,14 +175,14 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
   if (isLoading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl h-[85vh]" data-testid="user-calendar-dialog">
-          <DialogHeader>
+        <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden" data-testid="user-calendar-dialog">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <CalendarIcon className="h-5 w-5" />
               My Calendar
             </DialogTitle>
           </DialogHeader>
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center h-full overflow-hidden">
             <div className="text-muted-foreground">Loading calendar...</div>
           </div>
         </DialogContent>
@@ -195,8 +195,8 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[85vh]" data-testid="user-calendar-dialog">
-        <DialogHeader>
+      <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden" data-testid="user-calendar-dialog">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 flex-wrap">
             <CalendarIcon className="h-5 w-5" />
             My Calendar
@@ -216,7 +216,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
             )}
           </DialogTitle>
         </DialogHeader>
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <EnhancedCalendar
             events={events}
             onEventClick={handleEventClick}
