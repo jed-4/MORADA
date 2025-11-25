@@ -3608,12 +3608,18 @@ export default function EstimateDetail() {
         const currentIndex = shownAsOptions.indexOf(currentShownAs);
         const validIndex = currentIndex >= 0 ? currentIndex : 1; // Default to 'price' if invalid
         
+        // Chip color based on shown as value
+        const shownAsChipClass = 
+          currentShownAs === 'price' ? 'bg-[#bba7db]/20 text-[#7c5bb0] border-[#bba7db]/30' :
+          currentShownAs === 'included' ? 'bg-green-100 text-green-700 border-green-200' :
+          currentShownAs === 'excluded' ? 'bg-red-100 text-red-700 border-red-200' :
+          'bg-muted text-muted-foreground border-border';
+        
         return (
           <TableCell className="py-0.5 text-sm" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
-            <Button
+            <Badge
               variant="outline"
-              size="sm"
-              className="h-6 px-2 text-xs capitalize"
+              className={`h-5 px-2 text-xs capitalize cursor-pointer hover-elevate ${shownAsChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through options
@@ -3624,26 +3630,32 @@ export default function EstimateDetail() {
                   data: { shownAs: nextShownAs }
                 });
               }}
-              disabled={isLocked}
               data-testid={`button-toggle-shownAs-${item.id}`}
             >
               {currentShownAs}
-            </Button>
+            </Badge>
           </TableCell>
         );
       
       case 'allowance':
         const allowanceType = item.allowance || 'None';
+        
+        // Chip styling for allowance
+        const allowanceChipClass = 
+          allowanceType === 'Prime Cost' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+          allowanceType === 'Provisional Sum' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+          'bg-muted/50 text-muted-foreground border-border';
+        
+        const allowanceLabel = 
+          allowanceType === 'Prime Cost' ? 'PC' : 
+          allowanceType === 'Provisional Sum' ? 'PS' : 
+          '-';
+        
         return (
           <TableCell className="py-0.5 text-sm" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
-            <Button
-              variant={allowanceType === 'None' ? 'outline' : 'default'}
-              size="sm"
-              className={`h-6 px-2 text-xs ${
-                allowanceType === 'Prime Cost' ? 'bg-blue-500 hover:bg-blue-600 text-white border-blue-500' :
-                allowanceType === 'Provisional Sum' ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500' :
-                'text-muted-foreground'
-              } ${!isLocked ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+            <Badge
+              variant="outline"
+              className={`h-5 px-2 text-xs cursor-pointer hover-elevate ${allowanceChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through: None -> Prime Cost -> Provisional Sum -> None
@@ -3655,11 +3667,10 @@ export default function EstimateDetail() {
                   data: { allowance: nextAllowance }
                 });
               }}
-              disabled={isLocked}
               data-testid={`button-toggle-allowance-${item.id}`}
             >
-              {allowanceType === 'Prime Cost' ? 'PC' : allowanceType === 'Provisional Sum' ? 'PS' : ''}
-            </Button>
+              {allowanceLabel}
+            </Badge>
           </TableCell>
         );
       
