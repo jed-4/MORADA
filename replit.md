@@ -46,7 +46,13 @@ Preferred communication style: Simple, everyday language.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with CRUD operations.
 - **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items, integrating with financial modules.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
-- **User Column Preferences**: Persistent storage for user-specific table column order, visibility, and width across sessions (e.g., Gantt chart).
+- **User View Preferences**: Database-backed persistence for user-specific view settings across all pages:
+  - API: `/api/user-view-preferences` with GET by viewKey and POST to save
+  - Stores column order, visibility, width, filters, and other view-specific settings
+  - Persists across sessions, devices, and environments (dev/production have separate databases per user)
+  - Pages using database-backed preferences: EstimateDetail, Tasks, BusinessTasks, BusinessProjects, Gantt
+  - Pattern: Load on mount with useQuery, apply with useEffect, auto-save with debounced useMutation
+  - Console logging with `[PageName]` prefix for debugging preference load/save operations
 - **Optimistic UI Updates**: Implemented for improved responsiveness.
 - **Estimate Enhancements**: Cost code dropdowns, loading states, cascading group selection, and improved bulk delete.
 - **Searchable Select Components**: Reusable typeahead components for dropdowns with many items:

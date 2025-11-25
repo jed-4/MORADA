@@ -2469,7 +2469,7 @@ export default function EstimateDetail() {
     };
 
     const handleMouseUp = () => {
-      // Clear resizing state - this will trigger the localStorage save via useEffect
+      // Clear resizing state - this will trigger the database save via debounced useEffect
       setResizingColumn(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
