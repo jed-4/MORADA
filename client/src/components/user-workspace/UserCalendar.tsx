@@ -206,15 +206,16 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         events.push({
           id: task.id,
           title: task.title,
-          start: new Date(task.dueDate),
-          end: new Date(task.dueDate),
+          startDate: new Date(task.dueDate),
+          endDate: new Date(task.dueDate),
+          startTime: task.startTime,
+          endTime: task.endTime,
           type: "task",
           projectId: task.projectId,
-          projectName: project?.name,
           projectColor: project?.color,
           status: task.status,
-          priority: task.priority,
-          resource: task,
+          isCompleted: task.status === "completed" || task.status === "done",
+          description: task.content,
         });
       }
     });
@@ -226,13 +227,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         events.push({
           id: item.id,
           title: item.title,
-          start: new Date(item.date),
-          end: new Date(item.date),
+          startDate: new Date(item.date),
+          endDate: new Date(item.date),
+          startTime: item.startTime,
+          endTime: item.endTime,
           type: "schedule",
           projectId: item.projectId,
-          projectName: project?.name,
           projectColor: project?.color,
-          resource: item,
+          description: item.description,
         });
       }
     });
@@ -243,10 +245,13 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         events.push({
           id: event.id,
           title: event.summary || "Untitled Event",
-          start: new Date(event.start.dateTime || event.start.date),
-          end: new Date(event.end.dateTime || event.end.date),
+          startDate: new Date(event.start.dateTime || event.start.date),
+          endDate: new Date(event.end.dateTime || event.end.date),
+          startTime: event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null,
+          endTime: event.end.dateTime ? new Date(event.end.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null,
           type: "google-calendar",
-          resource: event,
+          description: event.description,
+          location: event.location,
         });
       });
     }
@@ -280,7 +285,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
       // Filter by date range
       if (filters.dateFrom && filters.dateTo) {
-        const eventStart = event.start;
+        const eventStart = event.startDate;
         if (!isWithinInterval(eventStart, { start: filters.dateFrom, end: filters.dateTo })) {
           return false;
         }
