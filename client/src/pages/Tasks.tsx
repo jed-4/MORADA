@@ -316,34 +316,59 @@ export default function Tasks() {
   const priorityOptions = taskPriorityCategory?.options || [];
 
   // Load user view preferences
-  const { data: userPreferences } = useQuery({
+  const { data: userPreferences, isLoading: preferencesLoading, error: preferencesError } = useQuery({
     queryKey: ["/api/user-view-preferences", "tasks"],
     queryFn: async () => {
+      console.log('[Tasks] Fetching user view preferences...');
       const response = await fetch("/api/user-view-preferences/tasks", {
         credentials: "include",
       });
+      console.log('[Tasks] Preferences fetch response status:', response.status);
       if (!response.ok) {
-        if (response.status === 404) return null;
+        if (response.status === 404) {
+          console.log('[Tasks] No preferences found (404)');
+          return null;
+        }
+        const errorText = await response.text();
+        console.error('[Tasks] Preferences fetch error:', response.status, errorText);
         throw new Error("Failed to fetch view preferences");
       }
-      return response.json();
+      const data = await response.json();
+      console.log('[Tasks] Preferences fetched successfully:', data);
+      return data;
     },
   });
+  
+  // Log preferences loading state
+  React.useEffect(() => {
+    if (preferencesError) {
+      console.error('[Tasks] Preferences query error:', preferencesError);
+    }
+  }, [preferencesError]);
 
   // Apply loaded preferences when they arrive
   React.useEffect(() => {
+    console.log('[Tasks] userPreferences changed:', userPreferences);
     if (userPreferences?.preferences) {
       const prefs = userPreferences.preferences;
+      console.log('[Tasks] Applying loaded preferences:', prefs);
       if (prefs.activeTab) setActiveTab(prefs.activeTab);
       if (prefs.groupBy) setGroupBy(prefs.groupBy);
       if (prefs.filters) setFilters(prefs.filters);
-      if (prefs.columnOrder) setColumnOrder(prefs.columnOrder);
-      if (prefs.columnVisibility) setColumnVisibility(prefs.columnVisibility);
+      if (prefs.columnOrder) {
+        console.log('[Tasks] Setting columnOrder from preferences:', prefs.columnOrder);
+        setColumnOrder(prefs.columnOrder);
+      }
+      if (prefs.columnVisibility) {
+        console.log('[Tasks] Setting columnVisibility from preferences:', prefs.columnVisibility);
+        setColumnVisibility(prefs.columnVisibility);
+      }
       if (prefs.cardDisplaySettings) setCardDisplaySettings(prefs.cardDisplaySettings);
       if (prefs.cardWidth) setCardWidth(prefs.cardWidth);
       setPreferencesLoaded(true);
     } else if (userPreferences === null) {
       // No saved preferences, mark as loaded with defaults
+      console.log('[Tasks] No saved preferences found, using defaults');
       setPreferencesLoaded(true);
     }
   }, [userPreferences]);
@@ -351,6 +376,7 @@ export default function Tasks() {
   // Save user view preferences mutation
   const savePreferencesMutation = useMutation({
     mutationFn: async (preferences: any) => {
+      console.log('[Tasks] Saving preferences:', { viewKey: 'tasks', preferences });
       const response = await fetch("/api/user-view-preferences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -360,8 +386,17 @@ export default function Tasks() {
           preferences,
         }),
       });
-      if (!response.ok) throw new Error("Failed to save view preferences");
-      return response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Tasks] Failed to save preferences:', response.status, errorText);
+        throw new Error(`Failed to save view preferences: ${response.status}`);
+      }
+      const result = await response.json();
+      console.log('[Tasks] Preferences saved successfully:', result);
+      return result;
+    },
+    onError: (error) => {
+      console.error('[Tasks] Save preferences mutation error:', error);
     },
   });
 
