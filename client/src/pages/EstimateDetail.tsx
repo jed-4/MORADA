@@ -608,22 +608,64 @@ export default function EstimateDetail() {
   // Track if preferences have been loaded
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
-  // Load user column preferences
-  const { data: columnPreferences, isError: preferencesError } = useQuery({
-    queryKey: ["/api/user-column-preferences/estimate_detail"],
-    enabled: !!effectiveEstimateId,
+  // Load user view preferences (columns + filters)
+  const { data: userPreferences, isError: preferencesError } = useQuery({
+    queryKey: ["/api/user-view-preferences", "estimate_detail"],
+    queryFn: async () => {
+      console.log('[EstimateDetail] Fetching user view preferences...');
+      const response = await fetch("/api/user-view-preferences/estimate_detail", {
+        credentials: "include",
+      });
+      console.log('[EstimateDetail] Preferences fetch response status:', response.status);
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('[EstimateDetail] No preferences found (404)');
+          return null;
+        }
+        const errorText = await response.text();
+        console.error('[EstimateDetail] Preferences fetch error:', response.status, errorText);
+        throw new Error("Failed to fetch view preferences");
+      }
+      const data = await response.json();
+      console.log('[EstimateDetail] Preferences fetched successfully:', data);
+      return data;
+    },
+    enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
-  // Apply loaded preferences to columns
+  // Apply loaded preferences
   useEffect(() => {
-    if (columnPreferences && (columnPreferences as any).columnConfig) {
-      setColumns((columnPreferences as any).columnConfig as ColumnConfig[]);
+    console.log('[EstimateDetail] userPreferences changed:', userPreferences);
+    if (userPreferences?.preferences) {
+      const prefs = userPreferences.preferences;
+      console.log('[EstimateDetail] Applying loaded preferences:', prefs);
+      if (prefs.columns) {
+        console.log('[EstimateDetail] Setting columns from preferences:', prefs.columns);
+        // Merge with defaults to handle new columns
+        const savedColumnIds = new Set((prefs.columns as ColumnConfig[]).map(col => col.id));
+        const newColumns = defaultColumns.filter(col => !savedColumnIds.has(col.id));
+        if (newColumns.length > 0) {
+          const mergedColumns = [...defaultColumns];
+          (prefs.columns as ColumnConfig[]).forEach((savedCol) => {
+            const index = mergedColumns.findIndex(col => col.id === savedCol.id);
+            if (index !== -1) {
+              mergedColumns[index] = savedCol;
+            }
+          });
+          setColumns(mergedColumns);
+        } else {
+          setColumns(prefs.columns as ColumnConfig[]);
+        }
+      }
+      if (prefs.filterType) setFilterType(prefs.filterType);
+      if (prefs.filterStatus) setFilterStatus(prefs.filterStatus);
+      if (prefs.filterGroup) setFilterGroup(prefs.filterGroup);
       setPreferencesLoaded(true);
-    } else if (columnPreferences === null || preferencesError) {
-      // No saved preferences or error loading, use defaults
+    } else if (userPreferences === null || preferencesError) {
+      console.log('[EstimateDetail] No saved preferences found, using defaults');
       setPreferencesLoaded(true);
     }
-  }, [columnPreferences, preferencesError]);
+  }, [userPreferences, preferencesError]);
 
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
@@ -679,27 +721,24 @@ export default function EstimateDetail() {
   // Get tax rate from company settings (default to 10% if not set)
   const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
 
-  // Save column preferences mutation
-  const saveColumnPreferencesMutation = useMutation({
-    mutationFn: async (columnConfig: ColumnConfig[]) => {
-      return await apiRequest("/api/user-column-preferences", "POST", {
-        pageKey: "estimate_detail",
-        columnConfig,
+  // Save view preferences mutation
+  const saveViewPreferencesMutation = useMutation({
+    mutationFn: async (preferences: { columns: ColumnConfig[]; filterType: string; filterStatus: string; filterGroup: string }) => {
+      console.log('[EstimateDetail] Saving view preferences:', preferences);
+      return await apiRequest("/api/user-view-preferences", "POST", {
+        viewKey: "estimate_detail",
+        preferences,
       });
+    },
+    onSuccess: () => {
+      console.log('[EstimateDetail] Preferences saved successfully');
+    },
+    onError: (error) => {
+      console.error('[EstimateDetail] Error saving preferences:', error);
     },
   });
 
-  // Auto-save column preferences when they change (after initial load)
-  useEffect(() => {
-    if (preferencesLoaded && effectiveEstimateId) {
-      const timer = setTimeout(() => {
-        saveColumnPreferencesMutation.mutate(columns);
-      }, 1000); // Debounce for 1 second
-      return () => clearTimeout(timer);
-    }
-  }, [columns, effectiveEstimateId, preferencesLoaded]);
-
-  // Filter state
+  // Filter state (declared here so preferences can set them)
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
@@ -1390,77 +1429,21 @@ export default function EstimateDetail() {
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
 
-  // Load column config from localStorage
-  React.useEffect(() => {
-    if (effectiveEstimateId && !isNewEstimate) {
-      const savedColumns = localStorage.getItem(`estimateTable_${effectiveEstimateId}_columns`);
-      if (savedColumns) {
-        try {
-          const parsed = JSON.parse(savedColumns);
-          // Merge with defaultColumns to add any new columns that didn't exist before
-          const savedColumnIds = new Set(parsed.map((col: ColumnConfig) => col.id));
-          const newColumns = defaultColumns.filter(col => !savedColumnIds.has(col.id));
-          
-          if (newColumns.length > 0) {
-            // Add new columns at their default positions
-            const mergedColumns = [...defaultColumns];
-            parsed.forEach((savedCol: ColumnConfig) => {
-              const index = mergedColumns.findIndex(col => col.id === savedCol.id);
-              if (index !== -1) {
-                mergedColumns[index] = savedCol;
-              }
-            });
-            // Ensure 'item' column is always visible
-            const itemColIndex = mergedColumns.findIndex(col => col.id === 'item');
-            if (itemColIndex !== -1) {
-              mergedColumns[itemColIndex].visible = true;
-            }
-            setColumns(mergedColumns);
-          } else {
-            // Ensure 'item' column is always visible
-            const itemColIndex = parsed.findIndex((col: ColumnConfig) => col.id === 'item');
-            if (itemColIndex !== -1) {
-              parsed[itemColIndex].visible = true;
-            }
-            setColumns(parsed);
-          }
-          console.log('[COLUMNS] Loaded columns from localStorage, item column visible:', parsed.find((c: ColumnConfig) => c.id === 'item')?.visible);
-        } catch (e) {
-          console.error('Failed to parse saved column config:', e);
-        }
-      }
-
-      const savedFilters = localStorage.getItem(`estimateTable_${effectiveEstimateId}_filters`);
-      if (savedFilters) {
-        try {
-          const filters = JSON.parse(savedFilters);
-          setFilterType(filters.type || 'all');
-          setFilterStatus(filters.status || 'all');
-          setFilterGroup(filters.group || 'all');
-        } catch (e) {
-          console.error('Failed to parse saved filters:', e);
-        }
-      }
+  // Auto-save preferences when columns or filters change (after initial load)
+  useEffect(() => {
+    if (preferencesLoaded && effectiveEstimateId && !isNewEstimate && !resizingColumn) {
+      const timer = setTimeout(() => {
+        console.log('[EstimateDetail] Debounced save triggered');
+        saveViewPreferencesMutation.mutate({
+          columns,
+          filterType,
+          filterStatus,
+          filterGroup,
+        });
+      }, 1000); // Debounce for 1 second
+      return () => clearTimeout(timer);
     }
-  }, [effectiveEstimateId, isNewEstimate]);
-
-  // Save column config to localStorage (skip during active resizing)
-  React.useEffect(() => {
-    if (effectiveEstimateId && !isNewEstimate && !resizingColumn) {
-      localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(columns));
-    }
-  }, [columns, effectiveEstimateId, isNewEstimate, resizingColumn]);
-
-  // Save filters to localStorage
-  React.useEffect(() => {
-    if (effectiveEstimateId && !isNewEstimate) {
-      localStorage.setItem(`estimateTable_${effectiveEstimateId}_filters`, JSON.stringify({
-        type: filterType,
-        status: filterStatus,
-        group: filterGroup
-      }));
-    }
-  }, [filterType, filterStatus, filterGroup, effectiveEstimateId, isNewEstimate]);
+  }, [columns, filterType, filterStatus, filterGroup, effectiveEstimateId, preferencesLoaded, isNewEstimate, resizingColumn]);
 
   // Early validation - show error if invalid ID for non-new estimates
   if (!effectiveEstimateId && !isNewEstimate) {
