@@ -4212,19 +4212,46 @@ export default function EstimateDetail() {
                 <Columns className="w-3 h-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <div className="px-2 py-1.5 text-sm font-semibold">Show columns</div>
-              {columns.map(column => (
+            <DropdownMenuContent align="end" className="w-72">
+              <div className="px-2 py-1.5 text-sm font-semibold">Columns (visibility & order)</div>
+              {columns.map((column, index) => (
                 <DropdownMenuItem 
                   key={column.id}
                   onClick={(e) => e.preventDefault()}
+                  className="flex items-center justify-between gap-2"
                 >
-                  <Checkbox
-                    checked={column.visible}
-                    onCheckedChange={() => toggleColumn(column.id)}
-                    className="mr-2"
-                  />
-                  {column.label}
+                  <div className="flex items-center flex-1 min-w-0">
+                    <Checkbox
+                      checked={column.visible}
+                      onCheckedChange={() => toggleColumn(column.id)}
+                      className="mr-2 flex-shrink-0"
+                    />
+                    <span className="truncate">{column.label}</span>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveColumnUp(column.id);
+                      }}
+                      disabled={index === 0}
+                      className={`p-0.5 rounded hover:bg-muted ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      data-testid={`button-move-column-up-${column.id}`}
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveColumnDown(column.id);
+                      }}
+                      disabled={index === columns.length - 1}
+                      className={`p-0.5 rounded hover:bg-muted ${index === columns.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      data-testid={`button-move-column-down-${column.id}`}
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
