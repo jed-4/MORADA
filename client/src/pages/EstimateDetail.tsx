@@ -1652,12 +1652,15 @@ export default function EstimateDetail() {
       // Snapshot the previous value
       const previousItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]);
       
-      // Optimistically update the cache with a temporary ID
+      // Convert dollar values to cents for optimistic update (backend stores in cents)
       const optimisticItem = {
         ...newItem,
         id: `temp-${Date.now()}`,
         createdAt: new Date(),
         updatedAt: new Date(),
+        // Convert to cents for proper display
+        unitCostExTax: typeof newItem.unitCostExTax === 'number' ? Math.round(newItem.unitCostExTax * 100) : 0,
+        quantity: typeof newItem.quantity === 'number' ? Math.round(newItem.quantity * 100) : 100,
       };
       
       queryClient.setQueryData(["/api/estimates", effectiveEstimateId, "items"], (old: any) => {
@@ -1791,10 +1794,19 @@ export default function EstimateDetail() {
       // Snapshot the previous value
       const previousItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
       
+      // Convert dollar values to cents for optimistic update (backend stores in cents)
+      const optimisticData = { ...data };
+      if (typeof optimisticData.unitCostExTax === 'number') {
+        optimisticData.unitCostExTax = Math.round(optimisticData.unitCostExTax * 100);
+      }
+      if (typeof optimisticData.quantity === 'number') {
+        optimisticData.quantity = Math.round(optimisticData.quantity * 100);
+      }
+      
       // Optimistically update to the new value
       queryClient.setQueryData<EstimateItem[]>(
         ["/api/estimates", effectiveEstimateId, "items"],
-        (old) => old?.map(item => item.id === itemId ? { ...item, ...data } : item)
+        (old) => old?.map(item => item.id === itemId ? { ...item, ...optimisticData } : item)
       );
       
       // Return context with the previous value
@@ -2648,9 +2660,9 @@ export default function EstimateDetail() {
           name: item.name,
           description: item.description || '',
           type: item.type,
-          quantity: item.quantity,
+          quantity: item.quantity / 100,  // Convert from stored hundredths to actual quantity
           unitType: item.unitType || 'ea',
-          unitCostExTax: item.unitCostExTax,
+          unitCostExTax: item.unitCostExTax / 100,  // Convert from cents to dollars for display
           markupPercent: item.markupPercent || undefined,
           groupId: item.groupId || undefined,
           costCode: item.costCode || '',
