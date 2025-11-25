@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3 } from "lucide-react";
 import { type Project } from "@shared/schema";
 import { ProjectBoard, type ViewPreferences, type GroupBy, type ColumnWidth } from "@/components/ProjectBoard";
@@ -26,29 +27,86 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
   },
 };
 
-const STORAGE_KEY = "projectBoardPreferences";
-
 export default function BusinessProjects() {
   const [activeTab, setActiveTab] = useState("board");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [cardFieldsDialogOpen, setCardFieldsDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   // Manage preferences state at parent level
-  const [preferences, setPreferences] = useState<ViewPreferences>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
-    } catch {
-      return DEFAULT_PREFERENCES;
-    }
+  const [preferences, setPreferences] = useState<ViewPreferences>(DEFAULT_PREFERENCES);
+
+  // Load view preferences from database
+  const { data: userPreferences, isError: preferencesError } = useQuery({
+    queryKey: ["/api/user-view-preferences", "business_projects"],
+    queryFn: async () => {
+      console.log('[BusinessProjects] Fetching user view preferences...');
+      const response = await fetch("/api/user-view-preferences/business_projects", {
+        credentials: "include",
+      });
+      console.log('[BusinessProjects] Preferences fetch response status:', response.status);
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('[BusinessProjects] No preferences found (404)');
+          return null;
+        }
+        throw new Error("Failed to fetch view preferences");
+      }
+      const data = await response.json();
+      console.log('[BusinessProjects] Preferences fetched successfully:', data);
+      return data;
+    },
   });
+
+  // Apply loaded preferences
+  useEffect(() => {
+    console.log('[BusinessProjects] userPreferences changed:', userPreferences);
+    if (userPreferences?.preferences) {
+      console.log('[BusinessProjects] Applying loaded preferences');
+      setPreferences({ ...DEFAULT_PREFERENCES, ...userPreferences.preferences });
+      if (userPreferences.preferences.activeTab) {
+        setActiveTab(userPreferences.preferences.activeTab);
+      }
+      setPreferencesLoaded(true);
+    } else if (userPreferences === null || preferencesError) {
+      console.log('[BusinessProjects] No saved preferences, using defaults');
+      setPreferencesLoaded(true);
+    }
+  }, [userPreferences, preferencesError]);
+
+  // Save view preferences mutation
+  const savePreferencesMutation = useMutation({
+    mutationFn: async (prefs: ViewPreferences & { activeTab: string }) => {
+      console.log('[BusinessProjects] Saving view preferences:', prefs);
+      return await apiRequest("/api/user-view-preferences", "POST", {
+        viewKey: "business_projects",
+        preferences: prefs,
+      });
+    },
+    onSuccess: () => {
+      console.log('[BusinessProjects] Preferences saved successfully');
+    },
+    onError: (error) => {
+      console.error('[BusinessProjects] Error saving preferences:', error);
+    },
+  });
+
+  // Auto-save preferences when they change (after initial load)
+  useEffect(() => {
+    if (preferencesLoaded) {
+      const timer = setTimeout(() => {
+        console.log('[BusinessProjects] Debounced save triggered');
+        savePreferencesMutation.mutate({ ...preferences, activeTab });
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [preferences, activeTab, preferencesLoaded]);
 
   // Handle preferences update from child or local changes - supports functional updates
   const handlePreferencesChange = (newPreferences: ViewPreferences | ((prev: ViewPreferences) => ViewPreferences)) => {
     setPreferences(prev => {
       const updated = typeof newPreferences === 'function' ? newPreferences(prev) : newPreferences;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
   };

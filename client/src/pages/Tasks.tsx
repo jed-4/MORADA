@@ -133,26 +133,6 @@ export default function Tasks() {
   // Track whether preferences have been loaded to prevent saving before load
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
-  // Load card display settings from localStorage when project changes
-  React.useEffect(() => {
-    if (effectiveProjectId) {
-      const savedSettings = localStorage.getItem(`cardDisplay_${effectiveProjectId}`);
-      if (savedSettings) {
-        try {
-          setCardDisplaySettings(JSON.parse(savedSettings));
-        } catch (e) {
-          console.error('Failed to parse card display settings:', e);
-        }
-      }
-    }
-  }, [effectiveProjectId]);
-
-  // Save card display settings to localStorage when they change
-  React.useEffect(() => {
-    if (effectiveProjectId) {
-      localStorage.setItem(`cardDisplay_${effectiveProjectId}`, JSON.stringify(cardDisplaySettings));
-    }
-  }, [cardDisplaySettings, effectiveProjectId]);
 
   // ALL HOOKS MUST BE DECLARED HERE BEFORE ANY CONDITIONAL LOGIC
   // Mutation for creating new views

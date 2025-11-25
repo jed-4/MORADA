@@ -1,6 +1,6 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DropdownMenu,
@@ -52,6 +52,7 @@ export default function BusinessTasks() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showNavigation, setShowNavigation] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -76,22 +77,80 @@ export default function BusinessTasks() {
     }
   };
 
-  // Load card display settings from localStorage
-  React.useEffect(() => {
-    const savedSettings = localStorage.getItem('cardDisplay_businessTasks');
-    if (savedSettings) {
-      try {
-        setCardDisplaySettings(JSON.parse(savedSettings));
-      } catch (e) {
-        console.error('Failed to parse card display settings:', e);
+  // Load view preferences from database
+  const { data: userPreferences, isError: preferencesError } = useQuery({
+    queryKey: ["/api/user-view-preferences", "business_tasks"],
+    queryFn: async () => {
+      console.log('[BusinessTasks] Fetching user view preferences...');
+      const response = await fetch("/api/user-view-preferences/business_tasks", {
+        credentials: "include",
+      });
+      console.log('[BusinessTasks] Preferences fetch response status:', response.status);
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('[BusinessTasks] No preferences found (404)');
+          return null;
+        }
+        throw new Error("Failed to fetch view preferences");
       }
-    }
-  }, []);
+      const data = await response.json();
+      console.log('[BusinessTasks] Preferences fetched successfully:', data);
+      return data;
+    },
+  });
 
-  // Save card display settings to localStorage when they change
-  React.useEffect(() => {
-    localStorage.setItem('cardDisplay_businessTasks', JSON.stringify(cardDisplaySettings));
-  }, [cardDisplaySettings]);
+  // Apply loaded preferences
+  useEffect(() => {
+    console.log('[BusinessTasks] userPreferences changed:', userPreferences);
+    if (userPreferences?.preferences) {
+      console.log('[BusinessTasks] Applying loaded preferences');
+      if (userPreferences.preferences.cardDisplaySettings) {
+        setCardDisplaySettings(userPreferences.preferences.cardDisplaySettings);
+      }
+      if (userPreferences.preferences.activeTab) {
+        setActiveTab(userPreferences.preferences.activeTab);
+      }
+      if (userPreferences.preferences.groupBy) {
+        setGroupBy(userPreferences.preferences.groupBy);
+      }
+      setPreferencesLoaded(true);
+    } else if (userPreferences === null || preferencesError) {
+      console.log('[BusinessTasks] No saved preferences, using defaults');
+      setPreferencesLoaded(true);
+    }
+  }, [userPreferences, preferencesError]);
+
+  // Save view preferences mutation
+  const savePreferencesMutation = useMutation({
+    mutationFn: async (prefs: { cardDisplaySettings: typeof cardDisplaySettings; activeTab: string; groupBy: string }) => {
+      console.log('[BusinessTasks] Saving view preferences:', prefs);
+      return await apiRequest("/api/user-view-preferences", "POST", {
+        viewKey: "business_tasks",
+        preferences: prefs,
+      });
+    },
+    onSuccess: () => {
+      console.log('[BusinessTasks] Preferences saved successfully');
+    },
+    onError: (error) => {
+      console.error('[BusinessTasks] Error saving preferences:', error);
+    },
+  });
+
+  // Auto-save preferences when they change (after initial load)
+  useEffect(() => {
+    if (preferencesLoaded) {
+      const timer = setTimeout(() => {
+        console.log('[BusinessTasks] Debounced save triggered');
+        savePreferencesMutation.mutate({
+          cardDisplaySettings,
+          activeTab,
+          groupBy,
+        });
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cardDisplaySettings, activeTab, groupBy, preferencesLoaded]);
 
   // Fetch business tasks (tasks without a project)
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({

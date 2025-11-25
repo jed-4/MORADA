@@ -3019,17 +3019,13 @@ export default function EstimateDetail() {
     }
   };
 
-  // Column reordering functions
+  // Column reordering functions (auto-saved via debounced useEffect)
   const moveColumnUp = (columnId: string) => {
     setColumns(prev => {
       const index = prev.findIndex(col => col.id === columnId);
       if (index > 0) {
         const newColumns = [...prev];
         [newColumns[index - 1], newColumns[index]] = [newColumns[index], newColumns[index - 1]];
-        const effectiveEstimateId = estimate?.id || estimateId;
-        if (effectiveEstimateId) {
-          localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(newColumns));
-        }
         return newColumns;
       }
       return prev;
@@ -3042,10 +3038,6 @@ export default function EstimateDetail() {
       if (index < prev.length - 1) {
         const newColumns = [...prev];
         [newColumns[index + 1], newColumns[index]] = [newColumns[index], newColumns[index + 1]];
-        const effectiveEstimateId = estimate?.id || estimateId;
-        if (effectiveEstimateId) {
-          localStorage.setItem(`estimateTable_${effectiveEstimateId}_columns`, JSON.stringify(newColumns));
-        }
         return newColumns;
       }
       return prev;
