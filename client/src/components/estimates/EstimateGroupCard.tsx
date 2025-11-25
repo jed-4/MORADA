@@ -166,6 +166,12 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       {group.description && (
                         <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
                       )}
+                      {/* Group total badge - always visible in header */}
+                      {groupTotals && groupTotals.clientAmountIncTax > 0 && (
+                        <span className="text-xs font-semibold text-[#7c5bb0] ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
+                          {formatCurrency(groupTotals.clientAmountIncTax)}
+                        </span>
+                      )}
                     </div>
                   </TableCell>
                 );
