@@ -2323,7 +2323,7 @@ export default function EstimateDetail() {
             row.push(escapeCsvField(item.shownAs || ''));
             break;
           case 'quantity':
-            row.push(item.quantity?.toString() || '0');
+            row.push(((item.quantity || 0) / 100).toFixed(2));
             break;
           case 'allowance':
             row.push(escapeCsvField(item.allowance || 'None'));
