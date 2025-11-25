@@ -4885,23 +4885,23 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      {/* Quick Totals Footer */}
+      {/* Quick Totals Footer - Fixed at bottom */}
       <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">Items:</span>
-          <span className="font-medium">{items.length}</span>
+          <span className="font-medium">{summary?.itemCount || items.length}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">Subtotal:</span>
-          <span className="font-medium">{formatCurrency(summary?.subtotalCents || 0)}</span>
+          <span className="font-medium">{formatCurrency(summary?.subtotal || 0)}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">GST ({taxRate}%):</span>
-          <span className="font-medium">{formatCurrency(summary?.taxCents || 0)}</span>
+          <span className="font-medium">{formatCurrency(summary?.taxAmount || 0)}</span>
         </div>
         <div className="flex items-center gap-1.5 border-l pl-4">
           <span className="text-muted-foreground font-medium">Total (Inc GST):</span>
-          <span className="font-semibold text-primary">{formatCurrency(summary?.totalCents || 0)}</span>
+          <span className="font-semibold text-[#bba7db]">{formatCurrency(summary?.total || 0)}</span>
         </div>
       </div>
 
