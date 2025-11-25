@@ -4743,8 +4743,9 @@ export default function EstimateDetail() {
                             const groupId = String(activeId).replace('group-', '');
                             const group = groups.find(g => g.id === groupId);
                             if (group) {
+                              const subgroups = groups.filter(g => g.parentGroupId);
                               const nestingLevel = group.parentGroupId 
-                                ? (allSubgroups.filter(sg => sg.parentGroupId === group.parentGroupId).indexOf(group) >= 0 ? 2 : 1)
+                                ? (subgroups.filter(sg => sg.parentGroupId === group.parentGroupId).indexOf(group) >= 0 ? 2 : 1)
                                 : 1;
                               const borderColor = nestingLevel === 1 ? '#3b82f6' : '#10b981';
                               
@@ -4771,7 +4772,7 @@ export default function EstimateDetail() {
                                   <span className="font-medium text-sm">{item.name}</span>
                                   {item.quantity && item.unitCostExTax && (
                                     <span className="text-xs text-muted-foreground">
-                                      - {item.quantity} × ${(item.unitCostExTax / 100).toFixed(2)}
+                                      - {(item.quantity / 100).toFixed(2)} × ${(item.unitCostExTax / 100).toFixed(2)}
                                     </span>
                                   )}
                                 </div>
