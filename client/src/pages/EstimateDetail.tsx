@@ -67,7 +67,7 @@ import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
-import { Package, Undo2 } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -741,6 +741,7 @@ export default function EstimateDetail() {
   // Filter state (declared here so preferences can set them)
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Track active drag item for DragOverlay
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -2105,6 +2106,9 @@ export default function EstimateDetail() {
     setEditingValue('');
   };
 
+  // Define editable fields in order for Tab navigation
+  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markupPercent', 'costCode', 'description'];
+  
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -2112,6 +2116,57 @@ export default function EstimateDetail() {
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleCellCancel();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      handleCellSave(item, field);
+      
+      // Find next editable cell
+      const currentFieldIndex = editableFields.indexOf(field);
+      const isShift = e.shiftKey;
+      
+      // Get all visible items in order
+      const { sortedGroups, groupedItems, ungroupedItems } = organizeItemsByGroups();
+      const allItems: EstimateItem[] = [];
+      
+      // Add ungrouped items first
+      ungroupedItems.forEach(i => {
+        allItems.push(i);
+        // Add sub-items
+        items.filter(sub => sub.parentItemId === i.id).forEach(sub => allItems.push(sub));
+      });
+      
+      // Add grouped items
+      sortedGroups.forEach(group => {
+        if (!group.isCollapsed && groupedItems[group.id]) {
+          groupedItems[group.id].forEach(i => {
+            allItems.push(i);
+            // Add sub-items
+            items.filter(sub => sub.parentItemId === i.id).forEach(sub => allItems.push(sub));
+          });
+        }
+      });
+      
+      const currentItemIndex = allItems.findIndex(i => i.id === item.id);
+      
+      if (isShift) {
+        // Move backwards
+        if (currentFieldIndex > 0) {
+          // Previous field in same item
+          handleCellEdit(item, editableFields[currentFieldIndex - 1]);
+        } else if (currentItemIndex > 0) {
+          // Last field of previous item
+          handleCellEdit(allItems[currentItemIndex - 1], editableFields[editableFields.length - 1]);
+        }
+      } else {
+        // Move forwards
+        if (currentFieldIndex < editableFields.length - 1) {
+          // Next field in same item
+          handleCellEdit(item, editableFields[currentFieldIndex + 1]);
+        } else if (currentItemIndex < allItems.length - 1) {
+          // First field of next item
+          handleCellEdit(allItems[currentItemIndex + 1], editableFields[0]);
+        }
+      }
     }
   };
 
@@ -2596,6 +2651,22 @@ export default function EstimateDetail() {
         if (filterGroup !== 'ungrouped' && item.groupId !== filterGroup) return false;
       }
       
+      // Search filter - search by name, description, or cost code
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const nameMatch = item.name?.toLowerCase().includes(query);
+        const descriptionMatch = item.description?.toLowerCase().includes(query);
+        const costCodeMatch = item.costCode?.toLowerCase().includes(query);
+        // Also search in matching cost code title
+        const matchedCode = costCodes.find(code => code.id === item.costCode);
+        const costCodeTitleMatch = matchedCode?.title?.toLowerCase().includes(query) || 
+                                   matchedCode?.code?.toLowerCase().includes(query);
+        
+        if (!nameMatch && !descriptionMatch && !costCodeMatch && !costCodeTitleMatch) {
+          return false;
+        }
+      }
+      
       return true;
     });
   };
@@ -3067,6 +3138,35 @@ export default function EstimateDetail() {
     const isItemSelected = selectedItems.has(item.id);
     if (isItemSelected) {
       itemClassName += " bg-[#f6f3ff]";
+    } else {
+      // Add subtle status-based color coding when not selected
+      switch (item.status) {
+        case 'approved':
+          itemClassName += " bg-green-50/50";
+          break;
+        case 'pending':
+          // No special color for pending - default state
+          break;
+        case 'in_progress':
+          itemClassName += " bg-blue-50/50";
+          break;
+        case 'quoted':
+          itemClassName += " bg-amber-50/50";
+          break;
+        case 'ordered':
+          itemClassName += " bg-purple-50/50";
+          break;
+        case 'delivered':
+          itemClassName += " bg-teal-50/50";
+          break;
+        case 'completed':
+          itemClassName += " bg-emerald-50/50";
+          break;
+        case 'rejected':
+        case 'declined':
+          itemClassName += " bg-red-50/40";
+          break;
+      }
     }
     
     const rows = [
@@ -3379,9 +3479,9 @@ export default function EstimateDetail() {
         const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
         return (
           <TableCell 
-            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? displayCode : 'Double-click to edit'}
-            onDoubleClick={(e) => {
+            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            title={isLocked ? displayCode : 'Click to edit'}
+            onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'costCode');
             }}
@@ -3439,9 +3539,9 @@ export default function EstimateDetail() {
                 </Button>
               )}
               <span 
-                className={`font-medium text-sm truncate max-w-[180px] block ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-                title={isLocked ? item.name : 'Double-click to edit'}
-                onDoubleClick={(e) => {
+                className={`font-medium text-sm truncate max-w-[180px] block ${!isLocked ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1' : ''}`}
+                title={isLocked ? item.name : 'Click to edit'}
+                onClick={(e) => {
                   e.stopPropagation();
                   if (!isLocked) {
                     handleCellEdit(item, 'name');
@@ -3463,8 +3563,8 @@ export default function EstimateDetail() {
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
                 <div 
-                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-                  onDoubleClick={(e) => {
+                  className={`truncate max-w-[200px] ${!isLocked ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1' : ''}`}
+                  onClick={(e) => {
                     e.stopPropagation();
                     if (!isLocked) {
                       handleCellEdit(item, 'description');
@@ -3598,9 +3698,9 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? '' : 'Double-click to edit'}
-            onDoubleClick={(e) => {
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            title={isLocked ? '' : 'Click to edit'}
+            onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'quantity');
             }}
@@ -3646,9 +3746,9 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? item.unitType || '' : 'Double-click to edit'}
-            onDoubleClick={(e) => {
+            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            title={isLocked ? item.unitType || '' : 'Click to edit'}
+            onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'unitType');
             }}
@@ -3679,9 +3779,9 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? '' : 'Double-click to edit'}
-            onDoubleClick={(e) => {
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            title={isLocked ? '' : 'Click to edit'}
+            onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'unitCostExTax');
             }}
@@ -3714,9 +3814,9 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? '' : 'Double-click to edit'}
-            onDoubleClick={(e) => {
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            title={isLocked ? '' : 'Click to edit'}
+            onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'unitCostIncTax');
             }}
@@ -3761,9 +3861,9 @@ export default function EstimateDetail() {
         }
         return (
           <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:text-primary' : ''}`}
-            title={isLocked ? '' : 'Double-click to edit'}
-            onDoubleClick={(e) => {
+            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            title={isLocked ? '' : 'Click to edit'}
+            onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'markupPercent');
             }}
@@ -4095,6 +4195,27 @@ export default function EstimateDetail() {
       <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Filter Chips */}
         <div className="flex items-center gap-1.5 flex-1">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input
+              placeholder="Search items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-6 pl-7 pr-2 text-xs w-40"
+              data-testid="input-search-items"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                data-testid="button-clear-search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          
           {/* Group Expand/Collapse */}
           {groups.length > 0 && (
             <button
@@ -4335,9 +4456,9 @@ export default function EstimateDetail() {
         </div>
       )}
 
-      {/* Main Content */}
+      {/* Main Content - Single scroll container for both vertical and horizontal */}
       <div className="flex-1 overflow-auto p-4">
-        <div className="space-y-6 min-w-0">
+        <div className="space-y-6">
           {/* Collapsible Summary */}
           {summary && (
             <Card className="rounded-xl">
@@ -4599,11 +4720,10 @@ export default function EstimateDetail() {
                       const allSubgroups = groups.filter(g => g.parentGroupId);
                       
                       return (
-                        <div className="overflow-x-auto">
-                          <div style={{ minWidth: `${tableWidth}px` }}>
+                        <div style={{ minWidth: `${tableWidth}px` }}>
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          {/* Sticky Header - Single shared header for all cards */}
-                          <div className="sticky top-0 z-10 bg-muted/30 border-b-2 mb-1.5 rounded-xl">
+                          {/* Table Header */}
+                          <div className="bg-muted/30 border-b-2 mb-1.5 rounded-xl">
                             <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                               <colgroup>
                                 <col style={{ width: '32px' }} />
@@ -4704,7 +4824,6 @@ export default function EstimateDetail() {
                             ))}
                           </div>
                         </SortableContext>
-                          </div>
                         </div>
                       );
                     })()}
@@ -4763,6 +4882,26 @@ export default function EstimateDetail() {
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Quick Totals Footer */}
+      <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">Items:</span>
+          <span className="font-medium">{items.length}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">Subtotal:</span>
+          <span className="font-medium">{formatCurrency(summary?.subtotalCents || 0)}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">GST ({taxRate}%):</span>
+          <span className="font-medium">{formatCurrency(summary?.taxCents || 0)}</span>
+        </div>
+        <div className="flex items-center gap-1.5 border-l pl-4">
+          <span className="text-muted-foreground font-medium">Total (Inc GST):</span>
+          <span className="font-semibold text-primary">{formatCurrency(summary?.totalCents || 0)}</span>
         </div>
       </div>
 
