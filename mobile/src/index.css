@@ -60,6 +60,20 @@
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior-y: none;
   }
+  
+  /* Ensure html and body take full height for mobile layout */
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
+}
+
+/* Dynamic viewport height with fallback */
+@layer utilities {
+  .h-dvh {
+    height: 100vh; /* Fallback for browsers without dvh support */
+    height: 100dvh;
+  }
 }
 
 /* Mobile-specific styles */

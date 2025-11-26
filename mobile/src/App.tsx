@@ -16,9 +16,9 @@ function MobileApp() {
   return (
     <ProjectProvider>
       <Router base="/mobile">
-        <div className="flex flex-col h-screen bg-background">
-          {/* Content Area with Routes */}
-          <main className="flex-1 overflow-hidden">
+        <div className="flex flex-col h-dvh bg-background">
+          {/* Content Area with Routes - pb-16 accounts for fixed bottom nav */}
+          <main className="flex-1 overflow-auto pb-16">
             <Switch>
               <Route path="/" component={Dashboard} />
               <Route path="/projects" component={Projects} />
@@ -42,7 +42,7 @@ function MobileApp() {
             </Switch>
           </main>
 
-          {/* Bottom Navigation */}
+          {/* Bottom Navigation - Fixed at bottom */}
           <BottomNav />
         </div>
       </Router>
