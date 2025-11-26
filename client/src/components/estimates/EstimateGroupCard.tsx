@@ -148,7 +148,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             {columns.filter(col => col.visible).map(column => {
               if (column.id === 'item') {
                 return (
-                  <TableCell key={column.id} className="py-1 text-xs font-semibold" style={{ width: column.widthPx }}>
+                  <TableCell key={column.id} className="py-1 text-xs font-semibold" style={{ width: `${column.widthPx}px` }}>
                     <div className="flex items-center gap-2 min-w-0">
                       <Button
                         variant="ghost"
@@ -197,7 +197,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 <TableCell
                   key={column.id}
                   className="py-1 text-xs font-semibold"
-                  style={{ width: column.widthPx }}
+                  style={{ width: `${column.widthPx}px` }}
                   data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
                 >
                   {cellContent}

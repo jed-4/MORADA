@@ -358,7 +358,7 @@ function SortableGroupRow({
               <TableCell 
                 key={column.id}
                 className="py-1"
-                style={{ width: column.widthPx, paddingLeft: `${cellPaddingLeft}px` }}
+                style={{ width: `${column.widthPx}px`, paddingLeft: `${cellPaddingLeft}px` }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <Button
@@ -403,7 +403,7 @@ function SortableGroupRow({
             <TableCell 
               key={column.id} 
               className="py-1 text-xs font-semibold"
-              style={{ width: column.widthPx }}
+              style={{ width: `${column.widthPx}px` }}
               data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
             >
               {cellContent}
