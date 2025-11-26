@@ -4825,7 +4825,7 @@ export default function EstimateDetail() {
                           <div className="space-y-1.5">
                             {/* Ungrouped items card */}
                             {ungroupedItems.length > 0 && (
-                              <Card className="rounded-xl overflow-visible">
+                              <Card className="rounded-xl overflow-visible" style={{ minWidth: `${tableWidth}px` }}>
                                 <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                                   <colgroup>
                                     <col style={{ width: '32px' }} />

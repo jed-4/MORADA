@@ -99,6 +99,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     transform: CSS.Transform.toString(transform),
     transition: transition || 'transform 200ms ease-in-out',
     opacity: isDragging ? 0.4 : 1,
+    minWidth: `${tableWidth}px`,
   };
 
   const isGroupSelected = selectedGroups.has(group.id);
