@@ -30,15 +30,14 @@ import { ProjectMessagesTab } from "./ProjectMessagesTab";
 import { ProjectEstimatesTab } from "./ProjectEstimatesTab";
 import { ProjectProposalsTab } from "./ProjectProposalsTab";
 import { ProjectTimesheetsTab } from "./ProjectTimesheetsTab";
-
-const tabKeys = ["scope", "notes", "messages", "minutes", "tasks", "schedule", "estimates", "selections", "rfq", "rfi", "proposals", "allowances", "defects", "pos", "variations", "bills", "client-invoices", "site-diary", "timesheets", "budget", "files", "team"];
+import { ProjectOverviewTab } from "./ProjectOverviewTab";
 
 export function ProjectView() {
   const routeParams = useProjectRoute();
   const [, setLocation] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
   const projectId = routeParams?.projectId;
-  const currentTab = routeParams?.tab || "scope";
+  const currentTab = routeParams?.tab || "overview";
 
   // Fetch project if route ID doesn't match current project
   const needsFetch = !!projectId && (!currentProject || currentProject.id !== projectId);
@@ -70,6 +69,7 @@ export function ProjectView() {
   };
 
   const tabs = [
+    { key: "overview", content: <ProjectOverviewTab /> },
     { key: "scope", content: <ProjectScopeTab /> },
     { key: "notes", content: <ProjectNotesTab /> },
     { key: "messages", content: <ProjectMessagesTab /> },

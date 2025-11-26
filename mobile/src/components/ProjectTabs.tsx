@@ -1,8 +1,9 @@
 import { useLocation } from "wouter";
-import { CheckSquare, Calendar, DollarSign, FileText, Users, FolderOpen, FileText as Doc, AlertCircle, Package, Layout, Eye, BarChart3, Receipt, Book, MessageSquare, Clock, Lightbulb } from "lucide-react";
+import { CheckSquare, Calendar, DollarSign, FileText, Users, FolderOpen, FileText as Doc, AlertCircle, Package, Layout, Eye, BarChart3, Receipt, Book, MessageSquare, Clock, Lightbulb, Home } from "lucide-react";
 import { useProjectRoute } from "@/hooks/useProjectRoute";
 
 const projectTabs = [
+  { path: "overview", label: "Overview", Icon: Home },
   { path: "scope", label: "Scope", Icon: Layout },
   { path: "notes", label: "Notes", Icon: Doc },
   { path: "messages", label: "Messages", Icon: MessageSquare },
@@ -32,7 +33,7 @@ export function ProjectTabs() {
   const routeParams = useProjectRoute();
   
   const projectId = routeParams?.projectId;
-  const currentTab = routeParams?.tab || 'scope';
+  const currentTab = routeParams?.tab || 'overview';
 
   return (
     <div className="bg-card border-b overflow-x-auto scrollbar-hide">

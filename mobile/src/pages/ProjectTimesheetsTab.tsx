@@ -1,7 +1,7 @@
 import { useProject } from "@/contexts/ProjectContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
-import { Plus, Search, Loader2, Clock, Play, Square, Trash2, Calendar } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Search, Loader2, Clock, Play, Square, Trash2, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee } from "lucide-react";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
@@ -12,7 +12,7 @@ import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { apiRequest, queryClient, getApiBaseUrl } from "@lib/queryClient";
 import { ImpactStyle } from "@capacitor/haptics";
 import { getHaptics } from "@/lib/capacitor";
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks } from "date-fns";
+import { format, startOfWeek, endOfWeek, addWeeks, differenceInSeconds } from "date-fns";
 
 interface Timesheet {
   id: string;
@@ -24,10 +24,17 @@ interface Timesheet {
   duration: string;
   breakDuration: string;
   description: string | null;
+  hourlyRate: string | null;
   status: "draft" | "submitted" | "approved" | "rejected";
   isActive: boolean;
   clockInTime: string | null;
   createdAt: string;
+}
+
+interface CostCode {
+  id: string;
+  code: string;
+  title: string;
 }
 
 export function ProjectTimesheetsTab() {
@@ -37,12 +44,18 @@ export function ProjectTimesheetsTab() {
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState("00:00:00");
 
   // Form state for new timesheet
   const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [newStartTime, setNewStartTime] = useState("09:00");
-  const [newEndTime, setNewEndTime] = useState("17:00");
+  const [newStartTime, setNewStartTime] = useState("07:00");
+  const [newEndTime, setNewEndTime] = useState("15:30");
+  const [newBreakDuration, setNewBreakDuration] = useState("0.5");
+  const [newHourlyRate, setNewHourlyRate] = useState("");
+  const [newCostCodeId, setNewCostCodeId] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [timeEntryMode, setTimeEntryMode] = useState<"time" | "duration">("time");
+  const [newDuration, setNewDuration] = useState("");
 
   const currentWeekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   const currentWeekEnd = endOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -57,12 +70,26 @@ export function ProjectTimesheetsTab() {
       if (!res.ok) throw new Error("Failed to fetch timesheets");
       return res.json();
     },
-    enabled: !!currentProject,
+    enabled: !!currentProject?.id,
+    retry: false,
+  });
+
+  // Fetch cost codes
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+    queryFn: async () => {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/cost-codes`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
     retry: false,
   });
 
   // Check for active timesheet
-  const { data: activeTimesheet } = useQuery<Timesheet | null>({
+  const { data: activeTimesheet, refetch: refetchActive } = useQuery<Timesheet | null>({
     queryKey: ["/api/timesheets/active"],
     queryFn: async () => {
       const baseUrl = getApiBaseUrl();
@@ -70,48 +97,84 @@ export function ProjectTimesheetsTab() {
         credentials: "include",
       });
       if (!res.ok) return null;
-      return res.json();
+      const data = await res.json();
+      return data || null;
     },
     retry: false,
   });
 
+  // Update elapsed time every second when clocked in
+  useEffect(() => {
+    if (!activeTimesheet?.clockInTime) {
+      setElapsedTime("00:00:00");
+      return;
+    }
+
+    const updateElapsed = () => {
+      const clockIn = new Date(activeTimesheet.clockInTime!);
+      const now = new Date();
+      const seconds = differenceInSeconds(now, clockIn);
+      const hours = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      setElapsedTime(
+        `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+      );
+    };
+
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 1000);
+    return () => clearInterval(interval);
+  }, [activeTimesheet?.clockInTime]);
+
   const pullToRefresh = usePullToRefresh({
     onRefresh: async () => {
-      await refetch().then(() => undefined);
+      await Promise.all([refetch(), refetchActive()]);
     },
   });
 
   const createTimesheetMutation = useMutation({
     mutationFn: async (data: { 
       date: string;
-      startTime: string;
-      endTime: string;
+      startTime?: string;
+      endTime?: string;
+      duration: string;
+      breakDuration: string;
+      hourlyRate: string;
+      costCodeId: string;
       description: string;
     }) => {
-      // Calculate duration
-      const [startH, startM] = data.startTime.split(":").map(Number);
-      const [endH, endM] = data.endTime.split(":").map(Number);
-      const duration = ((endH * 60 + endM) - (startH * 60 + startM)) / 60;
-
-      return await apiRequest(`/api/timesheets`, "POST", {
+      const res = await apiRequest(`/api/timesheets`, "POST", {
         projectId: currentProject?.id,
         date: new Date(data.date).toISOString(),
-        startTime: data.startTime,
-        endTime: data.endTime,
-        duration: duration.toString(),
+        startTime: data.startTime || null,
+        endTime: data.endTime || null,
+        duration: data.duration,
+        breakDuration: data.breakDuration,
+        hourlyRate: data.hourlyRate,
         description: data.description,
         status: "draft",
       });
+      const created = await res.json();
+      
+      // Add cost code if selected
+      if (data.costCodeId && created.id) {
+        await apiRequest(`/api/timesheets/${created.id}/cost-codes`, "POST", {
+          costCodeId: data.costCodeId,
+          duration: data.duration,
+          hourlyRate: data.hourlyRate,
+          total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+        });
+      }
+      
+      return created;
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets", { projectId: currentProject?.id }] });
       const Haptics = await getHaptics();
       await Haptics.impact({ style: ImpactStyle.Medium });
       setIsAddOpen(false);
-      setNewDate(format(new Date(), "yyyy-MM-dd"));
-      setNewStartTime("09:00");
-      setNewEndTime("17:00");
-      setNewDescription("");
+      resetForm();
     },
   });
 
@@ -130,8 +193,10 @@ export function ProjectTimesheetsTab() {
   });
 
   const clockOutMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest(`/api/timesheets/clock-out`, "POST", {});
+    mutationFn: async (timesheetId: string) => {
+      return await apiRequest(`/api/timesheets/clock-out`, "POST", {
+        timesheetId,
+      });
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets/active"] });
@@ -152,6 +217,28 @@ export function ProjectTimesheetsTab() {
     },
   });
 
+  const resetForm = () => {
+    setNewDate(format(new Date(), "yyyy-MM-dd"));
+    setNewStartTime("07:00");
+    setNewEndTime("15:30");
+    setNewBreakDuration("0.5");
+    setNewHourlyRate("");
+    setNewCostCodeId("");
+    setNewDescription("");
+    setNewDuration("");
+    setTimeEntryMode("time");
+  };
+
+  // Calculate duration from start/end time
+  const calculateDuration = (start: string, end: string, breakDur: string): string => {
+    const [startH, startM] = start.split(":").map(Number);
+    const [endH, endM] = end.split(":").map(Number);
+    let minutes = (endH * 60 + endM) - (startH * 60 + startM);
+    if (minutes < 0) minutes += 24 * 60; // Handle overnight
+    const hours = (minutes / 60) - parseFloat(breakDur || "0");
+    return Math.max(0, Math.round(hours * 4) / 4).toString(); // Round to nearest 0.25
+  };
+
   // Filter timesheets by week
   const filteredTimesheets = timesheets
     .filter((ts) => {
@@ -167,12 +254,32 @@ export function ProjectTimesheetsTab() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "draft": return "bg-gray-100 text-gray-800";
-      case "submitted": return "bg-blue-100 text-blue-800";
-      case "approved": return "bg-green-100 text-green-800";
-      case "rejected": return "bg-red-100 text-red-800";
+      case "draft": return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
+      case "submitted": return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      case "approved": return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
       default: return "bg-muted text-muted-foreground";
     }
+  };
+
+  const handleSubmit = () => {
+    let duration: string;
+    if (timeEntryMode === "time") {
+      duration = calculateDuration(newStartTime, newEndTime, newBreakDuration);
+    } else {
+      duration = newDuration;
+    }
+
+    createTimesheetMutation.mutate({
+      date: newDate,
+      startTime: timeEntryMode === "time" ? newStartTime : undefined,
+      endTime: timeEntryMode === "time" ? newEndTime : undefined,
+      duration,
+      breakDuration: newBreakDuration,
+      hourlyRate: newHourlyRate,
+      costCodeId: newCostCodeId,
+      description: newDescription,
+    });
   };
 
   return (
@@ -180,46 +287,65 @@ export function ProjectTimesheetsTab() {
       <PullToRefreshIndicator {...pullToRefresh} />
       
       <div className="p-4 space-y-3">
-        {/* Clock In/Out Button */}
-        <div className="flex gap-2">
+        {/* Clock In/Out Section */}
+        <div className={`p-4 rounded-xl ${activeTimesheet ? "bg-green-50 dark:bg-green-950 border-2 border-green-500" : "bg-card border"}`}>
           {activeTimesheet ? (
-            <button
-              onClick={() => clockOutMutation.mutate()}
-              disabled={clockOutMutation.isPending}
-              className="flex-1 h-12 bg-red-500 text-white rounded-lg flex items-center justify-center gap-2 font-medium"
-              data-testid="button-clock-out"
-            >
-              <Square className="w-5 h-5" />
-              {clockOutMutation.isPending ? "Clocking Out..." : "Clock Out"}
-            </button>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                  <span className="font-medium text-green-700 dark:text-green-300">Clocked In</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  Started {activeTimesheet.clockInTime ? format(new Date(activeTimesheet.clockInTime), "h:mm a") : ""}
+                </span>
+              </div>
+              
+              <div className="text-center py-2">
+                <div className="text-4xl font-mono font-bold text-green-600 dark:text-green-400" data-testid="text-elapsed-time">
+                  {elapsedTime}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Time elapsed</p>
+              </div>
+              
+              <button
+                onClick={() => clockOutMutation.mutate(activeTimesheet.id)}
+                disabled={clockOutMutation.isPending}
+                className="w-full h-14 bg-red-500 hover:bg-red-600 text-white rounded-xl flex items-center justify-center gap-3 font-semibold text-lg transition-colors"
+                data-testid="button-clock-out"
+              >
+                <Square className="w-6 h-6" />
+                {clockOutMutation.isPending ? "Clocking Out..." : "Clock Out"}
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => clockInMutation.mutate()}
               disabled={clockInMutation.isPending}
-              className="flex-1 h-12 bg-green-500 text-white rounded-lg flex items-center justify-center gap-2 font-medium"
+              className="w-full h-16 bg-green-500 hover:bg-green-600 text-white rounded-xl flex items-center justify-center gap-3 font-semibold text-lg transition-colors"
               data-testid="button-clock-in"
             >
-              <Play className="w-5 h-5" />
+              <Play className="w-7 h-7" />
               {clockInMutation.isPending ? "Clocking In..." : "Clock In"}
             </button>
           )}
         </div>
 
         {/* Week Navigation */}
-        <div className="flex items-center justify-between bg-card border rounded-lg p-2">
+        <div className="flex items-center justify-between bg-card border rounded-lg p-3">
           <button
             onClick={() => setWeekOffset(w => w - 1)}
             className="p-2 hover-elevate rounded-md"
             data-testid="button-prev-week"
           >
-            <Calendar className="w-4 h-4" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="text-center">
             <div className="text-sm font-medium">
               {format(currentWeekStart, "MMM d")} - {format(currentWeekEnd, "MMM d, yyyy")}
             </div>
             <div className="text-xs text-muted-foreground">
-              {totalHours.toFixed(1)} hours
+              {totalHours.toFixed(1)} hours this week
             </div>
           </div>
           <button
@@ -227,7 +353,7 @@ export function ProjectTimesheetsTab() {
             className="p-2 hover-elevate rounded-md"
             data-testid="button-next-week"
           >
-            <Calendar className="w-4 h-4" />
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
 
@@ -238,20 +364,22 @@ export function ProjectTimesheetsTab() {
             placeholder="Search timesheets..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-9 pl-9 pr-3 bg-background border rounded-lg text-sm"
+            className="w-full h-10 pl-10 pr-3 bg-background border rounded-lg text-sm"
             data-testid="input-search-timesheets"
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4" {...pullToRefresh.handlers}>
+      <div className="flex-1 overflow-y-auto px-4 pb-24" {...pullToRefresh.touchHandlers}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : filteredTimesheets.length === 0 ? (
           <div className="text-center py-12">
+            <Clock className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
             <p className="text-muted-foreground">No timesheets for this week</p>
+            <p className="text-sm text-muted-foreground/70 mt-1">Clock in or add a time entry</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -270,28 +398,29 @@ export function ProjectTimesheetsTab() {
                     setSelectedTimesheet(timesheet);
                     setIsDetailOpen(true);
                   }}
-                  className={`p-3 bg-card border rounded-lg ${timesheet.isActive ? "border-green-500" : ""}`}
+                  className={`p-3 bg-card border rounded-lg ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
                   data-testid={`timesheet-card-${timesheet.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-muted-foreground" />
+                        <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                         <span className="font-medium">
                           {format(new Date(timesheet.date), "EEE, MMM d")}
                         </span>
                         {timesheet.isActive && (
-                          <span className="flex items-center gap-1 text-xs text-green-600">
+                          <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                             Active
                           </span>
                         )}
                       </div>
                       <div className="text-sm text-muted-foreground mt-1">
-                        {timesheet.startTime || "?"} - {timesheet.endTime || "?"} ({parseFloat(timesheet.duration || "0").toFixed(1)}h)
+                        {timesheet.startTime || "?"} - {timesheet.endTime || "?"} 
+                        <span className="font-medium ml-2">({parseFloat(timesheet.duration || "0").toFixed(1)}h)</span>
                       </div>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded ${getStatusColor(timesheet.status)}`}>
+                    <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(timesheet.status)}`}>
                       {timesheet.status}
                     </span>
                   </div>
@@ -310,7 +439,7 @@ export function ProjectTimesheetsTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center"
         data-testid="button-add-timesheet"
       >
         <Plus className="w-6 h-6" />
@@ -318,60 +447,171 @@ export function ProjectTimesheetsTab() {
 
       {/* Add Timesheet Sheet */}
       <BottomSheet isOpen={isAddOpen} onClose={() => setIsAddOpen(false)}>
-        <div className="p-4">
+        <div className="p-4 max-h-[80vh] overflow-y-auto">
           <h2 className="text-xl font-bold mb-6">Add Time Entry</h2>
           
           <div className="space-y-4">
-            <MobileInput
-              label="Date"
-              type="date"
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              data-testid="input-timesheet-date"
-            />
+            {/* Time Entry Mode Toggle */}
+            <div className="flex gap-2 p-1 bg-muted rounded-lg">
+              <button
+                onClick={() => setTimeEntryMode("time")}
+                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                  timeEntryMode === "time" 
+                    ? "bg-background shadow text-foreground" 
+                    : "text-muted-foreground"
+                }`}
+                data-testid="button-mode-time"
+              >
+                Start/End Time
+              </button>
+              <button
+                onClick={() => setTimeEntryMode("duration")}
+                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                  timeEntryMode === "duration" 
+                    ? "bg-background shadow text-foreground" 
+                    : "text-muted-foreground"
+                }`}
+                data-testid="button-mode-duration"
+              >
+                Duration Only
+              </button>
+            </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Date</label>
               <MobileInput
-                label="Start Time"
-                type="time"
-                value={newStartTime}
-                onChange={(e) => setNewStartTime(e.target.value)}
-                data-testid="input-timesheet-start"
-              />
-              <MobileInput
-                label="End Time"
-                type="time"
-                value={newEndTime}
-                onChange={(e) => setNewEndTime(e.target.value)}
-                data-testid="input-timesheet-end"
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                data-testid="input-timesheet-date"
               />
             </div>
 
-            <MobileTextarea
-              label="Description"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              placeholder="What did you work on?"
-              rows={3}
-              data-testid="textarea-timesheet-description"
-            />
+            {timeEntryMode === "time" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Start Time</label>
+                    <MobileInput
+                      type="time"
+                      value={newStartTime}
+                      onChange={(e) => setNewStartTime(e.target.value)}
+                      data-testid="input-timesheet-start"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">End Time</label>
+                    <MobileInput
+                      type="time"
+                      value={newEndTime}
+                      onChange={(e) => setNewEndTime(e.target.value)}
+                      data-testid="input-timesheet-end"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium mb-1">
+                    <Coffee className="w-4 h-4" />
+                    Break Duration (hours)
+                  </label>
+                  <MobileInput
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    value={newBreakDuration}
+                    onChange={(e) => setNewBreakDuration(e.target.value)}
+                    placeholder="0.5"
+                    data-testid="input-timesheet-break"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium mb-1">
+                  <Timer className="w-4 h-4" />
+                  Duration (hours)
+                </label>
+                <MobileInput
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  value={newDuration}
+                  onChange={(e) => setNewDuration(e.target.value)}
+                  placeholder="8"
+                  data-testid="input-timesheet-duration"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium mb-1">
+                <DollarSign className="w-4 h-4" />
+                Hourly Rate ($)
+              </label>
+              <MobileInput
+                type="number"
+                step="0.01"
+                min="0"
+                value={newHourlyRate}
+                onChange={(e) => setNewHourlyRate(e.target.value)}
+                placeholder="50.00"
+                data-testid="input-timesheet-rate"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Cost Code</label>
+              <select
+                value={newCostCodeId}
+                onChange={(e) => setNewCostCodeId(e.target.value)}
+                className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                data-testid="select-cost-code"
+              >
+                <option value="">Select a cost code</option>
+                {costCodes.map((cc) => (
+                  <option key={cc.id} value={cc.id}>
+                    {cc.code} - {cc.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Description</label>
+              <MobileTextarea
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="What did you work on?"
+                rows={3}
+                data-testid="textarea-timesheet-description"
+              />
+            </div>
+
+            {/* Calculated Duration Preview */}
+            {timeEntryMode === "time" && newStartTime && newEndTime && (
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="text-sm text-muted-foreground">Calculated Duration:</div>
+                <div className="text-lg font-semibold">
+                  {calculateDuration(newStartTime, newEndTime, newBreakDuration)} hours
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-3 pt-4">
               <MobileButton
                 variant="outline"
-                onClick={() => setIsAddOpen(false)}
+                onClick={() => {
+                  setIsAddOpen(false);
+                  resetForm();
+                }}
                 className="flex-1"
                 data-testid="button-cancel-timesheet"
               >
                 Cancel
               </MobileButton>
               <MobileButton
-                onClick={() => createTimesheetMutation.mutate({
-                  date: newDate,
-                  startTime: newStartTime,
-                  endTime: newEndTime,
-                  description: newDescription,
-                })}
+                onClick={handleSubmit}
                 disabled={createTimesheetMutation.isPending}
                 className="flex-1"
                 data-testid="button-save-timesheet"
@@ -392,11 +632,11 @@ export function ProjectTimesheetsTab() {
             </h2>
             
             <div className="flex items-center gap-2 mb-4">
-              <span className={`text-xs px-2 py-1 rounded ${getStatusColor(selectedTimesheet.status)}`}>
+              <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(selectedTimesheet.status)}`}>
                 {selectedTimesheet.status}
               </span>
               {selectedTimesheet.isActive && (
-                <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded flex items-center gap-1">
+                <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-md flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   Active
                 </span>
@@ -404,18 +644,24 @@ export function ProjectTimesheetsTab() {
             </div>
 
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">Time:</span>
-                <span>{selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}</span>
+                <span className="font-medium">{selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">Duration:</span>
-                <span>{parseFloat(selectedTimesheet.duration || "0").toFixed(1)} hours</span>
+                <span className="font-medium">{parseFloat(selectedTimesheet.duration || "0").toFixed(1)} hours</span>
               </div>
               {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
-                <div className="flex justify-between">
+                <div className="flex justify-between py-2 border-b">
                   <span className="text-muted-foreground">Break:</span>
-                  <span>{parseFloat(selectedTimesheet.breakDuration).toFixed(1)} hours</span>
+                  <span className="font-medium">{parseFloat(selectedTimesheet.breakDuration).toFixed(1)} hours</span>
+                </div>
+              )}
+              {selectedTimesheet.hourlyRate && (
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-muted-foreground">Hourly Rate:</span>
+                  <span className="font-medium">${parseFloat(selectedTimesheet.hourlyRate).toFixed(2)}</span>
                 </div>
               )}
             </div>
