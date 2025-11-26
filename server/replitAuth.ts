@@ -139,8 +139,6 @@ export async function setupAuth(app: Express) {
         const user = await storage.getUser(data.userId);
         if (user) {
           data.dbUser = user;
-          // Log critical fields for production debugging
-          console.log(`[Passport Deserialize] User ${user.id}: companyId=${user.companyId}, roleId=${user.roleId}`);
           if (!user.companyId) {
             console.warn(`⚠️  [Passport Deserialize] User ${user.id} has NO companyId!`);
           }

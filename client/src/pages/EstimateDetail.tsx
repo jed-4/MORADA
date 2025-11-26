@@ -617,6 +617,7 @@ export default function EstimateDetail() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const isApplyingPreferencesRef = React.useRef(false);
   const hasUserModifiedRef = React.useRef(false);
+  const lastAppliedPreferencesRef = React.useRef<string | null>(null);
 
   // Load user view preferences (columns + filters)
   const { data: userPreferences, isError: preferencesError } = useQuery({
@@ -643,12 +644,26 @@ export default function EstimateDetail() {
     enabled: !!effectiveEstimateId && !isNewEstimate,
   });
 
-  // Apply loaded preferences
+  // Apply loaded preferences - with deep comparison to prevent infinite loops
   useEffect(() => {
+    // Deep compare to prevent redundant state updates that cause infinite re-renders
+    const prefsSnapshot = userPreferences?.preferences 
+      ? JSON.stringify(userPreferences.preferences) 
+      : null;
+    
+    if (prefsSnapshot === lastAppliedPreferencesRef.current) {
+      console.log('[EstimateDetail] Preferences unchanged, skipping application');
+      if (!preferencesLoaded && (userPreferences !== undefined || preferencesError)) {
+        setPreferencesLoaded(true);
+      }
+      return;
+    }
+    
     console.log('[EstimateDetail] userPreferences changed:', userPreferences);
     if (userPreferences?.preferences) {
       // Set guard to prevent auto-save from triggering during preference application
       isApplyingPreferencesRef.current = true;
+      lastAppliedPreferencesRef.current = prefsSnapshot;
       
       const prefs = userPreferences.preferences;
       console.log('[EstimateDetail] Applying loaded preferences:', prefs);
@@ -683,9 +698,10 @@ export default function EstimateDetail() {
       });
     } else if (userPreferences === null || preferencesError) {
       console.log('[EstimateDetail] No saved preferences found, using defaults');
+      lastAppliedPreferencesRef.current = null;
       setPreferencesLoaded(true);
     }
-  }, [userPreferences, preferencesError]);
+  }, [userPreferences, preferencesError, preferencesLoaded]);
 
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
