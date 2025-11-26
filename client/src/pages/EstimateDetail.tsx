@@ -68,14 +68,7 @@ import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { Package, Undo2, ChevronsUpDown, Search } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+// Table imports removed - now using CSS Grid for pixel-perfect alignment
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,6 +117,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { GridRow, GridCell, GridHeaderRow, GridHeaderCell } from "@/components/estimates/GridRow";
+import { EstimateGridLayoutProvider, useEstimateGridLayout } from "@/contexts/EstimateGridLayoutContext";
 
 interface EstimateDetailParams {
   id?: string;
@@ -157,15 +152,16 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
 ];
 
-// Sortable Row Component for drag & drop
+// Sortable Row Component for drag & drop - CSS Grid based
 interface SortableRowProps {
   id: string;
   children: React.ReactNode;
   className?: string;
   isDraggable?: boolean;
+  gridTemplate: string;
 }
 
-const SortableRow = React.memo(({ id, children, className, isDraggable = true }: SortableRowProps) => {
+const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate }: SortableRowProps) => {
   const {
     attributes,
     listeners,
@@ -176,20 +172,23 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true }:
   } = useSortable({ id, disabled: !isDraggable });
 
   const style = React.useMemo(() => ({
+    display: 'grid',
+    gridTemplateColumns: gridTemplate,
     transform: CSS.Transform.toString(transform),
     transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
-  }), [transform, transition, isDragging]);
+  }), [gridTemplate, transform, transition, isDragging]);
 
   return (
-    <TableRow
+    <div
       ref={setNodeRef}
+      role="row"
       style={style}
-      className={`${className} group hover:bg-muted/50 transition-colors ${isDragging ? 'shadow-lg' : ''}`}
+      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-white dark:bg-card' : ''}`}
       data-testid={`row-item-${id}`}
     >
-      <TableCell className="py-0.5 px-1" style={{ width: '32px' }}>
+      <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
         {isDraggable && (
           <div
             {...attributes}
@@ -199,9 +198,9 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true }:
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
         )}
-      </TableCell>
+      </div>
       {children}
-    </TableRow>
+    </div>
   );
 });
 
@@ -236,296 +235,7 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
   );
 });
 
-// Separate component for sortable group row to comply with Rules of Hooks
-function SortableGroupRow({ 
-  group, 
-  groupedItems,
-  columns,
-  handleToggleGroupCollapse,
-  renderItemWithSubItems,
-  onDeleteGroup,
-  onEditGroup,
-  onDuplicateGroup,
-  onCopyGroup,
-  onAddSubgroup,
-  onAddItemToGroup,
-  isLocked,
-  selectedItems,
-  selectedGroups,
-  onToggleGroupSelection,
-  nestingLevel = 0,
-  groupTotals,
-  formatCurrency,
-  subgroups = [],
-  allGroups = []
-}: { 
-  group: EstimateGroup;
-  groupedItems: Record<string, EstimateItem[]>;
-  columns: Array<{ id: string; label: string; visible: boolean; widthPx: number }>;
-  handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
-  renderItemWithSubItems: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }) => React.ReactNode;
-  onDeleteGroup: (groupId: string) => void;
-  onEditGroup: (groupId: string) => void;
-  onDuplicateGroup: (groupId: string) => void;
-  onCopyGroup: (groupId: string) => void;
-  onAddSubgroup: (parentGroupId: string) => void;
-  onAddItemToGroup: (groupId: string) => void;
-  isLocked: boolean;
-  selectedItems: Set<string>;
-  selectedGroups: Set<string>;
-  onToggleGroupSelection: (groupId: string) => void;
-  nestingLevel?: number;
-  groupTotals?: {
-    builderCostExTax: number;
-    builderCostIncTax: number;
-    clientAmountExTax: number;
-    clientTax: number;
-    clientAmountIncTax: number;
-  };
-  formatCurrency: (amount: number) => string;
-  subgroups?: EstimateGroup[];
-  allGroups?: EstimateGroup[];
-}) {
-  const { toast } = useToast();
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `group-${group.id}` });
-  
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease-in-out',
-    opacity: isDragging ? 0.4 : 1,
-  };
-  
-  // Check if the group itself is selected
-  const isGroupSelected = selectedGroups.has(group.id);
-  
-  // Calculate indentation based on nesting level (each level adds 32px to match item indentation)
-  const indentPixels = nestingLevel * 32;
-  
-  // Get immediate children subgroups
-  const childSubgroups = subgroups.filter(sg => sg.parentGroupId === group.id)
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
-  
-  return (
-    <>
-      {/* Spacer row for visual separation between top-level groups */}
-      {nestingLevel === 0 && (
-        <TableRow className="h-3 bg-transparent border-0">
-          <TableCell colSpan={100} className="p-0 border-0 bg-transparent" />
-        </TableRow>
-      )}
-      <TableRow 
-        ref={setNodeRef}
-        style={{
-          ...style,
-        }}
-        className={`group-row-shell h-8 ${group.isCollapsed ? 'group-collapsed' : 'group-expanded'} transition-all ${isDragging ? 'opacity-40' : ''} ${isGroupSelected ? 'bg-[#f6f3ff]' : ''}`}
-        data-testid={`row-group-${group.id}`}
-      >
-        <TableCell className="py-1" style={{ width: '32px' }}>
-          <div
-            {...attributes}
-            {...listeners}
-            className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
-            data-testid={`drag-handle-group-${group.id}`}
-          >
-            <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-          </div>
-        </TableCell>
-        <TableCell className="py-1" style={{ width: '24px' }} onClick={(e) => e.stopPropagation()}>
-          <Checkbox
-            checked={isGroupSelected}
-            onCheckedChange={() => onToggleGroupSelection(group.id)}
-            aria-label={`Select group ${group.name}`}
-            data-testid={`checkbox-group-${group.id}`}
-            disabled={isLocked}
-          />
-        </TableCell>
-        
-        {/* Render cells for each visible column, with custom rendering for item column */}
-        {columns.filter(col => col.visible).map(column => {
-          if (column.id === 'item') {
-            // Custom rendering for item/name column with group name and toggle
-            // Base padding 32px (to match pl-8 used by items) + indentation for nested groups
-            const cellPaddingLeft = 32 + indentPixels;
-            return (
-              <TableCell 
-                key={column.id}
-                className="py-1"
-                style={{ width: `${column.widthPx}px`, paddingLeft: `${cellPaddingLeft}px` }}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 flex-shrink-0"
-                    onClick={() => handleToggleGroupCollapse(group.id, group.isCollapsed || false)}
-                    data-testid={`button-toggle-group-${group.id}`}
-                  >
-                    {group.isCollapsed ? (
-                      <ChevronRight className="h-4 w-4" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4" />
-                    )}
-                  </Button>
-                  <span className="font-semibold text-xs truncate">{group.name}</span>
-                  {group.description && (
-                    <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
-                  )}
-                </div>
-              </TableCell>
-            );
-          }
-          
-          // Show group totals in relevant columns
-          let cellContent = '';
-          if (groupTotals) {
-            if (column.id === 'builderCost') {
-              cellContent = formatCurrency(groupTotals.builderCostExTax);
-            } else if (column.id === 'builderCostIncTax') {
-              cellContent = formatCurrency(groupTotals.builderCostIncTax);
-            } else if (column.id === 'clientPriceExTax') {
-              cellContent = formatCurrency(groupTotals.clientAmountExTax);
-            } else if (column.id === 'clientTax') {
-              cellContent = formatCurrency(groupTotals.clientTax);
-            } else if (column.id === 'clientPriceIncTax') {
-              cellContent = formatCurrency(groupTotals.clientAmountIncTax);
-            }
-          }
-          
-          return (
-            <TableCell 
-              key={column.id} 
-              className="py-1 text-xs font-semibold"
-              style={{ width: `${column.widthPx}px` }}
-              data-testid={cellContent ? `group-total-${column.id}-${group.id}` : undefined}
-            >
-              {cellContent}
-            </TableCell>
-          );
-        })}
-        
-        {/* Actions column - group menu */}
-        <TableCell className="py-1" style={{ width: '80px' }}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-8 w-8 p-0"
-                data-testid={`button-group-menu-${group.id}`}
-                disabled={isLocked}
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem 
-                onClick={() => onAddSubgroup(group.id)}
-                data-testid={`button-add-subgroup-${group.id}`}
-                disabled={isLocked}
-              >
-                <FolderPlus className="w-4 h-4 mr-2" />
-                Add Subgroup
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => onAddItemToGroup(group.id)}
-                data-testid={`button-add-item-to-group-${group.id}`}
-                disabled={isLocked}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Item
-              </DropdownMenuItem>
-              <Separator />
-              <DropdownMenuItem 
-                onClick={() => onEditGroup(group.id)}
-                data-testid={`button-edit-group-${group.id}`}
-                disabled={isLocked}
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit Group
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => onDuplicateGroup(group.id)}
-                data-testid={`button-duplicate-group-${group.id}`}
-                disabled={isLocked}
-              >
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => onCopyGroup(group.id)}
-                data-testid={`button-copy-group-${group.id}`}
-                disabled={isLocked}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Copy To...
-              </DropdownMenuItem>
-              <Separator />
-              <DropdownMenuItem 
-                onClick={() => toast({ title: "Create from Group", description: "Coming soon" })}
-                data-testid={`button-create-from-group-${group.id}`}
-                disabled={isLocked}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create from...
-              </DropdownMenuItem>
-              <Separator />
-              <DropdownMenuItem 
-                onClick={() => onDeleteGroup(group.id)}
-                data-testid={`button-delete-group-${group.id}`} 
-                className="text-destructive"
-                disabled={isLocked}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete Group
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TableCell>
-      </TableRow>
-      
-      {/* Render items in this group if not collapsed */}
-      {!group.isCollapsed && groupedItems[group.id]?.map((item, index, array) => {
-        const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
-        return renderItemWithSubItems(item, { isInGroup: true, isLastInGroup });
-      })}
-      
-      {/* Recursively render child subgroups if not collapsed */}
-      {!group.isCollapsed && childSubgroups.map((childGroup) => (
-        <SortableGroupRow
-          key={`subgroup-${childGroup.id}`}
-          group={childGroup}
-          groupedItems={groupedItems}
-          columns={columns}
-          handleToggleGroupCollapse={handleToggleGroupCollapse}
-          renderItemWithSubItems={renderItemWithSubItems}
-          onDeleteGroup={onDeleteGroup}
-          onEditGroup={onEditGroup}
-          onDuplicateGroup={onDuplicateGroup}
-          onCopyGroup={onCopyGroup}
-          onAddSubgroup={onAddSubgroup}
-          onAddItemToGroup={onAddItemToGroup}
-          isLocked={isLocked}
-          selectedItems={selectedItems}
-          selectedGroups={selectedGroups}
-          onToggleGroupSelection={onToggleGroupSelection}
-          nestingLevel={nestingLevel + 1}
-          groupTotals={groupTotals}
-          formatCurrency={formatCurrency}
-          subgroups={subgroups}
-          allGroups={allGroups}
-        />
-      ))}
-    </>
-  );
-}
+// Note: SortableGroupRow removed - EstimateGroupCard now handles all group rendering with CSS Grid
 
 export default function EstimateDetail() {
   const { id, estimateId, projectId: projectIdFromParams } = useParams<EstimateDetailParams>();
@@ -2485,13 +2195,22 @@ export default function EstimateDetail() {
     document.body.style.cursor = 'col-resize';
   };
 
-  // Handle resize effect
+  // Handle resize effect with per-column min/max constraints
   React.useEffect(() => {
     if (!resizingColumn) return;
 
+    // Define min/max constraints per column type
+    const getColumnConstraints = (columnId: string) => {
+      if (columnId === 'description' || columnId === 'item') {
+        return { min: 150, max: 600 };
+      }
+      return { min: 80, max: 400 };
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       const diff = e.clientX - resizeStartX;
-      const newWidth = Math.max(80, resizeStartWidth + diff);
+      const { min, max } = getColumnConstraints(resizingColumn);
+      const newWidth = Math.min(max, Math.max(min, resizeStartWidth + diff));
       
       setColumns(prev => prev.map(col => {
         if (col.id === resizingColumn) {
@@ -3096,8 +2815,8 @@ export default function EstimateDetail() {
     });
   };
 
-  // Helper function to render an item row with its sub-items
-  const renderItemWithSubItems = (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }) => {
+  // Helper function to render an item row with its sub-items - CSS Grid based
+  const renderItemWithSubItems = (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string) => {
     const subItems = getSubItems(item.id);
     const isCollapsed = collapsedItems.has(item.id);
     const isLocked = estimate?.isLocked;
@@ -3106,8 +2825,11 @@ export default function EstimateDetail() {
     
     const visibleColumns = columns.filter(col => col.visible);
     
+    // Generate grid template if not provided
+    const effectiveGridTemplate = gridTemplate || `32px 24px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+    
     // Build className for visual containment - 40px row height
-    let itemClassName = "h-10";
+    let itemClassName = "";
     if (isInGroup) {
       itemClassName += " item-in-group";
       if (isLastInGroup && subItems.length === 0) {
@@ -3137,9 +2859,10 @@ export default function EstimateDetail() {
     }
     
     const rows = [
-      // Parent item row
-      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked}>
-        <TableCell className="py-0.5" style={{ width: '24px' }}>
+      // Parent item row - CSS Grid
+      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate}>
+        {/* Checkbox cell */}
+        <div className="h-10 px-2 flex items-center" role="gridcell">
           <Checkbox
             checked={selectedItems.has(item.id)}
             onCheckedChange={() => handleToggleSelection(item.id)}
@@ -3148,12 +2871,13 @@ export default function EstimateDetail() {
             disabled={estimate?.isLocked}
             onClick={(e) => e.stopPropagation()}
           />
-        </TableCell>
+        </div>
         {visibleColumns.map(column => {
           const cell = renderCell(item, column.id);
           return React.cloneElement(cell as React.ReactElement, { key: `${item.id}-${column.id}` });
         })}
-        <TableCell className="py-0.5" style={{ width: '80px' }}>
+        {/* Actions cell */}
+        <div className="h-10 px-2 flex items-center" role="gridcell">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
@@ -3248,16 +2972,16 @@ export default function EstimateDetail() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </TableCell>
+        </div>
       </SortableRow>
     ];
     
-    // Add sub-items if not collapsed
+    // Add sub-items if not collapsed - CSS Grid based
     if (!isCollapsed) {
       subItems.forEach(subItem => {
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className="h-10 bg-muted/20" isDraggable={!isLocked}>
-            <TableCell className="py-0.5" style={{ width: '24px' }}>
+          <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate}>
+            <div className="h-10 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
                 onCheckedChange={() => handleToggleSelection(subItem.id)}
@@ -3266,12 +2990,12 @@ export default function EstimateDetail() {
                 disabled={estimate?.isLocked}
                 onClick={(e) => e.stopPropagation()}
               />
-            </TableCell>
+            </div>
             {columns.filter(col => col.visible).map(column => {
               const cell = renderCell(subItem, column.id);
               return React.cloneElement(cell as React.ReactElement, { key: `${subItem.id}-${column.id}` });
             })}
-            <TableCell className="py-0.5" style={{ width: '80px' }}>
+            <div className="h-10 px-2 flex items-center" role="gridcell">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
@@ -3336,7 +3060,7 @@ export default function EstimateDetail() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </TableCell>
+            </div>
           </SortableRow>
         );
       });
@@ -3407,19 +3131,21 @@ export default function EstimateDetail() {
     };
   };
 
-  // Render cell based on column ID - returns keyed TableCell elements
+  // Render cell based on column ID - returns grid-compatible div elements
   const renderCell = (item: EstimateItem, columnId: string) => {
     const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
     const isLocked = estimate?.isLocked;
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
+    // Common grid cell base class
+    const cellBase = "h-10 px-2 flex items-center text-sm overflow-hidden";
 
     switch (columnId) {
       case 'costCode':
         if (isEditing) {
           return (
-            <TableCell className="py-0.5">
+            <div className={cellBase} role="gridcell">
               <CostCodeSelect
                 value={editingValue || ''}
                 onValueChange={(value) => {
@@ -3435,14 +3161,15 @@ export default function EstimateDetail() {
                 className="h-7"
                 data-testid={`select-edit-costCode-${item.id}`}
               />
-            </TableCell>
+            </div>
           );
         }
         const matchedCode = costCodes.find(code => code.id === item.costCode);
         const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : (item.costCode || '-');
         return (
-          <TableCell 
-            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+          <div 
+            className={`${cellBase} truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
             title={isLocked ? displayCode : 'Click to edit'}
             onClick={(e) => {
               e.stopPropagation();
@@ -3451,7 +3178,7 @@ export default function EstimateDetail() {
             data-testid={`cell-costCode-${item.id}`}
           >
             {displayCode}
-          </TableCell>
+          </div>
         );
       
       case 'item':
@@ -3463,7 +3190,7 @@ export default function EstimateDetail() {
         
         if (isEditing) {
           return (
-            <TableCell className={`py-0.5 ${indentClass}`}>
+            <div className={`${cellBase} ${indentClass}`} role="gridcell">
               <Input
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
@@ -3473,12 +3200,13 @@ export default function EstimateDetail() {
                 autoFocus
                 data-testid={`input-edit-name-${item.id}`}
               />
-            </TableCell>
+            </div>
           );
         }
         return (
-          <TableCell 
-            className={`py-0.5 ${indentClass}`}
+          <div 
+            className={`${cellBase} ${indentClass}`}
+            role="gridcell"
             data-testid={`cell-name-${item.id}`}
           >
             <div className="flex items-center gap-2">
@@ -3513,13 +3241,14 @@ export default function EstimateDetail() {
                 {item.name}
               </span>
             </div>
-          </TableCell>
+          </div>
         );
       
       case 'description':
         return (
-          <TableCell 
-            className={`py-0.5 text-sm`}
+          <div 
+            className={cellBase}
+            role="gridcell"
             data-testid={`cell-description-${item.id}`}
           >
             <HoverCard openDelay={200}>
@@ -3546,12 +3275,12 @@ export default function EstimateDetail() {
                 </HoverCardContent>
               )}
             </HoverCard>
-          </TableCell>
+          </div>
         );
       
       case 'proposalVisible':
         return (
-          <TableCell className="py-0.5 text-center" data-testid={`cell-proposalVisible-${item.id}`}>
+          <div className={`${cellBase} justify-center`} role="gridcell" data-testid={`cell-proposalVisible-${item.id}`}>
             <Button
               variant="ghost"
               size="icon"
@@ -3575,7 +3304,7 @@ export default function EstimateDetail() {
             >
               {item.proposalVisible ? <Eye className="w-4 h-4" /> : <Eye className="w-4 h-4 opacity-30" />}
             </Button>
-          </TableCell>
+          </div>
         );
       
       case 'shownAs':
@@ -3592,7 +3321,7 @@ export default function EstimateDetail() {
           'bg-muted text-muted-foreground border-border';
         
         return (
-          <TableCell className="py-0.5 text-sm" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
+          <div className={cellBase} role="gridcell" key={`${item.id}-shownAs`} data-testid={`cell-shownAs-${item.id}`}>
             <Badge
               variant="outline"
               className={`h-5 w-16 px-2 text-xs capitalize cursor-pointer hover-elevate justify-center ${shownAsChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
@@ -3610,7 +3339,7 @@ export default function EstimateDetail() {
             >
               {currentShownAs}
             </Badge>
-          </TableCell>
+          </div>
         );
       
       case 'status':
@@ -3631,7 +3360,7 @@ export default function EstimateDetail() {
           'Todo';
         
         return (
-          <TableCell className="py-0.5 text-sm" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
+          <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
             <Badge
               variant="outline"
               className={`h-5 w-12 px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
@@ -3649,7 +3378,7 @@ export default function EstimateDetail() {
             >
               {statusLabel}
             </Badge>
-          </TableCell>
+          </div>
         );
       
       case 'allowance':
@@ -3667,7 +3396,7 @@ export default function EstimateDetail() {
           '-';
         
         return (
-          <TableCell className="py-0.5 text-sm" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
+          <div className={cellBase} role="gridcell" key={`${item.id}-allowance`} data-testid={`cell-allowance-${item.id}`}>
             <Badge
               variant="outline"
               className={`h-5 w-8 px-2 text-xs cursor-pointer hover-elevate justify-center ${allowanceChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
@@ -3686,13 +3415,13 @@ export default function EstimateDetail() {
             >
               {allowanceLabel}
             </Badge>
-          </TableCell>
+          </div>
         );
       
       case 'quantity':
         if (isEditing) {
           return (
-            <TableCell className="py-0.5">
+            <div className={cellBase} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
@@ -3705,7 +3434,7 @@ export default function EstimateDetail() {
                 step="0.01"
                 data-testid={`input-edit-quantity-${item.id}`}
               />
-            </TableCell>
+            </div>
           );
         }
         // Calculate quantity with wastage
@@ -3715,8 +3444,9 @@ export default function EstimateDetail() {
         const displayQuantity = wastage > 0 ? adjustedQuantity : baseQuantity;
         
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+          <div 
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
             title={isLocked ? '' : `Click to edit (Base: ${baseQuantity.toFixed(2).replace(/\.?0+$/, '')}${wastage > 0 ? `, +${wastage}% waste` : ''})`}
             onClick={(e) => {
               e.stopPropagation();
@@ -3725,7 +3455,7 @@ export default function EstimateDetail() {
             data-testid={`cell-quantity-${item.id}`}
           >
             {displayQuantity.toFixed(2).replace(/\.?0+$/, '')}
-          </TableCell>
+          </div>
         );
       
       case 'wastage':
@@ -3744,7 +3474,7 @@ export default function EstimateDetail() {
         const wastageLabel = currentWastage === 0 ? '-' : `${currentWastage}%`;
         
         return (
-          <TableCell className="py-0.5 text-sm" key={`${item.id}-wastage`} data-testid={`cell-wastage-${item.id}`}>
+          <div className={cellBase} role="gridcell" key={`${item.id}-wastage`} data-testid={`cell-wastage-${item.id}`}>
             <Badge
               variant="outline"
               className={`h-5 w-10 px-1 text-xs cursor-pointer hover-elevate justify-center ${wastageChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
@@ -3762,13 +3492,13 @@ export default function EstimateDetail() {
             >
               {wastageLabel}
             </Badge>
-          </TableCell>
+          </div>
         );
       
       case 'unitType':
         if (isEditing) {
           return (
-            <TableCell className="py-0.5">
+            <div className={cellBase} role="gridcell">
               <Select
                 value={editingValue}
                 onValueChange={(value) => {
@@ -3796,12 +3526,13 @@ export default function EstimateDetail() {
                     ))}
                 </SelectContent>
               </Select>
-            </TableCell>
+            </div>
           );
         }
         return (
-          <TableCell 
-            className={`py-0.5 text-sm truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+          <div 
+            className={`${cellBase} truncate ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
             title={isLocked ? item.unitType || '' : 'Click to edit'}
             onClick={(e) => {
               e.stopPropagation();
@@ -3810,13 +3541,13 @@ export default function EstimateDetail() {
             data-testid={`cell-unitType-${item.id}`}
           >
             {item.unitType || '-'}
-          </TableCell>
+          </div>
         );
       
       case 'unitCostExTax':
         if (isEditing) {
           return (
-            <TableCell className="py-0.5">
+            <div className={cellBase} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
@@ -3829,12 +3560,13 @@ export default function EstimateDetail() {
                 step="0.01"
                 data-testid={`input-edit-unitCostExTax-${item.id}`}
               />
-            </TableCell>
+            </div>
           );
         }
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+          <div 
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {
               e.stopPropagation();
@@ -3843,7 +3575,7 @@ export default function EstimateDetail() {
             data-testid={`cell-unitCostExTax-${item.id}`}
           >
             {formatCurrency(item.unitCostExTax)}
-          </TableCell>
+          </div>
         );
       
       case 'unitCostIncTax':
@@ -3851,7 +3583,7 @@ export default function EstimateDetail() {
         
         if (isEditing) {
           return (
-            <TableCell className="py-0.5">
+            <div className={cellBase} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
@@ -3864,12 +3596,13 @@ export default function EstimateDetail() {
                 step="0.01"
                 data-testid={`input-edit-unitCostIncTax-${item.id}`}
               />
-            </TableCell>
+            </div>
           );
         }
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+          <div 
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {
               e.stopPropagation();
@@ -3878,27 +3611,27 @@ export default function EstimateDetail() {
             data-testid={`cell-unitCostIncTax-${item.id}`}
           >
             {formatCurrency(unitCostIncTax)}
-          </TableCell>
+          </div>
         );
       
       case 'builderCost':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-builderCost-${item.id}`}>
+          <div className={cellBase} role="gridcell" data-testid={`cell-builderCost-${item.id}`}>
             {formatCurrency(pricingValues.builderCost)}
-          </TableCell>
+          </div>
         );
       
       case 'builderCostIncTax':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-builderCostIncTax-${item.id}`}>
+          <div className={cellBase} role="gridcell" data-testid={`cell-builderCostIncTax-${item.id}`}>
             {formatCurrency(pricingValues.builderCostIncTax)}
-          </TableCell>
+          </div>
         );
       
       case 'markup':
         if (isEditing) {
           return (
-            <TableCell className="py-0.5">
+            <div className={cellBase} role="gridcell">
               <Input
                 type="number"
                 value={editingValue}
@@ -3911,12 +3644,13 @@ export default function EstimateDetail() {
                 step="1"
                 data-testid={`input-edit-markup-${item.id}`}
               />
-            </TableCell>
+            </div>
           );
         }
         return (
-          <TableCell 
-            className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+          <div 
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
             title={isLocked ? '' : 'Click to edit'}
             onClick={(e) => {
               e.stopPropagation();
@@ -3926,33 +3660,33 @@ export default function EstimateDetail() {
           >
             {pricingValues.markupPercent != null ? `${pricingValues.markupPercent}%` : 
              (estimate?.projectMarkupPercent != null ? `${estimate.projectMarkupPercent}% (project)` : '-')}
-          </TableCell>
+          </div>
         );
       
       case 'clientPriceExTax':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-clientPriceExTax-${item.id}`}>
+          <div className={cellBase} role="gridcell" data-testid={`cell-clientPriceExTax-${item.id}`}>
             {formatCurrency(pricingValues.clientPriceExTax)}
-          </TableCell>
+          </div>
         );
       
       case 'clientTax':
         return (
-          <TableCell className="py-0.5 text-sm" data-testid={`cell-clientTax-${item.id}`}>
+          <div className={cellBase} role="gridcell" data-testid={`cell-clientTax-${item.id}`}>
             {formatCurrency(pricingValues.clientTax)}
-          </TableCell>
+          </div>
         );
       
       case 'clientPriceIncTax':
         return (
-          <TableCell className="py-0.5 text-sm font-medium" data-testid={`cell-clientPriceIncTax-${item.id}`}>
+          <div className={`${cellBase} font-medium`} role="gridcell" data-testid={`cell-clientPriceIncTax-${item.id}`}>
             {formatCurrency(pricingValues.clientPriceIncTax)}
-          </TableCell>
+          </div>
         );
       
       case 'notes':
         return (
-          <TableCell className="py-0.5 text-center" data-testid={`cell-notes-${item.id}`}>
+          <div className={`${cellBase} justify-center`} role="gridcell" data-testid={`cell-notes-${item.id}`}>
             <Popover>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -4006,11 +3740,11 @@ export default function EstimateDetail() {
                 </div>
               </PopoverContent>
             </Popover>
-          </TableCell>
+          </div>
         );
       
       default:
-        return <TableCell className="py-0.5"></TableCell>;
+        return <div className={cellBase} role="gridcell" />;
     }
   };
 
@@ -4770,75 +4504,75 @@ export default function EstimateDetail() {
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24 + 32;
                       
+                      // Generate CSS Grid template
+                      const visibleCols = columns.filter(col => col.visible);
+                      const gridTemplate = `32px 24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+                      
                       // Get all subgroups for passing to EstimateGroupCard
                       const allSubgroups = groups.filter(g => g.parentGroupId);
                       
                       return (
                         <div style={{ minWidth: `${tableWidth}px` }}>
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          {/* Table Header */}
-                          <div className="bg-muted/30 border-b-2 mb-1.5 rounded-xl">
-                            <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
-                              <colgroup>
-                                <col style={{ width: '32px' }} />
-                                <col style={{ width: '24px' }} />
-                                {columns.filter(col => col.visible).map(column => (
-                                  <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                                ))}
-                                <col style={{ width: '80px' }} />
-                              </colgroup>
-                              <TableHeader>
-                                <TableRow className="h-9">
-                                  <TableHead className="py-1 text-xs font-semibold" style={{ width: '32px' }}></TableHead>
-                                  <TableHead className="py-1 text-xs font-semibold" style={{ width: '24px' }}>
-                                    <Checkbox
-                                      checked={selectedItems.size > 0 && selectedItems.size === items.length}
-                                      onCheckedChange={handleSelectAll}
-                                      aria-label="Select all items"
-                                      data-testid="checkbox-select-all"
-                                      disabled={estimate?.isLocked}
-                                    />
-                                  </TableHead>
-                                  {columns.filter(col => col.visible).map(column => (
-                                    <TableHead 
-                                      key={column.id}
-                                      className="py-1 text-xs font-semibold relative group"
-                                      style={{ width: `${column.widthPx}px` }}
-                                    >
-                                      <div className="flex items-center gap-1">
-                                        <span>{column.label}</span>
-                                      </div>
-                                      <div
-                                        className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                        style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                        onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                        data-testid={`resize-handle-${column.id}`}
-                                      />
-                                    </TableHead>
-                                  ))}
-                                  <TableHead className="py-1 text-xs font-semibold" style={{ width: '80px' }}>Actions</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                            </Table>
+                          {/* CSS Grid Header */}
+                          <div 
+                            className="bg-muted/30 border-b-2 border-gray-200 dark:border-gray-700 mb-1.5 rounded-xl"
+                            role="row"
+                            style={{ 
+                              display: 'grid', 
+                              gridTemplateColumns: gridTemplate,
+                              width: `${tableWidth}px`,
+                              minWidth: `${tableWidth}px`
+                            }}
+                          >
+                            {/* Drag handle column */}
+                            <div className="h-10 px-1 flex items-center" role="columnheader" />
+                            {/* Checkbox column */}
+                            <div className="h-10 px-2 flex items-center" role="columnheader">
+                              <Checkbox
+                                checked={selectedItems.size > 0 && selectedItems.size === items.length}
+                                onCheckedChange={handleSelectAll}
+                                aria-label="Select all items"
+                                data-testid="checkbox-select-all"
+                                disabled={estimate?.isLocked}
+                              />
+                            </div>
+                            {/* Dynamic columns with resize handles */}
+                            {visibleCols.map((column, index) => (
+                              <div 
+                                key={column.id}
+                                role="columnheader"
+                                className="h-10 px-2 flex items-center text-xs font-semibold relative group/header"
+                              >
+                                <span className="truncate">{column.label}</span>
+                                {/* Resize handle - hidden on last column and on mobile */}
+                                {index < visibleCols.length - 1 && (
+                                  <div
+                                    className={`hidden md:block absolute right-0 top-0 h-full w-1 cursor-col-resize transition-all z-10 ${
+                                      resizingColumn === column.id 
+                                        ? 'opacity-100 bg-[#bba7db] w-[3px]' 
+                                        : 'opacity-0 group-hover/header:opacity-100 hover:bg-[#bba7db] bg-gray-300'
+                                    }`}
+                                    style={{ pointerEvents: 'auto', touchAction: 'none' }}
+                                    onMouseDown={(e) => handleResizeStart(e, column.id)}
+                                    data-testid={`resize-handle-${column.id}`}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                            {/* Actions column */}
+                            <div className="h-10 px-2 flex items-center text-xs font-semibold" role="columnheader">
+                              Actions
+                            </div>
                           </div>
                           
                           <div className="space-y-1.5">
-                            {/* Ungrouped items card */}
+                            {/* Ungrouped items - CSS Grid based */}
                             {ungroupedItems.length > 0 && (
                               <Card className="rounded-xl overflow-visible" style={{ minWidth: `${tableWidth}px` }}>
-                                <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
-                                  <colgroup>
-                                    <col style={{ width: '32px' }} />
-                                    <col style={{ width: '24px' }} />
-                                    {columns.filter(col => col.visible).map(column => (
-                                      <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
-                                    ))}
-                                    <col style={{ width: '80px' }} />
-                                  </colgroup>
-                                  <TableBody>
-                                    {ungroupedItems.map((item) => renderItemWithSubItems(item))}
-                                  </TableBody>
-                                </Table>
+                                <div role="grid" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
+                                  {ungroupedItems.map((item) => renderItemWithSubItems(item, undefined, gridTemplate))}
+                                </div>
                               </Card>
                             )}
                             
@@ -4850,6 +4584,7 @@ export default function EstimateDetail() {
                                 groupedItems={groupedItems}
                                 columns={columns}
                                 tableWidth={tableWidth}
+                                gridTemplate={gridTemplate}
                                 handleToggleGroupCollapse={handleToggleGroupCollapse}
                                 renderItemRow={renderItemWithSubItems}
                                 onDeleteGroup={(groupId) => {
