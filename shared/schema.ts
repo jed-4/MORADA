@@ -576,6 +576,7 @@ export const estimateItems = pgTable("estimate_items", {
   allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
   pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
   quantity: integer("quantity").notNull().default(1),
+  wastagePercent: integer("wastage_percent").notNull().default(0), // Wastage percentage (0, 10, 15, 20, etc.)
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
   unitCostExTax: integer("unit_cost_ex_tax").notNull().default(0), // Unit price in cents (renamed from priceExTax)
@@ -606,6 +607,7 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   priceIncTax: z.number().default(0),
   markupPercent: z.number().optional().nullable(),
   shownAs: z.string().optional().nullable(),
+  wastagePercent: z.number().default(0),
 });
 
 export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;

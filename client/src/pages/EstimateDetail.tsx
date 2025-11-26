@@ -588,10 +588,12 @@ export default function EstimateDetail() {
     { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 120 },
     { id: 'item', label: 'Item', visible: true, widthPx: 180 },
     { id: 'description', label: 'Description', visible: true, widthPx: 220 },
+    { id: 'status', label: 'Status', visible: true, widthPx: 100 },
     { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
-    { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 180 },
-    { id: 'allowance', label: 'Allowance', visible: true, widthPx: 140 },
+    { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 100 },
+    { id: 'allowance', label: 'Allowance', visible: true, widthPx: 80 },
     { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
+    { id: 'wastage', label: 'Waste', visible: true, widthPx: 70 },
     { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
     { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
     { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
@@ -3637,6 +3639,45 @@ export default function EstimateDetail() {
           </TableCell>
         );
       
+      case 'status':
+        const statusOptions = ['incomplete', 'not relevant', 'done'];
+        const currentStatus = item.status || 'incomplete';
+        const statusIndex = statusOptions.indexOf(currentStatus);
+        const validStatusIndex = statusIndex >= 0 ? statusIndex : 0;
+        
+        // Chip color based on status value
+        const statusChipClass = 
+          currentStatus === 'done' ? 'bg-green-100 text-green-700 border-green-200' :
+          currentStatus === 'not relevant' ? 'bg-muted text-muted-foreground border-border' :
+          'bg-amber-100 text-amber-700 border-amber-200'; // incomplete
+        
+        const statusLabel = 
+          currentStatus === 'done' ? 'Done' :
+          currentStatus === 'not relevant' ? 'N/A' :
+          'Todo';
+        
+        return (
+          <TableCell className="py-0.5 text-sm" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
+            <Badge
+              variant="outline"
+              className={`h-5 w-12 px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              onClick={() => {
+                if (isLocked) return;
+                // Cycle through options
+                const nextStatusIndex = (validStatusIndex + 1) % statusOptions.length;
+                const nextStatus = statusOptions[nextStatusIndex];
+                updateItemMutation.mutate({
+                  itemId: item.id,
+                  data: { status: nextStatus }
+                });
+              }}
+              data-testid={`button-toggle-status-${item.id}`}
+            >
+              {statusLabel}
+            </Badge>
+          </TableCell>
+        );
+      
       case 'allowance':
         const allowanceType = item.allowance || 'None';
         
@@ -3693,17 +3734,60 @@ export default function EstimateDetail() {
             </TableCell>
           );
         }
+        // Calculate quantity with wastage
+        const baseQuantity = item.quantity / 100;
+        const wastage = (item as any).wastagePercent || 0;
+        const adjustedQuantity = baseQuantity * (1 + wastage / 100);
+        const displayQuantity = wastage > 0 ? adjustedQuantity : baseQuantity;
+        
         return (
           <TableCell 
             className={`py-0.5 text-sm ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
-            title={isLocked ? '' : 'Click to edit'}
+            title={isLocked ? '' : `Click to edit (Base: ${baseQuantity.toFixed(2).replace(/\.?0+$/, '')}${wastage > 0 ? `, +${wastage}% waste` : ''})`}
             onClick={(e) => {
               e.stopPropagation();
               if (!isLocked) handleCellEdit(item, 'quantity');
             }}
             data-testid={`cell-quantity-${item.id}`}
           >
-            {(item.quantity / 100).toFixed(2).replace(/\.?0+$/, '')}
+            {displayQuantity.toFixed(2).replace(/\.?0+$/, '')}
+          </TableCell>
+        );
+      
+      case 'wastage':
+        const wastageOptions = [0, 10, 15, 20];
+        const currentWastage = (item as any).wastagePercent || 0;
+        const wastageIndex = wastageOptions.indexOf(currentWastage);
+        const validWastageIndex = wastageIndex >= 0 ? wastageIndex : 0;
+        
+        // Chip color based on wastage value
+        const wastageChipClass = 
+          currentWastage === 0 ? 'bg-muted/50 text-muted-foreground border-border' :
+          currentWastage === 10 ? 'bg-blue-100 text-blue-700 border-blue-200' :
+          currentWastage === 15 ? 'bg-amber-100 text-amber-700 border-amber-200' :
+          'bg-orange-100 text-orange-700 border-orange-200'; // 20%
+        
+        const wastageLabel = currentWastage === 0 ? '-' : `${currentWastage}%`;
+        
+        return (
+          <TableCell className="py-0.5 text-sm" key={`${item.id}-wastage`} data-testid={`cell-wastage-${item.id}`}>
+            <Badge
+              variant="outline"
+              className={`h-5 w-10 px-1 text-xs cursor-pointer hover-elevate justify-center ${wastageChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              onClick={() => {
+                if (isLocked) return;
+                // Cycle through options
+                const nextWastageIndex = (validWastageIndex + 1) % wastageOptions.length;
+                const nextWastage = wastageOptions[nextWastageIndex];
+                updateItemMutation.mutate({
+                  itemId: item.id,
+                  data: { wastagePercent: nextWastage }
+                });
+              }}
+              data-testid={`button-toggle-wastage-${item.id}`}
+            >
+              {wastageLabel}
+            </Badge>
           </TableCell>
         );
       
