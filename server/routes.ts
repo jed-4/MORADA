@@ -111,7 +111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // prefix all routes with /api
 
   // Global authentication middleware - protect all API routes
-  app.use('/api', (req, res, next) => {
+  app.use('/api', async (req, res, next) => {
     const path = req.path;
     
     // PUBLIC ENDPOINTS - Always allow these
@@ -125,9 +125,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
 
-    // DEVELOPMENT-ONLY BYPASSES - Remove these once frontend auth is working
+    // DEVELOPMENT-ONLY BYPASSES - Inject dev user when not authenticated
     if (process.env.NODE_ENV === 'development') {
-      // Allow all routes in development for now to avoid breaking the app during auth migration
+      // If user is already authenticated, use their data
+      if (req.user && (req.user as any).dbUser) {
+        return next();
+      }
+      
+      // Inject dev user from session or look up from database
+      try {
+        // Try to get the user from session first
+        const sessionUserId = (req.session as any)?.userId;
+        let dbUser = null;
+        
+        if (sessionUserId) {
+          dbUser = await storage.getUser(sessionUserId);
+        }
+        
+        // If no session user, try to find a user by email (for mobile app testing)
+        if (!dbUser) {
+          const devEmail = process.env.DEV_USER_EMAIL || 'jed@lighthouseprojects.com.au';
+          dbUser = await storage.getUserByEmail(devEmail);
+        }
+        
+        if (dbUser) {
+          // Inject the dev user into request
+          (req as any).user = {
+            id: dbUser.replitId || dbUser.id,
+            email: dbUser.email,
+            companyId: dbUser.companyId,
+            roleId: dbUser.roleId,
+            dbUser: dbUser,
+            expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+          };
+          
+          // Also populate legacy session fields
+          (req.session as any).userId = dbUser.id;
+          (req.session as any).companyId = dbUser.companyId;
+          (req.session as any).roleId = dbUser.roleId;
+        }
+      } catch (error) {
+        console.error('[Dev Auth] Failed to inject dev user:', error);
+      }
+      
       return next();
     }
     
@@ -7884,6 +7924,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Clock-in/out routes - must be before :id routes
+  app.get("/api/timesheets/active", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const user = (req.user as any).dbUser;
+      if (!user?.id) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
+      const activeTimesheet = await storage.getActiveTimesheet(user.id);
+      res.json(activeTimesheet || null);
+    } catch (error) {
+      console.error("Error fetching active timesheet:", error);
+      res.status(500).json({ error: "Failed to fetch active timesheet" });
+    }
+  });
+
+  app.post("/api/timesheets/clock-in", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const user = (req.user as any).dbUser;
+      if (!user?.id) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
+      const { projectId, costCodeId } = req.body;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      const timesheet = await storage.clockIn(projectId, user.id, costCodeId);
+      res.status(201).json(timesheet);
+    } catch (error) {
+      console.error("Error clocking in:", error);
+      res.status(500).json({ error: "Failed to clock in" });
+    }
+  });
+
+  app.post("/api/timesheets/clock-out", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const user = (req.user as any).dbUser;
+      if (!user?.id) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
+      const { timesheetId } = req.body;
+      if (!timesheetId) {
+        return res.status(400).json({ error: "timesheetId is required" });
+      }
+      const timesheet = await storage.clockOut(timesheetId, user.id);
+      if (!timesheet) {
+        return res.status(404).json({ error: "Timesheet not found" });
+      }
+      res.json(timesheet);
+    } catch (error) {
+      console.error("Error clocking out:", error);
+      if (error instanceof Error && error.message.includes("Unauthorized")) {
+        return res.status(403).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to clock out" });
+    }
+  });
+
   app.get("/api/timesheets/:id", async (req, res) => {
     try {
       const timesheet = await storage.getTimesheet(req.params.id);
@@ -8041,72 +8147,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to delete timesheet cost code",
         details: error.message
       });
-    }
-  });
-
-  // Clock-in/out routes
-  app.get("/api/timesheets/active", async (req, res) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ error: "User not authenticated" });
-      }
-      const user = (req.user as any).dbUser;
-      if (!user?.id) {
-        return res.status(401).json({ error: "User not found in database" });
-      }
-      const activeTimesheet = await storage.getActiveTimesheet(user.id);
-      res.json(activeTimesheet || null);
-    } catch (error) {
-      console.error("Error fetching active timesheet:", error);
-      res.status(500).json({ error: "Failed to fetch active timesheet" });
-    }
-  });
-
-  app.post("/api/timesheets/clock-in", async (req, res) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ error: "User not authenticated" });
-      }
-      const user = (req.user as any).dbUser;
-      if (!user?.id) {
-        return res.status(401).json({ error: "User not found in database" });
-      }
-      const { projectId, costCodeId } = req.body;
-      if (!projectId) {
-        return res.status(400).json({ error: "projectId is required" });
-      }
-      const timesheet = await storage.clockIn(projectId, user.id, costCodeId);
-      res.status(201).json(timesheet);
-    } catch (error) {
-      console.error("Error clocking in:", error);
-      res.status(500).json({ error: "Failed to clock in" });
-    }
-  });
-
-  app.post("/api/timesheets/clock-out", async (req, res) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ error: "User not authenticated" });
-      }
-      const user = (req.user as any).dbUser;
-      if (!user?.id) {
-        return res.status(401).json({ error: "User not found in database" });
-      }
-      const { timesheetId } = req.body;
-      if (!timesheetId) {
-        return res.status(400).json({ error: "timesheetId is required" });
-      }
-      const timesheet = await storage.clockOut(timesheetId, user.id);
-      if (!timesheet) {
-        return res.status(404).json({ error: "Timesheet not found" });
-      }
-      res.json(timesheet);
-    } catch (error) {
-      console.error("Error clocking out:", error);
-      if (error instanceof Error && error.message.includes("Unauthorized")) {
-        return res.status(403).json({ error: error.message });
-      }
-      res.status(500).json({ error: "Failed to clock out" });
     }
   });
 

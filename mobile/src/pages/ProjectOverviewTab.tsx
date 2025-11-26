@@ -108,13 +108,19 @@ export function ProjectOverviewTab() {
         {/* Project Header Card */}
         <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-xl p-4">
           <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
-              <Building2 className="w-6 h-6 text-primary" />
+            <div 
+              className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: currentProject.color || '#6366f1' }}
+            >
+              <Building2 className="w-6 h-6 text-white" />
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-bold truncate">{currentProject.name}</h1>
               {currentProject.projectSubStatus && (
-                <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-primary/20 text-primary rounded-full">
+                <span 
+                  className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full text-white"
+                  style={{ backgroundColor: currentProject.color || '#6366f1' }}
+                >
                   {getStatusPhase(currentProject.projectSubStatus)}
                 </span>
               )}

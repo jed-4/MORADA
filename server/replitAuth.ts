@@ -236,6 +236,10 @@ export const ensureLegacySessionFields: RequestHandler = (req, res, next) => {
     (req.session as any).userId = user.dbUser.id;
     (req.session as any).companyId = user.dbUser.companyId;
     (req.session as any).roleId = user.dbUser.roleId;
+    
+    // Also ensure companyId and roleId are on req.user for routes that check there
+    user.companyId = user.dbUser.companyId;
+    user.roleId = user.dbUser.roleId;
   }
   
   next();
