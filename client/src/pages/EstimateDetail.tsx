@@ -4514,9 +4514,9 @@ export default function EstimateDetail() {
       {/* Main Content - Single scroll container for both vertical and horizontal */}
       <div className="flex-1 overflow-auto p-4">
         <div className="space-y-6">
-          {/* Collapsible Summary */}
+          {/* Collapsible Summary - Sticky at top of scroll area */}
           {summary && (
-            <Card className="rounded-xl">
+            <Card className="rounded-xl sticky top-0 z-10 bg-card">
               <CardHeader className="cursor-pointer hover-elevate py-2.5" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -4936,8 +4936,8 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      {/* Quick Totals Footer - Fixed at bottom */}
-      <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0">
+      {/* Quick Totals Footer - Fixed at bottom, does not scroll horizontally */}
+      <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0 sticky bottom-0 left-0 right-0 z-20">
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">Items:</span>
           <span className="font-medium">{summary?.itemCount || items.length}</span>
