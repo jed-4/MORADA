@@ -4545,18 +4545,18 @@ export default function EstimateDetail() {
               <CardContent className="pt-0 pb-3 space-y-2">
                 <Separator />
                 
-                {/* Subtotal - Sum of all line items (ex tax, with their individual markups) */}
+                {/* Builder's Cost - Sum of raw costs (should match group totals) */}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal (ex-tax)</span>
+                  <span className="text-muted-foreground">Builder's Cost (ex-tax)</span>
                   <span className="font-semibold" data-testid="text-builder-cost-subtotal">
                     {formatCurrency(summary.subtotal)}
                   </span>
                 </div>
 
-                {/* Global Markup Line - Additional markup on top of subtotal */}
+                {/* Markup Line - Total markup from all items */}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
-                    Global Markup (
+                    Markup (Default: 
                     {isEditingMarkup ? (
                       <Input
                         value={editingMarkup}
@@ -4578,7 +4578,7 @@ export default function EstimateDetail() {
                           e.stopPropagation();
                           handleMarkupEdit();
                         }}
-                        title="Click to edit markup percentage"
+                        title="Click to edit default markup percentage"
                         data-testid="text-markup-percentage"
                       >
                         {estimate?.projectMarkupPercent || 0}
@@ -4591,9 +4591,9 @@ export default function EstimateDetail() {
                   </span>
                 </div>
 
-                {/* Amount Ex Tax */}
+                {/* Client Amount Ex Tax */}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Amount (ex-tax)</span>
+                  <span className="text-muted-foreground">Client Amount (ex-tax)</span>
                   <span className="font-semibold" data-testid="text-client-price-ex-tax">
                     {formatCurrency(summary.subtotalWithMarkup)}
                   </span>
@@ -4609,9 +4609,9 @@ export default function EstimateDetail() {
 
                 <Separator className="my-2" />
 
-                {/* Total Line (Amount Inc Tax) */}
+                {/* Total Line (Client Amount Inc Tax) */}
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-sm font-medium">Amount (inc. GST)</span>
+                  <span className="text-sm font-medium">Client Amount (inc. GST)</span>
                   <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
                     {formatCurrency(summary.total)}
                   </span>
@@ -4624,9 +4624,7 @@ export default function EstimateDetail() {
 
       {/* Main Content - Scrollable area for items table only */}
       <div className="flex-1 overflow-auto px-4 pb-4">
-        <div className="space-y-6">
-          <div className="min-w-0">
-            <div className="p-0">
+        <div className="inline-block min-w-full">
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -4851,6 +4849,7 @@ export default function EstimateDetail() {
                                 group={group}
                                 groupedItems={groupedItems}
                                 columns={columns}
+                                tableWidth={tableWidth}
                                 handleToggleGroupCollapse={handleToggleGroupCollapse}
                                 renderItemRow={renderItemWithSubItems}
                                 onDeleteGroup={(groupId) => {
@@ -4932,8 +4931,6 @@ export default function EstimateDetail() {
                   </DragOverlay>
                 </DndContext>
               )}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -4944,7 +4941,7 @@ export default function EstimateDetail() {
           <span className="font-medium">{summary?.itemCount || items.length}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">Subtotal:</span>
+          <span className="text-muted-foreground">Builder's Cost:</span>
           <span className="font-medium">{formatCurrency(summary?.subtotal || 0)}</span>
         </div>
         <div className="flex items-center gap-1.5">

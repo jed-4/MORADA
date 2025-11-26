@@ -639,6 +639,7 @@ export type EstimateGroup = typeof estimateGroups.$inferSelect;
 // Summary calculation type for API responses
 export type EstimateSummary = {
   subtotal: number;
+  builderCostTotal: number;
   markupAmount: number;
   subtotalWithMarkup: number;
   taxAmount: number;

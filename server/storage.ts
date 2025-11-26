@@ -284,7 +284,9 @@ export interface IStorage {
   // Summary calculations
   getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
+    builderCostTotal: number;
     markupAmount: number;
+    subtotalWithMarkup: number;
     taxAmount: number;
     total: number;
     itemCount: number;
@@ -3759,52 +3761,44 @@ export class MemStorage implements IStorage {
   // Summary calculations
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
+    builderCostTotal: number;
     markupAmount: number;
     subtotalWithMarkup: number;
     taxAmount: number;
     total: number;
     itemCount: number;
   }> {
-    const estimate = await this.getEstimate(estimateId);
     const items = await this.getEstimateItems(estimateId);
 
-    let builderCostTotal = 0;
-    let taxTotal = 0;
-    let clientPriceTotal = 0;
+    let builderCostTotal = 0; // Sum of all builder costs (what builder pays)
+    let clientTaxTotal = 0; // Sum of all stored taxes
+    let clientAmountIncTaxTotal = 0; // Sum of all stored client amounts inc tax
 
-    // Calculate totals, handling both new and legacy items
+    // Calculate totals using stored values (same as frontend)
     items.forEach(item => {
+      // Builder cost = unitCostExTax * quantity / 100 (calculated, same as frontend)
+      // unitCostExTax is in cents, quantity is fixed-point (100 = 1.00)
       const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100);
       builderCostTotal += builderCost;
-
-      // If item has calculated tax/price (new format), use it
-      if (item.taxAmount != null && item.priceIncTax != null) {
-        taxTotal += item.taxAmount;
-        clientPriceTotal += item.priceIncTax;
-      } else {
-        // Legacy item: calculate using defaults (0% markup if not specified)
-        const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
-        const markupAmount = Math.round((builderCost * markupPercent) / 100);
-        const clientPriceExTax = builderCost + markupAmount;
-        const taxRate = estimate?.taxRate ?? 10;
-        const tax = Math.round((clientPriceExTax * taxRate) / 100);
-        const clientPrice = clientPriceExTax + tax;
-
-        taxTotal += tax;
-        clientPriceTotal += clientPrice;
-      }
+      
+      // Use stored client values (taxAmount, priceIncTax) - these are pre-calculated on item save
+      clientTaxTotal += item.taxAmount ?? 0;
+      clientAmountIncTaxTotal += item.priceIncTax ?? 0;
     });
     
-    // Markup = (client price - tax) - builder cost
-    const markupTotal = (clientPriceTotal - taxTotal) - builderCostTotal;
-    const subtotalWithMarkup = builderCostTotal + markupTotal;
+    // Derive client ex-tax amount from stored values
+    const clientAmountExTaxTotal = clientAmountIncTaxTotal - clientTaxTotal;
+    
+    // Total markup is the difference between client amount ex tax and builder cost
+    const totalMarkup = clientAmountExTaxTotal - builderCostTotal;
 
     return {
-      subtotal: builderCostTotal,
-      markupAmount: markupTotal,
-      subtotalWithMarkup: subtotalWithMarkup,
-      taxAmount: taxTotal,
-      total: clientPriceTotal,
+      subtotal: builderCostTotal, // Sum of builder costs (what builder pays, no markup)
+      builderCostTotal: builderCostTotal, // Same as subtotal for clarity
+      markupAmount: totalMarkup, // Total markup embedded in all items
+      subtotalWithMarkup: clientAmountExTaxTotal, // Client amount ex tax (builder cost + markups)
+      taxAmount: clientTaxTotal, // Total GST on all items
+      total: clientAmountIncTaxTotal, // Client amount inc tax
       itemCount: items.length,
     };
   }
@@ -7612,6 +7606,7 @@ export class DbStorage implements IStorage {
   }
   async getEstimateSummary(estimateId: string): Promise<{
     subtotal: number;
+    builderCostTotal: number;
     markupAmount: number;
     subtotalWithMarkup: number;
     taxAmount: number;
@@ -7619,50 +7614,42 @@ export class DbStorage implements IStorage {
     itemCount: number;
   }> {
     try {
-      const estimate = await this.getEstimate(estimateId);
       const items = await this.getEstimateItems(estimateId);
 
-      let itemAmountsExTaxTotal = 0; // Sum of all line item amounts (ex tax, with their individual markups)
+      let builderCostTotal = 0; // Sum of all builder costs (what builder pays)
+      let clientTaxTotal = 0; // Sum of all stored taxes
+      let clientAmountIncTaxTotal = 0; // Sum of all stored client amounts inc tax
 
-      // Calculate totals from line items (each line item has its own markup applied)
+      // Calculate totals using stored values (same as frontend)
       items.forEach(item => {
+        // Builder cost = unitCostExTax * quantity / 100 (calculated, same as frontend)
+        // unitCostExTax is in cents, quantity is fixed-point (100 = 1.00)
         const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100);
-
-        // If item has calculated price (new format), use it
-        if (item.taxAmount != null && item.priceIncTax != null) {
-          const itemAmountExTax = item.priceIncTax - item.taxAmount;
-          itemAmountsExTaxTotal += itemAmountExTax;
-        } else {
-          // Legacy item: use item's own markup (default to 0% if not set)
-          // Note: We don't use the global markup here - that's applied separately to the subtotal
-          const markupPercent = item.markupPercent ?? 0;
-          const markupAmount = Math.round((builderCost * markupPercent) / 100);
-          const itemAmountExTax = builderCost + markupAmount;
-          itemAmountsExTaxTotal += itemAmountExTax;
-        }
+        builderCostTotal += builderCost;
+        
+        // Use stored client values (taxAmount, priceIncTax) - these are pre-calculated on item save
+        clientTaxTotal += item.taxAmount ?? 0;
+        clientAmountIncTaxTotal += item.priceIncTax ?? 0;
       });
       
-      // Now apply global markup to the sum of all item amounts (two-layer markup)
-      const globalMarkupPercent = estimate?.projectMarkupPercent ?? 0;
-      const globalMarkupAmount = Math.round((itemAmountsExTaxTotal * globalMarkupPercent) / 100);
-      const totalAmountExTax = itemAmountsExTaxTotal + globalMarkupAmount;
+      // Derive client ex-tax amount from stored values
+      const clientAmountExTaxTotal = clientAmountIncTaxTotal - clientTaxTotal;
       
-      // Calculate tax on the total amount (ex tax)
-      const taxRate = estimate?.taxRate ?? 10;
-      const totalTax = Math.round((totalAmountExTax * taxRate) / 100);
-      const totalAmountIncTax = totalAmountExTax + totalTax;
+      // Total markup is the difference between client amount ex tax and builder cost
+      const totalMarkup = clientAmountExTaxTotal - builderCostTotal;
 
       return {
-        subtotal: itemAmountsExTaxTotal, // Sum of all line item amounts (ex tax, includes item markups)
-        markupAmount: globalMarkupAmount, // Global markup applied to subtotal
-        subtotalWithMarkup: totalAmountExTax, // Subtotal + global markup
-        taxAmount: totalTax, // Tax on the total amount
-        total: totalAmountIncTax, // Final total inc tax
+        subtotal: builderCostTotal, // Sum of builder costs (what builder pays, no markup)
+        builderCostTotal: builderCostTotal, // Same as subtotal for clarity
+        markupAmount: totalMarkup, // Total markup embedded in all items
+        subtotalWithMarkup: clientAmountExTaxTotal, // Client amount ex tax (builder cost + markups)
+        taxAmount: clientTaxTotal, // Total GST on all items
+        total: clientAmountIncTaxTotal, // Client amount inc tax
         itemCount: items.length,
       };
     } catch (error) {
       console.error("Database error in getEstimateSummary:", error);
-      return { subtotal: 0, markupAmount: 0, subtotalWithMarkup: 0, taxAmount: 0, total: 0, itemCount: 0 };
+      return { subtotal: 0, builderCostTotal: 0, markupAmount: 0, subtotalWithMarkup: 0, taxAmount: 0, total: 0, itemCount: 0 };
     }
   }
   

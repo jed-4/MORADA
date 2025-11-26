@@ -35,6 +35,7 @@ interface EstimateGroupCardProps {
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
   columns: Array<{ id: string; label: string; visible: boolean; widthPx: number }>;
+  tableWidth: number;
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
   renderItemRow: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
@@ -65,6 +66,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   group,
   groupedItems,
   columns,
+  tableWidth,
   handleToggleGroupCollapse,
   renderItemRow,
   onDeleteGroup,
@@ -103,8 +105,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const childSubgroups = subgroups
     .filter(sg => sg.parentGroupId === group.id)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-  const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24 + 32;
 
   return (
     <Card 
@@ -296,6 +296,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             group={childGroup}
             groupedItems={groupedItems}
             columns={columns}
+            tableWidth={tableWidth}
             handleToggleGroupCollapse={handleToggleGroupCollapse}
             renderItemRow={renderItemRow}
             onDeleteGroup={onDeleteGroup}
