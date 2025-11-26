@@ -37,6 +37,29 @@ interface CostCode {
   title: string;
 }
 
+// Generate time options starting from 6:30 AM in 15-minute increments
+function generateTimeOptions() {
+  const times: { value: string; label: string }[] = [];
+  
+  // Start from 6:30 AM and go through 24 hours, wrapping to early morning last
+  for (let i = 0; i < 96; i++) { // 96 = 24 hours * 4 (15-min increments)
+    const adjustedIndex = (i + 26) % 96; // 26 = 6:30 AM offset
+    const totalMinutes = adjustedIndex * 15;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    const value = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+    
+    const period = hours >= 12 ? "PM" : "AM";
+    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+    const label = `${displayHours}:${minutes.toString().padStart(2, "0")} ${period}`;
+    
+    times.push({ value, label });
+  }
+  
+  return times;
+}
+
 export function Timesheets() {
   const [isLogSheetOpen, setIsLogSheetOpen] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -517,21 +540,33 @@ export function Timesheets() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium mb-1">Start Time</label>
-                    <MobileInput
-                      type="time"
+                    <select
                       value={newStartTime}
                       onChange={(e) => setNewStartTime(e.target.value)}
+                      className="w-full h-11 px-4 bg-background border rounded-lg text-base"
                       data-testid="input-timesheet-start"
-                    />
+                    >
+                      {generateTimeOptions().map((time) => (
+                        <option key={time.value} value={time.value}>
+                          {time.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">End Time</label>
-                    <MobileInput
-                      type="time"
+                    <select
                       value={newEndTime}
                       onChange={(e) => setNewEndTime(e.target.value)}
+                      className="w-full h-11 px-4 bg-background border rounded-lg text-base"
                       data-testid="input-timesheet-end"
-                    />
+                    >
+                      {generateTimeOptions().map((time) => (
+                        <option key={time.value} value={time.value}>
+                          {time.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
