@@ -126,6 +126,14 @@ export function ProjectScopeTab() {
 
   const isLoading = stagesLoading || itemsLoading;
 
+  if (!currentProject) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-muted-foreground">Please select a project</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full relative">
       <PullToRefreshIndicator {...pullToRefresh} />
