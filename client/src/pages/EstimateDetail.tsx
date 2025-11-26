@@ -4511,122 +4511,123 @@ export default function EstimateDetail() {
         </div>
       )}
 
-      {/* Main Content - Single scroll container for both vertical and horizontal */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className="space-y-6">
-          {/* Collapsible Summary - Sticky at top of scroll area */}
-          {summary && (
-            <Card className="rounded-xl sticky top-0 z-10 bg-card">
-              <CardHeader className="cursor-pointer hover-elevate py-2.5" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6"
-                      data-testid="button-toggle-summary"
-                    >
-                      {isSummaryExpanded ? (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                    <CardTitle className="flex items-center text-sm font-semibold">
-                      <Calculator className="w-4 h-4 mr-1.5" />
-                      Estimate Total
-                    </CardTitle>
-                  </div>
-                  <div className="text-lg font-bold text-[#bba7db]" data-testid="text-total">
-                    {formatCurrency(summary.total)}
-                  </div>
+      {/* Collapsible Summary - Fixed above scroll area */}
+      {summary && (
+        <div className="px-4 pt-4 pb-2 flex-shrink-0">
+          <Card className="rounded-xl bg-card">
+            <CardHeader className="cursor-pointer hover-elevate py-2.5" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6"
+                    data-testid="button-toggle-summary"
+                  >
+                    {isSummaryExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <CardTitle className="flex items-center text-sm font-semibold">
+                    <Calculator className="w-4 h-4 mr-1.5" />
+                    Estimate Total
+                  </CardTitle>
                 </div>
-              </CardHeader>
-              
-              {isSummaryExpanded && (
-                <CardContent className="pt-0 pb-3 space-y-2">
-                  <Separator />
-                  
-                  {/* Subtotal - Sum of all line items (ex tax, with their individual markups) */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal (ex-tax)</span>
-                    <span className="font-semibold" data-testid="text-builder-cost-subtotal">
-                      {formatCurrency(summary.subtotal)}
-                    </span>
-                  </div>
+                <div className="text-lg font-bold text-[#bba7db]" data-testid="text-total">
+                  {formatCurrency(summary.total)}
+                </div>
+              </div>
+            </CardHeader>
+            
+            {isSummaryExpanded && (
+              <CardContent className="pt-0 pb-3 space-y-2">
+                <Separator />
+                
+                {/* Subtotal - Sum of all line items (ex tax, with their individual markups) */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal (ex-tax)</span>
+                  <span className="font-semibold" data-testid="text-builder-cost-subtotal">
+                    {formatCurrency(summary.subtotal)}
+                  </span>
+                </div>
 
-                  {/* Global Markup Line - Additional markup on top of subtotal */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Global Markup (
-                      {isEditingMarkup ? (
-                        <Input
-                          value={editingMarkup}
-                          onChange={(e) => setEditingMarkup(e.target.value)}
-                          onKeyDown={handleMarkupKeyDown}
-                          onBlur={handleMarkupSave}
-                          className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                          data-testid="input-markup-percentage"
-                          autoFocus
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.1"
-                        />
-                      ) : (
-                        <span 
-                          className="cursor-pointer hover:text-primary transition-colors underline decoration-dotted"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkupEdit();
-                          }}
-                          title="Click to edit markup percentage"
-                          data-testid="text-markup-percentage"
-                        >
-                          {estimate?.projectMarkupPercent || 0}
-                        </span>
-                      )}
-                      %)
-                    </span>
-                    <span className="font-semibold" data-testid="text-markup">
-                      {formatCurrency(summary.markupAmount)}
-                    </span>
-                  </div>
+                {/* Global Markup Line - Additional markup on top of subtotal */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Global Markup (
+                    {isEditingMarkup ? (
+                      <Input
+                        value={editingMarkup}
+                        onChange={(e) => setEditingMarkup(e.target.value)}
+                        onKeyDown={handleMarkupKeyDown}
+                        onBlur={handleMarkupSave}
+                        className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        data-testid="input-markup-percentage"
+                        autoFocus
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                    ) : (
+                      <span 
+                        className="cursor-pointer hover:text-primary transition-colors underline decoration-dotted"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkupEdit();
+                        }}
+                        title="Click to edit markup percentage"
+                        data-testid="text-markup-percentage"
+                      >
+                        {estimate?.projectMarkupPercent || 0}
+                      </span>
+                    )}
+                    %)
+                  </span>
+                  <span className="font-semibold" data-testid="text-markup">
+                    {formatCurrency(summary.markupAmount)}
+                  </span>
+                </div>
 
-                  {/* Amount Ex Tax */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Amount (ex-tax)</span>
-                    <span className="font-semibold" data-testid="text-client-price-ex-tax">
-                      {formatCurrency(summary.subtotalWithMarkup)}
-                    </span>
-                  </div>
+                {/* Amount Ex Tax */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Amount (ex-tax)</span>
+                  <span className="font-semibold" data-testid="text-client-price-ex-tax">
+                    {formatCurrency(summary.subtotalWithMarkup)}
+                  </span>
+                </div>
 
-                  {/* GST Line */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
-                    <span className="font-semibold" data-testid="text-tax">
-                      {formatCurrency(summary.taxAmount)}
-                    </span>
-                  </div>
+                {/* GST Line */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
+                  <span className="font-semibold" data-testid="text-tax">
+                    {formatCurrency(summary.taxAmount)}
+                  </span>
+                </div>
 
-                  <Separator className="my-2" />
+                <Separator className="my-2" />
 
-                  {/* Total Line (Amount Inc Tax) */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-sm font-medium">Amount (inc. GST)</span>
-                    <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
-                      {formatCurrency(summary.total)}
-                    </span>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )}
+                {/* Total Line (Amount Inc Tax) */}
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-sm font-medium">Amount (inc. GST)</span>
+                  <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
+                    {formatCurrency(summary.total)}
+                  </span>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        </div>
+      )}
 
-          {/* Items Table */}
+      {/* Main Content - Scrollable area for items table only */}
+      <div className="flex-1 overflow-auto px-4 pb-4">
+        <div className="space-y-6">
           <div className="min-w-0">
             <div className="p-0">
-                {itemsLoading || groupsLoading ? (
+              {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
                       <div key={i} className="h-32 bg-gray-300 rounded-lg"></div>
@@ -4936,8 +4937,8 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      {/* Quick Totals Footer - Fixed at bottom, does not scroll horizontally */}
-      <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0 sticky bottom-0 left-0 right-0 z-20">
+      {/* Quick Totals Footer - Fixed at bottom outside scroll area */}
+      <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">Items:</span>
           <span className="font-medium">{summary?.itemCount || items.length}</span>
