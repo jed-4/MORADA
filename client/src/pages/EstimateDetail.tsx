@@ -620,27 +620,20 @@ export default function EstimateDetail() {
   const { data: userPreferences, isError: preferencesError } = useQuery({
     queryKey: ["/api/user-view-preferences", "estimate_detail"],
     queryFn: async () => {
-      console.log('[EstimateDetail] Fetching user view preferences...');
       const response = await fetch("/api/user-view-preferences/estimate_detail", {
         credentials: "include",
       });
-      console.log('[EstimateDetail] Preferences fetch response status:', response.status);
       if (!response.ok) {
         if (response.status === 404) {
-          console.log('[EstimateDetail] No preferences found (404)');
           return null;
         }
-        const errorText = await response.text();
-        console.error('[EstimateDetail] Preferences fetch error:', response.status, errorText);
         throw new Error("Failed to fetch view preferences");
       }
-      const data = await response.json();
-      console.log('[EstimateDetail] Preferences fetched successfully:', data);
-      return data;
+      return response.json();
     },
     enabled: !!effectiveEstimateId && !isNewEstimate,
     staleTime: Infinity,
-    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
+    gcTime: 1000 * 60 * 30,
   });
 
   // Apply loaded preferences - runs only once when preferences are first loaded
@@ -655,8 +648,6 @@ export default function EstimateDetail() {
     if (userPreferences === undefined && !preferencesError) {
       return;
     }
-    
-    console.log('[EstimateDetail] Applying preferences for the first time:', userPreferences);
     
     if (userPreferences?.preferences) {
       const prefs = userPreferences.preferences;
@@ -682,7 +673,6 @@ export default function EstimateDetail() {
       if (prefs.filterStatus) setFilterStatus(prefs.filterStatus);
       if (prefs.filterGroup) setFilterGroup(prefs.filterGroup);
     } else {
-      console.log('[EstimateDetail] No saved preferences found, using defaults');
       lastAppliedPreferencesRef.current = 'none';
     }
     
@@ -746,17 +736,10 @@ export default function EstimateDetail() {
   // Save view preferences mutation
   const saveViewPreferencesMutation = useMutation({
     mutationFn: async (preferences: { columns: ColumnConfig[]; filterType: string; filterStatus: string; filterGroup: string }) => {
-      console.log('[EstimateDetail] Saving view preferences:', preferences);
       return await apiRequest("/api/user-view-preferences", "POST", {
         viewKey: "estimate_detail",
         preferences,
       });
-    },
-    onSuccess: () => {
-      console.log('[EstimateDetail] Preferences saved successfully');
-    },
-    onError: (error) => {
-      console.error('[EstimateDetail] Error saving preferences:', error);
     },
   });
 
@@ -777,8 +760,6 @@ export default function EstimateDetail() {
   // Register undo handler
   useEffect(() => {
     undoStack.setOnUndo(async (action) => {
-      // Handle undo based on action type
-      console.log('[UNDO] Reversing action:', action);
       
       switch (action.type) {
         case 'Drag Item':
@@ -967,7 +948,6 @@ export default function EstimateDetail() {
         return existsInData;
       });
       
-      console.log('[REORDER MUTATION] Sending', validItems.length, 'valid items out of', items.length, ':', validItems);
       
       if (validItems.length === 0) {
         console.warn('[REORDER MUTATION] No valid items to reorder, skipping');
@@ -1186,7 +1166,6 @@ export default function EstimateDetail() {
     // Clear active drag state
     setActiveId(null);
     
-    console.log('[DRAG] Drag end - active:', active.id, 'over:', over?.id);
     
     if (!over || active.id === over.id) return;
     
@@ -1200,11 +1179,9 @@ export default function EstimateDetail() {
       const draggedGroup = groups.find(g => g.id === draggedGroupId);
       
       if (!draggedGroup) {
-        console.log('[DRAG] Dragged group not found:', draggedGroupId);
         return;
       }
       
-      console.log('[DRAG] Dragging group:', draggedGroup.name, 'parentGroupId:', draggedGroup.parentGroupId);
       
       if (isOverGroup) {
         // Dragging a group onto another group
@@ -1212,13 +1189,11 @@ export default function EstimateDetail() {
         const overGroup = groups.find(g => g.id === overGroupId);
         
         if (!overGroup) {
-          console.log('[DRAG] Over group not found:', overGroupId);
           return;
         }
         
         // Prevent nesting a group into itself or its own descendants
         if (draggedGroupId === overGroupId) {
-          console.log('[DRAG] Cannot nest group into itself');
           return;
         }
         
@@ -1226,14 +1201,12 @@ export default function EstimateDetail() {
         let checkGroup = overGroup;
         while (checkGroup.parentGroupId) {
           if (checkGroup.parentGroupId === draggedGroupId) {
-            console.log('[DRAG] Cannot nest group into its own descendant');
             return;
           }
           checkGroup = groups.find(g => g.id === checkGroup.parentGroupId) || checkGroup;
           if (checkGroup.id === overGroup.id) break; // Safety check to prevent infinite loop
         }
         
-        console.log('[DRAG] Dropping group onto group:', overGroup.name);
         
         // Determine behavior: are they at the same level?
         const sameLevelGroups = groups.filter(g => g.parentGroupId === draggedGroup.parentGroupId);
@@ -1241,7 +1214,6 @@ export default function EstimateDetail() {
         
         if (isOverGroupSameLevel) {
           // Reorder at same level
-          console.log('[DRAG] Reordering groups at same level');
           const sortedSameLevelGroups = sameLevelGroups.sort((a, b) => (a.order || 0) - (b.order || 0));
           const oldIndex = sortedSameLevelGroups.findIndex(g => g.id === draggedGroupId);
           const newIndex = sortedSameLevelGroups.findIndex(g => g.id === overGroupId);
@@ -1254,11 +1226,9 @@ export default function EstimateDetail() {
             order: index
           }));
           
-          console.log('[DRAG] Reordering groups at same level:', updates);
           reorderGroupsMutation.mutate({ groups: updates });
         } else {
           // Nest into the over group (make draggedGroup a subgroup of overGroup)
-          console.log('[DRAG] Nesting group into another group');
           
           // Get siblings left behind in the original level (need to reorder them)
           const oldSiblings = sameLevelGroups.filter(g => g.id !== draggedGroupId);
@@ -1284,7 +1254,6 @@ export default function EstimateDetail() {
         }
       } else {
         // Dragging group onto an item - ignore this case
-        console.log('[DRAG] Ignoring group drag onto item');
       }
       return;
     }
@@ -1294,17 +1263,14 @@ export default function EstimateDetail() {
     const targetItem = items.find(item => item.id === over.id);
     
     if (!draggedItem) {
-      console.log('[DRAG] Dragged item not found:', active.id);
       return;
     }
     
     // Handle dropping onto a group header (cross-group move to end of group)
     if (isOverGroup) {
       const targetGroupId = String(over.id).replace('group-', '');
-      console.log('[DRAG] Dropping item onto group header:', targetGroupId);
       
       if (targetGroupId === draggedItem.groupId) {
-        console.log('[DRAG] Same group, ignoring');
         return;
       }
       
@@ -1345,14 +1311,12 @@ export default function EstimateDetail() {
         }
       });
       
-      console.log('[DRAG] Group header drop updates:', updates);
       
       reorderItemsMutation.mutate({ items: updates });
       return;
     }
     
     if (!targetItem) {
-      console.log('[DRAG] Target item not found:', over.id);
       return;
     }
     
@@ -1360,7 +1324,6 @@ export default function EstimateDetail() {
     const draggedGroupId = draggedItem.groupId || null;
     const targetGroupId = targetItem.groupId || null;
     
-    console.log('[DRAG] Dragged from container:', draggedGroupId, 'Target container:', targetGroupId);
     
     // Get all parent items in the source container, sorted by order
     const sourceContainerItems = items
@@ -1371,13 +1334,11 @@ export default function EstimateDetail() {
     const oldIndex = sourceContainerItems.findIndex(item => item.id === active.id);
     
     if (oldIndex === -1) {
-      console.log('[DRAG] Item not found in source container');
       return;
     }
     
     // If moving to a different group, reindex both containers
     if (targetGroupId !== draggedGroupId) {
-      console.log('[DRAG] Cross-group move detected');
       
       // Get target container items to find insertion point
       const targetContainerItems = items
@@ -1415,7 +1376,6 @@ export default function EstimateDetail() {
         }
       });
       
-      console.log('[DRAG] Cross-group move updates:', updates);
       
       reorderItemsMutation.mutate({ items: updates });
       return;
@@ -1425,11 +1385,9 @@ export default function EstimateDetail() {
     const newIndex = sourceContainerItems.findIndex(item => item.id === over.id);
     
     if (newIndex === -1) {
-      console.log('[DRAG] Target not found in container');
       return;
     }
     
-    console.log('[DRAG] Reordering within container - old:', oldIndex, 'new:', newIndex);
     
     // Reorder within the container
     const reorderedItems = arrayMove(sourceContainerItems, oldIndex, newIndex);
@@ -1440,7 +1398,6 @@ export default function EstimateDetail() {
       order: index
     }));
     
-    console.log('[DRAG] Sending reorder mutation with', updates.length, 'items:', updates);
     
     reorderItemsMutation.mutate({ items: updates });
   };
@@ -1456,13 +1413,11 @@ export default function EstimateDetail() {
   useEffect(() => {
     // Skip save if user hasn't made any modifications (prevents save on initial load)
     if (!hasUserModifiedRef.current) {
-      console.log('[EstimateDetail] Skipping save - no user modifications yet');
       return;
     }
     
     if (preferencesLoaded && effectiveEstimateId && !isNewEstimate && !resizingColumn) {
       const timer = setTimeout(() => {
-        console.log('[EstimateDetail] Debounced save triggered');
         saveViewPreferencesMutation.mutate({
           columns,
           filterType,
@@ -1735,14 +1690,10 @@ export default function EstimateDetail() {
   const toggleLockMutation = useMutation({
     mutationFn: async () => {
       const endpoint = estimate?.isLocked ? "unlock" : "lock";
-      console.log(`Making ${endpoint} request for estimate ${effectiveEstimateId}`);
       const data = await apiRequest(`/api/estimates/${effectiveEstimateId}/${endpoint}`, "POST");
-      console.log(`${endpoint} response:`, data);
       return data;
     },
     onSuccess: (updatedEstimate: Estimate) => {
-      console.log("Lock mutation success, invalidating queries...");
-      console.log("Updated estimate:", updatedEstimate);
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({
@@ -1965,7 +1916,6 @@ export default function EstimateDetail() {
 
   // Handlers for inline cell editing
   const handleCellEdit = (item: EstimateItem, field: string) => {
-    console.log('[CELL EDIT] Attempting to edit field:', field, 'for item:', item.id);
     
     if (estimate?.isLocked) {
       toast({
@@ -1976,7 +1926,6 @@ export default function EstimateDetail() {
       return;
     }
     
-    console.log('[CELL EDIT] Setting editing cell');
     setEditingCell({ itemId: item.id, field });
     
     // Set initial value based on field type
@@ -3465,9 +3414,6 @@ export default function EstimateDetail() {
     const pricingValues = calculatePricingValues(item);
     const cellKey = `${item.id}-${columnId}`;
     
-    if (columnId === 'item') {
-      console.log('[RENDER CELL] Rendering item cell for:', item.id, 'isEditing:', isEditing, 'isLocked:', isLocked);
-    }
 
     switch (columnId) {
       case 'costCode':
@@ -3514,7 +3460,6 @@ export default function EstimateDetail() {
         const isCollapsed = collapsedItems.has(item.id);
         const isSubItem = !!item.parentItemId;
         const indentClass = isSubItem ? 'pl-16' : 'pl-8';
-        console.log(`[ITEM ${item.name}] isSubItem:`, isSubItem, 'indentClass:', indentClass, '(pl-8=32px, pl-16=64px)');
         
         if (isEditing) {
           return (

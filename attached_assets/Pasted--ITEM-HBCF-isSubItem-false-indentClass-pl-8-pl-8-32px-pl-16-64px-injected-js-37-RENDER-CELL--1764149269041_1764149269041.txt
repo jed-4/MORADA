@@ -1,0 +1,83 @@
+[ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: 6fc2a344-c1ec-4550-932b-f955d4519146 isEditing: false isLocked: false
+injected.js:37 [ITEM HBCF] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: e89bbde3-8d88-4fdf-a6e5-93d9b3783c7f isEditing: false isLocked: false
+injected.js:37 [ITEM Labour - Demolition] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
