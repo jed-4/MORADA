@@ -1,0 +1,310 @@
+14Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.Understand this error
+ed1e693c96a75807.js:2 Unrecognized feature: 'ambient-light-sensor'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'battery'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'execution-while-not-rendered'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'execution-while-out-of-viewport'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'layout-animations'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'legacy-image-formats'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'navigation-override'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'oversized-images'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'publickey-credentials'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'speaker-selection'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'unoptimized-images'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'unsized-media'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Unrecognized feature: 'pointer-lock'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Allow attribute will take precedence over 'allowfullscreen'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+ed1e693c96a75807.js:2 Allow attribute will take precedence over 'allowpaymentrequest'.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2Understand this warning
+content_script.js:1 Uncaught TypeError: Cannot read properties of undefined (reading 'control')
+    at content_script.js:1:422999
+    at Array.some (<anonymous>)
+    at shouldOfferCompletionListForField (content_script.js:1:422984)
+    at elementWasFocused (content_script.js:1:423712)
+    at HTMLDocument.focusInEventHandler (content_script.js:1:423069)
+(anonymous) @ content_script.js:1
+shouldOfferCompletionListForField @ content_script.js:1
+elementWasFocused @ content_script.js:1
+focusInEventHandler @ content_script.js:1Understand this error
+47content_script.js:1 Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'control')
+    at content_script.js:1:422999
+    at Array.some (<anonymous>)
+    at shouldOfferCompletionListForField (content_script.js:1:422984)
+    at processInputEvent (content_script.js:1:426332)
+(anonymous) @ content_script.js:1
+shouldOfferCompletionListForField @ content_script.js:1
+processInputEvent @ content_script.js:1Understand this error
+2content_script.js:1 Uncaught TypeError: Cannot read properties of undefined (reading 'control')
+    at content_script.js:1:422999
+    at Array.some (<anonymous>)
+    at shouldOfferCompletionListForField (content_script.js:1:422984)
+    at elementWasFocused (content_script.js:1:423712)
+    at HTMLDocument.focusInEventHandler (content_script.js:1:423069)
+(anonymous) @ content_script.js:1
+shouldOfferCompletionListForField @ content_script.js:1
+elementWasFocused @ content_script.js:1
+focusInEventHandler @ content_script.js:1Understand this error
+222content_script.js:1 Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'control')
+    at content_script.js:1:422999
+    at Array.some (<anonymous>)
+    at shouldOfferCompletionListForField (content_script.js:1:422984)
+    at processInputEvent (content_script.js:1:426332)
+(anonymous) @ content_script.js:1
+shouldOfferCompletionListForField @ content_script.js:1
+processInputEvent @ content_script.js:1Understand this error
+stallwart.build.js:1 stallwart: failed ping 1
+stallwart.build.js:1 stallwart: failed ping 2
+stallwart.build.js:1 stallwart: failed ping 3
+stallwart.build.js:1 stallwart: failed ping 4
+stallwart.build.js:1 stallwart: failed ping 5
+stallwart.build.js:1 stallwart: session stalled
+anchor?ar=1&k=6Ldqhw…jQ0Mw..&hl=en&v=…:1 Uncaught (in promise) Timeout (o)Understand this error
+sp.replit.com/v1/m:1  Failed to load resource: net::ERR_NETWORK_CHANGEDUnderstand this error
+cff42f3af3781237.js:2 Error sending segment performance metrics TypeError: Failed to fetch
+    at cff42f3af3781237.js:2:106527
+    at o (sdk.min.js:1:23763)
+    at t.<anonymous> (remote-metrics.ts:138:12)
+    at tslib.es6.js:103:23
+    at Object.next (tslib.es6.js:108:37)
+    at tslib.es6.js:80:8
+    at new Promise (<anonymous>)
+    at u (tslib.es6.js:72:27)
+    at t.send (sdk.min.js:1:22021)
+    at t.<anonymous> (remote-metrics.ts:125:16)
+    at tslib.es6.js:103:23
+    at Object.next (tslib.es6.js:108:37)
+    at tslib.es6.js:80:8
+    at new Promise (<anonymous>)
+    at u (tslib.es6.js:72:27)
+    at t.flush (sdk.min.js:1:21754)
+    at l (remote-metrics.ts:83:14)
+    at o (cff42f3af3781237.js:2:98665)
+(anonymous) @ cff42f3af3781237.js:2Understand this error
+/data/repls/f6c0d5f3-bcae-4964-ad47-5aab092fe0d5/get_connection_metadata:1  Failed to load resource: net::ERR_NETWORK_CHANGEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=2f034bf6-2590-4fa1-a7f2-8b988b12635c:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=b5483840-bf87-40e2-9ea7-dcb27d916782:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78%2Cretry_count%3A1%2Cretry_after%3A0&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=9dc5968c-b3a6-4935-b97d-343fb436c474:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78%2Cretry_count%3A1%2Cretry_after%3A0&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=35fdd09c-c144-42bf-aeca-6eacbdbab80e:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+events.launchdarkly.com/events/bulk/62b35a865152ab14c5942820:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+events.launchdarkly.com/events/bulk/62b35a865152ab14c5942820:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78%2Cretry_count%3A2%2Cretry_after%3A0&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=ceb4d008-2e23-41bb-b15f-23a23f06a17c:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78%2Cretry_count%3A2%2Cretry_after%3A0&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=4e26ec58-6278-4681-bb90-1086f8e01700:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78%2Cretry_count%3A3%2Cretry_after%3A0&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=a10295bd-1dc2-427a-8184-1005898e9712:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78%2Cretry_count%3A3%2Cretry_after%3A0&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=d41c2795-40d0-48a3-a3fe-721350f0696a:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTEDUnderstand this error
+ingest.app.coframe.com/ingest/v2/batched_events/68c9ad4d4cddb58cf3a1f93d/:1  Failed to load resource: net::ERR_NETWORK_CHANGEDUnderstand this error
+ingest.app.coframe.com/ingest/v2/batched_events/68c9ad4d4cddb58cf3a1f93d/:1  Failed to load resource: net::ERR_NETWORK_CHANGEDUnderstand this error
+analytics.google.com/g/collect?v=2&tid=G-MPJY3F1YEL&gtm=45je5bi1v9135634466za200&_p=1764139905867&gcd=13l3l3l3l2l1&npa=0&dma=0&ul=en-gb&sr=1920x1080&cid=441015489.1761593573&ecid=1601467475&ir=1&uaa=arm&uab=64&uafvl=Chromium%3B142.0.7444.176%7CGoogle%2520Chrome%3B142.0.7444.176%7CNot_A%2520Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=15.6.1&uaw=0&are=1&frm=0&pscdl=&_eu=EBAIAAQ&tag_exp=103116026~103200004~104527907~104528501~104684208~104684211~115583767~115938466~115938468~116184927~116184929~116217636~116217638&dl=https%3A%2F%2Freplit.com%2F%40jed39%2FBuildpro&dp=%2F%40jed39%2FBuildpro&dt=replEnvironmentDesktop&sid=1764138971&sct=14&seg=1&_tu=wAQ&_s=26&tfd=2027204:1  Failed to load resource: net::ERR_NETWORK_CHANGEDUnderstand this error
+cff42f3af3781237.js:2 task queue exceeded allotted deadline by 34ms
+(anonymous) @ cff42f3af3781237.js:2Understand this warning
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Ace30fc78&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=d3c81b1e-474a-4a9f-9570-7dbb82b9bdc7:1  Failed to load resource: net::ERR_NETWORK_CHANGEDUnderstand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'ambient-light-sensor'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'battery'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'execution-while-not-rendered'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'execution-while-out-of-viewport'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'layout-animations'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'legacy-image-formats'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'navigation-override'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'oversized-images'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'publickey-credentials'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'speaker-selection'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'unoptimized-images'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Unrecognized feature: 'unsized-media'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Allow attribute will take precedence over 'allowfullscreen'.Understand this warning
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=%3Arsq%3A:32 Allow attribute will take precedence over 'allowpaymentrequest'.Understand this warning
+12Loading the stylesheet '<URL>' violates the following Content Security Policy directive: "style-src 'self' 'unsafe-inline'". Note that 'style-src-elem' was not explicitly set, so 'style-src' is used as a fallback. The action has been blocked.Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/:1 Loading the script 'https://replit.com/public/js/replit-dev-banner.js' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline' 'unsafe-eval'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.Understand this error
+ Loading the script 'https://replit.com/public/js/beacon.js' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline' 'unsafe-eval'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.
+onIframeLoad @ f6c0d5f3-bcae-4964-a…2F&id=%3Arsq%3A:142Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/timesheets/active:1  Failed to load resource: the server responded with a status of 404 (Not Found)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/company-settings:1  Failed to load resource: the server responded with a status of 403 (Forbidden)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/notes?projectId=e4a2263e-4e4f-4f59-8f5f-d60cddebc830:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/company-settings:1  Failed to load resource: the server responded with a status of 403 (Forbidden)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/business/projects:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/business/projects:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/business/projects:1 Loading the script 'https://replit.com/public/js/replit-dev-banner.js' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline' 'unsafe-eval'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.Understand this error
+workspace_iframe.html?initialPath=%2Fbusiness%2Fprojects&id=%3Arsq%3A:142 Loading the script 'https://replit.com/public/js/beacon.js' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline' 'unsafe-eval'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.
+onIframeLoad @ workspace_iframe.html?initialPath=%2Fbusiness%2Fprojects&id=%3Arsq%3A:142Understand this error
+injected.js:37 [BusinessProjects] Fetching user view preferences...
+injected.js:37 [BusinessProjects] userPreferences changed: undefined
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/timesheets/active:1  Failed to load resource: the server responded with a status of 404 (Not Found)Understand this error
+f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/company-settings:1  Failed to load resource: the server responded with a status of 403 (Forbidden)Understand this error
+injected.js:37 Socket connected
+injected.js:37 [BusinessProjects] Preferences fetch response status: 200
+injected.js:37 [BusinessProjects] Preferences fetched successfully: Object
+injected.js:37 [BusinessProjects] userPreferences changed: Object
+injected.js:37 [BusinessProjects] Applying loaded preferences
+injected.js:37 [BusinessProjects] Debounced save triggered
+injected.js:37 [BusinessProjects] Saving view preferences: Object
+injected.js:37 [BusinessProjects] Preferences saved successfully
+102injected.js:37 Warning: Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render.
+    at EstimateDetail (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/pages/EstimateDetail.tsx:782:62)
+    at Route (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:206:16)
+    at Switch (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:262:17)
+    at Router (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=BIWc_Tdtrw-GMt3vZEPzd:91:20)
+    at main
+    at div
+    at div
+    at div
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at SidebarProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at SocketProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/lib/socket.tsx:22:34)
+    at ProjectProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ProjectContext.tsx:25:35)
+    at ThemeProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ThemeContext.tsx:25:3)
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at AuthWrapper (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=BIWc_Tdtrw-GMt3vZEPzd:812:48)
+    at QueryClientProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ae993647:2805:3)
+    at App
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+printWarning @ chunk-XQLYTHWV.js?v=ae993647:521
+error @ chunk-XQLYTHWV.js?v=ae993647:505
+checkForNestedUpdates @ chunk-XQLYTHWV.js?v=ae993647:19665
+scheduleUpdateOnFiber @ chunk-XQLYTHWV.js?v=ae993647:18533
+dispatchSetState @ chunk-XQLYTHWV.js?v=ae993647:12403
+setOnUndo @ useUndoStack.ts:81
+(anonymous) @ EstimateDetail.tsx:762
+commitHookEffectListMount @ chunk-XQLYTHWV.js?v=ae993647:16915
+commitPassiveMountOnFiber @ chunk-XQLYTHWV.js?v=ae993647:18156
+commitPassiveMountEffects_complete @ chunk-XQLYTHWV.js?v=ae993647:18129
+commitPassiveMountEffects_begin @ chunk-XQLYTHWV.js?v=ae993647:18119
+commitPassiveMountEffects @ chunk-XQLYTHWV.js?v=ae993647:18109
+flushPassiveEffectsImpl @ chunk-XQLYTHWV.js?v=ae993647:19490
+flushPassiveEffects @ chunk-XQLYTHWV.js?v=ae993647:19447
+(anonymous) @ chunk-XQLYTHWV.js?v=ae993647:19328
+workLoop @ chunk-XQLYTHWV.js?v=ae993647:197
+flushWork @ chunk-XQLYTHWV.js?v=ae993647:176
+performWorkUntilDeadline @ chunk-XQLYTHWV.js?v=ae993647:384Understand this error
+injected.js:214  GET https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/api/company-settings 403 (Forbidden)
