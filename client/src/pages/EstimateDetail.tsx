@@ -131,6 +131,32 @@ interface EstimateDetailParams {
   projectId?: string;
 }
 
+// Column configuration type - defined outside component to avoid re-creation
+type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
+
+// Default columns - defined outside component to maintain stable reference
+const DEFAULT_COLUMNS: ColumnConfig[] = [
+  { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 120 },
+  { id: 'item', label: 'Item', visible: true, widthPx: 180 },
+  { id: 'description', label: 'Description', visible: true, widthPx: 220 },
+  { id: 'status', label: 'Status', visible: true, widthPx: 100 },
+  { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
+  { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 100 },
+  { id: 'allowance', label: 'Allowance', visible: true, widthPx: 80 },
+  { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
+  { id: 'wastage', label: 'Waste', visible: true, widthPx: 70 },
+  { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
+  { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
+  { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
+  { id: 'builderCost', label: "Builder's Cost ex Tax", visible: true, widthPx: 150 },
+  { id: 'builderCostIncTax', label: "Builder's Cost inc Tax", visible: true, widthPx: 150 },
+  { id: 'markup', label: 'Markup %', visible: true, widthPx: 100 },
+  { id: 'clientPriceExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
+  { id: 'clientTax', label: 'Tax', visible: true, widthPx: 100 },
+  { id: 'clientPriceIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
+  { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
+];
+
 // Sortable Row Component for drag & drop
 interface SortableRowProps {
   id: string;
@@ -582,33 +608,14 @@ export default function EstimateDetail() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
-  // Column configuration state
-  type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
-  const defaultColumns: ColumnConfig[] = [
-    { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 120 },
-    { id: 'item', label: 'Item', visible: true, widthPx: 180 },
-    { id: 'description', label: 'Description', visible: true, widthPx: 220 },
-    { id: 'status', label: 'Status', visible: true, widthPx: 100 },
-    { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
-    { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 100 },
-    { id: 'allowance', label: 'Allowance', visible: true, widthPx: 80 },
-    { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
-    { id: 'wastage', label: 'Waste', visible: true, widthPx: 70 },
-    { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
-    { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
-    { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
-    { id: 'builderCost', label: "Builder's Cost ex Tax", visible: true, widthPx: 150 },
-    { id: 'builderCostIncTax', label: "Builder's Cost inc Tax", visible: true, widthPx: 150 },
-    { id: 'markup', label: 'Markup %', visible: true, widthPx: 100 },
-    { id: 'clientPriceExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
-    { id: 'clientTax', label: 'Tax', visible: true, widthPx: 100 },
-    { id: 'clientPriceIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
-    { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
-  ];
-  const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
+  // Column configuration state - use lazy initializer to deep clone DEFAULT_COLUMNS
+  const [columns, setColumns] = useState<ColumnConfig[]>(() => 
+    DEFAULT_COLUMNS.map(col => ({ ...col }))
+  );
 
-  // Track if preferences have been loaded
+  // Track if preferences have been loaded and if we're currently applying them
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const isApplyingPreferencesRef = React.useRef(false);
 
   // Load user view preferences (columns + filters)
   const { data: userPreferences, isError: preferencesError } = useQuery({
@@ -639,30 +646,40 @@ export default function EstimateDetail() {
   useEffect(() => {
     console.log('[EstimateDetail] userPreferences changed:', userPreferences);
     if (userPreferences?.preferences) {
+      // Set guard to prevent auto-save from triggering during preference application
+      isApplyingPreferencesRef.current = true;
+      
       const prefs = userPreferences.preferences;
       console.log('[EstimateDetail] Applying loaded preferences:', prefs);
       if (prefs.columns) {
         console.log('[EstimateDetail] Setting columns from preferences:', prefs.columns);
-        // Merge with defaults to handle new columns
+        // Merge with defaults to handle new columns - always deep clone to avoid shared mutations
         const savedColumnIds = new Set((prefs.columns as ColumnConfig[]).map(col => col.id));
-        const newColumns = defaultColumns.filter(col => !savedColumnIds.has(col.id));
+        const newColumns = DEFAULT_COLUMNS.filter(col => !savedColumnIds.has(col.id));
         if (newColumns.length > 0) {
-          const mergedColumns = [...defaultColumns];
+          // Deep clone DEFAULT_COLUMNS and merge with saved preferences
+          const mergedColumns = DEFAULT_COLUMNS.map(col => ({ ...col }));
           (prefs.columns as ColumnConfig[]).forEach((savedCol) => {
             const index = mergedColumns.findIndex(col => col.id === savedCol.id);
             if (index !== -1) {
-              mergedColumns[index] = savedCol;
+              mergedColumns[index] = { ...savedCol };
             }
           });
           setColumns(mergedColumns);
         } else {
-          setColumns(prefs.columns as ColumnConfig[]);
+          // Deep clone the saved columns to avoid reference issues
+          setColumns((prefs.columns as ColumnConfig[]).map(col => ({ ...col })));
         }
       }
       if (prefs.filterType) setFilterType(prefs.filterType);
       if (prefs.filterStatus) setFilterStatus(prefs.filterStatus);
       if (prefs.filterGroup) setFilterGroup(prefs.filterGroup);
-      setPreferencesLoaded(true);
+      
+      // Use requestAnimationFrame to ensure state updates have settled before clearing guard
+      requestAnimationFrame(() => {
+        isApplyingPreferencesRef.current = false;
+        setPreferencesLoaded(true);
+      });
     } else if (userPreferences === null || preferencesError) {
       console.log('[EstimateDetail] No saved preferences found, using defaults');
       setPreferencesLoaded(true);
@@ -1434,8 +1451,19 @@ export default function EstimateDetail() {
 
   // Auto-save preferences when columns or filters change (after initial load)
   useEffect(() => {
+    // Skip save if we're currently applying loaded preferences (prevents infinite loop)
+    if (isApplyingPreferencesRef.current) {
+      console.log('[EstimateDetail] Skipping save - applying preferences');
+      return;
+    }
+    
     if (preferencesLoaded && effectiveEstimateId && !isNewEstimate && !resizingColumn) {
       const timer = setTimeout(() => {
+        // Double-check guard hasn't been set during the debounce period
+        if (isApplyingPreferencesRef.current) {
+          console.log('[EstimateDetail] Skipping save - guard active during debounce');
+          return;
+        }
         console.log('[EstimateDetail] Debounced save triggered');
         saveViewPreferencesMutation.mutate({
           columns,
