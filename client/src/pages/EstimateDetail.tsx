@@ -2816,14 +2816,21 @@ export default function EstimateDetail() {
   };
 
   // Helper function to render an item row with its sub-items - CSS Grid based
-  const renderItemWithSubItems = (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string) => {
+  // Accepts optional visibleCols parameter to ensure consistency with header columns
+  const renderItemWithSubItems = (
+    item: EstimateItem, 
+    groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, 
+    gridTemplate?: string,
+    visibleCols?: ColumnConfig[]
+  ) => {
     const subItems = getSubItems(item.id);
     const isCollapsed = collapsedItems.has(item.id);
     const isLocked = estimate?.isLocked;
     const isInGroup = groupContext?.isInGroup || false;
     const isLastInGroup = groupContext?.isLastInGroup || false;
     
-    const visibleColumns = columns.filter(col => col.visible);
+    // Use passed visibleCols for consistency, fallback to filtering columns
+    const visibleColumns = visibleCols || columns.filter(col => col.visible);
     
     // Generate grid template if not provided
     const effectiveGridTemplate = gridTemplate || `32px 24px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
@@ -2991,7 +2998,7 @@ export default function EstimateDetail() {
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
-            {columns.filter(col => col.visible).map(column => {
+            {visibleColumns.map(column => {
               const cell = renderCell(subItem, column.id);
               return React.cloneElement(cell as React.ReactElement, { key: `${subItem.id}-${column.id}` });
             })}
@@ -4571,7 +4578,7 @@ export default function EstimateDetail() {
                             {ungroupedItems.length > 0 && (
                               <Card className="rounded-xl overflow-visible" style={{ minWidth: `${tableWidth}px` }}>
                                 <div role="grid" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
-                                  {ungroupedItems.map((item) => renderItemWithSubItems(item, undefined, gridTemplate))}
+                                  {ungroupedItems.map((item) => renderItemWithSubItems(item, undefined, gridTemplate, visibleCols))}
                                 </div>
                               </Card>
                             )}
@@ -4585,6 +4592,7 @@ export default function EstimateDetail() {
                                 columns={columns}
                                 tableWidth={tableWidth}
                                 gridTemplate={gridTemplate}
+                                visibleCols={visibleCols}
                                 handleToggleGroupCollapse={handleToggleGroupCollapse}
                                 renderItemRow={renderItemWithSubItems}
                                 onDeleteGroup={(groupId) => {

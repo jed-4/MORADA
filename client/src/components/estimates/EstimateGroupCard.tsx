@@ -25,14 +25,17 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { EstimateGroup, EstimateItem } from "@shared/schema";
 
+type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
+
 interface EstimateGroupCardProps {
   group: EstimateGroup;
   groupedItems: Record<string, EstimateItem[]>;
-  columns: Array<{ id: string; label: string; visible: boolean; widthPx: number }>;
+  columns: ColumnConfig[];
   tableWidth: number;
   gridTemplate?: string;
+  visibleCols?: ColumnConfig[];
   handleToggleGroupCollapse: (id: string, currentState: boolean) => void;
-  renderItemRow: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string) => React.ReactNode;
+  renderItemRow: (item: EstimateItem, groupContext?: { isInGroup?: boolean; isLastInGroup?: boolean }, gridTemplate?: string, visibleCols?: ColumnConfig[]) => React.ReactNode;
   onDeleteGroup: (groupId: string) => void;
   onEditGroup: (groupId: string) => void;
   onDuplicateGroup: (groupId: string) => void;
@@ -63,6 +66,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   columns,
   tableWidth,
   gridTemplate: parentGridTemplate,
+  visibleCols: parentVisibleCols,
   handleToggleGroupCollapse,
   renderItemRow,
   onDeleteGroup,
@@ -106,8 +110,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const isExpanded = !group.isCollapsed;
   const groupItems = groupedItems[group.id] || [];
   
-  // Generate CSS Grid template
-  const visibleCols = columns.filter(col => col.visible);
+  // Use passed visibleCols for consistency with parent, fallback to filtering columns
+  const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
   const gridTemplate = parentGridTemplate || `32px 24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-10 px-2 flex items-center text-sm overflow-hidden";
 
@@ -304,7 +308,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             >
               {groupItems.map((item, index, array) => {
                 const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
-                return renderItemRow(item, { isInGroup: true, isLastInGroup }, gridTemplate);
+                return renderItemRow(item, { isInGroup: true, isLastInGroup }, gridTemplate, visibleCols);
               })}
             </div>
           )}
@@ -318,6 +322,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 columns={columns}
                 tableWidth={tableWidth}
                 gridTemplate={gridTemplate}
+                visibleCols={visibleCols}
                 handleToggleGroupCollapse={handleToggleGroupCollapse}
                 renderItemRow={renderItemRow}
                 onDeleteGroup={onDeleteGroup}
