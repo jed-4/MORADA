@@ -195,6 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notes = await storage.getNotes(effectiveProjectId, companyId);
       res.json(notes);
     } catch (error) {
+      console.error("[Notes API] Error fetching notes:", error);
       res.status(500).json({ error: "Failed to fetch notes" });
     }
   });

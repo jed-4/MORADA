@@ -6046,76 +6046,35 @@ export class DbStorage implements IStorage {
     }
   }
   async getNotes(projectId?: string | null, companyId?: string): Promise<Note[]> {
-    // Build query to join with projects table for company filtering
-    let query = db
-      .select({
-        id: schema.notes.id,
-        companyId: schema.notes.companyId,
-        title: schema.notes.title,
-        content: schema.notes.content,
-        contentHtml: schema.notes.contentHtml,
-        contentText: schema.notes.contentText,
-        category: schema.notes.category,
-        priority: schema.notes.priority,
-        author: schema.notes.author,
-        ownerId: schema.notes.ownerId,
-        ownerName: schema.notes.ownerName,
-        visibility: schema.notes.visibility,
-        pinned: schema.notes.pinned,
-        customFields: schema.notes.customFields,
-        projectId: schema.notes.projectId,
-        type: schema.notes.type,
-        status: schema.notes.status,
-        assigneeId: schema.notes.assigneeId,
-        assigneeName: schema.notes.assigneeName,
-        dueDate: schema.notes.dueDate,
-        completedAt: schema.notes.completedAt,
-        tags: schema.notes.tags,
-        labels: schema.notes.labels,
-        parentTaskId: schema.notes.parentTaskId,
-        subtaskOrder: schema.notes.subtaskOrder,
-        recurringSettings: schema.notes.recurringSettings,
-        recurringParentId: schema.notes.recurringParentId,
-        templateId: schema.notes.templateId,
-        createdAt: schema.notes.createdAt,
-        updatedAt: schema.notes.updatedAt,
-      })
-      .from(schema.notes)
-      .leftJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id));
-
-    const conditions = [eq(schema.notes.type, "note")];
-    
-    // Filter by specific project if provided
-    // null means business/company-wide notes (projectId IS NULL)
-    // undefined means all notes (no project filter)
-    if (projectId === null) {
-      conditions.push(isNull(schema.notes.projectId));
+    try {
+      // Simple query without join - filter by companyId on notes table
+      const conditions: any[] = [eq(schema.notes.type, "note")];
+      
+      // Filter by specific project if provided
+      // null means business/company-wide notes (projectId IS NULL)
+      // undefined means all notes (no project filter)
+      if (projectId === null) {
+        conditions.push(isNull(schema.notes.projectId));
+      } else if (projectId !== undefined) {
+        conditions.push(eq(schema.notes.projectId, projectId));
+      }
+      
+      // Always filter by company if provided
       if (companyId) {
         conditions.push(eq(schema.notes.companyId, companyId));
       }
-    } else if (projectId !== undefined) {
-      conditions.push(eq(schema.notes.projectId, projectId));
-      // Project notes are filtered by project's company through join
-      if (companyId) {
-        conditions.push(eq(schema.projects.companyId, companyId));
-      }
-    } else {
-      // Show all notes - filter by company through both direct companyId and project's company
-      if (companyId) {
-        conditions.push(
-          or(
-            eq(schema.notes.companyId, companyId),
-            eq(schema.projects.companyId, companyId)
-          )!
-        );
-      }
+      
+      const notes = await db
+        .select()
+        .from(schema.notes)
+        .where(and(...conditions))
+        .orderBy(desc(schema.notes.createdAt));
+      
+      return notes as Note[];
+    } catch (error) {
+      console.error("Database error in getNotes:", error);
+      return [];
     }
-    
-    const notes = await query
-      .where(conditions.length === 1 ? conditions[0] : and(...conditions))
-      .orderBy(desc(schema.notes.createdAt));
-    
-    return notes as Note[];
   }
   async getNote(id: string, companyId?: string): Promise<Note | undefined> {
     if (!companyId) {
