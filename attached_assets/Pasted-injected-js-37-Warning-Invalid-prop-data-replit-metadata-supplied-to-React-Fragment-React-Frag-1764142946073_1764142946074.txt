@@ -1,0 +1,166 @@
+injected.js:37 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at EstimateGroupCard (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/estimates/EstimateGroupCard.tsx:50:3)
+    at div
+    at SortableContext (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@dnd-kit_sortable.js?v=ae993647:261:5)
+    at div
+    at div
+    at DndContext2 (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-F5Y63KJI.js?v=ae993647:2521:5)
+    at div
+    at div
+    at div
+    at div
+    at div
+    at EstimateDetail (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/pages/EstimateDetail.tsx:786:62)
+    at Route (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:206:16)
+    at Switch (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:262:17)
+    at Router (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=oBl4XrQyiyW4uKYYbC8YQ:91:20)
+    at main
+    at div
+    at div
+    at div
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at SidebarProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at SocketProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/lib/socket.tsx:22:34)
+    at ProjectProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ProjectContext.tsx:25:35)
+    at ThemeProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ThemeContext.tsx:25:3)
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at AuthWrapper (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=oBl4XrQyiyW4uKYYbC8YQ:812:48)
+    at QueryClientProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ae993647:2805:3)
+    at App
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+printWarning @ react_jsx-dev-runtime.js?v=ae993647:64
+error @ react_jsx-dev-runtime.js?v=ae993647:48
+validateFragmentProps @ react_jsx-dev-runtime.js?v=ae993647:796
+jsxWithValidation @ react_jsx-dev-runtime.js?v=ae993647:874
+(anonymous) @ EstimateDetail.tsx:3218
+renderItemWithSubItems @ EstimateDetail.tsx:3217
+(anonymous) @ EstimateGroupCard.tsx:290
+EstimateGroupCard @ EstimateGroupCard.tsx:286
+renderWithHooks @ chunk-XQLYTHWV.js?v=ae993647:11548
+updateFunctionComponent @ chunk-XQLYTHWV.js?v=ae993647:14582
+beginWork @ chunk-XQLYTHWV.js?v=ae993647:15924
+beginWork$1 @ chunk-XQLYTHWV.js?v=ae993647:19753
+performUnitOfWork @ chunk-XQLYTHWV.js?v=ae993647:19198
+workLoopSync @ chunk-XQLYTHWV.js?v=ae993647:19137
+renderRootSync @ chunk-XQLYTHWV.js?v=ae993647:19116
+performConcurrentWorkOnRoot @ chunk-XQLYTHWV.js?v=ae993647:18678
+workLoop @ chunk-XQLYTHWV.js?v=ae993647:197
+flushWork @ chunk-XQLYTHWV.js?v=ae993647:176
+performWorkUntilDeadline @ chunk-XQLYTHWV.js?v=ae993647:384Understand this error
+injected.js:37 [RENDER CELL] Rendering item cell for: f2581d47-7735-4032-8431-72b5794a6b21 isEditing: false isLocked: false
+injected.js:37 [ITEM Tipper Trailer] isSubItem: false indentClass: pl-8 (pl-8=32px, pl-16=64px)
+14injected.js:37 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at EstimateGroupCard (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/estimates/EstimateGroupCard.tsx:50:3)
+    at div
+    at SortableContext (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@dnd-kit_sortable.js?v=ae993647:261:5)
+    at div
+    at div
+    at DndContext2 (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-F5Y63KJI.js?v=ae993647:2521:5)
+    at div
+    at div
+    at div
+    at div
+    at div
+    at EstimateDetail (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/pages/EstimateDetail.tsx:786:62)
+    at Route (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:206:16)
+    at Switch (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:262:17)
+    at Router (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=oBl4XrQyiyW4uKYYbC8YQ:91:20)
+    at main
+    at div
+    at div
+    at div
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at SidebarProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at SocketProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/lib/socket.tsx:22:34)
+    at ProjectProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ProjectContext.tsx:25:35)
+    at ThemeProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ThemeContext.tsx:25:3)
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at AuthWrapper (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=oBl4XrQyiyW4uKYYbC8YQ:812:48)
+    at QueryClientProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ae993647:2805:3)
+    at App
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+(anonymous) @ injected.js:37
+printWarning @ react_jsx-dev-runtime.js?v=ae993647:64
+error @ react_jsx-dev-runtime.js?v=ae993647:48
+validateFragmentProps @ react_jsx-dev-runtime.js?v=ae993647:796
+jsxWithValidation @ react_jsx-dev-runtime.js?v=ae993647:874
+(anonymous) @ EstimateDetail.tsx:3218
+renderItemWithSubItems @ EstimateDetail.tsx:3217
+(anonymous) @ EstimateGroupCard.tsx:290
+EstimateGroupCard @ EstimateGroupCard.tsx:286
+renderWithHooks @ chunk-XQLYTHWV.js?v=ae993647:11548
+updateFunctionComponent @ chunk-XQLYTHWV.js?v=ae993647:14582
+beginWork @ chunk-XQLYTHWV.js?v=ae993647:15924
+beginWork$1 @ chunk-XQLYTHWV.js?v=ae993647:19753
+performUnitOfWork @ chunk-XQLYTHWV.js?v=ae993647:19198
+workLoopSync @ chunk-XQLYTHWV.js?v=ae993647:19137
+renderRootSync @ chunk-XQLYTHWV.js?v=ae993647:19116
+performConcurrentWorkOnRoot @ chunk-XQLYTHWV.js?v=ae993647:18678
+workLoop @ chunk-XQLYTHWV.js?v=ae993647:197
+flushWork @ chunk-XQLYTHWV.js?v=ae993647:176
+performWorkUntilDeadline @ chunk-XQLYTHWV.js?v=ae993647:384Understand this error
+injected.js:37 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at EstimateGroupCard (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/estimates/EstimateGroupCard.tsx:50:3)
+    at div
+    at SortableContext (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@dnd-kit_sortable.js?v=ae993647:261:5)
+    at div
+    at div
+    at DndContext2 (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-F5Y63KJI.js?v=ae993647:2521:5)
+    at div
+    at div
+    at div
+    at div
+    at div
+    at EstimateDetail (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/pages/EstimateDetail.tsx:786:62)
+    at Route (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:206:16)
+    at Switch (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:262:17)
+    at Router (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=oBl4XrQyiyW4uKYYbC8YQ:91:20)
+    at main
+    at div
+    at div
+    at div
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at SidebarProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at SocketProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/lib/socket.tsx:22:34)
+    at ProjectProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ProjectContext.tsx:25:35)
+    at ThemeProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ThemeContext.tsx:25:3)
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at AuthWrapper (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=oBl4XrQyiyW4uKYYbC8YQ:812:48)
+    at QueryClientProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ae993647:2805:3)

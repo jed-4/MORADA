@@ -620,6 +620,7 @@ export default function EstimateDetail() {
   const lastAppliedPreferencesRef = React.useRef<string | null>(null);
 
   // Load user view preferences (columns + filters)
+  // staleTime: Infinity prevents refetching, gcTime keeps data cached
   const { data: userPreferences, isError: preferencesError } = useQuery({
     queryKey: ["/api/user-view-preferences", "estimate_detail"],
     queryFn: async () => {
@@ -642,13 +643,15 @@ export default function EstimateDetail() {
       return data;
     },
     enabled: !!effectiveEstimateId && !isNewEstimate,
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
   });
 
-  // Apply loaded preferences - with deep comparison to prevent infinite loops
-  // This effect only runs when userPreferences changes - not on every render
+  // Apply loaded preferences - runs only once when preferences are first loaded
+  // Uses ref-based guard to ensure it never runs more than once
   useEffect(() => {
-    // Skip if already loaded preferences once
-    if (lastAppliedPreferencesRef.current !== null || preferencesLoaded) {
+    // Skip if already loaded preferences once (ref guard is most reliable)
+    if (lastAppliedPreferencesRef.current !== null) {
       return;
     }
     
@@ -688,7 +691,7 @@ export default function EstimateDetail() {
     }
     
     setPreferencesLoaded(true);
-  }, [userPreferences, preferencesError, preferencesLoaded]);
+  }, [userPreferences, preferencesError]);
 
   // Fetch estimate details
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
