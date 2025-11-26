@@ -45,8 +45,7 @@ export default function AddCostCodeDialog({ open, onOpenChange }: AddCostCodeDia
 
   const createCostCodeMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const response = await apiRequest("/api/cost-codes", "POST", data);
-      return response.json() as Promise<CostCode>;
+      return apiRequest("/api/cost-codes", "POST", data) as Promise<CostCode>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
