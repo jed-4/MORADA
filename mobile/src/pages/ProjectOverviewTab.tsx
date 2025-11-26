@@ -28,6 +28,14 @@ interface Note {
   updatedAt: string;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export function ProjectOverviewTab() {
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
@@ -106,13 +114,19 @@ export function ProjectOverviewTab() {
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="p-4 space-y-4">
         {/* Project Header Card */}
-        <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-xl p-4">
+        <div 
+          className="rounded-xl p-4"
+          style={{ 
+            background: `linear-gradient(to bottom right, ${hexToRgba(currentProject.color || '#6366f1', 0.15)}, ${hexToRgba(currentProject.color || '#6366f1', 0.05)})`,
+            border: `1px solid ${hexToRgba(currentProject.color || '#6366f1', 0.2)}`
+          }}
+        >
           <div className="flex items-start gap-3">
             <div 
               className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: currentProject.color || '#6366f1' }}
+              style={{ backgroundColor: hexToRgba(currentProject.color || '#6366f1', 0.2) }}
             >
-              <Building2 className="w-6 h-6 text-white" />
+              <Building2 className="w-6 h-6" style={{ color: currentProject.color || '#6366f1' }} />
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-bold truncate">{currentProject.name}</h1>
