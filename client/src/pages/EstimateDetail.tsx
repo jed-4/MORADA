@@ -645,35 +645,28 @@ export default function EstimateDetail() {
   });
 
   // Apply loaded preferences - with deep comparison to prevent infinite loops
+  // This effect only runs when userPreferences changes - not on every render
   useEffect(() => {
-    // Deep compare to prevent redundant state updates that cause infinite re-renders
-    const prefsSnapshot = userPreferences?.preferences 
-      ? JSON.stringify(userPreferences.preferences) 
-      : null;
-    
-    if (prefsSnapshot === lastAppliedPreferencesRef.current) {
-      console.log('[EstimateDetail] Preferences unchanged, skipping application');
-      if (!preferencesLoaded && (userPreferences !== undefined || preferencesError)) {
-        setPreferencesLoaded(true);
-      }
+    // Skip if already loaded preferences once
+    if (lastAppliedPreferencesRef.current !== null || preferencesLoaded) {
       return;
     }
     
-    console.log('[EstimateDetail] userPreferences changed:', userPreferences);
+    // Wait for the query to settle
+    if (userPreferences === undefined && !preferencesError) {
+      return;
+    }
+    
+    console.log('[EstimateDetail] Applying preferences for the first time:', userPreferences);
+    
     if (userPreferences?.preferences) {
-      // Set guard to prevent auto-save from triggering during preference application
-      isApplyingPreferencesRef.current = true;
-      lastAppliedPreferencesRef.current = prefsSnapshot;
-      
       const prefs = userPreferences.preferences;
-      console.log('[EstimateDetail] Applying loaded preferences:', prefs);
+      lastAppliedPreferencesRef.current = JSON.stringify(prefs);
+      
       if (prefs.columns) {
-        console.log('[EstimateDetail] Setting columns from preferences:', prefs.columns);
-        // Merge with defaults to handle new columns - always deep clone to avoid shared mutations
         const savedColumnIds = new Set((prefs.columns as ColumnConfig[]).map(col => col.id));
         const newColumns = DEFAULT_COLUMNS.filter(col => !savedColumnIds.has(col.id));
         if (newColumns.length > 0) {
-          // Deep clone DEFAULT_COLUMNS and merge with saved preferences
           const mergedColumns = DEFAULT_COLUMNS.map(col => ({ ...col }));
           (prefs.columns as ColumnConfig[]).forEach((savedCol) => {
             const index = mergedColumns.findIndex(col => col.id === savedCol.id);
@@ -683,24 +676,18 @@ export default function EstimateDetail() {
           });
           setColumns(mergedColumns);
         } else {
-          // Deep clone the saved columns to avoid reference issues
           setColumns((prefs.columns as ColumnConfig[]).map(col => ({ ...col })));
         }
       }
       if (prefs.filterType) setFilterType(prefs.filterType);
       if (prefs.filterStatus) setFilterStatus(prefs.filterStatus);
       if (prefs.filterGroup) setFilterGroup(prefs.filterGroup);
-      
-      // Use requestAnimationFrame to ensure state updates have settled before clearing guard
-      requestAnimationFrame(() => {
-        isApplyingPreferencesRef.current = false;
-        setPreferencesLoaded(true);
-      });
-    } else if (userPreferences === null || preferencesError) {
+    } else {
       console.log('[EstimateDetail] No saved preferences found, using defaults');
-      lastAppliedPreferencesRef.current = null;
-      setPreferencesLoaded(true);
+      lastAppliedPreferencesRef.current = 'none';
     }
+    
+    setPreferencesLoaded(true);
   }, [userPreferences, preferencesError, preferencesLoaded]);
 
   // Fetch estimate details
