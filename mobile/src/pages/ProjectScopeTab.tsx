@@ -149,9 +149,27 @@ export function ProjectScopeTab() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-16 px-6">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#bba7db]/10 flex items-center justify-center">
+              <Plus className="w-8 h-8 text-[#bba7db]" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">No Scope Items Yet</h3>
+            <p className="text-muted-foreground text-sm mb-6">
+              Add scope items to track project requirements, selections, and specifications.
+            </p>
+            <button
+              onClick={() => setIsAddOpen(true)}
+              className="inline-flex items-center gap-2 bg-[#bba7db] text-white px-4 py-2 rounded-lg font-medium"
+              data-testid="button-add-first-scope"
+            >
+              <Plus className="w-4 h-4" />
+              Add First Scope Item
+            </button>
+          </div>
         ) : filteredStageNames.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No scope items found</p>
+            <p className="text-muted-foreground">No matching items found</p>
           </div>
         ) : (
           <div className="space-y-2">
