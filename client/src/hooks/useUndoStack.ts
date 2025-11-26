@@ -68,7 +68,12 @@ export function useUndoStack(maxStackSize: number = 20) {
   }, [undoStack, popAction]);
 
   // Callback to handle undo action
-  const [onUndo, setOnUndo] = useState<((action: UndoAction) => void) | null>(null);
+  const [onUndo, setOnUndoState] = useState<((action: UndoAction) => void) | null>(null);
+  
+  // Stable reference for setOnUndo to prevent infinite loops
+  const setOnUndo = useCallback((callback: (action: UndoAction) => void) => {
+    setOnUndoState(() => callback);
+  }, []);
 
   return {
     pushAction,
@@ -78,6 +83,6 @@ export function useUndoStack(maxStackSize: number = 20) {
     canUndo: undoStack.length > 0,
     showUndoToast,
     lastAction,
-    setOnUndo: (callback: (action: UndoAction) => void) => setOnUndo(() => callback),
+    setOnUndo,
   };
 }

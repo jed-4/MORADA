@@ -107,6 +107,9 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     .filter(sg => sg.parentGroupId === group.id)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
+  const isExpanded = !group.isCollapsed;
+  const groupItems = groupedItems[group.id] || [];
+
   return (
     <Card 
       ref={setNodeRef}
@@ -114,6 +117,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       className={`rounded-xl overflow-visible ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
+      {/* Group Header Table */}
       <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
         <colgroup>
           <col style={{ width: '32px' }} />
@@ -125,7 +129,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         </colgroup>
         <TableBody>
           {/* Group header row */}
-          <TableRow className="h-9 bg-muted/30">
+          <TableRow className="h-10 bg-muted/30 hover:bg-muted/50 transition-colors">
             <TableCell className="py-1 text-xs font-semibold" style={{ width: '32px' }}>
               <div
                 {...attributes}
@@ -282,43 +286,66 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
               </DropdownMenu>
             </TableCell>
           </TableRow>
-          
-          {/* Group items */}
-          {!group.isCollapsed && groupedItems[group.id]?.map((item, index, array) => {
-            const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
-            return renderItemRow(item, { isInGroup: true, isLastInGroup });
-          })}
         </TableBody>
       </Table>
 
-      {!group.isCollapsed && childSubgroups.map((childGroup) => (
-        <div key={`subgroup-${childGroup.id}`} className="border-t">
-          <EstimateGroupCard
-            group={childGroup}
-            groupedItems={groupedItems}
-            columns={columns}
-            tableWidth={tableWidth}
-            handleToggleGroupCollapse={handleToggleGroupCollapse}
-            renderItemRow={renderItemRow}
-            onDeleteGroup={onDeleteGroup}
-            onEditGroup={onEditGroup}
-            onDuplicateGroup={onDuplicateGroup}
-            onCopyGroup={onCopyGroup}
-            onAddSubgroup={onAddSubgroup}
-            onAddItemToGroup={onAddItemToGroup}
-            isLocked={isLocked}
-            selectedItems={selectedItems}
-            selectedGroups={selectedGroups}
-            onToggleGroupSelection={onToggleGroupSelection}
-            nestingLevel={nestingLevel + 1}
-            groupTotals={groupTotals}
-            formatCurrency={formatCurrency}
-            subgroups={subgroups}
-            allGroups={allGroups}
-            onCreateFrom={onCreateFrom}
-          />
+      {/* Animated Collapsible Content - CSS Grid animation for smooth expand/collapse */}
+      <div 
+        className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+        style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          {/* Group items table */}
+          {groupItems.length > 0 && (
+            <Table style={{ tableLayout: 'fixed', width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
+              <colgroup>
+                <col style={{ width: '32px' }} />
+                <col style={{ width: '24px' }} />
+                {columns.filter(col => col.visible).map(column => (
+                  <col key={column.id} style={{ width: `${column.widthPx}px`, minWidth: `${column.widthPx}px` }} />
+                ))}
+                <col style={{ width: '80px' }} />
+              </colgroup>
+              <TableBody>
+                {groupItems.map((item, index, array) => {
+                  const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
+                  return renderItemRow(item, { isInGroup: true, isLastInGroup });
+                })}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* Child subgroups */}
+          {childSubgroups.map((childGroup) => (
+            <div key={`subgroup-${childGroup.id}`} className="border-t">
+              <EstimateGroupCard
+                group={childGroup}
+                groupedItems={groupedItems}
+                columns={columns}
+                tableWidth={tableWidth}
+                handleToggleGroupCollapse={handleToggleGroupCollapse}
+                renderItemRow={renderItemRow}
+                onDeleteGroup={onDeleteGroup}
+                onEditGroup={onEditGroup}
+                onDuplicateGroup={onDuplicateGroup}
+                onCopyGroup={onCopyGroup}
+                onAddSubgroup={onAddSubgroup}
+                onAddItemToGroup={onAddItemToGroup}
+                isLocked={isLocked}
+                selectedItems={selectedItems}
+                selectedGroups={selectedGroups}
+                onToggleGroupSelection={onToggleGroupSelection}
+                nestingLevel={nestingLevel + 1}
+                groupTotals={groupTotals}
+                formatCurrency={formatCurrency}
+                subgroups={subgroups}
+                allGroups={allGroups}
+                onCreateFrom={onCreateFrom}
+              />
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </Card>
   );
 };

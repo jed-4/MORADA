@@ -186,7 +186,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true }:
     <TableRow
       ref={setNodeRef}
       style={style}
-      className={`${className} group ${isDragging ? 'shadow-lg' : ''}`}
+      className={`${className} group hover:bg-muted/50 transition-colors ${isDragging ? 'shadow-lg' : ''}`}
       data-testid={`row-item-${id}`}
     >
       <TableCell className="py-0.5 px-1" style={{ width: '32px' }}>
@@ -3106,8 +3106,8 @@ export default function EstimateDetail() {
     
     const visibleColumns = columns.filter(col => col.visible);
     
-    // Build className for visual containment
-    let itemClassName = "min-h-8";
+    // Build className for visual containment - 40px row height
+    let itemClassName = "h-10";
     if (isInGroup) {
       itemClassName += " item-in-group";
       if (isLastInGroup && subItems.length === 0) {
@@ -3256,7 +3256,7 @@ export default function EstimateDetail() {
     if (!isCollapsed) {
       subItems.forEach(subItem => {
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className="min-h-8 bg-muted/20" isDraggable={!isLocked}>
+          <SortableRow key={subItem.id} id={subItem.id} className="h-10 bg-muted/20" isDraggable={!isLocked}>
             <TableCell className="py-0.5" style={{ width: '24px' }}>
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
@@ -4153,7 +4153,7 @@ export default function EstimateDetail() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       {/* UNIFIED 2-ROW HEADER - MATCHES TASKS */}
       
       {/* Row 1 - Breadcrumb + Actions (36px) */}
@@ -4622,8 +4622,8 @@ export default function EstimateDetail() {
         </div>
       )}
 
-      {/* Main Content - Scrollable area for items table only */}
-      <div className="flex-1 overflow-auto px-4 pb-4">
+      {/* Main Content - Horizontal scroll only, vertical flows naturally */}
+      <div className="flex-1 overflow-x-auto px-4 pb-4">
         <div className="inline-block min-w-full">
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
