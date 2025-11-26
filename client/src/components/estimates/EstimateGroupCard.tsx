@@ -285,11 +285,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           {/* Group items */}
           {!group.isCollapsed && groupedItems[group.id]?.map((item, index, array) => {
             const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
-            return (
-              <React.Fragment key={`item-wrapper-${item.id}`}>
-                {renderItemRow(item, { isInGroup: true, isLastInGroup })}
-              </React.Fragment>
-            );
+            return renderItemRow(item, { isInGroup: true, isLastInGroup });
           })}
         </TableBody>
       </Table>

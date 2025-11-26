@@ -494,11 +494,7 @@ function SortableGroupRow({
       {/* Render items in this group if not collapsed */}
       {!group.isCollapsed && groupedItems[group.id]?.map((item, index, array) => {
         const isLastInGroup = index === array.length - 1 && childSubgroups.length === 0;
-        return (
-          <React.Fragment key={`item-wrapper-${item.id}`}>
-            {renderItemWithSubItems(item, { isInGroup: true, isLastInGroup })}
-          </React.Fragment>
-        );
+        return renderItemWithSubItems(item, { isInGroup: true, isLastInGroup });
       })}
       
       {/* Recursively render child subgroups if not collapsed */}
@@ -3204,11 +3200,10 @@ export default function EstimateDetail() {
             onClick={(e) => e.stopPropagation()}
           />
         </TableCell>
-        {visibleColumns.map(column => (
-          <React.Fragment key={column.id}>
-            {renderCell(item, column.id)}
-          </React.Fragment>
-        ))}
+        {visibleColumns.map(column => {
+          const cell = renderCell(item, column.id);
+          return React.cloneElement(cell as React.ReactElement, { key: `${item.id}-${column.id}` });
+        })}
         <TableCell className="py-0.5" style={{ width: '80px' }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -3323,11 +3318,10 @@ export default function EstimateDetail() {
                 onClick={(e) => e.stopPropagation()}
               />
             </TableCell>
-            {columns.filter(col => col.visible).map(column => (
-              <React.Fragment key={column.id}>
-                {renderCell(subItem, column.id)}
-              </React.Fragment>
-            ))}
+            {columns.filter(col => col.visible).map(column => {
+              const cell = renderCell(subItem, column.id);
+              return React.cloneElement(cell as React.ReactElement, { key: `${subItem.id}-${column.id}` });
+            })}
             <TableCell className="py-0.5" style={{ width: '80px' }}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -3464,11 +3458,12 @@ export default function EstimateDetail() {
     };
   };
 
-  // Render cell based on column ID
+  // Render cell based on column ID - returns keyed TableCell elements
   const renderCell = (item: EstimateItem, columnId: string) => {
     const isEditing = editingCell?.itemId === item.id && editingCell?.field === columnId;
     const isLocked = estimate?.isLocked;
     const pricingValues = calculatePricingValues(item);
+    const cellKey = `${item.id}-${columnId}`;
     
     if (columnId === 'item') {
       console.log('[RENDER CELL] Rendering item cell for:', item.id, 'isEditing:', isEditing, 'isLocked:', isLocked);
@@ -4897,11 +4892,7 @@ export default function EstimateDetail() {
                                     <col style={{ width: '80px' }} />
                                   </colgroup>
                                   <TableBody>
-                                    {ungroupedItems.map((item) => (
-                                      <React.Fragment key={`item-wrapper-${item.id}`}>
-                                        {renderItemWithSubItems(item)}
-                                      </React.Fragment>
-                                    ))}
+                                    {ungroupedItems.map((item) => renderItemWithSubItems(item))}
                                   </TableBody>
                                 </Table>
                               </Card>
