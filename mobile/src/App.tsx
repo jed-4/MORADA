@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Route, Switch, Router } from "wouter";
+import { Route, Switch, Router, Redirect } from "wouter";
 import { queryClient } from "@lib/queryClient";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import { BottomNav } from "@/components/BottomNav";
@@ -23,6 +23,9 @@ function MobileApp() {
               <Route path="/" component={Dashboard} />
               <Route path="/projects" component={Projects} />
               <Route path="/projects/:id/:tab" component={ProjectView} />
+              <Route path="/projects/:id">
+                {(params) => <Redirect to={`/projects/${params.id}/overview`} />}
+              </Route>
               <Route path="/tasks" component={Tasks} />
               <Route path="/timesheets" component={Timesheets} />
               <Route path="/messages" component={Messages} />

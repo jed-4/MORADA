@@ -8050,7 +8050,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) {
         return res.status(401).json({ error: "User not authenticated" });
       }
-      const activeTimesheet = await storage.getActiveTimesheet(req.user.id);
+      const user = (req.user as any).dbUser;
+      if (!user?.id) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
+      const activeTimesheet = await storage.getActiveTimesheet(user.id);
       res.json(activeTimesheet || null);
     } catch (error) {
       console.error("Error fetching active timesheet:", error);
@@ -8063,11 +8067,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) {
         return res.status(401).json({ error: "User not authenticated" });
       }
+      const user = (req.user as any).dbUser;
+      if (!user?.id) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
       const { projectId, costCodeId } = req.body;
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
-      const timesheet = await storage.clockIn(projectId, req.user.id, costCodeId);
+      const timesheet = await storage.clockIn(projectId, user.id, costCodeId);
       res.status(201).json(timesheet);
     } catch (error) {
       console.error("Error clocking in:", error);
@@ -8080,11 +8088,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) {
         return res.status(401).json({ error: "User not authenticated" });
       }
+      const user = (req.user as any).dbUser;
+      if (!user?.id) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
       const { timesheetId } = req.body;
       if (!timesheetId) {
         return res.status(400).json({ error: "timesheetId is required" });
       }
-      const timesheet = await storage.clockOut(timesheetId, req.user.id);
+      const timesheet = await storage.clockOut(timesheetId, user.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }

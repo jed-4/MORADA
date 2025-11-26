@@ -29,8 +29,8 @@ export function ProjectSelector() {
     setCurrentProject(project);
     setIsOpen(false);
     
-    // Keep current tab or default to 'scope'
-    const currentTab = routeParams?.tab || 'scope';
+    // Keep current tab or default to 'overview'
+    const currentTab = routeParams?.tab || 'overview';
     
     // Navigate to new project with same tab
     setLocation(`/projects/${project.id}/${currentTab}`);

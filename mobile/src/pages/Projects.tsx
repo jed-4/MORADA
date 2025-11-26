@@ -85,7 +85,7 @@ export function Projects() {
                 key={project.id}
                 onClick={() => {
                   setCurrentProject(project);
-                  setLocation(`/projects/${project.id}/tasks`);
+                  setLocation(`/projects/${project.id}/overview`);
                 }}
                 className="w-full bg-card rounded-xl p-4 border hover-elevate active-elevate-2 text-left"
                 data-testid={`project-card-${project.id}`}
