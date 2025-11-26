@@ -46,6 +46,7 @@ import ImportCostCodesDialog from "@/components/ImportCostCodesDialog";
 import MergeCostCodeDialog from "@/components/MergeCostCodeDialog";
 import EditCategoryDialog from "@/components/EditCategoryDialog";
 import MergeCategoryDialog from "@/components/MergeCategoryDialog";
+import EditCostCodeDialog from "@/components/EditCostCodeDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
@@ -62,6 +63,8 @@ export default function CostCodes() {
   const [selectedCategoryForEdit, setSelectedCategoryForEdit] = useState<CostCategory | null>(null);
   const [isMergeCategoryOpen, setIsMergeCategoryOpen] = useState(false);
   const [selectedCategoryForMerge, setSelectedCategoryForMerge] = useState<CostCategory | null>(null);
+  const [isEditCostCodeOpen, setIsEditCostCodeOpen] = useState(false);
+  const [selectedCostCodeForEdit, setSelectedCostCodeForEdit] = useState<CostCode | null>(null);
   const [selectedCodeIds, setSelectedCodeIds] = useState<Set<string>>(new Set());
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
@@ -636,7 +639,13 @@ export default function CostCodes() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuItem disabled data-testid={`menu-edit-${code.id}`}>
+                                  <DropdownMenuItem 
+                                    onClick={() => {
+                                      setSelectedCostCodeForEdit(code);
+                                      setIsEditCostCodeOpen(true);
+                                    }}
+                                    data-testid={`menu-edit-${code.id}`}
+                                  >
                                     <Pencil className="h-4 w-4 mr-2" />
                                     Edit
                                   </DropdownMenuItem>
@@ -761,7 +770,13 @@ export default function CostCodes() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem disabled data-testid={`menu-edit-${code.id}`}>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  setSelectedCostCodeForEdit(code);
+                                  setIsEditCostCodeOpen(true);
+                                }}
+                                data-testid={`menu-edit-${code.id}`}
+                              >
                                 <Pencil className="h-4 w-4 mr-2" />
                                 Edit
                               </DropdownMenuItem>
@@ -849,6 +864,11 @@ export default function CostCodes() {
         open={isMergeCategoryOpen} 
         onOpenChange={setIsMergeCategoryOpen} 
         category={selectedCategoryForMerge}
+      />
+      <EditCostCodeDialog
+        open={isEditCostCodeOpen}
+        onOpenChange={setIsEditCostCodeOpen}
+        costCode={selectedCostCodeForEdit}
       />
     </div>
   );
