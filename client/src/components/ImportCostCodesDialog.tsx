@@ -59,8 +59,9 @@ export default function ImportCostCodesDialog({ open, onOpenChange }: ImportCost
         };
       });
 
-      const response = await apiRequest("/api/cost-codes/import", "POST", { items: importData });
-      return response.json();
+      // apiRequest already returns parsed JSON, don't call .json() on it
+      const result = await apiRequest("/api/cost-codes/import", "POST", { items: importData });
+      return result;
     },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-categories"] });
