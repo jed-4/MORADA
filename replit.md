@@ -71,6 +71,25 @@ Preferred communication style: Simple, everyday language.
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos, with distinct UX.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 
+### Mobile App (Capacitor-based)
+- **Framework**: React with Capacitor for native mobile features.
+- **Location**: `/mobile` directory with separate build configuration.
+- **Features Implemented**:
+  - **ProjectTasksTab**: Task list with search, status filters, swipe-to-complete/delete, detail sheet.
+  - **ProjectScopeTab**: Scope stages with collapsible sections, items list, swipe actions, add/view sheets.
+  - **ProjectNotesTab**: Notes list with search, pin/unpin swipe, delete swipe, category filtering.
+  - **ProjectMinutesTab**: Meeting minutes with attendee display, AI summary preview, add/view sheets.
+  - **ProjectDefectsTab**: Defects with priority/status filtering, resolve/delete swipe actions.
+  - **ProjectTimesheetsTab**: Clock in/out functionality, week navigation, time entry management.
+  - **ProjectSiteDiaryTab**: Date navigation with quick date buttons, weather display, entry management.
+- **Shared Components**:
+  - `SwipeableCard`: Touch swipe gestures for left/right actions.
+  - `BottomSheet`: Slide-up sheets for add/edit/detail views.
+  - `PullToRefresh`: Pull-to-refresh for data reloading.
+  - `MobileInput/MobileTextarea/MobileButton`: Mobile-optimized form components.
+- **UX Patterns**: Pull-to-refresh, haptic feedback, FAB for adding items, search/filter chips.
+- **API Pattern**: Uses `/api/projects/:projectId/...` for project-scoped resources.
+
 ## External Dependencies
 
 ### Core UI Libraries
