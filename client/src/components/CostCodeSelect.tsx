@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SearchableSelect, SearchableSelectOption } from "@/components/ui/searchable-select";
-import type { CostCode } from "@shared/schema";
+import type { CostCode, CostCategory } from "@shared/schema";
 
 interface CostCodeSelectProps {
   value?: string;
@@ -28,6 +28,18 @@ export function CostCodeSelect({
     queryKey: ["/api/cost-codes"],
   });
 
+  const { data: categories = [] } = useQuery<CostCategory[]>({
+    queryKey: ["/api/cost-categories"],
+  });
+
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((cat) => {
+      map.set(cat.id, `${cat.code} - ${cat.title}`);
+    });
+    return map;
+  }, [categories]);
+
   const options: SearchableSelectOption[] = useMemo(() => {
     const opts: SearchableSelectOption[] = [];
     
@@ -39,16 +51,16 @@ export function CostCodeSelect({
     }
     
     costCodes.forEach((code) => {
+      const categoryName = code.categoryId ? categoryMap.get(code.categoryId) : undefined;
       opts.push({
         value: code.id,
         label: `${code.code} - ${code.title}`,
-        description: code.categoryId ? undefined : undefined,
-        group: code.categoryId || undefined,
+        group: categoryName || (code.categoryId ? undefined : "Uncategorized"),
       });
     });
     
     return opts;
-  }, [costCodes, allowNone]);
+  }, [costCodes, allowNone, categoryMap]);
 
   const handleValueChange = (newValue: string) => {
     if (newValue === "none") {
