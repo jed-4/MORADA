@@ -613,9 +613,10 @@ export default function EstimateDetail() {
     DEFAULT_COLUMNS.map(col => ({ ...col }))
   );
 
-  // Track if preferences have been loaded and if we're currently applying them
+  // Track if preferences have been loaded and if user has modified any settings
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const isApplyingPreferencesRef = React.useRef(false);
+  const hasUserModifiedRef = React.useRef(false);
 
   // Load user view preferences (columns + filters)
   const { data: userPreferences, isError: preferencesError } = useQuery({
@@ -1449,21 +1450,16 @@ export default function EstimateDetail() {
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
 
-  // Auto-save preferences when columns or filters change (after initial load)
+  // Auto-save preferences when columns or filters change (after user modifies them)
   useEffect(() => {
-    // Skip save if we're currently applying loaded preferences (prevents infinite loop)
-    if (isApplyingPreferencesRef.current) {
-      console.log('[EstimateDetail] Skipping save - applying preferences');
+    // Skip save if user hasn't made any modifications (prevents save on initial load)
+    if (!hasUserModifiedRef.current) {
+      console.log('[EstimateDetail] Skipping save - no user modifications yet');
       return;
     }
     
     if (preferencesLoaded && effectiveEstimateId && !isNewEstimate && !resizingColumn) {
       const timer = setTimeout(() => {
-        // Double-check guard hasn't been set during the debounce period
-        if (isApplyingPreferencesRef.current) {
-          console.log('[EstimateDetail] Skipping save - guard active during debounce');
-          return;
-        }
         console.log('[EstimateDetail] Debounced save triggered');
         saveViewPreferencesMutation.mutate({
           columns,
@@ -2518,6 +2514,7 @@ export default function EstimateDetail() {
 
   // Column visibility toggle handler
   const toggleColumn = (columnId: string) => {
+    hasUserModifiedRef.current = true;
     setColumns(prev => prev.map(col => 
       col.id === columnId ? { ...col, visible: !col.visible } : col
     ));
@@ -2554,7 +2551,8 @@ export default function EstimateDetail() {
     };
 
     const handleMouseUp = () => {
-      // Clear resizing state - this will trigger the database save via debounced useEffect
+      // Mark as user modified and clear resizing state - this will trigger the database save via debounced useEffect
+      hasUserModifiedRef.current = true;
       setResizingColumn(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
@@ -3122,6 +3120,7 @@ export default function EstimateDetail() {
 
   // Column reordering functions (auto-saved via debounced useEffect)
   const moveColumnUp = (columnId: string) => {
+    hasUserModifiedRef.current = true;
     setColumns(prev => {
       const index = prev.findIndex(col => col.id === columnId);
       if (index > 0) {
@@ -3134,6 +3133,7 @@ export default function EstimateDetail() {
   };
 
   const moveColumnDown = (columnId: string) => {
+    hasUserModifiedRef.current = true;
     setColumns(prev => {
       const index = prev.findIndex(col => col.id === columnId);
       if (index < prev.length - 1) {
@@ -4362,9 +4362,9 @@ export default function EstimateDetail() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setFilterType('all')}>All Types</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterType('all'); }}>All Types</DropdownMenuItem>
               {Array.from(new Set(items.map(item => item.type))).map(type => (
-                <DropdownMenuItem key={type} onClick={() => setFilterType(type)}>{type}</DropdownMenuItem>
+                <DropdownMenuItem key={type} onClick={() => { hasUserModifiedRef.current = true; setFilterType(type); }}>{type}</DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -4385,9 +4385,9 @@ export default function EstimateDetail() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setFilterStatus('all')}>All Status</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterStatus('all'); }}>All Status</DropdownMenuItem>
               {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
-                <DropdownMenuItem key={option.key} onClick={() => setFilterStatus(option.key)}>{option.name}</DropdownMenuItem>
+                <DropdownMenuItem key={option.key} onClick={() => { hasUserModifiedRef.current = true; setFilterStatus(option.key); }}>{option.name}</DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -4409,9 +4409,9 @@ export default function EstimateDetail() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setFilterGroup('all')}>All Groups</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterGroup('all'); }}>All Groups</DropdownMenuItem>
                 {groups.map(group => (
-                  <DropdownMenuItem key={group.id} onClick={() => setFilterGroup(group.id)}>{group.name}</DropdownMenuItem>
+                  <DropdownMenuItem key={group.id} onClick={() => { hasUserModifiedRef.current = true; setFilterGroup(group.id); }}>{group.name}</DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
