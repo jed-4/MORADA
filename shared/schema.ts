@@ -861,6 +861,7 @@ export const selections = pgTable("selections", {
   category: text("category"), // "Tiles"
   room: text("room"), // "Kitchen"
   description: text("description"),
+  selectionType: text("selection_type").notNull().default("selection"), // "selection" or "design" - selections are project-specific, design are standard options
   status: text("status").notNull().default("draft"), // "draft" | "pending" | "approved" | "selected"
   deadline: timestamp("deadline"),
   allowance: integer("allowance"), // Budget allowance in cents

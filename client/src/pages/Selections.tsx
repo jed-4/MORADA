@@ -54,6 +54,8 @@ import {
   ChevronDown,
   Eye,
   List,
+  Palette,
+  Boxes,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -165,6 +167,11 @@ export default function Selections() {
   const [editingSelection, setEditingSelection] = useState<Selection | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [groupBy, setGroupBy] = useState<'none' | 'category' | 'room' | 'status'>('none');
+  const [showGroupingMenu, setShowGroupingMenu] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [locationFilter, setLocationFilter] = useState<string>("");
+  const [showSelections, setShowSelections] = useState(true);
+  const [showDesign, setShowDesign] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -260,6 +267,7 @@ export default function Selections() {
       description: "",
       category: "",
       room: "",
+      selectionType: "selection",
       status: "draft",
       deadline: undefined,
       allowance: undefined,
@@ -297,6 +305,7 @@ export default function Selections() {
       description: selection.description || "",
       category: selection.category || "",
       room: selection.room || "",
+      selectionType: (selection as any).selectionType || "selection",
       status: selection.status,
       deadline: selection.deadline || undefined,
       allowance: selection.allowance || undefined,
@@ -305,12 +314,27 @@ export default function Selections() {
     });
   };
 
-  // Filter selections based on search
-  const filteredSelections = (selections || []).filter((selection: Selection) =>
-    selection.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    selection.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    selection.category?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter selections based on search, type toggles, and category/location filters
+  const filteredSelections = (selections || []).filter((selection: Selection) => {
+    // Type filter (showSelections/showDesign)
+    const selectionType = (selection as any).selectionType || 'selection';
+    if (!showSelections && selectionType === 'selection') return false;
+    if (!showDesign && selectionType === 'design') return false;
+    
+    // Search filter
+    const matchesSearch = 
+      selection.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      selection.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      selection.category?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Category filter
+    const matchesCategory = !categoryFilter || selection.category === categoryFilter;
+    
+    // Location filter
+    const matchesLocation = !locationFilter || selection.room === locationFilter;
+    
+    return matchesSearch && matchesCategory && matchesLocation;
+  });
 
   // Group selections based on selected grouping
   const groupedSelections = React.useMemo(() => {
@@ -381,55 +405,171 @@ export default function Selections() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Selections</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage product selections and allowances for {currentProject.name}
-          </p>
+    <div className="flex flex-col h-full bg-background">
+      {/* Row 1 - Breadcrumbs & Add Button (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Project Name (Breadcrumb style) */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            {currentProject.name} / Selections
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-selection-count">
+            {filteredSelections.length} items
+          </Badge>
         </div>
-        <Button 
-          onClick={() => setIsAddingSelection(true)}
-          data-testid="button-add-selection"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Selection
-        </Button>
-      </div>
 
-      {/* Search and Grouping Controls */}
-      <div className="flex items-center gap-4">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-          <Input
-            placeholder="Search selections..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-            data-testid="input-search-selections"
-          />
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <Layers className="w-4 h-4 text-muted-foreground" />
-          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
-            <SelectTrigger className="w-40" data-testid="select-group-by">
-              <SelectValue placeholder="Group by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No Grouping</SelectItem>
-              <SelectItem value="category">Category</SelectItem>
-              <SelectItem value="room">Location</SelectItem>
-              <SelectItem value="status">Status</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Right: Add Selection Button */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setIsAddingSelection(true)}
+            data-testid="button-add-selection"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Selection</span>
+          </button>
         </div>
       </div>
 
-      {/* Selections Grid */}
-      {isLoading ? (
+      {/* Row 2 - Search, Filters & Type Toggles (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search + Filters + Divider + Type Toggles */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-selections"
+            />
+          </div>
+
+          {/* Category Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Category</span>
+                {categoryFilter && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setCategoryFilter("")}>
+                <span className={!categoryFilter ? "font-medium" : ""}>All Categories</span>
+              </DropdownMenuItem>
+              {selectionCategories?.options?.map(option => (
+                <DropdownMenuItem 
+                  key={option.key} 
+                  onClick={() => setCategoryFilter(option.name)}
+                  className={categoryFilter === option.name ? "bg-accent" : ""}
+                >
+                  {option.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Location Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                <span>Location</span>
+                {locationFilter && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setLocationFilter("")}>
+                <span className={!locationFilter ? "font-medium" : ""}>All Locations</span>
+              </DropdownMenuItem>
+              {locationCategories?.options?.map(option => (
+                <DropdownMenuItem 
+                  key={option.key} 
+                  onClick={() => setLocationFilter(option.name)}
+                  className={locationFilter === option.name ? "bg-accent" : ""}
+                >
+                  {option.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Subtle Divider */}
+          <div className="w-px h-4 bg-border mx-1" />
+
+          {/* Selections Toggle */}
+          <button
+            onClick={() => setShowSelections(!showSelections)}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              showSelections 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-toggle-selections"
+          >
+            <Boxes className="w-3 h-3" />
+            <span>Selections</span>
+          </button>
+
+          {/* Design Toggle */}
+          <button
+            onClick={() => setShowDesign(!showDesign)}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              showDesign 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-toggle-design"
+          >
+            <Palette className="w-3 h-3" />
+            <span>Design</span>
+          </button>
+        </div>
+
+        {/* Right: Grouping Toggle */}
+        <DropdownMenu open={showGroupingMenu} onOpenChange={setShowGroupingMenu}>
+          <DropdownMenuTrigger asChild>
+            <button 
+              className={`h-6 w-6 text-xs border rounded-md ${
+                groupBy !== 'none' 
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
+                  : 'hover-elevate'
+              } active-elevate-2 flex items-center justify-center`}
+              data-testid="button-grouping"
+            >
+              <Layers className="w-3 h-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setGroupBy('none')}>
+              <span className={groupBy === 'none' ? "font-medium" : ""}>No Grouping</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setGroupBy('category')}>
+              <span className={groupBy === 'category' ? "font-medium" : ""}>Group by Category</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setGroupBy('room')}>
+              <span className={groupBy === 'room' ? "font-medium" : ""}>Group by Location</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setGroupBy('status')}>
+              <span className={groupBy === 'status' ? "font-medium" : ""}>Group by Status</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto p-4">
+        {/* Selections Grid */}
+        {isLoading ? (
         <div className="space-y-4">
           {[...Array(6)].map((_, i) => (
             <Card key={i} className="animate-pulse">
@@ -491,6 +631,12 @@ export default function Selections() {
                           {/* Title and main badges */}
                           <div className="flex items-center gap-3 flex-wrap">
                             <CardTitle className="text-lg font-semibold">{selection.name}</CardTitle>
+                            {(selection as any).selectionType === 'design' && (
+                              <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                                <Palette className="w-3 h-3 mr-1" />
+                                Design
+                              </Badge>
+                            )}
                             {selection.category && groupBy !== 'category' && (
                               <Badge variant="secondary" className="text-xs">
                                 {selection.category}
@@ -601,6 +747,7 @@ export default function Selections() {
           ))}
         </div>
       )}
+      </div>
 
       {/* Add/Edit Selection Dialog */}
       <Dialog 
@@ -640,30 +787,64 @@ export default function Selections() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-selection-category">
-                          <SelectValue placeholder="Select a category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {selectionCategories?.options?.map((option) => (
-                          <SelectItem key={option.key} value={option.name}>
-                            {option.name}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Category</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-selection-category">
+                            <SelectValue placeholder="Select a category" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {selectionCategories?.options?.map((option) => (
+                            <SelectItem key={option.key} value={option.name}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="selectionType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Type</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value || "selection"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-selection-type">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="selection">
+                            <div className="flex items-center gap-2">
+                              <Boxes className="w-3 h-3" />
+                              <span>Selection</span>
+                            </div>
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                          <SelectItem value="design">
+                            <div className="flex items-center gap-2">
+                              <Palette className="w-3 h-3" />
+                              <span>Design Option</span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <FormField
                 control={form.control}
