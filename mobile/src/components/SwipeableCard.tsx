@@ -69,13 +69,15 @@ export function SwipeableCard({
       return;
     }
     
-    // If minimal movement, treat as a tap
+    setCurrentX(0);
+    setIsSwiping(false);
+  };
+
+  const handleClick = () => {
+    // Only trigger click if we didn't swipe
     if (!hasMoved && onClick) {
       onClick();
     }
-    
-    setCurrentX(0);
-    setIsSwiping(false);
   };
 
   const translateX = Math.max(-150, Math.min(150, currentX));
@@ -83,7 +85,7 @@ export function SwipeableCard({
   const showRightAction = currentX < -50;
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-hidden" onClick={handleClick}>
       {/* Left Action */}
       {leftAction && (
         <div
