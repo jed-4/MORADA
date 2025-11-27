@@ -4806,6 +4806,16 @@ export class DbStorage implements IStorage {
         supportsHierarchy: true,
         sortOrder: 14,
       },
+      {
+        id: 'cat-timesheet-label',
+        key: 'timesheet.label',
+        label: 'Timesheet Labels',
+        entity: 'timesheet',
+        description: 'Labels for categorizing timesheets',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 15,
+      },
     ];
 
     for (const categoryData of requiredCategories) {
@@ -5004,6 +5014,15 @@ export class DbStorage implements IStorage {
           // Post Construction sub-statuses
           { id: 'opt-project-substatus-postcon-defects', categoryId, key: 'postcon_defects_period', name: 'Post Construction', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 17 },
           { id: 'opt-project-substatus-postcon-completed', categoryId, key: 'postcon_completed', name: 'Completed', color: '#86EFAC', parentId: 'opt-project-status-post-construction', sortOrder: 18 },
+        ];
+      case 'timesheet.label':
+        return [
+          { id: 'opt-timesheet-label-regular', categoryId, key: 'regular', name: 'Regular Hours', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-timesheet-label-overtime', categoryId, key: 'overtime', name: 'Overtime', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+          { id: 'opt-timesheet-label-travel', categoryId, key: 'travel', name: 'Travel Time', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
+          { id: 'opt-timesheet-label-meeting', categoryId, key: 'meeting', name: 'Meeting', color: '#06B6D4', isDefault: false, sortOrder: 3 },
+          { id: 'opt-timesheet-label-training', categoryId, key: 'training', name: 'Training', color: '#10B981', isDefault: false, sortOrder: 4 },
+          { id: 'opt-timesheet-label-site-visit', categoryId, key: 'site-visit', name: 'Site Visit', color: '#EC4899', isDefault: false, sortOrder: 5 },
         ];
       default:
         return [];

@@ -30,6 +30,16 @@ interface Timesheet {
   clockInTime: string | null;
   createdAt: string;
   attachments: string[] | null;
+  costCodeId: string | null;
+  labels: string[] | null;
+}
+
+interface FieldOption {
+  id: string;
+  key: string;
+  name: string;
+  color: string | null;
+  isActive: boolean;
 }
 
 interface CostCode {
@@ -94,6 +104,9 @@ export function ProjectTimesheetsTab() {
   
   // Photos state
   const [photos, setPhotos] = useState<string[]>([]);
+  
+  // Labels state
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   const currentWeekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   const currentWeekEnd = endOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -118,6 +131,20 @@ export function ProjectTimesheetsTab() {
     queryFn: async () => {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/cost-codes?timesheets=true`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    retry: false,
+  });
+
+  // Fetch timesheet label options
+  const { data: labelOptions = [] } = useQuery<FieldOption[]>({
+    queryKey: ["/api/field-options", { categoryKey: "timesheet.label" }],
+    queryFn: async () => {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/field-options?categoryKey=timesheet.label`, {
         credentials: "include",
       });
       if (!res.ok) return [];
@@ -183,6 +210,7 @@ export function ProjectTimesheetsTab() {
       costCodes?: { costCodeId: string; duration: string }[];
       description: string;
       attachments?: string[];
+      labels?: string[];
     }) => {
       const res = await apiRequest(`/api/timesheets`, "POST", {
         projectId: currentProject?.id,
@@ -193,6 +221,7 @@ export function ProjectTimesheetsTab() {
         breakDuration: data.breakDuration,
         hourlyRate: data.hourlyRate,
         description: data.description,
+        labels: data.labels || [],
         status: "draft",
       });
       const created = await res.json();
@@ -271,6 +300,7 @@ export function ProjectTimesheetsTab() {
       costCodes?: { costCodeId: string; duration: string }[];
       description: string;
       attachments?: string[];
+      labels?: string[];
     }) => {
       const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
         date: new Date(data.date).toISOString(),
@@ -280,6 +310,7 @@ export function ProjectTimesheetsTab() {
         breakDuration: data.breakDuration,
         hourlyRate: data.hourlyRate,
         description: data.description,
+        labels: data.labels || [],
       });
 
       const baseUrl = getApiBaseUrl();
@@ -333,6 +364,7 @@ export function ProjectTimesheetsTab() {
     setFirstCostCodeDuration("");
     setSecondCostCodeDuration("");
     setPhotos([]);
+    setSelectedLabels([]);
   };
 
   const openEditMode = async (timesheet: Timesheet) => {
@@ -348,6 +380,7 @@ export function ProjectTimesheetsTab() {
     setNewDuration(timesheet.duration || "");
     setTimeEntryMode(timesheet.startTime ? "time" : "duration");
     setPhotos(timesheet.attachments || []);
+    setSelectedLabels(timesheet.labels || []);
     
     try {
       const baseUrl = getApiBaseUrl();
@@ -439,6 +472,17 @@ export function ProjectTimesheetsTab() {
     }
   };
 
+  const getCostCodeName = (costCodeId: string | null) => {
+    if (!costCodeId) return null;
+    const costCode = costCodes.find(cc => cc.id === costCodeId);
+    return costCode ? `${costCode.code} - ${costCode.title}` : null;
+  };
+
+  const getLabelInfo = (labelKey: string) => {
+    const option = labelOptions.find(opt => opt.key === labelKey);
+    return option || null;
+  };
+
   const handleSubmit = () => {
     if (!newCostCodeId && !isSplitCostCode) return;
     if (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) return;
@@ -472,6 +516,7 @@ export function ProjectTimesheetsTab() {
         costCodes: costCodesToSubmit,
         description: newDescription,
         attachments: photos,
+        labels: selectedLabels,
       });
     } else {
       createTimesheetMutation.mutate({
@@ -485,8 +530,17 @@ export function ProjectTimesheetsTab() {
         costCodes: costCodesToSubmit,
         description: newDescription,
         attachments: photos,
+        labels: selectedLabels,
       });
     }
+  };
+
+  const toggleLabel = (labelKey: string) => {
+    setSelectedLabels(prev => 
+      prev.includes(labelKey)
+        ? prev.filter(k => k !== labelKey)
+        : [...prev, labelKey]
+    );
   };
 
   return (
@@ -887,6 +941,38 @@ export function ProjectTimesheetsTab() {
               />
             </div>
 
+            {/* Labels Section */}
+            {labelOptions.length > 0 && (
+              <div className="py-3 border-b">
+                <label className="block text-sm text-muted-foreground mb-2">Labels</label>
+                <div className="flex flex-wrap gap-2">
+                  {labelOptions.map((option) => {
+                    const isSelected = selectedLabels.includes(option.key);
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => toggleLabel(option.key)}
+                        className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                          isSelected ? 'ring-2 ring-offset-1' : 'opacity-60'
+                        }`}
+                        style={{
+                          backgroundColor: option.color ? `${option.color}20` : undefined,
+                          color: option.color || undefined,
+                          borderColor: option.color || undefined,
+                          border: `1px solid ${option.color || '#ccc'}`,
+                          ringColor: option.color || undefined,
+                        }}
+                        data-testid={`button-label-${option.key}`}
+                      >
+                        {option.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Photos Section */}
             <div className="py-3 border-b">
               <label className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
@@ -1016,7 +1102,37 @@ export function ProjectTimesheetsTab() {
                   <span className="font-medium">${parseFloat(selectedTimesheet.hourlyRate).toFixed(2)}</span>
                 </div>
               )}
+              {getCostCodeName(selectedTimesheet.costCodeId) && (
+                <div className="flex justify-between py-3 border-b">
+                  <span className="text-muted-foreground">Cost Code</span>
+                  <span className="font-medium text-right max-w-[60%]">{getCostCodeName(selectedTimesheet.costCodeId)}</span>
+                </div>
+              )}
             </div>
+
+            {selectedTimesheet.labels && selectedTimesheet.labels.length > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <h4 className="text-sm font-medium mb-2">Labels</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTimesheet.labels.map((labelKey, idx) => {
+                    const labelInfo = getLabelInfo(labelKey);
+                    return (
+                      <span
+                        key={idx}
+                        className="text-xs px-2 py-1 rounded-md font-medium"
+                        style={{
+                          backgroundColor: labelInfo?.color ? `${labelInfo.color}20` : undefined,
+                          color: labelInfo?.color || undefined,
+                          border: labelInfo?.color ? `1px solid ${labelInfo.color}` : undefined,
+                        }}
+                      >
+                        {labelInfo?.name || labelKey}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {selectedTimesheet.description && (
               <div className="mt-4 pt-4 border-t">

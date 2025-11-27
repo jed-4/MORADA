@@ -1012,6 +1012,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get field options by category key (for mobile app)
+  app.get("/api/field-options", async (req, res) => {
+    try {
+      const categoryKey = req.query.categoryKey as string;
+      if (!categoryKey) {
+        return res.status(400).json({ error: "categoryKey query parameter is required" });
+      }
+      
+      // First get the category by key
+      const categories = await storage.getFieldCategories();
+      const category = categories.find((c: any) => c.key === categoryKey);
+      if (!category) {
+        return res.json([]); // Return empty array if category doesn't exist yet
+      }
+      
+      // Then get options for that category
+      const options = await storage.getFieldOptions(category.id);
+      res.json(options.filter((opt: any) => opt.isActive));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch field options" });
+    }
+  });
+
   app.get("/api/field-options/:id", async (req, res) => {
     try {
       const option = await storage.getFieldOption(req.params.id);
