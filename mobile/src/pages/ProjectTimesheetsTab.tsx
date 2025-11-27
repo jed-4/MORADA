@@ -183,6 +183,7 @@ export function ProjectTimesheetsTab() {
       costCodeId: string;
       costCodes?: { costCodeId: string; duration: string }[];
       description: string;
+      attachments?: string[];
     }) => {
       const res = await apiRequest(`/api/timesheets`, "POST", {
         projectId: currentProject?.id,
@@ -270,6 +271,7 @@ export function ProjectTimesheetsTab() {
       costCodeId?: string;
       costCodes?: { costCodeId: string; duration: string }[];
       description: string;
+      attachments?: string[];
     }) => {
       const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
         date: new Date(data.date).toISOString(),

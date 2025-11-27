@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 
 interface SwipeableViewProps {
   tabs: Array<{
@@ -11,11 +11,11 @@ interface SwipeableViewProps {
 
 export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
-  const [touchCurrent, setTouchCurrent] = useState<{ x: number; y: number } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isVerticalScroll, setIsVerticalScroll] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
   const [isSwipeTransition, setIsSwipeTransition] = useState(false);
+  const isVerticalScrollRef = useRef(false);
   const prevIndexRef = useRef<number>(-1);
 
   const currentIndex = tabs.findIndex(t => t.key === currentTab);
@@ -37,101 +37,109 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
     prevIndexRef.current = currentIndex;
   }, [currentIndex, isSwipeTransition]);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.targetTouches[0];
-    setTouchStart({ x: touch.clientX, y: touch.clientY });
-    setTouchCurrent({ x: touch.clientX, y: touch.clientY });
-    setIsVerticalScroll(false);
-  };
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    isVerticalScrollRef.current = false;
+    setDragOffset(0);
+  }, []);
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStart) return;
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!touchStartRef.current) return;
     
-    const touch = e.targetTouches[0];
-    const deltaX = Math.abs(touch.clientX - touchStart.x);
-    const deltaY = Math.abs(touch.clientY - touchStart.y);
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
     
-    if (!isDragging && !isVerticalScroll) {
-      if (deltaY > deltaX && deltaY > 10) {
-        setIsVerticalScroll(true);
+    // Determine scroll direction once
+    if (!isDragging && !isVerticalScrollRef.current) {
+      if (absY > absX && absY > 10) {
+        isVerticalScrollRef.current = true;
         return;
-      } else if (deltaX > 10) {
+      } else if (absX > 15) {
+        // Only start horizontal dragging if significantly horizontal
         setIsDragging(true);
       }
     }
     
-    if (isVerticalScroll) return;
+    if (isVerticalScrollRef.current) return;
     
     if (isDragging) {
-      setTouchCurrent({ x: touch.clientX, y: touch.clientY });
+      const canDragLeft = currentIndex < tabs.length - 1;
+      const canDragRight = currentIndex > 0;
+      
+      let offset = deltaX * 0.5;
+      if (deltaX < 0 && !canDragLeft) offset = 0;
+      if (deltaX > 0 && !canDragRight) offset = 0;
+      
+      setDragOffset(offset);
     }
-  };
+  }, [isDragging, currentIndex, tabs.length]);
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStart || !touchCurrent || isVerticalScroll) {
-      resetTouch();
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
+    if (!touchStartRef.current) return;
+
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const absDistance = Math.abs(deltaX);
+    const elapsed = Date.now() - touchStartRef.current.time;
+
+    // Quick tap detection: minimal movement and short duration
+    // Don't do anything - let the click event propagate naturally
+    if (absDistance < 10 && elapsed < 300 && !isDragging) {
+      touchStartRef.current = null;
+      setIsDragging(false);
+      setDragOffset(0);
       return;
     }
 
-    const distance = touchStart.x - touchCurrent.x;
-    const absDistance = Math.abs(distance);
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
-
-    // If this was a tap (minimal movement), don't interfere - let child elements handle it
-    if (absDistance < 10 && !isDragging) {
-      resetTouch();
-      return;
-    }
-
-    // Only handle actual swipe gestures
-    if (isDragging) {
-      if (isLeftSwipe && currentIndex < tabs.length - 1) {
+    // Handle actual swipes
+    if (isDragging && absDistance > minSwipeDistance) {
+      if (deltaX < -minSwipeDistance && currentIndex < tabs.length - 1) {
         setIsSwipeTransition(true);
         onTabChange(tabs[currentIndex + 1].key);
-      } else if (isRightSwipe && currentIndex > 0) {
+      } else if (deltaX > minSwipeDistance && currentIndex > 0) {
         setIsSwipeTransition(true);
         onTabChange(tabs[currentIndex - 1].key);
       }
     }
 
-    resetTouch();
-  };
-
-  const resetTouch = () => {
+    touchStartRef.current = null;
     setIsDragging(false);
-    setIsVerticalScroll(false);
-    setTouchStart(null);
-    setTouchCurrent(null);
-  };
+    setDragOffset(0);
+  }, [isDragging, currentIndex, tabs, onTabChange, minSwipeDistance]);
 
-  const getDragOffset = () => {
-    if (!isDragging || !touchStart || !touchCurrent) return 0;
-    const offset = touchCurrent.x - touchStart.x;
-    
-    const canDragLeft = currentIndex < tabs.length - 1;
-    const canDragRight = currentIndex > 0;
-    
-    if (offset < 0 && !canDragLeft) return 0;
-    if (offset > 0 && !canDragRight) return 0;
-    
-    return offset * 0.5;
-  };
+  // Use native event listeners for better control
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  const shouldAnimate = isDragging || isSwipeTransition;
+    // Use passive: false only for touchmove to allow preventDefault if needed
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: true });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
+
+  const shouldAnimate = !isDragging && isSwipeTransition;
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-hidden relative touch-pan-y"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      className="flex-1 overflow-hidden relative"
+      style={{ touchAction: isDragging ? 'none' : 'pan-y' }}
     >
       <div
         className={`h-full flex ${shouldAnimate ? 'transition-transform duration-300' : ''}`}
         style={{
-          transform: `translateX(calc(-${currentIndex * 100}vw + ${getDragOffset()}px))`,
+          transform: `translateX(calc(-${currentIndex * 100}vw + ${dragOffset}px))`,
         }}
       >
         {tabs.map((tab) => (
