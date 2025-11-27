@@ -975,74 +975,83 @@ export function ProjectTimesheetsTab() {
       <BottomSheet isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)}>
         {selectedTimesheet && (
           <div className="p-4">
-            <h2 className="text-xl font-bold mb-2">
-              {format(new Date(selectedTimesheet.date), "EEEE, MMMM d, yyyy")}
-            </h2>
+            <h2 className="text-xl font-bold mb-4">Time Entry Details</h2>
             
-            <div className="flex items-center gap-2 mb-4">
-              <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(selectedTimesheet.status)}`}>
-                {selectedTimesheet.status}
-              </span>
-              {selectedTimesheet.isActive && (
-                <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-md flex items-center gap-1">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  Active
-                </span>
-              )}
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-muted-foreground">Time:</span>
-                <span className="font-medium">{selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}</span>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Date</span>
+                <span className="font-medium">{format(new Date(selectedTimesheet.date), "EEEE, MMMM d, yyyy")}</span>
               </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-muted-foreground">Duration:</span>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Time</span>
+                <span className="font-medium">
+                  {selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}
+                </span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Duration</span>
                 <span className="font-medium">{parseFloat(selectedTimesheet.duration || "0").toFixed(1)} hours</span>
               </div>
+              
               {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-muted-foreground">Break:</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Break</span>
                   <span className="font-medium">{parseFloat(selectedTimesheet.breakDuration).toFixed(1)} hours</span>
                 </div>
               )}
+              
               {selectedTimesheet.hourlyRate && (
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-muted-foreground">Hourly Rate:</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Hourly Rate</span>
                   <span className="font-medium">${parseFloat(selectedTimesheet.hourlyRate).toFixed(2)}</span>
                 </div>
               )}
-            </div>
-
-            {selectedTimesheet.description && (
-              <div className="mt-4 pt-4 border-t">
-                <h4 className="text-sm font-medium mb-2">Notes</h4>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {selectedTimesheet.description}
-                </p>
-              </div>
-            )}
-
-            {selectedTimesheet.attachments && selectedTimesheet.attachments.length > 0 && (
-              <div className="mt-4 pt-4 border-t">
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Image className="w-4 h-4" />
-                  Photos ({selectedTimesheet.attachments.length})
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                  {selectedTimesheet.attachments.map((photo, idx) => (
-                    <img
-                      key={idx}
-                      src={photo}
-                      alt={`Photo ${idx + 1}`}
-                      className="w-20 h-20 object-cover rounded-lg border"
-                    />
-                  ))}
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Status</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(selectedTimesheet.status)}`}>
+                    {selectedTimesheet.status}
+                  </span>
+                  {selectedTimesheet.isActive && (
+                    <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-md flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      Active
+                    </span>
+                  )}
                 </div>
               </div>
-            )}
-
-            <div className="flex gap-3 pt-6">
+              
+              {selectedTimesheet.description && (
+                <div>
+                  <span className="text-muted-foreground block mb-1">Description</span>
+                  <p className="text-sm bg-muted/50 p-3 rounded-lg">{selectedTimesheet.description}</p>
+                </div>
+              )}
+              
+              {selectedTimesheet.attachments && selectedTimesheet.attachments.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground block mb-2 flex items-center gap-2">
+                    <Image className="w-4 h-4" />
+                    Photos ({selectedTimesheet.attachments.length})
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedTimesheet.attachments.map((photo, idx) => (
+                      <img
+                        key={idx}
+                        src={photo}
+                        alt={`Photo ${idx + 1}`}
+                        className="w-20 h-20 object-cover rounded-lg border"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex gap-3 mt-6">
               <MobileButton
                 variant="outline"
                 onClick={() => setIsDetailOpen(false)}
