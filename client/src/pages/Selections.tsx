@@ -56,7 +56,31 @@ import {
   List,
   Palette,
   Boxes,
+  LayoutList,
+  LayoutGrid,
+  Pencil,
+  MapPin,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -162,6 +186,247 @@ function SelectionOptionsDropdown({ selectionId, onNavigate }: SelectionOptionsD
   );
 }
 
+// Compact Selection Card for both List and Kanban views
+interface SelectionCardCompactProps {
+  selection: Selection;
+  onClick: () => void;
+  onEdit: (selection: Selection) => void;
+  onDelete: (id: string) => void;
+  showCategory?: boolean;
+  showRoom?: boolean;
+  isDragging?: boolean;
+}
+
+function SelectionCardCompact({ 
+  selection, 
+  onClick, 
+  onEdit, 
+  onDelete,
+  showCategory = true,
+  showRoom = true,
+  isDragging = false
+}: SelectionCardCompactProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const selectionType = (selection as any).selectionType || 'selection';
+
+  const statusConfig = {
+    draft: { color: '#eab308', bg: '#eab30815' },
+    pending: { color: '#3b82f6', bg: '#3b82f615' },
+    approved: { color: '#22c55e', bg: '#22c55e15' },
+    completed: { color: '#16a34a', bg: '#16a34a15' },
+  };
+
+  const { color: statusColor, bg: statusBg } = statusConfig[selection.status as keyof typeof statusConfig] || statusConfig.draft;
+
+  return (
+    <Card
+      className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 hover-elevate active-elevate-2 ${
+        isDragging ? 'opacity-80 shadow-lg scale-[1.01]' : ''
+      }`}
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      data-testid={`selection-card-${selection.id}`}
+    >
+      <CardContent className="p-2 h-full flex flex-col justify-between">
+        {/* Top row: Title + Status Badge */}
+        <div className="flex items-start gap-1.5">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-1">
+              <h3 className="text-sm leading-5 truncate flex-1 text-foreground font-medium" data-testid={`selection-title-${selection.id}`}>
+                {selection.name}
+              </h3>
+              
+              {/* Status badge */}
+              <Badge 
+                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                style={{
+                  backgroundColor: statusBg,
+                  color: statusColor,
+                  borderColor: `${statusColor}30`
+                }}
+              >
+                {selection.status}
+              </Badge>
+            </div>
+
+            {/* Metadata line below title */}
+            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+              {selectionType === 'design' && (
+                <span className="flex items-center gap-0.5 text-purple-600">
+                  <Palette className="h-2.5 w-2.5 flex-shrink-0" />
+                  Design
+                </span>
+              )}
+              {showCategory && selection.category && (
+                <span className="truncate">{selection.category}</span>
+              )}
+              {showRoom && selection.room && (
+                <span className="flex items-center gap-0.5 truncate">
+                  <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
+                  {selection.room}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Pencil icon on hover */}
+          {isHovered && (
+            <Pencil className="h-3 w-3 text-[#bba7db] shrink-0" />
+          )}
+        </div>
+
+        {/* Bottom row: Allowance + Actions */}
+        <div className="flex items-center justify-between">
+          {/* Allowance or deadline */}
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            {selection.allowance && (
+              <span className="flex items-center gap-0.5">
+                <DollarSign className="h-2.5 w-2.5" />
+                ${(selection.allowance / 100).toFixed(0)}
+              </span>
+            )}
+            {selection.deadline && (
+              <span className="flex items-center gap-0.5">
+                <CalendarIcon className="h-2.5 w-2.5" />
+                {format(new Date(selection.deadline), 'MMM d')}
+              </span>
+            )}
+          </div>
+
+          {/* Actions dropdown */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-5 w-5 rounded-md hover-elevate active-elevate-2 flex items-center justify-center" data-testid={`button-actions-${selection.id}`}>
+                  <MoreVertical className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onClick()}>
+                  <Eye className="w-4 h-4 mr-2" />
+                  View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onEdit(selection)}>
+                  <Edit3 className="w-4 h-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onDelete(selection.id)} className="text-destructive">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Draggable Selection Card for Kanban
+interface DraggableSelectionCardProps {
+  selection: Selection;
+  columnId: string;
+  onClick: () => void;
+  onEdit: (selection: Selection) => void;
+  onDelete: (id: string) => void;
+}
+
+function DraggableSelectionCard({ selection, columnId, onClick, onEdit, onDelete }: DraggableSelectionCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id: selection.id,
+    data: { 
+      type: 'card',
+      columnId: columnId,
+    }
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <SelectionCardCompact
+        selection={selection}
+        onClick={onClick}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        isDragging={isDragging}
+      />
+    </div>
+  );
+}
+
+// Kanban Column Component
+interface KanbanColumnProps {
+  column: { id: string; title: string; color: string };
+  selections: Selection[];
+  onCardClick: (id: string) => void;
+  onEdit: (selection: Selection) => void;
+  onDelete: (id: string) => void;
+}
+
+function KanbanColumn({ column, selections, onCardClick, onEdit, onDelete }: KanbanColumnProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: column.id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col w-72 shrink-0 rounded-lg bg-muted/30 ${isOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
+    >
+      {/* Column Header */}
+      <div className="px-3 py-2 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div 
+              className="w-2 h-2 rounded-full" 
+              style={{ backgroundColor: column.color }}
+            />
+            <span className="text-sm font-medium">{column.title}</span>
+          </div>
+          <Badge variant="secondary" className="text-xs h-5">
+            {selections.length}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Cards Container */}
+      <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[200px]">
+        <SortableContext id={column.id} items={selections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+          {selections.map((selection) => (
+            <DraggableSelectionCard
+              key={selection.id}
+              selection={selection}
+              columnId={column.id}
+              onClick={() => onCardClick(selection.id)}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+        </SortableContext>
+        
+        {selections.length === 0 && (
+          <div className="text-center text-xs text-muted-foreground py-8">
+            No selections
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Selections() {
   const [isAddingSelection, setIsAddingSelection] = useState(false);
   const [editingSelection, setEditingSelection] = useState<Selection | null>(null);
@@ -172,6 +437,8 @@ export default function Selections() {
   const [locationFilter, setLocationFilter] = useState<string>("");
   const [showSelections, setShowSelections] = useState(true);
   const [showDesign, setShowDesign] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -393,6 +660,78 @@ export default function Selections() {
     );
   };
 
+  // DnD sensors for Kanban board
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Kanban columns
+  const kanbanColumns = [
+    { id: 'draft', title: 'Draft', color: '#eab308' },
+    { id: 'pending', title: 'Pending', color: '#3b82f6' },
+    { id: 'approved', title: 'Approved', color: '#22c55e' },
+    { id: 'completed', title: 'Completed', color: '#16a34a' },
+  ];
+
+  // Get selections by status for Kanban
+  const getSelectionsByStatus = (status: string) => {
+    return filteredSelections.filter(s => s.status === status);
+  };
+
+  // Handle drag start
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  // Handle drag end - update selection status
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over) return;
+
+    const activeSelection = filteredSelections.find(s => s.id === active.id);
+    if (!activeSelection) return;
+
+    const overId = over.id as string;
+
+    // Determine target column - either directly on column or on a card within a column
+    let targetColumnId: string | undefined;
+    
+    // Check if dropped directly on a column
+    const directColumn = kanbanColumns.find(col => col.id === overId);
+    if (directColumn) {
+      targetColumnId = directColumn.id;
+    } else {
+      // Dropped on a card - get the destination column from the sortable containerId
+      // or from the over card's stored columnId
+      const overData = over.data?.current as any;
+      if (overData?.sortable?.containerId) {
+        targetColumnId = overData.sortable.containerId;
+      } else if (overData?.columnId) {
+        targetColumnId = overData.columnId;
+      }
+    }
+    
+    // Update status if dropped on a different column
+    if (targetColumnId && activeSelection.status !== targetColumnId) {
+      updateSelectionMutation.mutate({
+        id: activeSelection.id,
+        data: { status: targetColumnId }
+      });
+    }
+  };
+
+  // Get the active selection for drag overlay
+  const activeSelection = activeId ? filteredSelections.find(s => s.id === activeId) : null;
+
   if (!currentProject) {
     return (
       <div className="p-6">
@@ -533,9 +872,40 @@ export default function Selections() {
             <Palette className="w-3 h-3" />
             <span>Design</span>
           </button>
+
+          {/* Subtle Divider */}
+          <div className="w-px h-4 bg-border mx-1" />
+
+          {/* View Toggle */}
+          <div className="flex items-center gap-0.5 bg-muted/50 rounded-md p-0.5">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`h-5 w-5 rounded flex items-center justify-center ${
+                viewMode === 'list' 
+                  ? 'bg-[#bba7db] text-white' 
+                  : 'hover-elevate text-muted-foreground'
+              }`}
+              data-testid="button-view-list"
+              title="List View"
+            >
+              <LayoutList className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setViewMode('board')}
+              className={`h-5 w-5 rounded flex items-center justify-center ${
+                viewMode === 'board' 
+                  ? 'bg-[#bba7db] text-white' 
+                  : 'hover-elevate text-muted-foreground'
+              }`}
+              data-testid="button-view-board"
+              title="Board View"
+            >
+              <LayoutGrid className="w-3 h-3" />
+            </button>
+          </div>
         </div>
 
-        {/* Right: Grouping Toggle */}
+        {/* Right: Grouping Toggle (only in list view) */}
         <DropdownMenu open={showGroupingMenu} onOpenChange={setShowGroupingMenu}>
           <DropdownMenuTrigger asChild>
             <button 
@@ -567,186 +937,96 @@ export default function Selections() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-auto p-4">
-        {/* Selections Grid */}
+      <div className="flex-1 overflow-auto p-3">
+        {/* Loading State */}
         {isLoading ? (
-        <div className="space-y-4">
-          {[...Array(6)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 space-y-2">
-                    <div className="h-5 bg-muted rounded w-1/4"></div>
-                    <div className="h-4 bg-muted rounded w-1/2"></div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="h-6 bg-muted rounded w-16"></div>
-                    <div className="h-6 bg-muted rounded w-16"></div>
-                    <div className="h-6 bg-muted rounded w-20"></div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : filteredSelections.length === 0 ? (
-        <div className="text-center py-12">
-          <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-          <h3 className="text-lg font-medium mb-2">No selections found</h3>
-          <p className="text-muted-foreground mb-4">
-            {searchTerm ? "Try adjusting your search terms." : "Create your first selection to get started."}
-          </p>
-          {!searchTerm && (
-            <Button onClick={() => setIsAddingSelection(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Selection
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {Object.entries(groupedSelections).map(([groupName, groupSelections]) => (
-            <div key={groupName} className="space-y-4">
-              {groupBy !== 'none' && (
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-foreground">{groupName}</h3>
-                  <Badge variant="secondary" className="text-xs">
-                    {groupSelections.length} {groupSelections.length === 1 ? 'selection' : 'selections'}
-                  </Badge>
-                </div>
-              )}
-              
-              <div className="space-y-4">
-                {groupSelections.map((selection) => (
-                  <Card 
-                    key={selection.id} 
-                    className="hover-elevate cursor-pointer" 
-                    data-testid={`card-selection-${selection.id}`}
-                    onClick={() => setLocation(`/selections/${selection.id}`)}
-                  >
-                    <CardContent className="p-6">
-                      <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-                        {/* Main content - List format */}
-                        <div className="flex-1 space-y-3">
-                          {/* Title and main badges */}
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <CardTitle className="text-lg font-semibold">{selection.name}</CardTitle>
-                            {(selection as any).selectionType === 'design' && (
-                              <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
-                                <Palette className="w-3 h-3 mr-1" />
-                                Design
-                              </Badge>
-                            )}
-                            {selection.category && groupBy !== 'category' && (
-                              <Badge variant="secondary" className="text-xs">
-                                {selection.category}
-                              </Badge>
-                            )}
-                            {selection.room && groupBy !== 'room' && (
-                              <Badge variant="outline" className="text-xs">
-                                {selection.room}
-                              </Badge>
-                            )}
-                          </div>
-                          
-                          {/* Description */}
-                          {selection.description && (
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              {selection.description}
-                            </p>
-                          )}
-                          
-                          {/* Status and financial details */}
-                          <div className="flex items-center gap-4 flex-wrap">
-                            {groupBy !== 'status' && <StatusBadge status={selection.status} />}
-                            {selection.allowance && (
-                              <div className="flex items-center gap-1">
-                                <DollarSign className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">${(selection.allowance / 100).toFixed(0)} allowance</span>
-                              </div>
-                            )}
-                            {!selection.clientCanChange && (
-                              <Badge variant="outline" className="text-xs">
-                                Fixed Selection
-                              </Badge>
-                            )}
-                          </div>
-                          
-                          {/* Timeline information */}
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                            <div className="flex items-center gap-1">
-                              <CalendarIcon className="w-3 h-3" />
-                              <span>Created {format(new Date(selection.createdAt), "MMM d, yyyy")}</span>
-                            </div>
-                            {selection.deadline && (
-                              <div className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                <span>Due {format(new Date(selection.deadline), "MMM d, yyyy")}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        
-                        {/* Actions */}
-                        <div className="flex lg:flex-col items-center lg:items-end gap-2">
-                          {/* View Options Dropdown */}
-                          <SelectionOptionsDropdown 
-                            selectionId={selection.id} 
-                            onNavigate={(path) => {
-                              setLocation(path);
-                            }}
-                          />
-                          
-                          {/* Main Actions Dropdown */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8 shrink-0"
-                                data-testid={`button-selection-menu-${selection.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={(e) => {
-                                e.stopPropagation();
-                                setLocation(`/selections/${selection.id}`);
-                              }}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                View Details
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => {
-                                e.stopPropagation();
-                                handleEdit(selection);
-                              }}>
-                                <Edit3 className="w-4 h-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteSelectionMutation.mutate(selection.id);
-                                }}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {[...Array(6)].map((_, i) => (
+              <Card key={i} className="h-20 animate-pulse rounded-xl">
+                <CardContent className="p-2 h-full flex flex-col justify-between">
+                  <div className="h-4 bg-muted rounded w-3/4"></div>
+                  <div className="h-3 bg-muted rounded w-1/2"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : filteredSelections.length === 0 ? (
+          <div className="text-center py-12">
+            <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-medium mb-2">No selections found</h3>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm ? "Try adjusting your search terms." : "Create your first selection to get started."}
+            </p>
+            {!searchTerm && (
+              <Button onClick={() => setIsAddingSelection(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Selection
+              </Button>
+            )}
+          </div>
+        ) : viewMode === 'board' ? (
+          /* Kanban Board View */
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex gap-4 overflow-x-auto pb-4">
+              {kanbanColumns.map((column) => (
+                <KanbanColumn
+                  key={column.id}
+                  column={column}
+                  selections={getSelectionsByStatus(column.id)}
+                  onCardClick={(id) => setLocation(`/selections/${id}`)}
+                  onEdit={handleEdit}
+                  onDelete={(id) => deleteSelectionMutation.mutate(id)}
+                />
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+            <DragOverlay>
+              {activeSelection && (
+                <SelectionCardCompact
+                  selection={activeSelection}
+                  onClick={() => {}}
+                  onEdit={() => {}}
+                  onDelete={() => {}}
+                  isDragging
+                />
+              )}
+            </DragOverlay>
+          </DndContext>
+        ) : (
+          /* List View with Compact Cards */
+          <div className="space-y-6">
+            {Object.entries(groupedSelections).map(([groupName, groupSelections]) => (
+              <div key={groupName} className="space-y-2">
+                {groupBy !== 'none' && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-sm font-semibold text-foreground">{groupName}</h3>
+                    <Badge variant="secondary" className="text-xs">
+                      {groupSelections.length}
+                    </Badge>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {groupSelections.map((selection) => (
+                    <SelectionCardCompact
+                      key={selection.id}
+                      selection={selection}
+                      onClick={() => setLocation(`/selections/${selection.id}`)}
+                      onEdit={handleEdit}
+                      onDelete={(id) => deleteSelectionMutation.mutate(id)}
+                      showCategory={groupBy !== 'category'}
+                      showRoom={groupBy !== 'room'}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Selection Dialog */}
