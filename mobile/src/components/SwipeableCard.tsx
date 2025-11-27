@@ -25,63 +25,87 @@ export function SwipeableCard({
   leftAction,
   rightAction,
 }: SwipeableCardProps) {
-  const [startX, setStartX] = useState(0);
-  const [currentX, setCurrentX] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [hasMoved, setHasMoved] = useState(false);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const currentXRef = useRef(0);
+  const isSwipingRef = useRef(false);
+  const hasMovedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const [, setRenderTrigger] = useState(0);
+  
+  const updateTransform = (x: number) => {
+    currentXRef.current = x;
+    setRenderTrigger(v => v + 1);
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
-    setStartX(e.touches[0].clientX);
-    setIsSwiping(true);
-    setHasMoved(false);
+    startXRef.current = e.touches[0].clientX;
+    startYRef.current = e.touches[0].clientY;
+    isSwipingRef.current = true;
+    hasMovedRef.current = false;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isSwiping) return;
-    const diff = e.touches[0].clientX - startX;
-    if (Math.abs(diff) > 10) {
-      setHasMoved(true);
+    if (!isSwipingRef.current) return;
+    
+    const diffX = e.touches[0].clientX - startXRef.current;
+    const diffY = e.touches[0].clientY - startYRef.current;
+    
+    if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) {
+      hasMovedRef.current = true;
     }
-    setCurrentX(diff);
+    
+    updateTransform(diffX);
   };
 
   const handleTouchEnd = () => {
-    if (!isSwiping) return;
+    if (!isSwipingRef.current) return;
     
     const swipeThreshold = 100;
+    const currentX = currentXRef.current;
+    const hasMoved = hasMovedRef.current;
+    
+    if (!hasMoved && onClick) {
+      updateTransform(0);
+      isSwipingRef.current = false;
+      onClick();
+      return;
+    }
     
     if (currentX > swipeThreshold && onSwipeRight) {
-      setCurrentX(200);
+      updateTransform(200);
       setTimeout(() => {
         onSwipeRight();
-        setCurrentX(0);
-        setIsSwiping(false);
-        setHasMoved(false);
-      }, 200);
-      return;
-    } else if (currentX < -swipeThreshold && onSwipeLeft) {
-      setCurrentX(-200);
-      setTimeout(() => {
-        onSwipeLeft();
-        setCurrentX(0);
-        setIsSwiping(false);
-        setHasMoved(false);
+        updateTransform(0);
+        isSwipingRef.current = false;
+        hasMovedRef.current = false;
       }, 200);
       return;
     }
     
-    setCurrentX(0);
-    setIsSwiping(false);
+    if (currentX < -swipeThreshold && onSwipeLeft) {
+      updateTransform(-200);
+      setTimeout(() => {
+        onSwipeLeft();
+        updateTransform(0);
+        isSwipingRef.current = false;
+        hasMovedRef.current = false;
+      }, 200);
+      return;
+    }
+    
+    updateTransform(0);
+    isSwipingRef.current = false;
   };
 
+  const currentX = currentXRef.current;
   const translateX = Math.max(-150, Math.min(150, currentX));
   const showLeftAction = currentX > 50;
   const showRightAction = currentX < -50;
 
   return (
     <div className="relative overflow-hidden">
-      {/* Left Action - pointer-events-none so it doesn't block taps */}
       {leftAction && (
         <div
           className={`absolute left-0 top-0 bottom-0 flex items-center justify-start px-6 pointer-events-none ${leftAction.color} transition-opacity ${
@@ -96,7 +120,6 @@ export function SwipeableCard({
         </div>
       )}
 
-      {/* Right Action - pointer-events-none so it doesn't block taps */}
       {rightAction && (
         <div
           className={`absolute right-0 top-0 bottom-0 flex items-center justify-end px-6 pointer-events-none ${rightAction.color} transition-opacity ${
@@ -111,21 +134,15 @@ export function SwipeableCard({
         </div>
       )}
 
-      {/* Card Content - handles both swipe and tap */}
       <div
         ref={containerRef}
-        onClick={() => {
-          if (!hasMoved && onClick) {
-            onClick();
-          }
-        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className="relative z-10 swipeable-card-content"
         style={{
           transform: `translateX(${translateX}px)`,
-          transition: isSwiping ? "none" : "transform 0.3s ease-out",
+          transition: isSwipingRef.current ? "none" : "transform 0.3s ease-out",
         }}
       >
         {children}
