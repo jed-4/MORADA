@@ -2,11 +2,13 @@ import { forwardRef } from "react";
 import { cn } from "@lib/utils";
 
 export interface MobileInputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+}
 
 const MobileInput = forwardRef<HTMLInputElement, MobileInputProps>(
-  ({ className, type, ...props }, ref) => {
-    return (
+  ({ className, type, label, ...props }, ref) => {
+    const input = (
       <input
         type={type}
         className={cn(
@@ -17,6 +19,17 @@ const MobileInput = forwardRef<HTMLInputElement, MobileInputProps>(
         {...props}
       />
     );
+
+    if (label) {
+      return (
+        <div>
+          <label className="block text-sm font-medium mb-2">{label}</label>
+          {input}
+        </div>
+      );
+    }
+
+    return input;
   }
 );
 MobileInput.displayName = "MobileInput";
