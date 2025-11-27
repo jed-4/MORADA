@@ -647,37 +647,39 @@ export function ProjectTimesheetsTab() {
       {/* Add Timesheet Sheet */}
       <BottomSheet isOpen={isAddOpen} onClose={() => setIsAddOpen(false)}>
         <div className="p-4 max-h-[80vh] overflow-y-auto">
-          <h2 className="text-xl font-bold mb-6">{isEditMode ? "Edit Time Entry" : "Add Time Entry"}</h2>
+          <h2 className="text-xl font-bold mb-4">{isEditMode ? "Edit Time Entry" : "Add Time Entry"}</h2>
           
-          <div className="space-y-4">
+          <div className="space-y-0">
             {/* Time Entry Mode Toggle */}
-            <div className="flex gap-2 p-1 bg-muted rounded-lg">
-              <button
-                onClick={() => setTimeEntryMode("time")}
-                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                  timeEntryMode === "time" 
-                    ? "bg-background shadow text-foreground" 
-                    : "text-muted-foreground"
-                }`}
-                data-testid="button-mode-time"
-              >
-                Start/End Time
-              </button>
-              <button
-                onClick={() => setTimeEntryMode("duration")}
-                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                  timeEntryMode === "duration" 
-                    ? "bg-background shadow text-foreground" 
-                    : "text-muted-foreground"
-                }`}
-                data-testid="button-mode-duration"
-              >
-                Duration Only
-              </button>
+            <div className="py-3 border-b">
+              <div className="flex gap-2 p-1 bg-muted rounded-lg">
+                <button
+                  onClick={() => setTimeEntryMode("time")}
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                    timeEntryMode === "time" 
+                      ? "bg-background shadow text-foreground" 
+                      : "text-muted-foreground"
+                  }`}
+                  data-testid="button-mode-time"
+                >
+                  Start/End Time
+                </button>
+                <button
+                  onClick={() => setTimeEntryMode("duration")}
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                    timeEntryMode === "duration" 
+                      ? "bg-background shadow text-foreground" 
+                      : "text-muted-foreground"
+                  }`}
+                  data-testid="button-mode-duration"
+                >
+                  Duration Only
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Date</label>
+            <div className="py-3 border-b">
+              <label className="block text-sm text-muted-foreground mb-2">Date</label>
               <MobileInput
                 type="date"
                 value={newDate}
@@ -688,41 +690,43 @@ export function ProjectTimesheetsTab() {
 
             {timeEntryMode === "time" ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">Start Time</label>
-                    <select
-                      value={newStartTime}
-                      onChange={(e) => setNewStartTime(e.target.value)}
-                      className="w-full h-11 px-4 bg-background border rounded-lg text-base"
-                      data-testid="input-timesheet-start"
-                    >
-                      {generateTimeOptions().map((time) => (
-                        <option key={time.value} value={time.value}>
-                          {time.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">End Time</label>
-                    <select
-                      value={newEndTime}
-                      onChange={(e) => setNewEndTime(e.target.value)}
-                      className="w-full h-11 px-4 bg-background border rounded-lg text-base"
-                      data-testid="input-timesheet-end"
-                    >
-                      {generateTimeOptions().map((time) => (
-                        <option key={time.value} value={time.value}>
-                          {time.label}
-                        </option>
-                      ))}
-                    </select>
+                <div className="py-3 border-b">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-muted-foreground mb-2">Start Time</label>
+                      <select
+                        value={newStartTime}
+                        onChange={(e) => setNewStartTime(e.target.value)}
+                        className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                        data-testid="input-timesheet-start"
+                      >
+                        {generateTimeOptions().map((time) => (
+                          <option key={time.value} value={time.value}>
+                            {time.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-muted-foreground mb-2">End Time</label>
+                      <select
+                        value={newEndTime}
+                        onChange={(e) => setNewEndTime(e.target.value)}
+                        className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                        data-testid="input-timesheet-end"
+                      >
+                        {generateTimeOptions().map((time) => (
+                          <option key={time.value} value={time.value}>
+                            {time.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-medium mb-1">
+                <div className="py-3 border-b">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                     <Coffee className="w-4 h-4" />
                     Break Duration (hours)
                   </label>
@@ -738,8 +742,8 @@ export function ProjectTimesheetsTab() {
                 </div>
               </>
             ) : (
-              <div>
-                <label className="flex items-center gap-2 text-sm font-medium mb-1">
+              <div className="py-3 border-b">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                   <Timer className="w-4 h-4" />
                   Duration (hours)
                 </label>
@@ -755,8 +759,8 @@ export function ProjectTimesheetsTab() {
               </div>
             )}
 
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium mb-1">
+            <div className="py-3 border-b">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                 <DollarSign className="w-4 h-4" />
                 Hourly Rate ($)
               </label>
@@ -771,32 +775,31 @@ export function ProjectTimesheetsTab() {
               />
             </div>
 
-            {/* Split Cost Code Toggle */}
-            <div className="flex items-center gap-3 py-2">
-              <input
-                type="checkbox"
-                id="splitCostCode"
-                checked={isSplitCostCode}
-                onChange={(e) => {
-                  setIsSplitCostCode(e.target.checked);
-                  if (!e.target.checked) {
-                    setSecondCostCodeId("");
-                    setFirstCostCodeDuration("");
-                    setSecondCostCodeDuration("");
-                  }
-                }}
-                className="w-5 h-5 rounded border-gray-300"
-                data-testid="checkbox-split-cost-code"
-              />
-              <label htmlFor="splitCostCode" className="text-sm font-medium">
-                Split across multiple cost codes
-              </label>
-            </div>
-
             {/* Cost Code Section */}
-            {!isSplitCostCode ? (
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Cost Code</label>
+            <div className="py-3 border-b">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm text-muted-foreground">Cost Code</label>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    id="splitCostCode"
+                    checked={isSplitCostCode}
+                    onChange={(e) => {
+                      setIsSplitCostCode(e.target.checked);
+                      if (!e.target.checked) {
+                        setSecondCostCodeId("");
+                        setFirstCostCodeDuration("");
+                        setSecondCostCodeDuration("");
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-gray-300"
+                    data-testid="checkbox-split-cost-code"
+                  />
+                  Split codes
+                </label>
+              </div>
+              
+              {!isSplitCostCode ? (
                 <select
                   value={newCostCodeId}
                   onChange={(e) => setNewCostCodeId(e.target.value)}
@@ -810,74 +813,71 @@ export function ProjectTimesheetsTab() {
                     </option>
                   ))}
                 </select>
-              </div>
-            ) : (
-              <div className="space-y-4 p-3 bg-muted/30 rounded-lg border">
-                {/* First Cost Code */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium">Cost Code 1</label>
-                  <select
-                    value={newCostCodeId}
-                    onChange={(e) => setNewCostCodeId(e.target.value)}
-                    className="w-full h-11 px-4 bg-background border rounded-lg text-base"
-                    data-testid="select-cost-code-1"
-                  >
-                    <option value="">Select a cost code</option>
-                    {costCodes.map((cc) => (
-                      <option key={cc.id} value={cc.id}>
-                        {cc.code} - {cc.title}
-                      </option>
-                    ))}
-                  </select>
-                  <MobileInput
-                    type="number"
-                    step="0.25"
-                    min="0"
-                    value={firstCostCodeDuration}
-                    onChange={(e) => setFirstCostCodeDuration(e.target.value)}
-                    placeholder="Hours for this cost code"
-                    data-testid="input-cost-code-1-duration"
-                  />
-                </div>
-
-                {/* Second Cost Code */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium">Cost Code 2</label>
-                  <select
-                    value={secondCostCodeId}
-                    onChange={(e) => setSecondCostCodeId(e.target.value)}
-                    className="w-full h-11 px-4 bg-background border rounded-lg text-base"
-                    data-testid="select-cost-code-2"
-                  >
-                    <option value="">Select a cost code</option>
-                    {costCodes.map((cc) => (
-                      <option key={cc.id} value={cc.id}>
-                        {cc.code} - {cc.title}
-                      </option>
-                    ))}
-                  </select>
-                  <MobileInput
-                    type="number"
-                    step="0.25"
-                    min="0"
-                    value={secondCostCodeDuration}
-                    onChange={(e) => setSecondCostCodeDuration(e.target.value)}
-                    placeholder="Hours for this cost code"
-                    data-testid="input-cost-code-2-duration"
-                  />
-                </div>
-
-                {/* Split Duration Summary */}
-                {(firstCostCodeDuration || secondCostCodeDuration) && (
-                  <div className="text-xs text-muted-foreground pt-2 border-t">
-                    Total split: {(parseFloat(firstCostCodeDuration || "0") + parseFloat(secondCostCodeDuration || "0")).toFixed(2)} hours
+              ) : (
+                <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium">Cost Code 1</label>
+                    <select
+                      value={newCostCodeId}
+                      onChange={(e) => setNewCostCodeId(e.target.value)}
+                      className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                      data-testid="select-cost-code-1"
+                    >
+                      <option value="">Select a cost code</option>
+                      {costCodes.map((cc) => (
+                        <option key={cc.id} value={cc.id}>
+                          {cc.code} - {cc.title}
+                        </option>
+                      ))}
+                    </select>
+                    <MobileInput
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={firstCostCodeDuration}
+                      onChange={(e) => setFirstCostCodeDuration(e.target.value)}
+                      placeholder="Hours"
+                      data-testid="input-cost-code-1-duration"
+                    />
                   </div>
-                )}
-              </div>
-            )}
 
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Description</label>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium">Cost Code 2</label>
+                    <select
+                      value={secondCostCodeId}
+                      onChange={(e) => setSecondCostCodeId(e.target.value)}
+                      className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                      data-testid="select-cost-code-2"
+                    >
+                      <option value="">Select a cost code</option>
+                      {costCodes.map((cc) => (
+                        <option key={cc.id} value={cc.id}>
+                          {cc.code} - {cc.title}
+                        </option>
+                      ))}
+                    </select>
+                    <MobileInput
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={secondCostCodeDuration}
+                      onChange={(e) => setSecondCostCodeDuration(e.target.value)}
+                      placeholder="Hours"
+                      data-testid="input-cost-code-2-duration"
+                    />
+                  </div>
+
+                  {(firstCostCodeDuration || secondCostCodeDuration) && (
+                    <div className="text-xs text-muted-foreground pt-2 border-t">
+                      Total: {(parseFloat(firstCostCodeDuration || "0") + parseFloat(secondCostCodeDuration || "0")).toFixed(2)} hours
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="py-3 border-b">
+              <label className="block text-sm text-muted-foreground mb-2">Description</label>
               <MobileTextarea
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
@@ -888,8 +888,8 @@ export function ProjectTimesheetsTab() {
             </div>
 
             {/* Photos Section */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium mb-2">
+            <div className="py-3 border-b">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                 <Camera className="w-4 h-4" />
                 Photos
               </label>
@@ -930,42 +930,46 @@ export function ProjectTimesheetsTab() {
 
             {/* Calculated Duration Preview */}
             {timeEntryMode === "time" && newStartTime && newEndTime && (
-              <div className="p-3 bg-muted/50 rounded-lg">
-                <div className="text-sm text-muted-foreground">Calculated Duration:</div>
-                <div className="text-lg font-semibold">
-                  {calculateDuration(newStartTime, newEndTime, newBreakDuration)} hours
+              <div className="py-3 border-b">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Calculated Duration</span>
+                  <span className="text-lg font-semibold">
+                    {calculateDuration(newStartTime, newEndTime, newBreakDuration)} hours
+                  </span>
                 </div>
               </div>
             )}
 
-            <div className="flex gap-3 pt-4">
-              <MobileButton
-                variant="outline"
-                onClick={() => {
-                  setIsAddOpen(false);
-                  resetForm();
-                }}
-                className="flex-1"
-                data-testid="button-cancel-timesheet"
-              >
-                Cancel
-              </MobileButton>
-              <MobileButton
-                onClick={handleSubmit}
-                disabled={
-                  (!newCostCodeId && !isSplitCostCode) ||
-                  (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) ||
-                  createTimesheetMutation.isPending || 
-                  updateTimesheetMutation.isPending
-                }
-                className="flex-1"
-                data-testid="button-save-timesheet"
-              >
-                {isEditMode 
-                  ? (updateTimesheetMutation.isPending ? "Updating..." : "Update")
-                  : (createTimesheetMutation.isPending ? "Adding..." : "Add Entry")
-                }
-              </MobileButton>
+            <div className="py-4 mt-2">
+              <div className="flex gap-3">
+                <MobileButton
+                  variant="outline"
+                  onClick={() => {
+                    setIsAddOpen(false);
+                    resetForm();
+                  }}
+                  className="flex-1"
+                  data-testid="button-cancel-timesheet"
+                >
+                  Cancel
+                </MobileButton>
+                <MobileButton
+                  onClick={handleSubmit}
+                  disabled={
+                    (!newCostCodeId && !isSplitCostCode) ||
+                    (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) ||
+                    createTimesheetMutation.isPending || 
+                    updateTimesheetMutation.isPending
+                  }
+                  className="flex-1"
+                  data-testid="button-save-timesheet"
+                >
+                  {isEditMode 
+                    ? (updateTimesheetMutation.isPending ? "Updating..." : "Update")
+                    : (createTimesheetMutation.isPending ? "Adding..." : "Add Entry")
+                  }
+                </MobileButton>
+              </div>
             </div>
           </div>
         </div>
@@ -975,83 +979,74 @@ export function ProjectTimesheetsTab() {
       <BottomSheet isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)}>
         {selectedTimesheet && (
           <div className="p-4">
-            <h2 className="text-xl font-bold mb-4">Time Entry Details</h2>
+            <h2 className="text-xl font-bold mb-2">
+              {format(new Date(selectedTimesheet.date), "EEEE, MMMM d, yyyy")}
+            </h2>
             
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Date</span>
-                <span className="font-medium">{format(new Date(selectedTimesheet.date), "EEEE, MMMM d, yyyy")}</span>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Time</span>
-                <span className="font-medium">
-                  {selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}
+            <div className="flex items-center gap-2 mb-4">
+              <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(selectedTimesheet.status)}`}>
+                {selectedTimesheet.status}
+              </span>
+              {selectedTimesheet.isActive && (
+                <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-md flex items-center gap-1">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  Active
                 </span>
+              )}
+            </div>
+
+            <div className="space-y-0 text-sm">
+              <div className="flex justify-between py-3 border-b">
+                <span className="text-muted-foreground">Time</span>
+                <span className="font-medium">{selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}</span>
               </div>
-              
-              <div className="flex items-center justify-between">
+              <div className="flex justify-between py-3 border-b">
                 <span className="text-muted-foreground">Duration</span>
                 <span className="font-medium">{parseFloat(selectedTimesheet.duration || "0").toFixed(1)} hours</span>
               </div>
-              
               {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between py-3 border-b">
                   <span className="text-muted-foreground">Break</span>
                   <span className="font-medium">{parseFloat(selectedTimesheet.breakDuration).toFixed(1)} hours</span>
                 </div>
               )}
-              
               {selectedTimesheet.hourlyRate && (
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between py-3 border-b">
                   <span className="text-muted-foreground">Hourly Rate</span>
                   <span className="font-medium">${parseFloat(selectedTimesheet.hourlyRate).toFixed(2)}</span>
                 </div>
               )}
-              
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Status</span>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(selectedTimesheet.status)}`}>
-                    {selectedTimesheet.status}
-                  </span>
-                  {selectedTimesheet.isActive && (
-                    <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-md flex items-center gap-1">
-                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      Active
-                    </span>
-                  )}
+            </div>
+
+            {selectedTimesheet.description && (
+              <div className="mt-4 pt-4 border-t">
+                <h4 className="text-sm font-medium mb-2">Notes</h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {selectedTimesheet.description}
+                </p>
+              </div>
+            )}
+
+            {selectedTimesheet.attachments && selectedTimesheet.attachments.length > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Image className="w-4 h-4" />
+                  Photos ({selectedTimesheet.attachments.length})
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTimesheet.attachments.map((photo, idx) => (
+                    <img
+                      key={idx}
+                      src={photo}
+                      alt={`Photo ${idx + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg border"
+                    />
+                  ))}
                 </div>
               </div>
-              
-              {selectedTimesheet.description && (
-                <div>
-                  <span className="text-muted-foreground block mb-1">Description</span>
-                  <p className="text-sm bg-muted/50 p-3 rounded-lg">{selectedTimesheet.description}</p>
-                </div>
-              )}
-              
-              {selectedTimesheet.attachments && selectedTimesheet.attachments.length > 0 && (
-                <div>
-                  <span className="text-muted-foreground block mb-2 flex items-center gap-2">
-                    <Image className="w-4 h-4" />
-                    Photos ({selectedTimesheet.attachments.length})
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedTimesheet.attachments.map((photo, idx) => (
-                      <img
-                        key={idx}
-                        src={photo}
-                        alt={`Photo ${idx + 1}`}
-                        className="w-20 h-20 object-cover rounded-lg border"
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="flex gap-3 mt-6">
+            )}
+
+            <div className="flex gap-3 pt-6">
               <MobileButton
                 variant="outline"
                 onClick={() => setIsDetailOpen(false)}
