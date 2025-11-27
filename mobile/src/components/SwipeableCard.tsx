@@ -25,29 +25,25 @@ export function SwipeableCard({
   leftAction,
   rightAction,
 }: SwipeableCardProps) {
+  const [currentX, setCurrentX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  
   const startXRef = useRef(0);
   const startYRef = useRef(0);
-  const currentXRef = useRef(0);
-  const isSwipingRef = useRef(false);
   const hasMovedRef = useRef(false);
+  const touchHandledRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const [, setRenderTrigger] = useState(0);
-  
-  const updateTransform = (x: number) => {
-    currentXRef.current = x;
-    setRenderTrigger(v => v + 1);
-  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startXRef.current = e.touches[0].clientX;
     startYRef.current = e.touches[0].clientY;
-    isSwipingRef.current = true;
     hasMovedRef.current = false;
+    touchHandledRef.current = false;
+    setIsSwiping(true);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isSwipingRef.current) return;
+    if (!isSwiping) return;
     
     const diffX = e.touches[0].clientX - startXRef.current;
     const diffY = e.touches[0].clientY - startYRef.current;
@@ -56,50 +52,56 @@ export function SwipeableCard({
       hasMovedRef.current = true;
     }
     
-    updateTransform(diffX);
+    setCurrentX(diffX);
   };
 
   const handleTouchEnd = () => {
-    if (!isSwipingRef.current) return;
+    if (!isSwiping) return;
     
     const swipeThreshold = 100;
-    const currentX = currentXRef.current;
-    const hasMoved = hasMovedRef.current;
     
-    if (!hasMoved && onClick) {
-      updateTransform(0);
-      isSwipingRef.current = false;
+    if (!hasMovedRef.current && onClick) {
+      touchHandledRef.current = true;
+      setCurrentX(0);
+      setIsSwiping(false);
       onClick();
       return;
     }
     
     if (currentX > swipeThreshold && onSwipeRight) {
-      updateTransform(200);
+      setCurrentX(200);
       setTimeout(() => {
         onSwipeRight();
-        updateTransform(0);
-        isSwipingRef.current = false;
-        hasMovedRef.current = false;
+        setCurrentX(0);
+        setIsSwiping(false);
       }, 200);
       return;
     }
     
     if (currentX < -swipeThreshold && onSwipeLeft) {
-      updateTransform(-200);
+      setCurrentX(-200);
       setTimeout(() => {
         onSwipeLeft();
-        updateTransform(0);
-        isSwipingRef.current = false;
-        hasMovedRef.current = false;
+        setCurrentX(0);
+        setIsSwiping(false);
       }, 200);
       return;
     }
     
-    updateTransform(0);
-    isSwipingRef.current = false;
+    setCurrentX(0);
+    setIsSwiping(false);
   };
 
-  const currentX = currentXRef.current;
+  const handleClick = () => {
+    if (touchHandledRef.current) {
+      touchHandledRef.current = false;
+      return;
+    }
+    if (!hasMovedRef.current && onClick) {
+      onClick();
+    }
+  };
+
   const translateX = Math.max(-150, Math.min(150, currentX));
   const showLeftAction = currentX > 50;
   const showRightAction = currentX < -50;
@@ -136,13 +138,14 @@ export function SwipeableCard({
 
       <div
         ref={containerRef}
+        onClick={handleClick}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative z-10 swipeable-card-content"
+        className="relative z-10 cursor-pointer"
         style={{
           transform: `translateX(${translateX}px)`,
-          transition: isSwipingRef.current ? "none" : "transform 0.3s ease-out",
+          transition: isSwiping ? "none" : "transform 0.3s ease-out",
         }}
       >
         {children}
