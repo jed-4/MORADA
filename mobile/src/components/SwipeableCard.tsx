@@ -122,7 +122,7 @@ export function SwipeableCard({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative z-10"
+        className="relative z-10 swipeable-card-content"
         style={{
           transform: `translateX(${translateX}px)`,
           transition: isSwiping ? "none" : "transform 0.3s ease-out",

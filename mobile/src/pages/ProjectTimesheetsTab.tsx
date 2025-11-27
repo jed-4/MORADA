@@ -485,7 +485,7 @@ export function ProjectTimesheetsTab() {
                 }}
               >
                 <div
-                  className={`p-3 bg-card border rounded-lg ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
+                  className={`p-3 bg-card border rounded-lg timesheet-entry ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
                   data-testid={`timesheet-card-${timesheet.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
