@@ -57,6 +57,7 @@ export function SwipeableCard({
         onSwipeRight();
         setCurrentX(0);
         setIsSwiping(false);
+        setHasMoved(false);
       }, 200);
       return;
     } else if (currentX < -swipeThreshold && onSwipeLeft) {
@@ -65,6 +66,7 @@ export function SwipeableCard({
         onSwipeLeft();
         setCurrentX(0);
         setIsSwiping(false);
+        setHasMoved(false);
       }, 200);
       return;
     }
@@ -73,23 +75,16 @@ export function SwipeableCard({
     setIsSwiping(false);
   };
 
-  const handleClick = () => {
-    // Only trigger click if we didn't swipe
-    if (!hasMoved && onClick) {
-      onClick();
-    }
-  };
-
   const translateX = Math.max(-150, Math.min(150, currentX));
   const showLeftAction = currentX > 50;
   const showRightAction = currentX < -50;
 
   return (
-    <div className="relative overflow-hidden" onClick={handleClick}>
-      {/* Left Action */}
+    <div className="relative overflow-hidden">
+      {/* Left Action - pointer-events-none so it doesn't block taps */}
       {leftAction && (
         <div
-          className={`absolute left-0 top-0 bottom-0 flex items-center justify-start px-6 ${leftAction.color} transition-opacity ${
+          className={`absolute left-0 top-0 bottom-0 flex items-center justify-start px-6 pointer-events-none ${leftAction.color} transition-opacity ${
             showLeftAction ? "opacity-100" : "opacity-0"
           }`}
           style={{ width: Math.max(0, currentX) }}
@@ -101,10 +96,10 @@ export function SwipeableCard({
         </div>
       )}
 
-      {/* Right Action */}
+      {/* Right Action - pointer-events-none so it doesn't block taps */}
       {rightAction && (
         <div
-          className={`absolute right-0 top-0 bottom-0 flex items-center justify-end px-6 ${rightAction.color} transition-opacity ${
+          className={`absolute right-0 top-0 bottom-0 flex items-center justify-end px-6 pointer-events-none ${rightAction.color} transition-opacity ${
             showRightAction ? "opacity-100" : "opacity-0"
           }`}
           style={{ width: Math.max(0, -currentX) }}
@@ -116,12 +111,18 @@ export function SwipeableCard({
         </div>
       )}
 
-      {/* Card Content */}
+      {/* Card Content - handles both swipe and tap */}
       <div
         ref={containerRef}
+        onClick={() => {
+          if (!hasMoved && onClick) {
+            onClick();
+          }
+        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        className="relative z-10"
         style={{
           transform: `translateX(${translateX}px)`,
           transition: isSwiping ? "none" : "transform 0.3s ease-out",
