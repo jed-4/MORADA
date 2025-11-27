@@ -5,13 +5,14 @@ import { MobileButton } from "@/components/ui/MobileButton";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
 import { MobileTextarea } from "@/components/ui/MobileTextarea";
-import { Plus, Clock, Play, Square, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Loader2, Pencil } from "lucide-react";
+import { Plus, Clock, Play, Square, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Loader2, Pencil, Camera, X, Image } from "lucide-react";
 import { format, startOfWeek, endOfWeek, addWeeks, differenceInSeconds } from "date-fns";
 import { apiRequest, queryClient, getApiBaseUrl } from "@lib/queryClient";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { ImpactStyle } from "@capacitor/haptics";
-import { getHaptics } from "@/lib/capacitor";
+import { CameraResultType, CameraSource } from "@capacitor/camera";
+import { getHaptics, getCamera } from "@/lib/capacitor";
 import type { Project } from "@shared/schema";
 
 interface Timesheet {
@@ -29,6 +30,7 @@ interface Timesheet {
   isActive: boolean;
   clockInTime: string | null;
   createdAt: string;
+  attachments: string[] | null;
 }
 
 interface CostCode {
@@ -86,6 +88,9 @@ export function Timesheets() {
   const [secondCostCodeId, setSecondCostCodeId] = useState("");
   const [firstCostCodeDuration, setFirstCostCodeDuration] = useState("");
   const [secondCostCodeDuration, setSecondCostCodeDuration] = useState("");
+  
+  // Photo state
+  const [photos, setPhotos] = useState<string[]>([]);
 
   const currentWeekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   const currentWeekEnd = endOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -185,6 +190,7 @@ export function Timesheets() {
       costCodeId: string;
       costCodes?: { costCodeId: string; duration: string }[];
       description: string;
+      attachments?: string[];
     }) => {
       const res = await apiRequest(`/api/timesheets`, "POST", {
         projectId: data.projectId,
@@ -195,6 +201,7 @@ export function Timesheets() {
         breakDuration: data.breakDuration,
         hourlyRate: data.hourlyRate,
         description: data.description,
+        attachments: data.attachments || [],
         status: "draft",
       });
       const created = await res.json();
@@ -261,6 +268,7 @@ export function Timesheets() {
       costCodeId?: string;
       costCodes?: { costCodeId: string; duration: string }[];
       description: string;
+      attachments?: string[];
     }) => {
       const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
         date: new Date(data.date).toISOString(),
@@ -270,6 +278,7 @@ export function Timesheets() {
         breakDuration: data.breakDuration,
         hourlyRate: data.hourlyRate,
         description: data.description,
+        attachments: data.attachments || [],
       });
 
       const baseUrl = getApiBaseUrl();
@@ -319,6 +328,7 @@ export function Timesheets() {
     setNewDescription(timesheet.description || "");
     setNewDuration(timesheet.duration || "");
     setTimeEntryMode(timesheet.startTime ? "time" : "duration");
+    setPhotos(timesheet.attachments || []);
     
     try {
       const baseUrl = getApiBaseUrl();
@@ -371,6 +381,32 @@ export function Timesheets() {
     setSecondCostCodeId("");
     setFirstCostCodeDuration("");
     setSecondCostCodeDuration("");
+    setPhotos([]);
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const CameraPlugin = await getCamera();
+      const photo = await CameraPlugin.getPhoto({
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Prompt,
+        quality: 80,
+        correctOrientation: true,
+      });
+      
+      if (photo.base64String) {
+        const imageData = `data:image/jpeg;base64,${photo.base64String}`;
+        setPhotos(prev => [...prev, imageData]);
+        const Haptics = await getHaptics();
+        await Haptics.impact({ style: ImpactStyle.Medium });
+      }
+    } catch (error) {
+      console.error("Camera error:", error);
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   const calculateDuration = (start: string, end: string, breakDur: string): string => {
@@ -384,6 +420,8 @@ export function Timesheets() {
 
   const handleSubmit = () => {
     if (!selectedProjectId && !isEditMode) return;
+    if (!newCostCodeId && !isSplitCostCode) return;
+    if (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) return;
 
     let duration: string;
     if (timeEntryMode === "time") {
@@ -413,6 +451,7 @@ export function Timesheets() {
         costCodeId: newCostCodeId || undefined,
         costCodes: costCodesToSubmit,
         description: newDescription,
+        attachments: photos,
       });
     } else {
       createTimesheetMutation.mutate({
@@ -426,6 +465,7 @@ export function Timesheets() {
         costCodeId: newCostCodeId,
         costCodes: costCodesToSubmit,
         description: newDescription,
+        attachments: photos,
       });
     }
   };
@@ -456,20 +496,8 @@ export function Timesheets() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <MobileHeader
-        title="Timesheets"
-        action={
-          <MobileButton
-            size="icon"
-            variant="ghost"
-            onClick={() => setIsLogSheetOpen(true)}
-            data-testid="button-add-timesheet"
-          >
-            <Plus className="w-5 h-5" />
-          </MobileButton>
-        }
-      />
+    <div className="flex flex-col h-full relative">
+      <MobileHeader title="Timesheets" />
 
       <main className="flex-1 overflow-y-auto" {...pullToRefresh.touchHandlers}>
         <PullToRefreshIndicator {...pullToRefresh} />
@@ -524,6 +552,19 @@ export function Timesheets() {
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={newCostCodeId}
+                  onChange={(e) => setNewCostCodeId(e.target.value)}
+                  className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                  data-testid="select-cost-code-clock-in"
+                >
+                  <option value="">Select a cost code...</option>
+                  {costCodes.map((cc) => (
+                    <option key={cc.id} value={cc.id}>
+                      {cc.code} - {cc.title}
                     </option>
                   ))}
                 </select>
@@ -628,6 +669,15 @@ export function Timesheets() {
           )}
         </div>
       </main>
+
+      {/* Floating Action Button */}
+      <button
+        onClick={() => setIsLogSheetOpen(true)}
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center z-50"
+        data-testid="button-add-timesheet"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
       {/* Add/Edit Timesheet Sheet */}
       <BottomSheet isOpen={isLogSheetOpen} onClose={() => { setIsLogSheetOpen(false); resetForm(); }}>
@@ -889,6 +939,47 @@ export function Timesheets() {
               />
             </div>
 
+            {/* Photos Section */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium mb-2">
+                <Camera className="w-4 h-4" />
+                Photos
+              </label>
+              
+              {photos.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {photos.map((photo, idx) => (
+                    <div key={idx} className="relative w-20 h-20">
+                      <img
+                        src={photo}
+                        alt={`Photo ${idx + 1}`}
+                        className="w-full h-full object-cover rounded-lg border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(idx)}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center"
+                        data-testid={`button-remove-photo-${idx}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <MobileButton
+                type="button"
+                variant="outline"
+                onClick={handleTakePhoto}
+                className="w-full"
+                data-testid="button-add-photo"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                {photos.length > 0 ? "Add Another Photo" : "Add Photo"}
+              </MobileButton>
+            </div>
+
             {/* Calculated Duration Preview */}
             {timeEntryMode === "time" && newStartTime && newEndTime && (
               <div className="p-3 bg-muted/50 rounded-lg">
@@ -913,7 +1004,13 @@ export function Timesheets() {
               </MobileButton>
               <MobileButton
                 onClick={handleSubmit}
-                disabled={(!selectedProjectId && !isEditMode) || createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
+                disabled={
+                  (!selectedProjectId && !isEditMode) || 
+                  (!newCostCodeId && !isSplitCostCode) ||
+                  (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) ||
+                  createTimesheetMutation.isPending || 
+                  updateTimesheetMutation.isPending
+                }
                 className="flex-1"
                 data-testid="button-save-timesheet"
               >
@@ -983,6 +1080,25 @@ export function Timesheets() {
                   <p className="text-sm bg-muted/50 p-3 rounded-lg">{selectedTimesheet.description}</p>
                 </div>
               )}
+              
+              {selectedTimesheet.attachments && selectedTimesheet.attachments.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground block mb-2 flex items-center gap-2">
+                    <Image className="w-4 h-4" />
+                    Photos ({selectedTimesheet.attachments.length})
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedTimesheet.attachments.map((photo, idx) => (
+                      <img
+                        key={idx}
+                        src={photo}
+                        alt={`Photo ${idx + 1}`}
+                        className="w-20 h-20 object-cover rounded-lg border"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="flex gap-3 mt-6">
@@ -994,7 +1110,7 @@ export function Timesheets() {
               >
                 Close
               </MobileButton>
-              {selectedTimesheet.status === "draft" && (
+              {(selectedTimesheet.status === "draft" || !selectedTimesheet.isActive) && (
                 <MobileButton
                   onClick={() => openEditMode(selectedTimesheet)}
                   className="flex-1"

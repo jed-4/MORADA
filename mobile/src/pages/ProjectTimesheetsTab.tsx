@@ -1,7 +1,7 @@
 import { useProject } from "@/contexts/ProjectContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { Plus, Search, Loader2, Clock, Play, Square, Trash2, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Pencil } from "lucide-react";
+import { Plus, Search, Loader2, Clock, Play, Square, Trash2, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Pencil, Camera, X, Image } from "lucide-react";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
@@ -11,7 +11,8 @@ import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { apiRequest, queryClient, getApiBaseUrl } from "@lib/queryClient";
 import { ImpactStyle } from "@capacitor/haptics";
-import { getHaptics } from "@/lib/capacitor";
+import { CameraResultType, CameraSource } from "@capacitor/camera";
+import { getHaptics, getCamera } from "@/lib/capacitor";
 import { format, startOfWeek, endOfWeek, addWeeks, differenceInSeconds } from "date-fns";
 
 interface Timesheet {
@@ -29,6 +30,7 @@ interface Timesheet {
   isActive: boolean;
   clockInTime: string | null;
   createdAt: string;
+  attachments: string[] | null;
 }
 
 interface CostCode {
@@ -90,6 +92,9 @@ export function ProjectTimesheetsTab() {
   const [secondCostCodeId, setSecondCostCodeId] = useState("");
   const [firstCostCodeDuration, setFirstCostCodeDuration] = useState("");
   const [secondCostCodeDuration, setSecondCostCodeDuration] = useState("");
+  
+  // Photos state
+  const [photos, setPhotos] = useState<string[]>([]);
 
   const currentWeekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   const currentWeekEnd = endOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -326,6 +331,7 @@ export function ProjectTimesheetsTab() {
     setSecondCostCodeId("");
     setFirstCostCodeDuration("");
     setSecondCostCodeDuration("");
+    setPhotos([]);
   };
 
   const openEditMode = async (timesheet: Timesheet) => {
@@ -340,6 +346,7 @@ export function ProjectTimesheetsTab() {
     setNewDescription(timesheet.description || "");
     setNewDuration(timesheet.duration || "");
     setTimeEntryMode(timesheet.startTime ? "time" : "duration");
+    setPhotos(timesheet.attachments || []);
     
     try {
       const baseUrl = getApiBaseUrl();
@@ -385,6 +392,29 @@ export function ProjectTimesheetsTab() {
     return Math.max(0, Math.round(hours * 4) / 4).toString(); // Round to nearest 0.25
   };
 
+  const handleTakePhoto = async () => {
+    try {
+      const CameraPlugin = await getCamera();
+      const image = await CameraPlugin.getPhoto({
+        quality: 80,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Prompt,
+      });
+      
+      if (image.base64String) {
+        const base64Image = `data:image/${image.format};base64,${image.base64String}`;
+        setPhotos(prev => [...prev, base64Image]);
+      }
+    } catch (err) {
+      console.log("Camera cancelled or error:", err);
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
   // Filter timesheets by week
   const filteredTimesheets = timesheets
     .filter((ts) => {
@@ -409,6 +439,9 @@ export function ProjectTimesheetsTab() {
   };
 
   const handleSubmit = () => {
+    if (!newCostCodeId && !isSplitCostCode) return;
+    if (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) return;
+
     let duration: string;
     if (timeEntryMode === "time") {
       duration = calculateDuration(newStartTime, newEndTime, newBreakDuration);
@@ -437,6 +470,7 @@ export function ProjectTimesheetsTab() {
         costCodeId: newCostCodeId || undefined,
         costCodes: costCodesToSubmit,
         description: newDescription,
+        attachments: photos,
       });
     } else {
       createTimesheetMutation.mutate({
@@ -449,6 +483,7 @@ export function ProjectTimesheetsTab() {
         costCodeId: newCostCodeId,
         costCodes: costCodesToSubmit,
         description: newDescription,
+        attachments: photos,
       });
     }
   };
@@ -493,7 +528,8 @@ export function ProjectTimesheetsTab() {
             <button
               onClick={() => clockInMutation.mutate()}
               disabled={clockInMutation.isPending}
-              className="w-full h-16 bg-green-500 hover:bg-green-600 text-white rounded-xl flex items-center justify-center gap-3 font-semibold text-lg transition-colors"
+              style={{ backgroundColor: currentProject?.color || "#22c55e" }}
+              className="w-full h-16 text-white rounded-xl flex items-center justify-center gap-3 font-semibold text-lg transition-colors hover:opacity-90"
               data-testid="button-clock-in"
             >
               <Play className="w-7 h-7" />
@@ -859,6 +895,47 @@ export function ProjectTimesheetsTab() {
               />
             </div>
 
+            {/* Photos Section */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium mb-2">
+                <Camera className="w-4 h-4" />
+                Photos
+              </label>
+              
+              {photos.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {photos.map((photo, idx) => (
+                    <div key={idx} className="relative w-20 h-20">
+                      <img
+                        src={photo}
+                        alt={`Photo ${idx + 1}`}
+                        className="w-full h-full object-cover rounded-lg border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(idx)}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center"
+                        data-testid={`button-remove-photo-${idx}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <MobileButton
+                type="button"
+                variant="outline"
+                onClick={handleTakePhoto}
+                className="w-full"
+                data-testid="button-add-photo"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                {photos.length > 0 ? "Add Another Photo" : "Add Photo"}
+              </MobileButton>
+            </div>
+
             {/* Calculated Duration Preview */}
             {timeEntryMode === "time" && newStartTime && newEndTime && (
               <div className="p-3 bg-muted/50 rounded-lg">
@@ -883,7 +960,12 @@ export function ProjectTimesheetsTab() {
               </MobileButton>
               <MobileButton
                 onClick={handleSubmit}
-                disabled={createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
+                disabled={
+                  (!newCostCodeId && !isSplitCostCode) ||
+                  (isSplitCostCode && (!newCostCodeId || !secondCostCodeId)) ||
+                  createTimesheetMutation.isPending || 
+                  updateTimesheetMutation.isPending
+                }
                 className="flex-1"
                 data-testid="button-save-timesheet"
               >
@@ -949,6 +1031,25 @@ export function ProjectTimesheetsTab() {
               </div>
             )}
 
+            {selectedTimesheet.attachments && selectedTimesheet.attachments.length > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Image className="w-4 h-4" />
+                  Photos ({selectedTimesheet.attachments.length})
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTimesheet.attachments.map((photo, idx) => (
+                    <img
+                      key={idx}
+                      src={photo}
+                      alt={`Photo ${idx + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg border"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3 pt-6">
               <MobileButton
                 variant="outline"
@@ -958,7 +1059,7 @@ export function ProjectTimesheetsTab() {
               >
                 Close
               </MobileButton>
-              {selectedTimesheet.status === "draft" && (
+              {(selectedTimesheet.status === "draft" || !selectedTimesheet.isActive) && (
                 <MobileButton
                   onClick={() => openEditMode(selectedTimesheet)}
                   className="flex-1"
