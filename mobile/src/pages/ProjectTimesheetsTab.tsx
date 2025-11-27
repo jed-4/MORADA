@@ -1,7 +1,7 @@
 import { useProject } from "@/contexts/ProjectContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { Plus, Search, Loader2, Clock, Play, Square, Trash2, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee } from "lucide-react";
+import { Plus, Search, Loader2, Clock, Play, Square, Trash2, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Pencil } from "lucide-react";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
@@ -70,6 +70,8 @@ export function ProjectTimesheetsTab() {
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingTimesheetId, setEditingTimesheetId] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState("00:00:00");
 
   // Form state for new timesheet
@@ -243,6 +245,36 @@ export function ProjectTimesheetsTab() {
     },
   });
 
+  const updateTimesheetMutation = useMutation({
+    mutationFn: async (data: { 
+      id: string;
+      startTime?: string;
+      endTime?: string;
+      duration: string;
+      breakDuration: string;
+      hourlyRate: string;
+      description: string;
+    }) => {
+      return await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
+        startTime: data.startTime || null,
+        endTime: data.endTime || null,
+        duration: data.duration,
+        breakDuration: data.breakDuration,
+        hourlyRate: data.hourlyRate,
+        description: data.description,
+      });
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets", { projectId: currentProject?.id }] });
+      const Haptics = await getHaptics();
+      await Haptics.impact({ style: ImpactStyle.Medium });
+      setIsAddOpen(false);
+      setIsEditMode(false);
+      setEditingTimesheetId(null);
+      resetForm();
+    },
+  });
+
   const resetForm = () => {
     setNewDate(format(new Date(), "yyyy-MM-dd"));
     setNewStartTime("07:00");
@@ -253,6 +285,23 @@ export function ProjectTimesheetsTab() {
     setNewDescription("");
     setNewDuration("");
     setTimeEntryMode("time");
+    setIsEditMode(false);
+    setEditingTimesheetId(null);
+  };
+
+  const openEditMode = (timesheet: Timesheet) => {
+    setIsDetailOpen(false);
+    setIsEditMode(true);
+    setEditingTimesheetId(timesheet.id);
+    setNewDate(format(new Date(timesheet.date), "yyyy-MM-dd"));
+    setNewStartTime(timesheet.startTime || "07:00");
+    setNewEndTime(timesheet.endTime || "15:30");
+    setNewBreakDuration(timesheet.breakDuration || "0.5");
+    setNewHourlyRate(timesheet.hourlyRate || "");
+    setNewDescription(timesheet.description || "");
+    setNewDuration(timesheet.duration || "");
+    setTimeEntryMode(timesheet.startTime ? "time" : "duration");
+    setIsAddOpen(true);
   };
 
   // Calculate duration from start/end time
@@ -296,16 +345,28 @@ export function ProjectTimesheetsTab() {
       duration = newDuration;
     }
 
-    createTimesheetMutation.mutate({
-      date: newDate,
-      startTime: timeEntryMode === "time" ? newStartTime : undefined,
-      endTime: timeEntryMode === "time" ? newEndTime : undefined,
-      duration,
-      breakDuration: newBreakDuration,
-      hourlyRate: newHourlyRate,
-      costCodeId: newCostCodeId,
-      description: newDescription,
-    });
+    if (isEditMode && editingTimesheetId) {
+      updateTimesheetMutation.mutate({
+        id: editingTimesheetId,
+        startTime: timeEntryMode === "time" ? newStartTime : undefined,
+        endTime: timeEntryMode === "time" ? newEndTime : undefined,
+        duration,
+        breakDuration: newBreakDuration,
+        hourlyRate: newHourlyRate,
+        description: newDescription,
+      });
+    } else {
+      createTimesheetMutation.mutate({
+        date: newDate,
+        startTime: timeEntryMode === "time" ? newStartTime : undefined,
+        endTime: timeEntryMode === "time" ? newEndTime : undefined,
+        duration,
+        breakDuration: newBreakDuration,
+        hourlyRate: newHourlyRate,
+        costCodeId: newCostCodeId,
+        description: newDescription,
+      });
+    }
   };
 
   return (
@@ -474,7 +535,7 @@ export function ProjectTimesheetsTab() {
       {/* Add Timesheet Sheet */}
       <BottomSheet isOpen={isAddOpen} onClose={() => setIsAddOpen(false)}>
         <div className="p-4 max-h-[80vh] overflow-y-auto">
-          <h2 className="text-xl font-bold mb-6">Add Time Entry</h2>
+          <h2 className="text-xl font-bold mb-6">{isEditMode ? "Edit Time Entry" : "Add Time Entry"}</h2>
           
           <div className="space-y-4">
             {/* Time Entry Mode Toggle */}
@@ -650,11 +711,14 @@ export function ProjectTimesheetsTab() {
               </MobileButton>
               <MobileButton
                 onClick={handleSubmit}
-                disabled={createTimesheetMutation.isPending}
+                disabled={createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
                 className="flex-1"
                 data-testid="button-save-timesheet"
               >
-                {createTimesheetMutation.isPending ? "Adding..." : "Add Entry"}
+                {isEditMode 
+                  ? (updateTimesheetMutation.isPending ? "Updating..." : "Update")
+                  : (createTimesheetMutation.isPending ? "Adding..." : "Add Entry")
+                }
               </MobileButton>
             </div>
           </div>
@@ -715,12 +779,23 @@ export function ProjectTimesheetsTab() {
 
             <div className="flex gap-3 pt-6">
               <MobileButton
+                variant="outline"
                 onClick={() => setIsDetailOpen(false)}
                 className="flex-1"
                 data-testid="button-close-timesheet-detail"
               >
                 Close
               </MobileButton>
+              {selectedTimesheet.status === "draft" && (
+                <MobileButton
+                  onClick={() => openEditMode(selectedTimesheet)}
+                  className="flex-1"
+                  data-testid="button-edit-timesheet"
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
+                </MobileButton>
+              )}
             </div>
           </div>
         )}
