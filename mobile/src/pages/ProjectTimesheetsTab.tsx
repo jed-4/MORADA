@@ -1,8 +1,7 @@
 import { useProject } from "@/contexts/ProjectContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { Plus, Search, Loader2, Clock, Play, Square, Trash2, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Pencil, Camera, X, Image } from "lucide-react";
-import { SwipeableCard } from "@/components/SwipeableCard";
+import { Plus, Search, Loader2, Clock, Play, Square, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Pencil, Camera, X, Image, Trash2 } from "lucide-react";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
 import { MobileTextarea } from "@/components/ui/MobileTextarea";
@@ -593,54 +592,45 @@ export function ProjectTimesheetsTab() {
         ) : (
           <div className="space-y-2">
             {filteredTimesheets.map((timesheet) => (
-              <SwipeableCard
+              <div
                 key={timesheet.id}
-                onSwipeLeft={() => deleteTimesheetMutation.mutate(timesheet.id)}
                 onClick={() => {
                   setSelectedTimesheet(timesheet);
                   setIsDetailOpen(true);
                 }}
-                rightAction={{
-                  icon: <Trash2 className="w-5 h-5" />,
-                  color: "bg-red-500",
-                  label: "Delete",
-                }}
+                className={`p-3 bg-card border rounded-lg cursor-pointer active:bg-muted/50 ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
+                data-testid={`timesheet-card-${timesheet.id}`}
               >
-                <div
-                  className={`p-3 bg-card border rounded-lg timesheet-entry ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
-                  data-testid={`timesheet-card-${timesheet.id}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                        <span className="font-medium">
-                          {format(new Date(timesheet.date), "EEE, MMM d")}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <span className="font-medium">
+                        {format(new Date(timesheet.date), "EEE, MMM d")}
+                      </span>
+                      {timesheet.isActive && (
+                        <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          Active
                         </span>
-                        {timesheet.isActive && (
-                          <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        {timesheet.startTime || "?"} - {timesheet.endTime || "?"} 
-                        <span className="font-medium ml-2">({parseFloat(timesheet.duration || "0").toFixed(1)}h)</span>
-                      </div>
+                      )}
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(timesheet.status)}`}>
-                      {timesheet.status}
-                    </span>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {timesheet.startTime || "?"} - {timesheet.endTime || "?"} 
+                      <span className="font-medium ml-2">({parseFloat(timesheet.duration || "0").toFixed(1)}h)</span>
+                    </div>
                   </div>
-                  
-                  {timesheet.description && (
-                    <p className="text-sm text-muted-foreground mt-2 line-clamp-1">
-                      {timesheet.description}
-                    </p>
-                  )}
+                  <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(timesheet.status)}`}>
+                    {timesheet.status}
+                  </span>
                 </div>
-              </SwipeableCard>
+                
+                {timesheet.description && (
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-1">
+                    {timesheet.description}
+                  </p>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -1062,14 +1052,29 @@ export function ProjectTimesheetsTab() {
                 Close
               </MobileButton>
               {(selectedTimesheet.status === "draft" || !selectedTimesheet.isActive) && (
-                <MobileButton
-                  onClick={() => openEditMode(selectedTimesheet)}
-                  className="flex-1"
-                  data-testid="button-edit-timesheet"
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Edit
-                </MobileButton>
+                <>
+                  <MobileButton
+                    variant="outline"
+                    onClick={() => {
+                      if (confirm("Are you sure you want to delete this timesheet?")) {
+                        deleteTimesheetMutation.mutate(selectedTimesheet.id);
+                        setIsDetailOpen(false);
+                      }
+                    }}
+                    className="text-red-500 border-red-500"
+                    data-testid="button-delete-timesheet"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </MobileButton>
+                  <MobileButton
+                    onClick={() => openEditMode(selectedTimesheet)}
+                    className="flex-1"
+                    data-testid="button-edit-timesheet"
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Edit
+                  </MobileButton>
+                </>
               )}
             </div>
           </div>
