@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 interface BottomSheetProps {
@@ -23,7 +24,7 @@ export function BottomSheet({ isOpen, onClose, children, title }: BottomSheetPro
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <>
       {/* Overlay */}
       <div
@@ -51,6 +52,7 @@ export function BottomSheet({ isOpen, onClose, children, title }: BottomSheetPro
         )}
         {children}
       </div>
-    </>
+    </>,
+    document.body
   );
 }
