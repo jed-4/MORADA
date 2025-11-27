@@ -165,6 +165,10 @@ export function ProjectNotesTab() {
                 key={note.id}
                 onSwipeRight={() => togglePinMutation.mutate({ noteId: note.id, pinned: !note.pinned })}
                 onSwipeLeft={() => deleteNoteMutation.mutate(note.id)}
+                onClick={() => {
+                  setSelectedNote(note);
+                  setIsDetailOpen(true);
+                }}
                 leftAction={{
                   icon: note.pinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />,
                   color: "bg-[#bba7db]",
@@ -177,11 +181,7 @@ export function ProjectNotesTab() {
                 }}
               >
                 <div
-                  onClick={() => {
-                    setSelectedNote(note);
-                    setIsDetailOpen(true);
-                  }}
-                  className="p-3 bg-card border rounded-lg"
+                  className="p-3 bg-card border rounded-lg cursor-pointer"
                   data-testid={`note-card-${note.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -216,7 +216,7 @@ export function ProjectNotesTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-note"
       >
         <Plus className="w-6 h-6" />

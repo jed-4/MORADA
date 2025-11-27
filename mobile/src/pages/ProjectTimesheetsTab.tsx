@@ -248,14 +248,17 @@ export function ProjectTimesheetsTab() {
   const updateTimesheetMutation = useMutation({
     mutationFn: async (data: { 
       id: string;
+      date: string;
       startTime?: string;
       endTime?: string;
       duration: string;
       breakDuration: string;
       hourlyRate: string;
+      costCodeId?: string;
       description: string;
     }) => {
-      return await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
+      const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
+        date: new Date(data.date).toISOString(),
         startTime: data.startTime || null,
         endTime: data.endTime || null,
         duration: data.duration,
@@ -263,6 +266,34 @@ export function ProjectTimesheetsTab() {
         hourlyRate: data.hourlyRate,
         description: data.description,
       });
+
+      const baseUrl = getApiBaseUrl();
+      const existingRes = await fetch(`${baseUrl}/api/timesheets/${data.id}/cost-codes`, {
+        credentials: "include",
+      });
+      const existingCostCodes = await existingRes.json();
+
+      if (data.costCodeId) {
+        if (existingCostCodes && existingCostCodes.length > 0) {
+          await apiRequest(`/api/timesheets/cost-codes/${existingCostCodes[0].id}`, "PATCH", {
+            costCodeId: data.costCodeId,
+            duration: data.duration,
+            hourlyRate: data.hourlyRate,
+            total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+          });
+        } else {
+          await apiRequest(`/api/timesheets/${data.id}/cost-codes`, "POST", {
+            costCodeId: data.costCodeId,
+            duration: data.duration,
+            hourlyRate: data.hourlyRate,
+            total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+          });
+        }
+      } else if (existingCostCodes && existingCostCodes.length > 0) {
+        await apiRequest(`/api/timesheets/cost-codes/${existingCostCodes[0].id}`, "DELETE", {});
+      }
+
+      return res;
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets", { projectId: currentProject?.id }] });
@@ -289,7 +320,7 @@ export function ProjectTimesheetsTab() {
     setEditingTimesheetId(null);
   };
 
-  const openEditMode = (timesheet: Timesheet) => {
+  const openEditMode = async (timesheet: Timesheet) => {
     setIsDetailOpen(false);
     setIsEditMode(true);
     setEditingTimesheetId(timesheet.id);
@@ -301,6 +332,22 @@ export function ProjectTimesheetsTab() {
     setNewDescription(timesheet.description || "");
     setNewDuration(timesheet.duration || "");
     setTimeEntryMode(timesheet.startTime ? "time" : "duration");
+    
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/timesheets/${timesheet.id}/cost-codes`, {
+        credentials: "include",
+      });
+      const existingCostCodes = await res.json();
+      if (existingCostCodes && existingCostCodes.length > 0) {
+        setNewCostCodeId(existingCostCodes[0].costCodeId);
+      } else {
+        setNewCostCodeId("");
+      }
+    } catch {
+      setNewCostCodeId("");
+    }
+    
     setIsAddOpen(true);
   };
 
@@ -348,11 +395,13 @@ export function ProjectTimesheetsTab() {
     if (isEditMode && editingTimesheetId) {
       updateTimesheetMutation.mutate({
         id: editingTimesheetId,
+        date: newDate,
         startTime: timeEntryMode === "time" ? newStartTime : undefined,
         endTime: timeEntryMode === "time" ? newEndTime : undefined,
         duration,
         breakDuration: newBreakDuration,
         hourlyRate: newHourlyRate,
+        costCodeId: newCostCodeId || undefined,
         description: newDescription,
       });
     } else {
@@ -526,7 +575,7 @@ export function ProjectTimesheetsTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-timesheet"
       >
         <Plus className="w-6 h-6" />

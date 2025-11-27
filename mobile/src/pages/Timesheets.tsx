@@ -5,7 +5,7 @@ import { MobileButton } from "@/components/ui/MobileButton";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
 import { MobileTextarea } from "@/components/ui/MobileTextarea";
-import { Plus, Clock, Play, Square, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Loader2 } from "lucide-react";
+import { Plus, Clock, Play, Square, ChevronLeft, ChevronRight, Timer, DollarSign, Coffee, Loader2, Pencil } from "lucide-react";
 import { format, startOfWeek, endOfWeek, addWeeks, differenceInSeconds } from "date-fns";
 import { apiRequest, queryClient, getApiBaseUrl } from "@lib/queryClient";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
@@ -66,6 +66,8 @@ export function Timesheets() {
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [elapsedTime, setElapsedTime] = useState("00:00:00");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingTimesheetId, setEditingTimesheetId] = useState<string | null>(null);
 
   // Form state
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -238,6 +240,99 @@ export function Timesheets() {
     },
   });
 
+  const updateTimesheetMutation = useMutation({
+    mutationFn: async (data: { 
+      id: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      duration: string;
+      breakDuration: string;
+      hourlyRate: string;
+      costCodeId?: string;
+      description: string;
+    }) => {
+      const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
+        date: new Date(data.date).toISOString(),
+        startTime: data.startTime || null,
+        endTime: data.endTime || null,
+        duration: data.duration,
+        breakDuration: data.breakDuration,
+        hourlyRate: data.hourlyRate,
+        description: data.description,
+      });
+
+      const baseUrl = getApiBaseUrl();
+      const existingRes = await fetch(`${baseUrl}/api/timesheets/${data.id}/cost-codes`, {
+        credentials: "include",
+      });
+      const existingCostCodes = await existingRes.json();
+
+      if (data.costCodeId) {
+        if (existingCostCodes && existingCostCodes.length > 0) {
+          await apiRequest(`/api/timesheets/cost-codes/${existingCostCodes[0].id}`, "PATCH", {
+            costCodeId: data.costCodeId,
+            duration: data.duration,
+            hourlyRate: data.hourlyRate,
+            total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+          });
+        } else {
+          await apiRequest(`/api/timesheets/${data.id}/cost-codes`, "POST", {
+            costCodeId: data.costCodeId,
+            duration: data.duration,
+            hourlyRate: data.hourlyRate,
+            total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+          });
+        }
+      } else if (existingCostCodes && existingCostCodes.length > 0) {
+        await apiRequest(`/api/timesheets/cost-codes/${existingCostCodes[0].id}`, "DELETE", {});
+      }
+
+      return res;
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      const Haptics = await getHaptics();
+      await Haptics.impact({ style: ImpactStyle.Medium });
+      setIsLogSheetOpen(false);
+      setIsEditMode(false);
+      setEditingTimesheetId(null);
+      resetForm();
+    },
+  });
+
+  const openEditMode = async (timesheet: Timesheet) => {
+    setIsDetailOpen(false);
+    setIsEditMode(true);
+    setEditingTimesheetId(timesheet.id);
+    setSelectedProjectId(timesheet.projectId);
+    setNewDate(format(new Date(timesheet.date), "yyyy-MM-dd"));
+    setNewStartTime(timesheet.startTime || "07:00");
+    setNewEndTime(timesheet.endTime || "15:30");
+    setNewBreakDuration(timesheet.breakDuration || "0.5");
+    setNewHourlyRate(timesheet.hourlyRate || "");
+    setNewDescription(timesheet.description || "");
+    setNewDuration(timesheet.duration || "");
+    setTimeEntryMode(timesheet.startTime ? "time" : "duration");
+    
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/timesheets/${timesheet.id}/cost-codes`, {
+        credentials: "include",
+      });
+      const existingCostCodes = await res.json();
+      if (existingCostCodes && existingCostCodes.length > 0) {
+        setNewCostCodeId(existingCostCodes[0].costCodeId);
+      } else {
+        setNewCostCodeId("");
+      }
+    } catch {
+      setNewCostCodeId("");
+    }
+    
+    setIsLogSheetOpen(true);
+  };
+
   const resetForm = () => {
     setSelectedProjectId("");
     setNewDate(format(new Date(), "yyyy-MM-dd"));
@@ -249,6 +344,8 @@ export function Timesheets() {
     setNewDescription("");
     setNewDuration("");
     setTimeEntryMode("time");
+    setIsEditMode(false);
+    setEditingTimesheetId(null);
   };
 
   const calculateDuration = (start: string, end: string, breakDur: string): string => {
@@ -261,7 +358,7 @@ export function Timesheets() {
   };
 
   const handleSubmit = () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId && !isEditMode) return;
 
     let duration: string;
     if (timeEntryMode === "time") {
@@ -270,17 +367,31 @@ export function Timesheets() {
       duration = newDuration;
     }
 
-    createTimesheetMutation.mutate({
-      projectId: selectedProjectId,
-      date: newDate,
-      startTime: timeEntryMode === "time" ? newStartTime : undefined,
-      endTime: timeEntryMode === "time" ? newEndTime : undefined,
-      duration,
-      breakDuration: newBreakDuration,
-      hourlyRate: newHourlyRate,
-      costCodeId: newCostCodeId,
-      description: newDescription,
-    });
+    if (isEditMode && editingTimesheetId) {
+      updateTimesheetMutation.mutate({
+        id: editingTimesheetId,
+        date: newDate,
+        startTime: timeEntryMode === "time" ? newStartTime : undefined,
+        endTime: timeEntryMode === "time" ? newEndTime : undefined,
+        duration,
+        breakDuration: newBreakDuration,
+        hourlyRate: newHourlyRate,
+        costCodeId: newCostCodeId || undefined,
+        description: newDescription,
+      });
+    } else {
+      createTimesheetMutation.mutate({
+        projectId: selectedProjectId,
+        date: newDate,
+        startTime: timeEntryMode === "time" ? newStartTime : undefined,
+        endTime: timeEntryMode === "time" ? newEndTime : undefined,
+        duration,
+        breakDuration: newBreakDuration,
+        hourlyRate: newHourlyRate,
+        costCodeId: newCostCodeId,
+        description: newDescription,
+      });
+    }
   };
 
   // Filter timesheets by week
@@ -482,10 +593,10 @@ export function Timesheets() {
         </div>
       </main>
 
-      {/* Add Timesheet Sheet */}
-      <BottomSheet isOpen={isLogSheetOpen} onClose={() => setIsLogSheetOpen(false)}>
+      {/* Add/Edit Timesheet Sheet */}
+      <BottomSheet isOpen={isLogSheetOpen} onClose={() => { setIsLogSheetOpen(false); resetForm(); }}>
         <div className="p-4 max-h-[80vh] overflow-y-auto">
-          <h2 className="text-xl font-bold mb-6">Add Time Entry</h2>
+          <h2 className="text-xl font-bold mb-6">{isEditMode ? "Edit Time Entry" : "Add Time Entry"}</h2>
 
           <div className="space-y-4">
             {/* Time Entry Mode Toggle */}
@@ -678,11 +789,14 @@ export function Timesheets() {
               </MobileButton>
               <MobileButton
                 onClick={handleSubmit}
-                disabled={!selectedProjectId || createTimesheetMutation.isPending}
+                disabled={(!selectedProjectId && !isEditMode) || createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
                 className="flex-1"
                 data-testid="button-save-timesheet"
               >
-                {createTimesheetMutation.isPending ? "Adding..." : "Add Entry"}
+                {isEditMode 
+                  ? (updateTimesheetMutation.isPending ? "Updating..." : "Update")
+                  : (createTimesheetMutation.isPending ? "Adding..." : "Add Entry")
+                }
               </MobileButton>
             </div>
           </div>
@@ -747,14 +861,25 @@ export function Timesheets() {
               )}
             </div>
             
-            <div className="mt-6">
+            <div className="flex gap-3 mt-6">
               <MobileButton
                 variant="outline"
                 onClick={() => setIsDetailOpen(false)}
-                className="w-full"
+                className="flex-1"
+                data-testid="button-close-timesheet-detail"
               >
                 Close
               </MobileButton>
+              {selectedTimesheet.status === "draft" && (
+                <MobileButton
+                  onClick={() => openEditMode(selectedTimesheet)}
+                  className="flex-1"
+                  data-testid="button-edit-timesheet"
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
+                </MobileButton>
+              )}
             </div>
           </div>
         )}

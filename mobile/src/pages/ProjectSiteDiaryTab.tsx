@@ -289,7 +289,7 @@ export function ProjectSiteDiaryTab() {
 
       <button
         onClick={() => setIsAddOpen(true)}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-[#bba7db] text-white rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-diary"
       >
         <Plus className="w-6 h-6" />
