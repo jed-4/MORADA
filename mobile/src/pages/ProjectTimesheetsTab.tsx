@@ -594,7 +594,9 @@ export function ProjectTimesheetsTab() {
             {filteredTimesheets.map((timesheet) => (
               <div
                 key={timesheet.id}
-                onClick={() => {
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                  console.log('[ProjectTimesheets] Card tapped, opening detail for:', timesheet.id);
                   setSelectedTimesheet(timesheet);
                   setIsDetailOpen(true);
                 }}
@@ -637,7 +639,11 @@ export function ProjectTimesheetsTab() {
       </div>
 
       <button
-        onClick={() => setIsAddOpen(true)}
+        onPointerUp={(e) => {
+          e.stopPropagation();
+          console.log('[ProjectTimesheets] FAB tapped, opening add sheet');
+          setIsAddOpen(true);
+        }}
         className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center z-50"
         data-testid="button-add-timesheet"
       >
