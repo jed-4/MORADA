@@ -62,6 +62,8 @@ function generateTimeOptions() {
 
 export function Timesheets() {
   const [isLogSheetOpen, setIsLogSheetOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [elapsedTime, setElapsedTime] = useState("00:00:00");
 
@@ -441,7 +443,11 @@ export function Timesheets() {
               {filteredTimesheets.map((timesheet) => (
                 <div
                   key={timesheet.id}
-                  className={`p-3 bg-card border rounded-lg ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
+                  onClick={() => {
+                    setSelectedTimesheet(timesheet);
+                    setIsDetailOpen(true);
+                  }}
+                  className={`p-3 bg-card border rounded-lg cursor-pointer active:bg-muted/50 ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
                   data-testid={`timesheet-card-${timesheet.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -681,6 +687,77 @@ export function Timesheets() {
             </div>
           </div>
         </div>
+      </BottomSheet>
+
+      {/* Detail Sheet */}
+      <BottomSheet isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)}>
+        {selectedTimesheet && (
+          <div className="p-4">
+            <h2 className="text-xl font-bold mb-4">Time Entry Details</h2>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Date</span>
+                <span className="font-medium">{format(new Date(selectedTimesheet.date), "EEEE, MMMM d, yyyy")}</span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Project</span>
+                <span className="font-medium">{getProjectName(selectedTimesheet.projectId)}</span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Time</span>
+                <span className="font-medium">
+                  {selectedTimesheet.startTime || "?"} - {selectedTimesheet.endTime || "?"}
+                </span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Duration</span>
+                <span className="font-medium">{parseFloat(selectedTimesheet.duration || "0").toFixed(1)} hours</span>
+              </div>
+              
+              {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Break</span>
+                  <span className="font-medium">{parseFloat(selectedTimesheet.breakDuration).toFixed(1)} hours</span>
+                </div>
+              )}
+              
+              {selectedTimesheet.hourlyRate && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Hourly Rate</span>
+                  <span className="font-medium">${parseFloat(selectedTimesheet.hourlyRate).toFixed(2)}</span>
+                </div>
+              )}
+              
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Status</span>
+                <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusColor(selectedTimesheet.status)}`}>
+                  {selectedTimesheet.status}
+                </span>
+              </div>
+              
+              {selectedTimesheet.description && (
+                <div>
+                  <span className="text-muted-foreground block mb-1">Description</span>
+                  <p className="text-sm bg-muted/50 p-3 rounded-lg">{selectedTimesheet.description}</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-6">
+              <MobileButton
+                variant="outline"
+                onClick={() => setIsDetailOpen(false)}
+                className="w-full"
+              >
+                Close
+              </MobileButton>
+            </div>
+          </div>
+        )}
       </BottomSheet>
     </div>
   );

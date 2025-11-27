@@ -56,11 +56,13 @@ export function SwipeableCard({
   };
 
   const handleTouchEnd = () => {
+    console.log("[SwipeableCard] touchEnd - isSwiping:", isSwiping, "hasMoved:", hasMovedRef.current, "onClick:", !!onClick);
     if (!isSwiping) return;
     
     const swipeThreshold = 100;
     
     if (!hasMovedRef.current && onClick) {
+      console.log("[SwipeableCard] TAP DETECTED - calling onClick");
       touchHandledRef.current = true;
       setCurrentX(0);
       setIsSwiping(false);
@@ -93,11 +95,14 @@ export function SwipeableCard({
   };
 
   const handleClick = () => {
+    console.log("[SwipeableCard] click - touchHandled:", touchHandledRef.current, "hasMoved:", hasMovedRef.current, "onClick:", !!onClick);
     if (touchHandledRef.current) {
+      console.log("[SwipeableCard] click ignored - already handled by touch");
       touchHandledRef.current = false;
       return;
     }
     if (!hasMovedRef.current && onClick) {
+      console.log("[SwipeableCard] CLICK - calling onClick");
       onClick();
     }
   };
