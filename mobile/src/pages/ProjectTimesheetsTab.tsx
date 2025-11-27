@@ -474,6 +474,10 @@ export function ProjectTimesheetsTab() {
               <SwipeableCard
                 key={timesheet.id}
                 onSwipeLeft={() => deleteTimesheetMutation.mutate(timesheet.id)}
+                onClick={() => {
+                  setSelectedTimesheet(timesheet);
+                  setIsDetailOpen(true);
+                }}
                 rightAction={{
                   icon: <Trash2 className="w-5 h-5" />,
                   color: "bg-red-500",
@@ -481,10 +485,6 @@ export function ProjectTimesheetsTab() {
                 }}
               >
                 <div
-                  onClick={() => {
-                    setSelectedTimesheet(timesheet);
-                    setIsDetailOpen(true);
-                  }}
                   className={`p-3 bg-card border rounded-lg ${timesheet.isActive ? "border-green-500 bg-green-50 dark:bg-green-950" : ""}`}
                   data-testid={`timesheet-card-${timesheet.id}`}
                 >

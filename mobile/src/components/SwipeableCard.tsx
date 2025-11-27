@@ -4,6 +4,7 @@ interface SwipeableCardProps {
   children: ReactNode;
   onSwipeLeft?: () => void;
   onSwipeRight?: () => void;
+  onClick?: () => void;
   leftAction?: {
     icon: ReactNode;
     color: string;
@@ -20,22 +21,28 @@ export function SwipeableCard({
   children,
   onSwipeLeft,
   onSwipeRight,
+  onClick,
   leftAction,
   rightAction,
 }: SwipeableCardProps) {
   const [startX, setStartX] = useState(0);
   const [currentX, setCurrentX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
+  const [hasMoved, setHasMoved] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setStartX(e.touches[0].clientX);
     setIsSwiping(true);
+    setHasMoved(false);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isSwiping) return;
     const diff = e.touches[0].clientX - startX;
+    if (Math.abs(diff) > 10) {
+      setHasMoved(true);
+    }
     setCurrentX(diff);
   };
 
@@ -45,7 +52,6 @@ export function SwipeableCard({
     const swipeThreshold = 100;
     
     if (currentX > swipeThreshold && onSwipeRight) {
-      // Animate completion before resetting
       setCurrentX(200);
       setTimeout(() => {
         onSwipeRight();
@@ -54,7 +60,6 @@ export function SwipeableCard({
       }, 200);
       return;
     } else if (currentX < -swipeThreshold && onSwipeLeft) {
-      // Animate completion before resetting
       setCurrentX(-200);
       setTimeout(() => {
         onSwipeLeft();
@@ -62,6 +67,11 @@ export function SwipeableCard({
         setIsSwiping(false);
       }, 200);
       return;
+    }
+    
+    // If minimal movement, treat as a tap
+    if (!hasMoved && onClick) {
+      onClick();
     }
     
     setCurrentX(0);
