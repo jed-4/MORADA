@@ -6818,7 +6818,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Cost Codes routes (company-specific)
   app.get("/api/cost-codes", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const codes = await storage.getCostCodes(req.user!.companyId);
+      let codes = await storage.getCostCodes(req.user!.companyId);
+      
+      // Filter by availableInTimesheets if query param is passed
+      if (req.query.timesheets === "true") {
+        codes = codes.filter(code => code.availableInTimesheets === true);
+      }
+      
       res.json(codes);
     } catch (error: any) {
       res.status(500).json({ 

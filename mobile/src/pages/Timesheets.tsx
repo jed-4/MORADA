@@ -122,10 +122,10 @@ export function Timesheets() {
   });
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
-    queryKey: ["/api/cost-codes"],
+    queryKey: ["/api/cost-codes", { timesheets: true }],
     queryFn: async () => {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/api/cost-codes`, {
+      const res = await fetch(`${baseUrl}/api/cost-codes?timesheets=true`, {
         credentials: "include",
       });
       if (!res.ok) return [];
@@ -712,7 +712,7 @@ export function Timesheets() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Project</label>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">Project</label>
               <select
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
@@ -729,7 +729,7 @@ export function Timesheets() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Date</label>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">Date</label>
               <MobileInput
                 type="date"
                 value={newDate}
@@ -742,7 +742,7 @@ export function Timesheets() {
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Start Time</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Start Time</label>
                     <select
                       value={newStartTime}
                       onChange={(e) => setNewStartTime(e.target.value)}
@@ -757,7 +757,7 @@ export function Timesheets() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">End Time</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">End Time</label>
                     <select
                       value={newEndTime}
                       onChange={(e) => setNewEndTime(e.target.value)}
@@ -848,7 +848,7 @@ export function Timesheets() {
             {/* Cost Code Section */}
             {!isSplitCostCode ? (
               <div>
-                <label className="block text-sm font-medium mb-1">Cost Code</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Cost Code</label>
                 <select
                   value={newCostCodeId}
                   onChange={(e) => setNewCostCodeId(e.target.value)}
@@ -929,7 +929,7 @@ export function Timesheets() {
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">Description</label>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">Description</label>
               <MobileTextarea
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}

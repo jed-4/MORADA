@@ -67,22 +67,32 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
     if (!touchStart || !touchCurrent || isVerticalScroll) {
       resetTouch();
       return;
     }
 
     const distance = touchStart.x - touchCurrent.x;
+    const absDistance = Math.abs(distance);
     const isLeftSwipe = distance > minSwipeDistance;
     const isRightSwipe = distance < -minSwipeDistance;
 
-    if (isLeftSwipe && currentIndex < tabs.length - 1) {
-      setIsSwipeTransition(true);
-      onTabChange(tabs[currentIndex + 1].key);
-    } else if (isRightSwipe && currentIndex > 0) {
-      setIsSwipeTransition(true);
-      onTabChange(tabs[currentIndex - 1].key);
+    // If this was a tap (minimal movement), don't interfere - let child elements handle it
+    if (absDistance < 10 && !isDragging) {
+      resetTouch();
+      return;
+    }
+
+    // Only handle actual swipe gestures
+    if (isDragging) {
+      if (isLeftSwipe && currentIndex < tabs.length - 1) {
+        setIsSwipeTransition(true);
+        onTabChange(tabs[currentIndex + 1].key);
+      } else if (isRightSwipe && currentIndex > 0) {
+        setIsSwipeTransition(true);
+        onTabChange(tabs[currentIndex - 1].key);
+      }
     }
 
     resetTouch();
