@@ -121,15 +121,13 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
       <div
         className={`h-full flex ${shouldAnimate ? 'transition-transform duration-300' : ''}`}
         style={{
-          transform: `translateX(calc(-${currentIndex * 100}% + ${getDragOffset()}px))`,
-          width: `${tabs.length * 100}%`,
+          transform: `translateX(calc(-${currentIndex * 100}vw + ${getDragOffset()}px))`,
         }}
       >
         {tabs.map((tab) => (
           <div
             key={tab.key}
-            className="h-full flex-shrink-0"
-            style={{ width: `${100 / tabs.length}%` }}
+            className="h-full flex-shrink-0 w-screen"
           >
             {tab.content}
           </div>
