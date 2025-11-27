@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
 interface SwipeableViewProps {
   tabs: Array<{
@@ -15,9 +15,27 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
   const [touchCurrent, setTouchCurrent] = useState<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isVerticalScroll, setIsVerticalScroll] = useState(false);
+  const [isSwipeTransition, setIsSwipeTransition] = useState(false);
+  const prevIndexRef = useRef<number>(-1);
 
   const currentIndex = tabs.findIndex(t => t.key === currentTab);
   const minSwipeDistance = 50;
+
+  useEffect(() => {
+    const prevIndex = prevIndexRef.current;
+    const isAdjacentTab = prevIndex !== -1 && Math.abs(currentIndex - prevIndex) === 1;
+    
+    if (isSwipeTransition && isAdjacentTab) {
+      const timer = setTimeout(() => {
+        setIsSwipeTransition(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setIsSwipeTransition(false);
+    }
+    
+    prevIndexRef.current = currentIndex;
+  }, [currentIndex, isSwipeTransition]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.targetTouches[0];
@@ -33,7 +51,6 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
     const deltaX = Math.abs(touch.clientX - touchStart.x);
     const deltaY = Math.abs(touch.clientY - touchStart.y);
     
-    // Determine if this is a vertical scroll gesture
     if (!isDragging && !isVerticalScroll) {
       if (deltaY > deltaX && deltaY > 10) {
         setIsVerticalScroll(true);
@@ -43,10 +60,8 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
       }
     }
     
-    // If vertical scroll, don't interfere
     if (isVerticalScroll) return;
     
-    // Handle horizontal drag
     if (isDragging) {
       setTouchCurrent({ x: touch.clientX, y: touch.clientY });
     }
@@ -63,8 +78,10 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
     const isRightSwipe = distance < -minSwipeDistance;
 
     if (isLeftSwipe && currentIndex < tabs.length - 1) {
+      setIsSwipeTransition(true);
       onTabChange(tabs[currentIndex + 1].key);
     } else if (isRightSwipe && currentIndex > 0) {
+      setIsSwipeTransition(true);
       onTabChange(tabs[currentIndex - 1].key);
     }
 
@@ -82,16 +99,16 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
     if (!isDragging || !touchStart || !touchCurrent) return 0;
     const offset = touchCurrent.x - touchStart.x;
     
-    // Limit drag distance
     const canDragLeft = currentIndex < tabs.length - 1;
     const canDragRight = currentIndex > 0;
     
     if (offset < 0 && !canDragLeft) return 0;
     if (offset > 0 && !canDragRight) return 0;
     
-    // Add resistance at edges
     return offset * 0.5;
   };
+
+  const shouldAnimate = isDragging || isSwipeTransition;
 
   return (
     <div
@@ -102,7 +119,7 @@ export function SwipeableView({ tabs, currentTab, onTabChange }: SwipeableViewPr
       onTouchEnd={handleTouchEnd}
     >
       <div
-        className="h-full flex transition-transform duration-300"
+        className={`h-full flex ${shouldAnimate ? 'transition-transform duration-300' : ''}`}
         style={{
           transform: `translateX(calc(-${currentIndex * 100}% + ${getDragOffset()}px))`,
           width: `${tabs.length * 100}%`,
