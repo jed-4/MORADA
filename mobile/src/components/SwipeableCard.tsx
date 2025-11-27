@@ -48,11 +48,13 @@ export function SwipeableCard({
     const diffX = e.touches[0].clientX - startXRef.current;
     const diffY = e.touches[0].clientY - startYRef.current;
     
-    if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) {
+    if (Math.abs(diffX) > 20 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
       hasMovedRef.current = true;
     }
     
-    setCurrentX(diffX);
+    if (hasMovedRef.current) {
+      setCurrentX(diffX);
+    }
   };
 
   const handleTouchEnd = () => {

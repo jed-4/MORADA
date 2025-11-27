@@ -84,6 +84,12 @@ export function ProjectTimesheetsTab() {
   const [newDescription, setNewDescription] = useState("");
   const [timeEntryMode, setTimeEntryMode] = useState<"time" | "duration">("time");
   const [newDuration, setNewDuration] = useState("");
+  
+  // Split cost code state
+  const [isSplitCostCode, setIsSplitCostCode] = useState(false);
+  const [secondCostCodeId, setSecondCostCodeId] = useState("");
+  const [firstCostCodeDuration, setFirstCostCodeDuration] = useState("");
+  const [secondCostCodeDuration, setSecondCostCodeDuration] = useState("");
 
   const currentWeekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   const currentWeekEnd = endOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -170,6 +176,7 @@ export function ProjectTimesheetsTab() {
       breakDuration: string;
       hourlyRate: string;
       costCodeId: string;
+      costCodes?: { costCodeId: string; duration: string }[];
       description: string;
     }) => {
       const res = await apiRequest(`/api/timesheets`, "POST", {
@@ -185,14 +192,15 @@ export function ProjectTimesheetsTab() {
       });
       const created = await res.json();
       
-      // Add cost code if selected
-      if (data.costCodeId && created.id) {
-        await apiRequest(`/api/timesheets/${created.id}/cost-codes`, "POST", {
-          costCodeId: data.costCodeId,
-          duration: data.duration,
-          hourlyRate: data.hourlyRate,
-          total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
-        });
+      if (data.costCodes && data.costCodes.length > 0 && created.id) {
+        for (const cc of data.costCodes) {
+          await apiRequest(`/api/timesheets/${created.id}/cost-codes`, "POST", {
+            costCodeId: cc.costCodeId,
+            duration: cc.duration,
+            hourlyRate: data.hourlyRate,
+            total: (parseFloat(cc.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+          });
+        }
       }
       
       return created;
@@ -255,6 +263,7 @@ export function ProjectTimesheetsTab() {
       breakDuration: string;
       hourlyRate: string;
       costCodeId?: string;
+      costCodes?: { costCodeId: string; duration: string }[];
       description: string;
     }) => {
       const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
@@ -273,24 +282,19 @@ export function ProjectTimesheetsTab() {
       });
       const existingCostCodes = await existingRes.json();
 
-      if (data.costCodeId) {
-        if (existingCostCodes && existingCostCodes.length > 0) {
-          await apiRequest(`/api/timesheets/cost-codes/${existingCostCodes[0].id}`, "PATCH", {
-            costCodeId: data.costCodeId,
-            duration: data.duration,
-            hourlyRate: data.hourlyRate,
-            total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
-          });
-        } else {
+      for (const existing of (existingCostCodes || [])) {
+        await apiRequest(`/api/timesheets/cost-codes/${existing.id}`, "DELETE", {});
+      }
+
+      if (data.costCodes && data.costCodes.length > 0) {
+        for (const cc of data.costCodes) {
           await apiRequest(`/api/timesheets/${data.id}/cost-codes`, "POST", {
-            costCodeId: data.costCodeId,
-            duration: data.duration,
+            costCodeId: cc.costCodeId,
+            duration: cc.duration,
             hourlyRate: data.hourlyRate,
-            total: (parseFloat(data.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
+            total: (parseFloat(cc.duration) * parseFloat(data.hourlyRate || "0")).toFixed(2),
           });
         }
-      } else if (existingCostCodes && existingCostCodes.length > 0) {
-        await apiRequest(`/api/timesheets/cost-codes/${existingCostCodes[0].id}`, "DELETE", {});
       }
 
       return res;
@@ -318,6 +322,10 @@ export function ProjectTimesheetsTab() {
     setTimeEntryMode("time");
     setIsEditMode(false);
     setEditingTimesheetId(null);
+    setIsSplitCostCode(false);
+    setSecondCostCodeId("");
+    setFirstCostCodeDuration("");
+    setSecondCostCodeDuration("");
   };
 
   const openEditMode = async (timesheet: Timesheet) => {
@@ -339,13 +347,29 @@ export function ProjectTimesheetsTab() {
         credentials: "include",
       });
       const existingCostCodes = await res.json();
-      if (existingCostCodes && existingCostCodes.length > 0) {
+      if (existingCostCodes && existingCostCodes.length > 1) {
+        setIsSplitCostCode(true);
         setNewCostCodeId(existingCostCodes[0].costCodeId);
+        setFirstCostCodeDuration(existingCostCodes[0].duration || "");
+        setSecondCostCodeId(existingCostCodes[1].costCodeId);
+        setSecondCostCodeDuration(existingCostCodes[1].duration || "");
+      } else if (existingCostCodes && existingCostCodes.length === 1) {
+        setIsSplitCostCode(false);
+        setNewCostCodeId(existingCostCodes[0].costCodeId);
+        setSecondCostCodeId("");
+        setFirstCostCodeDuration("");
+        setSecondCostCodeDuration("");
       } else {
+        setIsSplitCostCode(false);
         setNewCostCodeId("");
+        setSecondCostCodeId("");
+        setFirstCostCodeDuration("");
+        setSecondCostCodeDuration("");
       }
     } catch {
+      setIsSplitCostCode(false);
       setNewCostCodeId("");
+      setSecondCostCodeId("");
     }
     
     setIsAddOpen(true);
@@ -392,6 +416,15 @@ export function ProjectTimesheetsTab() {
       duration = newDuration;
     }
 
+    const costCodesToSubmit = isSplitCostCode 
+      ? [
+          { costCodeId: newCostCodeId, duration: firstCostCodeDuration },
+          { costCodeId: secondCostCodeId, duration: secondCostCodeDuration },
+        ].filter(cc => cc.costCodeId)
+      : newCostCodeId 
+        ? [{ costCodeId: newCostCodeId, duration }]
+        : [];
+
     if (isEditMode && editingTimesheetId) {
       updateTimesheetMutation.mutate({
         id: editingTimesheetId,
@@ -402,6 +435,7 @@ export function ProjectTimesheetsTab() {
         breakDuration: newBreakDuration,
         hourlyRate: newHourlyRate,
         costCodeId: newCostCodeId || undefined,
+        costCodes: costCodesToSubmit,
         description: newDescription,
       });
     } else {
@@ -413,6 +447,7 @@ export function ProjectTimesheetsTab() {
         breakDuration: newBreakDuration,
         hourlyRate: newHourlyRate,
         costCodeId: newCostCodeId,
+        costCodes: costCodesToSubmit,
         description: newDescription,
       });
     }
@@ -708,22 +743,110 @@ export function ProjectTimesheetsTab() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Cost Code</label>
-              <select
-                value={newCostCodeId}
-                onChange={(e) => setNewCostCodeId(e.target.value)}
-                className="w-full h-11 px-4 bg-background border rounded-lg text-base"
-                data-testid="select-cost-code"
-              >
-                <option value="">Select a cost code</option>
-                {costCodes.map((cc) => (
-                  <option key={cc.id} value={cc.id}>
-                    {cc.code} - {cc.title}
-                  </option>
-                ))}
-              </select>
+            {/* Split Cost Code Toggle */}
+            <div className="flex items-center gap-3 py-2">
+              <input
+                type="checkbox"
+                id="splitCostCode"
+                checked={isSplitCostCode}
+                onChange={(e) => {
+                  setIsSplitCostCode(e.target.checked);
+                  if (!e.target.checked) {
+                    setSecondCostCodeId("");
+                    setFirstCostCodeDuration("");
+                    setSecondCostCodeDuration("");
+                  }
+                }}
+                className="w-5 h-5 rounded border-gray-300"
+                data-testid="checkbox-split-cost-code"
+              />
+              <label htmlFor="splitCostCode" className="text-sm font-medium">
+                Split across multiple cost codes
+              </label>
             </div>
+
+            {/* Cost Code Section */}
+            {!isSplitCostCode ? (
+              <div>
+                <label className="block text-sm font-medium mb-1">Cost Code</label>
+                <select
+                  value={newCostCodeId}
+                  onChange={(e) => setNewCostCodeId(e.target.value)}
+                  className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                  data-testid="select-cost-code"
+                >
+                  <option value="">Select a cost code</option>
+                  {costCodes.map((cc) => (
+                    <option key={cc.id} value={cc.id}>
+                      {cc.code} - {cc.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-4 p-3 bg-muted/30 rounded-lg border">
+                {/* First Cost Code */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium">Cost Code 1</label>
+                  <select
+                    value={newCostCodeId}
+                    onChange={(e) => setNewCostCodeId(e.target.value)}
+                    className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                    data-testid="select-cost-code-1"
+                  >
+                    <option value="">Select a cost code</option>
+                    {costCodes.map((cc) => (
+                      <option key={cc.id} value={cc.id}>
+                        {cc.code} - {cc.title}
+                      </option>
+                    ))}
+                  </select>
+                  <MobileInput
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    value={firstCostCodeDuration}
+                    onChange={(e) => setFirstCostCodeDuration(e.target.value)}
+                    placeholder="Hours for this cost code"
+                    data-testid="input-cost-code-1-duration"
+                  />
+                </div>
+
+                {/* Second Cost Code */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium">Cost Code 2</label>
+                  <select
+                    value={secondCostCodeId}
+                    onChange={(e) => setSecondCostCodeId(e.target.value)}
+                    className="w-full h-11 px-4 bg-background border rounded-lg text-base"
+                    data-testid="select-cost-code-2"
+                  >
+                    <option value="">Select a cost code</option>
+                    {costCodes.map((cc) => (
+                      <option key={cc.id} value={cc.id}>
+                        {cc.code} - {cc.title}
+                      </option>
+                    ))}
+                  </select>
+                  <MobileInput
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    value={secondCostCodeDuration}
+                    onChange={(e) => setSecondCostCodeDuration(e.target.value)}
+                    placeholder="Hours for this cost code"
+                    data-testid="input-cost-code-2-duration"
+                  />
+                </div>
+
+                {/* Split Duration Summary */}
+                {(firstCostCodeDuration || secondCostCodeDuration) && (
+                  <div className="text-xs text-muted-foreground pt-2 border-t">
+                    Total split: {(parseFloat(firstCostCodeDuration || "0") + parseFloat(secondCostCodeDuration || "0")).toFixed(2)} hours
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium mb-1">Description</label>
