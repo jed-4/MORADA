@@ -570,7 +570,7 @@ function SupplierCard({
     >
       <CardContent className="p-2 h-full flex items-center gap-2">
         <Avatar className="h-12 w-12 shrink-0">
-          <AvatarFallback className="bg-blue-500/10 text-blue-600 font-semibold">
+          <AvatarFallback className="bg-[#bba7db]/10 text-[#bba7db] font-semibold">
             {getInitials(supplier.name)}
           </AvatarFallback>
         </Avatar>
@@ -624,7 +624,7 @@ function SupplierCard({
                 onClick={(e) => e.stopPropagation()}
                 data-testid={`button-supplier-actions-${supplier.id}`}
               >
-                <MoreVertical className="h-3 w-3 text-blue-600" />
+                <MoreVertical className="h-3 w-3 text-[#bba7db]" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
