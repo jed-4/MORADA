@@ -42,7 +42,7 @@ interface DefectFormDialogProps {
 }
 
 export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialogProps) {
-  const { id: projectId } = useParams<{ id: string }>();
+  const { projectId } = useParams<{ projectId: string }>();
   const { toast } = useToast();
   
   const { statusOptions } = useDefectStatusOptions();
