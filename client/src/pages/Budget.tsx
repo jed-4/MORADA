@@ -3,10 +3,8 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { 
   Table, 
@@ -25,27 +23,23 @@ export default function BudgetPage() {
   const { projectId } = useParams();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Budget" });
-  const [activeTab, setActiveTab] = useState("costs");
+  const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
 
-  // Fetch budget for this project
   const { data: budget, isLoading: budgetLoading } = useQuery<Budget>({
     queryKey: [`/api/projects/${projectId}/budget`],
     enabled: !!projectId,
   });
 
-  // Fetch budget line items
   const { data: lineItems = [], isLoading: lineItemsLoading } = useQuery<BudgetLineItem[]>({
     queryKey: [`/api/budgets/${budget?.id}/line-items`],
     enabled: !!budget?.id,
   });
 
-  // Fetch labour hours budget
   const { data: labourHours = [], isLoading: labourHoursLoading } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
     enabled: !!projectId,
   });
 
-  // Recalculate budget mutation
   const recalculateMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest('POST', `/api/projects/${projectId}/budget/calculate`, {});
@@ -66,7 +60,6 @@ export default function BudgetPage() {
     }
   });
 
-  // Recalculate line items mutation
   const recalculateLineItemsMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest('POST', `/api/budgets/${budget?.id}/line-items/recalculate`, {});
@@ -87,7 +80,6 @@ export default function BudgetPage() {
     }
   });
 
-  // Recalculate labour hours mutation
   const recalculateLabourHoursMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest('POST', `/api/projects/${projectId}/labour-hours-budget/recalculate`, {});
@@ -110,7 +102,6 @@ export default function BudgetPage() {
 
   const formatCurrency = (cents: number) => {
     const dollars = cents / 100;
-    // Check if it's a whole number
     const isWholeNumber = dollars % 1 === 0;
     
     return new Intl.NumberFormat('en-AU', {
@@ -123,7 +114,7 @@ export default function BudgetPage() {
 
   const formatHours = (hours: string | number) => {
     const numHours = typeof hours === 'string' ? parseFloat(hours) : hours;
-    return `${numHours.toFixed(2)}hrs`;
+    return `${numHours.toFixed(1)}hrs`;
   };
 
   const getVarianceColor = (variance: number) => {
@@ -138,7 +129,6 @@ export default function BudgetPage() {
     return "outline";
   };
 
-  // Calculate labour hours totals
   const totalBudgetedHours = labourHours.reduce((sum, item) => sum + parseFloat(item.budgetedHours || "0"), 0);
   const totalPendingHours = labourHours.reduce((sum, item) => sum + parseFloat(item.pendingHours || "0"), 0);
   const totalApprovedHours = labourHours.reduce((sum, item) => sum + parseFloat(item.approvedHours || "0"), 0);
@@ -146,16 +136,38 @@ export default function BudgetPage() {
   const hoursRemaining = totalBudgetedHours - totalActualHours;
   const hoursPercentUsed = totalBudgetedHours > 0 ? Math.round((totalActualHours / totalBudgetedHours) * 100) : 0;
 
+  const handleRecalculate = () => {
+    if (activeTab === "costs") {
+      recalculateMutation.mutate();
+      if (budget?.id) {
+        recalculateLineItemsMutation.mutate();
+      }
+    } else {
+      recalculateLabourHoursMutation.mutate();
+    }
+  };
+
+  const isRecalculating = activeTab === "costs" 
+    ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending)
+    : recalculateLabourHoursMutation.isPending;
+
   if (budgetLoading) {
     return (
-      <div className="container mx-auto p-6 space-y-6">
-        <Skeleton className="h-10 w-48" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
+      <div className="flex flex-col h-full">
+        <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-2 gap-4 flex-shrink-0">
+          <Skeleton className="h-5 w-24" />
         </div>
-        <Skeleton className="h-96" />
+        <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-2 border-b flex-shrink-0">
+          <Skeleton className="h-6 w-32" />
+        </div>
+        <div className="p-2 space-y-2">
+          <div className="grid gap-2 grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-20" />
+            ))}
+          </div>
+          <Skeleton className="h-64" />
+        </div>
       </div>
     );
   }
@@ -175,351 +187,377 @@ export default function BudgetPage() {
     : 0;
 
   return (
-    <div className="container mx-auto p-6 space-y-6" data-testid="page-budget">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-budget-title">{pageTitle}</h1>
-          <p className="text-muted-foreground mt-1">
-            Track project costs and financial performance
-          </p>
-        </div>
-        <Button
-          onClick={() => {
-            if (activeTab === "costs") {
-              recalculateMutation.mutate();
-              if (budget?.id) {
-                recalculateLineItemsMutation.mutate();
-              }
-            } else {
-              recalculateLabourHoursMutation.mutate();
-            }
-          }}
-          disabled={
-            activeTab === "costs" 
-              ? (recalculateMutation.isPending || recalculateLineItemsMutation.isPending)
-              : recalculateLabourHoursMutation.isPending
-          }
-          data-testid="button-recalculate"
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${
-            (activeTab === "costs" && recalculateMutation.isPending) || 
-            (activeTab === "hours" && recalculateLabourHoursMutation.isPending) 
-              ? 'animate-spin' : ''
-          }`} />
-          Recalculate
-        </Button>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="costs" data-testid="tab-costs">Costs</TabsTrigger>
-          <TabsTrigger value="hours" data-testid="tab-labour-hours">Labour Hours</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="costs" className="space-y-6"  data-testid="tabcontent-costs">
-
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Budget</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-budget">
-              {formatCurrency(budgetData.revisedAmount)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Baseline: {formatCurrency(budgetData.baselineAmount)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Actual Spent</CardTitle>
-            <TrendingDown className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-actual-spent">
-              {formatCurrency(budgetData.actualAmount)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {percentSpent}% of budget
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Remaining</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${getVarianceColor(remaining)}`} data-testid="text-remaining">
-              {formatCurrency(remaining)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {100 - percentSpent}% remaining
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Forecast</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-forecast">
-              {formatCurrency(budgetData.forecastAmount)}
-            </div>
-            <p className={`text-xs mt-1 ${getVarianceColor(budgetData.varianceAmount)}`}>
-              Variance: {formatCurrency(budgetData.varianceAmount)}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Detailed Breakdown Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cost Code Breakdown</CardTitle>
-          <CardDescription>
-            Budget vs actual costs by cost code
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {lineItemsLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : lineItems.length === 0 ? (
-            <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No budget breakdown available</h3>
-              <p className="text-muted-foreground mb-4">
-                Click "Recalculate" to generate budget breakdown from your estimates and bills.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Cost Code</TableHead>
-                    <TableHead className="text-right">Budgeted</TableHead>
-                    <TableHead className="text-right">Actual</TableHead>
-                    <TableHead className="text-right">Forecast</TableHead>
-                    <TableHead className="text-right">Variance</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lineItems.map((item) => (
-                    <TableRow key={item.id} data-testid={`row-budget-item-${item.id}`}>
-                      <TableCell className="font-medium">
-                        <div>
-                          <div>{item.costCodeTitle || "Uncategorized"}</div>
-                          {item.categoryTitle && (
-                            <div className="text-xs text-muted-foreground">{item.categoryTitle}</div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right" data-testid={`text-budgeted-${item.id}`}>
-                        {formatCurrency(item.budgetedAmount)}
-                      </TableCell>
-                      <TableCell className="text-right" data-testid={`text-actual-${item.id}`}>
-                        {formatCurrency(item.actualAmount)}
-                      </TableCell>
-                      <TableCell className="text-right" data-testid={`text-forecast-${item.id}`}>
-                        {formatCurrency(item.forecastAmount)}
-                      </TableCell>
-                      <TableCell className={`text-right ${getVarianceColor(item.variance)}`} data-testid={`text-variance-${item.id}`}>
-                        {formatCurrency(item.variance)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={getVarianceBadgeVariant(item.variance)}>
-                          {item.variance > 0 ? "Under" : item.variance < 0 ? "Over" : "On Track"}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+    <div className="flex flex-col h-full" data-testid="page-budget">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-budget-title">
+            {pageTitle}
+          </h2>
+          {activeTab === "costs" && (
+            <Badge variant="secondary" className="text-xs">
+              {lineItems.length} cost codes
+            </Badge>
           )}
-        </CardContent>
-      </Card>
-        </TabsContent>
+          {activeTab === "hours" && (
+            <Badge variant="secondary" className="text-xs">
+              {labourHours.length} items
+            </Badge>
+          )}
+        </div>
 
-        <TabsContent value="hours" className="space-y-6" data-testid="tabcontent-labour-hours">
-          {/* Labour Hours Summary Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Budgeted Hours</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold" data-testid="text-budgeted-hours">
-                  {formatHours(totalBudgetedHours)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  From labour estimates
-                </p>
-              </CardContent>
-            </Card>
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+            onClick={handleRecalculate}
+            disabled={isRecalculating}
+            data-testid="button-recalculate"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRecalculating ? 'animate-spin' : ''}`} />
+            <span>Recalculate</span>
+          </button>
+        </div>
+      </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pending Hours</CardTitle>
-                <AlertCircle className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400" data-testid="text-pending-hours">
-                  {formatHours(totalPendingHours)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Awaiting approval
-                </p>
-              </CardContent>
-            </Card>
+      {/* Row 2 - Tabs (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setActiveTab('costs')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === 'costs' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-costs"
+          >
+            <DollarSign className="w-3 h-3" />
+            <span>Costs</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('hours')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === 'hours' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-labour-hours"
+          >
+            <Clock className="w-3 h-3" />
+            <span>Labour Hours</span>
+          </button>
+        </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Approved Hours</CardTitle>
-                <TrendingDown className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold" data-testid="text-approved-hours">
-                  {formatHours(totalApprovedHours)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {hoursPercentUsed}% of budget
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Remaining</CardTitle>
-                <Target className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${getVarianceColor(hoursRemaining)}`} data-testid="text-remaining-hours">
-                  {formatHours(hoursRemaining)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {100 - hoursPercentUsed}% remaining
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Efficiency</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold" data-testid="text-efficiency">
-                  {hoursPercentUsed}%
-                </div>
-                <Progress value={hoursPercentUsed} className="mt-2" />
-              </CardContent>
-            </Card>
+        {/* Summary stats in header */}
+        {activeTab === "costs" && (
+          <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+            <span>Budget: <span className="font-medium text-foreground">{formatCurrency(budgetData.revisedAmount)}</span></span>
+            <span>Spent: <span className="font-medium text-foreground">{formatCurrency(budgetData.actualAmount)}</span></span>
+            <span className={getVarianceColor(remaining)}>Remaining: <span className="font-medium">{formatCurrency(remaining)}</span></span>
           </div>
+        )}
+        {activeTab === "hours" && (
+          <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+            <span>Budget: <span className="font-medium text-foreground">{formatHours(totalBudgetedHours)}</span></span>
+            <span>Used: <span className="font-medium text-foreground">{formatHours(totalActualHours)}</span></span>
+            <span className={getVarianceColor(hoursRemaining)}>Remaining: <span className="font-medium">{formatHours(hoursRemaining)}</span></span>
+          </div>
+        )}
+      </div>
 
-          {/* Labour Hours Breakdown Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Hours by Cost Code</CardTitle>
-              <CardDescription>
-                Labour hours budget vs actual by cost code
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {labourHoursLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-2 space-y-2">
+        {activeTab === "costs" && (
+          <>
+            {/* Compact Summary Cards */}
+            <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Total Budget</p>
+                    <p className="text-base font-bold" data-testid="text-total-budget">
+                      {formatCurrency(budgetData.revisedAmount)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Baseline: {formatCurrency(budgetData.baselineAmount)}
+                    </p>
+                  </div>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </div>
-              ) : labourHours.length === 0 ? (
-                <div className="text-center py-12">
-                  <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No labour hours budget</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Mark labour estimate items as "Track Hours" and click "Recalculate" to generate hours budget.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Cost Code</TableHead>
-                        <TableHead className="text-right">Budgeted</TableHead>
-                        <TableHead className="text-right">Pending</TableHead>
-                        <TableHead className="text-right">Approved</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead className="text-right">Variance</TableHead>
-                        <TableHead className="text-right">% Used</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {labourHours.map((item) => {
-                        const budgeted = parseFloat(item.budgetedHours || "0");
-                        const pending = parseFloat(item.pendingHours || "0");
-                        const approved = parseFloat(item.approvedHours || "0");
-                        const total = pending + approved;
-                        const variance = budgeted - total;
-                        const percentUsed = budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
+              </Card>
 
-                        return (
-                          <TableRow key={item.id} data-testid={`row-labour-hours-${item.id}`}>
-                            <TableCell className="font-medium">
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Actual Spent</p>
+                    <p className="text-base font-bold" data-testid="text-actual-spent">
+                      {formatCurrency(budgetData.actualAmount)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{percentSpent}% of budget</p>
+                  </div>
+                  <TrendingDown className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Remaining</p>
+                    <p className={`text-base font-bold ${getVarianceColor(remaining)}`} data-testid="text-remaining">
+                      {formatCurrency(remaining)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{100 - percentSpent}% remaining</p>
+                  </div>
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Forecast</p>
+                    <p className="text-base font-bold" data-testid="text-forecast">
+                      {formatCurrency(budgetData.forecastAmount)}
+                    </p>
+                    <p className={`text-[10px] ${getVarianceColor(budgetData.varianceAmount)}`}>
+                      Variance: {formatCurrency(budgetData.varianceAmount)}
+                    </p>
+                  </div>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+            </div>
+
+            {/* Cost Code Breakdown Table */}
+            <Card>
+              <CardHeader className="py-2 px-3">
+                <CardTitle className="text-sm">Cost Code Breakdown</CardTitle>
+                <CardDescription className="text-xs">Budget vs actual costs by cost code</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {lineItemsLoading ? (
+                  <div className="p-3 space-y-2">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : lineItems.length === 0 ? (
+                  <div className="text-center py-8">
+                    <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                    <h3 className="text-sm font-semibold mb-1">No budget breakdown available</h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Click "Recalculate" to generate budget breakdown from your estimates and bills.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Cost Code</TableHead>
+                          <TableHead className="text-xs text-right">Budgeted</TableHead>
+                          <TableHead className="text-xs text-right">Actual</TableHead>
+                          <TableHead className="text-xs text-right">Forecast</TableHead>
+                          <TableHead className="text-xs text-right">Variance</TableHead>
+                          <TableHead className="text-xs text-right">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lineItems.map((item) => (
+                          <TableRow key={item.id} data-testid={`row-budget-item-${item.id}`}>
+                            <TableCell className="text-xs">
                               <div>
-                                <div>{item.costCodeTitle || "Uncategorized"}</div>
+                                <div className="font-medium">{item.costCodeTitle || "Uncategorized"}</div>
                                 {item.categoryTitle && (
-                                  <div className="text-xs text-muted-foreground">{item.categoryTitle}</div>
+                                  <div className="text-[10px] text-muted-foreground">{item.categoryTitle}</div>
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell className="text-right" data-testid={`text-budgeted-${item.id}`}>
-                              {formatHours(budgeted)}
+                            <TableCell className="text-xs text-right" data-testid={`text-budgeted-${item.id}`}>
+                              {formatCurrency(item.budgetedAmount)}
                             </TableCell>
-                            <TableCell className="text-right text-amber-600 dark:text-amber-400" data-testid={`text-pending-${item.id}`}>
-                              {formatHours(pending)}
+                            <TableCell className="text-xs text-right" data-testid={`text-actual-${item.id}`}>
+                              {formatCurrency(item.actualAmount)}
                             </TableCell>
-                            <TableCell className="text-right" data-testid={`text-approved-${item.id}`}>
-                              {formatHours(approved)}
+                            <TableCell className="text-xs text-right" data-testid={`text-forecast-${item.id}`}>
+                              {formatCurrency(item.forecastAmount)}
                             </TableCell>
-                            <TableCell className="text-right font-medium" data-testid={`text-total-${item.id}`}>
-                              {formatHours(total)}
-                            </TableCell>
-                            <TableCell className={`text-right ${getVarianceColor(variance)}`} data-testid={`text-variance-${item.id}`}>
-                              {formatHours(variance)}
+                            <TableCell className={`text-xs text-right ${getVarianceColor(item.variance)}`} data-testid={`text-variance-${item.id}`}>
+                              {formatCurrency(item.variance)}
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <span className="text-sm">{percentUsed}%</span>
-                                <Progress value={percentUsed} className="w-16" />
-                              </div>
+                              <Badge variant={getVarianceBadgeVariant(item.variance)} className="h-4 px-1.5 text-[10px]">
+                                {item.variance > 0 ? "Under" : item.variance < 0 ? "Over" : "On Track"}
+                              </Badge>
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {activeTab === "hours" && (
+          <>
+            {/* Labour Hours Summary Cards */}
+            <div className="grid gap-2 grid-cols-2 lg:grid-cols-5">
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Budgeted Hours</p>
+                    <p className="text-base font-bold" data-testid="text-budgeted-hours">
+                      {formatHours(totalBudgetedHours)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">From estimates</p>
+                  </div>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              </Card>
+
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Pending Hours</p>
+                    <p className="text-base font-bold text-amber-600 dark:text-amber-400" data-testid="text-pending-hours">
+                      {formatHours(totalPendingHours)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Awaiting approval</p>
+                  </div>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Approved Hours</p>
+                    <p className="text-base font-bold" data-testid="text-approved-hours">
+                      {formatHours(totalApprovedHours)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{hoursPercentUsed}% of budget</p>
+                  </div>
+                  <TrendingDown className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Remaining</p>
+                    <p className={`text-base font-bold ${getVarianceColor(hoursRemaining)}`} data-testid="text-remaining-hours">
+                      {formatHours(hoursRemaining)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{100 - hoursPercentUsed}% remaining</p>
+                  </div>
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+
+              <Card className="p-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Efficiency</p>
+                    <p className="text-base font-bold" data-testid="text-efficiency">
+                      {hoursPercentUsed}%
+                    </p>
+                    <Progress value={hoursPercentUsed} className="mt-1 h-1.5" />
+                  </div>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Card>
+            </div>
+
+            {/* Labour Hours Breakdown Table */}
+            <Card>
+              <CardHeader className="py-2 px-3">
+                <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
+                <CardDescription className="text-xs">Labour hours budget vs actual by cost code</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {labourHoursLoading ? (
+                  <div className="p-3 space-y-2">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : labourHours.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                    <h3 className="text-sm font-semibold mb-1">No labour hours budget</h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Mark labour estimate items as "Track Hours" and click "Recalculate".
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Cost Code</TableHead>
+                          <TableHead className="text-xs text-right">Budgeted</TableHead>
+                          <TableHead className="text-xs text-right">Pending</TableHead>
+                          <TableHead className="text-xs text-right">Approved</TableHead>
+                          <TableHead className="text-xs text-right">Total</TableHead>
+                          <TableHead className="text-xs text-right">Variance</TableHead>
+                          <TableHead className="text-xs text-right">% Used</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {labourHours.map((item) => {
+                          const budgeted = parseFloat(item.budgetedHours || "0");
+                          const pending = parseFloat(item.pendingHours || "0");
+                          const approved = parseFloat(item.approvedHours || "0");
+                          const total = pending + approved;
+                          const variance = budgeted - total;
+                          const percentUsed = budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
+
+                          return (
+                            <TableRow key={item.id} data-testid={`row-labour-hours-${item.id}`}>
+                              <TableCell className="text-xs">
+                                <div>
+                                  <div className="font-medium">{item.costCodeTitle || "Uncategorized"}</div>
+                                  {item.categoryTitle && (
+                                    <div className="text-[10px] text-muted-foreground">{item.categoryTitle}</div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-right" data-testid={`text-budgeted-${item.id}`}>
+                                {formatHours(budgeted)}
+                              </TableCell>
+                              <TableCell className="text-xs text-right text-amber-600 dark:text-amber-400" data-testid={`text-pending-${item.id}`}>
+                                {formatHours(pending)}
+                              </TableCell>
+                              <TableCell className="text-xs text-right" data-testid={`text-approved-${item.id}`}>
+                                {formatHours(approved)}
+                              </TableCell>
+                              <TableCell className="text-xs text-right font-medium" data-testid={`text-total-${item.id}`}>
+                                {formatHours(total)}
+                              </TableCell>
+                              <TableCell className={`text-xs text-right ${getVarianceColor(variance)}`} data-testid={`text-variance-${item.id}`}>
+                                {formatHours(variance)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <span className="text-xs">{percentUsed}%</span>
+                                  <Progress value={percentUsed} className="w-12 h-1.5" />
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
     </div>
   );
 }
