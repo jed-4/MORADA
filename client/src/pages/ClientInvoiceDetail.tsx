@@ -752,50 +752,74 @@ export default function ClientInvoiceDetail() {
     <div className="flex flex-col h-full" data-testid="page-client-invoice-detail">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex-none border-b p-6">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleCancel}
-                  data-testid="button-back"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <h1 className="text-2xl font-bold" data-testid="text-page-title">
-                  {isEditMode ? "Edit Invoice" : "Create Invoice"}
-                </h1>
+          {/* Row 1 - Title & Actions (36px) */}
+          <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+                data-testid="button-back"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+              <h2 className="text-sm font-semibold" data-testid="text-page-title">
+                {isEditMode ? "Edit Invoice" : "Create Invoice"}
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-preview"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
+              </button>
+              <button
+                type="submit"
+                disabled={createMutation.isPending || updateMutation.isPending}
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-save-invoice"
+              >
+                <FileText className="w-3 h-3" />
+                <span>{isEditMode ? "Update" : "Create"} Invoice</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2 - Summary Info (36px) */}
+          <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5" data-testid="header-summary-total">
+                <span className="text-muted-foreground">Total:</span>
+                <span className="font-semibold">{formatCurrency(total)}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="button-preview"
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Preview
-                </Button>
+              <div className="w-px h-4 bg-border" />
+              <div className="flex items-center gap-1.5" data-testid="header-summary-paid">
+                <span className="text-muted-foreground">Paid:</span>
+                <span className="font-semibold text-green-600">{formatCurrency(paid)}</span>
+              </div>
+              <div className="w-px h-4 bg-border" />
+              <div className="flex items-center gap-1.5" data-testid="header-summary-due">
+                <span className="text-muted-foreground">Due:</span>
+                <span className="font-semibold text-[#bba7db]">{formatCurrency(due)}</span>
               </div>
             </div>
 
-            {/* Summary in Header */}
-            <div className="flex items-center gap-8 text-sm">
-              <div data-testid="header-summary-total">
-                <span className="text-muted-foreground">Total: </span>
-                <span className="font-semibold">{formatCurrency(total)}</span>
-              </div>
-              <div data-testid="header-summary-paid">
-                <span className="text-muted-foreground">Paid: </span>
-                <span className="font-semibold">{formatCurrency(paid)}</span>
-              </div>
-              <div data-testid="header-summary-due">
-                <span className="text-muted-foreground">Due: </span>
-                <span className="font-semibold">{formatCurrency(due)}</span>
-              </div>
-            </div>
+            {isEditMode && invoice?.status === "draft" && (
+              <button
+                type="button"
+                onClick={handleSendInvoice}
+                disabled={sendInvoiceMutation.isPending}
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-send-invoice"
+              >
+                <Send className="w-3 h-3" />
+                <span>Send Invoice</span>
+              </button>
+            )}
           </div>
 
           {/* Main Content */}
@@ -1541,61 +1565,20 @@ export default function ClientInvoiceDetail() {
             </div>
           </div>
 
-          {/* Footer with Actions */}
-          <div className="flex-none border-t p-6">
-            <div className="flex items-center justify-between gap-3">
-              <Button
+          {/* Footer with Additional Actions - only shown for sent/partial invoices */}
+          {isEditMode && (invoice?.status === "sent" || invoice?.status === "partial") && (
+            <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-end px-2 border-t border-border flex-shrink-0">
+              <button
                 type="button"
-                variant="outline"
-                onClick={handleCancel}
-                data-testid="button-cancel"
+                onClick={() => setPaymentDialogOpen(true)}
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                data-testid="button-record-payment-footer"
               >
-                Cancel
-              </Button>
-              
-              <div className="flex items-center gap-3">
-                {/* Save button - always shown */}
-                <Button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  data-testid="button-save"
-                >
-                  {(createMutation.isPending || updateMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  )}
-                  Save
-                </Button>
-
-                {/* Send button - shown for draft invoices */}
-                {isEditMode && invoice?.status === "draft" && (
-                  <Button
-                    type="button"
-                    onClick={handleSendInvoice}
-                    disabled={sendInvoiceMutation.isPending}
-                    data-testid="button-send"
-                  >
-                    {sendInvoiceMutation.isPending && (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    )}
-                    <Send className="h-4 w-4 mr-2" />
-                    Send
-                  </Button>
-                )}
-
-                {/* Record Payment button - shown for sent, partial invoices */}
-                {isEditMode && (invoice?.status === "sent" || invoice?.status === "partial") && (
-                  <Button
-                    type="button"
-                    onClick={() => setPaymentDialogOpen(true)}
-                    data-testid="button-record-payment-footer"
-                  >
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    Record Payment
-                  </Button>
-                )}
-              </div>
+                <DollarSign className="w-3 h-3" />
+                <span>Record Payment</span>
+              </button>
             </div>
-          </div>
+          )}
         </form>
       </Form>
 
