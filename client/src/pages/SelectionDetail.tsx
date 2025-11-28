@@ -1,21 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useProject } from "@/contexts/ProjectContext";
+import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
 import { 
   insertSelectionOptionSchema, 
+  insertSelectionSchema,
   type SelectionWithOptions,
   type SelectionOption,
-  type InsertSelectionOption
+  type InsertSelectionOption,
+  type InsertSelection,
+  type FieldCategoryWithOptions
 } from "@shared/schema";
 import {
   Select,
@@ -38,6 +44,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   ArrowLeft,
   Plus,
   Search,
@@ -51,28 +63,113 @@ import {
   DollarSign,
   Calendar as CalendarIcon,
   MapPin,
+  Settings,
+  Loader2,
+  Save,
+  Eye,
+  EyeOff,
+  LockOpen,
+  Lock,
 } from "lucide-react";
 import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 export default function SelectionDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, projectId } = useParams<{ id: string; projectId?: string }>();
   const [, setLocation] = useLocation();
+  const { currentProject } = useProject();
   const [isAddingOption, setIsAddingOption] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("options");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const { toast } = useToast();
+  const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
 
-  // Fetch selection with options
+  const effectiveProjectId = projectId || currentProject?.id;
+
+  const { data: selectionCategories } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/selection.category"],
+  });
+
+  const { data: locationCategories } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/selection.room"],
+  });
+
   const { data: selection, isLoading } = useQuery<SelectionWithOptions>({
     queryKey: ["/api/selections", id],
     enabled: !!id,
   });
 
-  // Create option mutation
+  const selectionForm = useForm<InsertSelection>({
+    resolver: zodResolver(insertSelectionSchema),
+    defaultValues: {
+      projectId: effectiveProjectId || "",
+      name: "",
+      description: "",
+      category: "",
+      room: "",
+      selectionType: "selection",
+      status: "draft",
+      deadline: undefined,
+      allowance: undefined,
+      clientCanChange: true,
+      clientCanSeePrice: false,
+    },
+  });
+
+  useEffect(() => {
+    if (selection) {
+      selectionForm.reset({
+        projectId: selection.projectId,
+        name: selection.name,
+        description: selection.description || "",
+        category: selection.category || "",
+        room: selection.room || "",
+        selectionType: (selection as any).selectionType || "selection",
+        status: selection.status,
+        deadline: selection.deadline || undefined,
+        allowance: selection.allowance || undefined,
+        clientCanChange: selection.clientCanChange,
+        clientCanSeePrice: selection.clientCanSeePrice,
+      });
+    }
+  }, [selection]);
+
+  useEffect(() => {
+    const subscription = selectionForm.watch(() => {
+      setHasUnsavedChanges(true);
+    });
+    return () => subscription.unsubscribe();
+  }, [selectionForm.watch]);
+
+  const updateSelectionMutation = useMutation({
+    mutationFn: async (data: Partial<InsertSelection>) => {
+      return await apiRequest(`/api/selections/${id}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/selections", effectiveProjectId] });
+      setHasUnsavedChanges(false);
+      toast({
+        title: "Selection updated",
+        description: "Your changes have been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save changes. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const createOptionMutation = useMutation({
     mutationFn: async (option: InsertSelectionOption) => {
-      const response = await apiRequest(`/api/selections/${id}/options`, "POST", option);
-      return response.json();
+      return await apiRequest(`/api/selections/${id}/options`, "POST", option);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
@@ -91,11 +188,9 @@ export default function SelectionDetail() {
     },
   });
 
-  // Update option mutation
   const updateOptionMutation = useMutation({
     mutationFn: async ({ optionId, data }: { optionId: string; data: Partial<InsertSelectionOption> }) => {
-      const response = await apiRequest(`/api/selection-options/${optionId}`, "PATCH", data);
-      return response.json();
+      return await apiRequest(`/api/selection-options/${optionId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/selections", id] });
@@ -114,7 +209,6 @@ export default function SelectionDetail() {
     },
   });
 
-  // Delete option mutation
   const deleteOptionMutation = useMutation({
     mutationFn: async (optionId: string) => {
       await apiRequest(`/api/selection-options/${optionId}`, "DELETE");
@@ -135,10 +229,9 @@ export default function SelectionDetail() {
     },
   });
 
-  // Form for creating/editing options
   const [gstInclusive, setGstInclusive] = useState<boolean>(false);
 
-  const form = useForm<InsertSelectionOption>({
+  const optionForm = useForm<InsertSelectionOption>({
     resolver: zodResolver(insertSelectionOptionSchema),
     defaultValues: {
       selectionId: id || "",
@@ -162,13 +255,12 @@ export default function SelectionDetail() {
     },
   });
 
-  // Handle dialog changes
   const handleDialogChange = (open: boolean) => {
     if (!open) {
       setIsAddingOption(false);
       setEditingOption(null);
       setGstInclusive(false);
-      form.reset({
+      optionForm.reset({
         selectionId: id || "",
         name: "",
         description: "",
@@ -191,8 +283,7 @@ export default function SelectionDetail() {
     }
   };
 
-  // Handle form submission
-  const onSubmit = (data: InsertSelectionOption) => {
+  const onOptionSubmit = (data: InsertSelectionOption) => {
     if (editingOption) {
       updateOptionMutation.mutate({ optionId: editingOption.id, data });
     } else {
@@ -203,13 +294,11 @@ export default function SelectionDetail() {
     }
   };
 
-  // Handle editing
-  const handleEdit = (option: SelectionOption) => {
+  const handleEditOption = (option: SelectionOption) => {
     setEditingOption(option);
-    // Use the stored gstInclusive field from the option
     setGstInclusive(option.gstInclusive || false);
     
-    form.reset({
+    optionForm.reset({
       selectionId: option.selectionId,
       name: option.name,
       description: option.description || "",
@@ -231,12 +320,11 @@ export default function SelectionDetail() {
     });
   };
 
-  // Handle adding new option
   const handleAddOption = () => {
     setIsAddingOption(true);
     setEditingOption(null);
     setGstInclusive(false);
-    form.reset({
+    optionForm.reset({
       selectionId: id || "",
       name: "",
       description: "",
@@ -258,42 +346,36 @@ export default function SelectionDetail() {
     });
   };
 
-  // Calculate GST amount based on unit cost and inclusive/exclusive setting
   const calculateGst = (unitCost: number | undefined, inclusive: boolean): number => {
     if (!unitCost || unitCost <= 0) return 0;
-    const gstRate = 0.1; // 10% GST in Australia
+    const gstRate = 0.1;
     
     if (inclusive) {
-      // If price includes GST, calculate the GST portion
       return Math.round((unitCost * gstRate) / (1 + gstRate));
     } else {
-      // If price excludes GST, calculate GST to add
       return Math.round(unitCost * gstRate);
     }
   };
 
-  // Handle GST change and recalculate tax
   const handleGstChange = (inclusive: boolean) => {
     setGstInclusive(inclusive);
-    form.setValue("gstInclusive", inclusive);
-    const currentUnitCost = form.getValues("unitCost");
+    optionForm.setValue("gstInclusive", inclusive);
+    const currentUnitCost = optionForm.getValues("unitCost");
     if (currentUnitCost) {
       const newTax = calculateGst(currentUnitCost, inclusive);
-      form.setValue("unitTax", newTax);
+      optionForm.setValue("unitTax", newTax);
     }
   };
 
-  // Handle unit cost change and recalculate tax
   const handleUnitCostChange = (value: number | undefined) => {
     if (value && gstInclusive) {
       const newTax = calculateGst(value, gstInclusive);
-      form.setValue("unitTax", newTax);
+      optionForm.setValue("unitTax", newTax);
     } else if (!gstInclusive) {
-      form.setValue("unitTax", value ? calculateGst(value, false) : undefined);
+      optionForm.setValue("unitTax", value ? calculateGst(value, false) : undefined);
     }
   };
 
-  // Filter options based on search
   const filteredOptions = (selection?.options || []).filter((option) =>
     option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     option.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -301,37 +383,24 @@ export default function SelectionDetail() {
     option.sku?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Status badge component
-  const StatusBadge = ({ status }: { status: string }) => {
-    const config = {
-      draft: { icon: Clock, color: "text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800" },
-      pending: { icon: AlertCircle, color: "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800" },
-      approved: { icon: CheckCircle, color: "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800" },
-      completed: { icon: CheckCircle, color: "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800" },
-    };
-    
-    const { icon: Icon, color } = config[status as keyof typeof config] || config.draft;
-    
-    return (
-      <Badge variant="outline" className={`${color} capitalize`}>
-        <Icon className="w-3 h-3 mr-1" />
-        {status}
-      </Badge>
-    );
+  const handleSaveSelection = () => {
+    const data = selectionForm.getValues();
+    updateSelectionMutation.mutate(data);
+  };
+
+
+  const goBack = () => {
+    if (effectiveProjectId) {
+      setLocation(`/projects/${effectiveProjectId}/selections`);
+    } else {
+      setLocation("/selections");
+    }
   };
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-muted rounded w-1/2"></div>
-          <div className="h-32 bg-muted rounded"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-48 bg-muted rounded"></div>
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -344,7 +413,7 @@ export default function SelectionDetail() {
           <p>Selection not found.</p>
           <Button 
             variant="outline" 
-            onClick={() => setLocation("/selections")}
+            onClick={goBack}
             className="mt-4"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -355,237 +424,509 @@ export default function SelectionDetail() {
     );
   }
 
+  const currentStatus = getStatusInfo(selection.status);
+  const StatusIcon = currentStatus.icon;
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Button 
-            variant="outline" 
+    <div className="flex flex-col h-full">
+      {/* Header Row 1 - Breadcrumb + Title */}
+      <div className="h-9 px-4 flex items-center justify-between border-b bg-background shrink-0">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
             size="icon"
-            onClick={() => setLocation("/selections")}
-            data-testid="button-back-to-selections"
+            className="h-6 w-6"
+            onClick={goBack}
+            data-testid="button-back"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">{selection.name}</h1>
-            <p className="text-muted-foreground mt-1">
-              Manage options for this selection
-            </p>
-          </div>
+          <span className="text-sm text-muted-foreground">Selections /</span>
+          <h1 className="text-sm font-medium truncate max-w-[300px]">{selection.name}</h1>
+          <Badge variant="outline" className={cn("text-xs capitalize", currentStatus.bgClass, currentStatus.textClass)}>
+            <StatusIcon className="w-3 h-3 mr-1" />
+            {currentStatus.name}
+          </Badge>
         </div>
-        <Button 
-          onClick={handleAddOption}
-          data-testid="button-add-option"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Option
-        </Button>
+        <div className="flex items-center gap-2">
+          {hasUnsavedChanges && (
+            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+          )}
+        </div>
       </div>
 
-      {/* Selection Info Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="space-y-2 flex-1">
-              <div className="flex items-center space-x-2">
-                <StatusBadge status={selection.status} />
-                {selection.category && (
-                  <Badge variant="secondary">{selection.category}</Badge>
-                )}
-                {!selection.clientCanChange && (
-                  <Badge variant="outline" className="text-xs">Fixed</Badge>
-                )}
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {selection.description && (
-            <p className="text-muted-foreground">{selection.description}</p>
-          )}
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {selection.room && (
-              <div className="flex items-center space-x-2 text-sm">
-                <MapPin className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Room:</span>
-                <span>{selection.room}</span>
-              </div>
-            )}
-            
-            {selection.deadline && (
-              <div className="flex items-center space-x-2 text-sm">
-                <CalendarIcon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Deadline:</span>
-                <span>{format(new Date(selection.deadline), "MMM d, yyyy")}</span>
-              </div>
-            )}
-            
-            {selection.allowance && (
-              <div className="flex items-center space-x-2 text-sm">
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Budget:</span>
-                <span>${(selection.allowance / 100).toFixed(2)}</span>
-              </div>
-            )}
-            
-            <div className="flex items-center space-x-2 text-sm">
-              <Package className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Options:</span>
-              <span>{selection.options?.length || 0}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Header Row 2 - Tabs + Actions */}
+      <div className="h-9 px-4 flex items-center justify-between border-b bg-background shrink-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full">
+          <TabsList className="h-7 bg-transparent p-0 gap-1">
+            <TabsTrigger 
+              value="options" 
+              className="h-6 px-3 text-xs data-[state=active]:bg-[#bba7db] data-[state=active]:text-white"
+              data-testid="tab-options"
+            >
+              <Package className="w-3 h-3 mr-1" />
+              Options ({selection.options?.length || 0})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="details" 
+              className="h-6 px-3 text-xs data-[state=active]:bg-[#bba7db] data-[state=active]:text-white"
+              data-testid="tab-details"
+            >
+              <Settings className="w-3 h-3 mr-1" />
+              Details
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-      {/* Options Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Selection Options</h2>
-          
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search options..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-              data-testid="input-search-options"
-            />
-          </div>
-        </div>
-
-        {/* Options Gallery */}
-        {filteredOptions.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-medium mb-2">No options found</h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm ? "Try adjusting your search terms." : "Add your first option to get started."}
-            </p>
-            {!searchTerm && (
-              <Button onClick={handleAddOption}>
-                <Plus className="w-4 h-4 mr-2" />
+        <div className="flex items-center gap-2">
+          {activeTab === "options" && (
+            <>
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search options..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-6 pl-7 w-[180px] text-xs"
+                  data-testid="input-search-options"
+                />
+              </div>
+              <Button 
+                size="sm" 
+                className="h-6 px-2 text-xs"
+                onClick={handleAddOption}
+                data-testid="button-add-option"
+              >
+                <Plus className="w-3 h-3 mr-1" />
                 Add Option
               </Button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredOptions.map((option) => (
-              <Card key={option.id} className="hover-elevate transition-all duration-200 group" data-testid={`card-option-${option.id}`}>
-                {/* Card Header with improved layout */}
-                <CardHeader className="pb-4">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2 flex-1 min-w-0">
-                      <CardTitle className="text-xl leading-tight font-semibold group-hover:text-primary transition-colors">
-                        {option.name}
-                      </CardTitle>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {option.brand && (
-                          <Badge variant="secondary" className="text-xs font-medium">
-                            {option.brand}
-                          </Badge>
-                        )}
-                        {option.category && (
-                          <Badge variant="outline" className="text-xs">
-                            {option.category}
-                          </Badge>
-                        )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "options" ? (
+          <div className="p-4">
+            {filteredOptions.length === 0 ? (
+              <div className="text-center py-12">
+                <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-medium mb-2">No options found</h3>
+                <p className="text-muted-foreground mb-4">
+                  {searchTerm ? "Try adjusting your search terms." : "Add your first option to get started."}
+                </p>
+                {!searchTerm && (
+                  <Button onClick={handleAddOption} data-testid="button-add-first-option">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Option
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredOptions.map((option) => (
+                  <Card key={option.id} className="hover-elevate transition-all duration-200 group" data-testid={`card-option-${option.id}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <CardTitle className="text-base leading-tight font-semibold group-hover:text-primary transition-colors">
+                            {option.name}
+                          </CardTitle>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {option.brand && (
+                              <Badge variant="secondary" className="text-xs">
+                                {option.brand}
+                              </Badge>
+                            )}
+                            {option.category && (
+                              <Badge variant="outline" className="text-xs">
+                                {option.category}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-7 w-7 shrink-0 opacity-60 group-hover:opacity-100"
+                              data-testid={`button-option-menu-${option.id}`}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditOption(option)}>
+                              <Edit3 className="w-4 h-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => deleteOptionMutation.mutate(option.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity"
-                          data-testid={`button-option-menu-${option.id}`}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(option)}>
-                          <Edit3 className="w-4 h-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => deleteOptionMutation.mutate(option.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardHeader>
-                
-                {/* Card Content with better spacing */}
-                <CardContent className="space-y-4">
-                  {/* Description */}
-                  {option.description && (
-                    <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                      {option.description}
-                    </p>
-                  )}
-                  
-                  {/* SKU and Cost Section */}
-                  <div className="flex items-center justify-between border-t pt-3">
-                    <div className="flex flex-col gap-1">
-                      {option.sku && (
-                        <span className="text-xs text-muted-foreground font-mono">
-                          SKU: {option.sku}
-                        </span>
+                    </CardHeader>
+                    
+                    <CardContent className="space-y-3">
+                      {option.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {option.description}
+                        </p>
                       )}
-                      <span className="text-xs text-muted-foreground">
-                        Qty: {option.quantity} {option.unitType}
-                      </span>
-                    </div>
-                    {option.totalCost && (
-                      <div className="text-right">
-                        <span className="text-lg font-semibold text-foreground">
-                          ${(option.totalCost / 100).toFixed(2)}
-                        </span>
-                        {option.unitCost && option.quantity > 1 && (
-                          <div className="text-xs text-muted-foreground">
-                            ${(option.unitCost / 100).toFixed(2)} each
+                      
+                      <div className="flex items-center justify-between border-t pt-3">
+                        <div className="flex flex-col gap-0.5">
+                          {option.sku && (
+                            <span className="text-xs text-muted-foreground font-mono">
+                              SKU: {option.sku}
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            Qty: {option.quantity} {option.unitType}
+                          </span>
+                        </div>
+                        {option.totalCost != null && (
+                          <div className="text-right">
+                            <span className="text-lg font-semibold">
+                              ${(option.totalCost / 100).toFixed(2)}
+                            </span>
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  
-                  {/* Status Badges */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {option.isSelectedByClient && (
-                      <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Selected
-                      </Badge>
-                    )}
-                    {!option.visibleToClient && (
-                      <Badge variant="outline" className="text-xs bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-                        <AlertCircle className="w-3 h-3 mr-1" />
-                        Hidden
-                      </Badge>
-                    )}
-                    {option.url && (
-                      <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
-                        <Package className="w-3 h-3 mr-1" />
-                        Specs
-                      </Badge>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {option.isSelectedByClient && (
+                          <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Selected
+                          </Badge>
+                        )}
+                        {!option.visibleToClient && (
+                          <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-red-700">
+                            <EyeOff className="w-3 h-3 mr-1" />
+                            Hidden
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Details Tab */
+          <div className="p-4 pb-20">
+            <Form {...selectionForm}>
+              <form className="space-y-6 max-w-2xl">
+                {/* Status Section */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Status</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <FormField
+                      control={selectionForm.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {statusOptions.map((status) => {
+                              const Icon = status.icon;
+                              const isSelected = field.value === status.key;
+                              return (
+                                <button
+                                  key={status.key}
+                                  type="button"
+                                  onClick={() => field.onChange(status.key)}
+                                  className={cn(
+                                    "flex flex-col items-center gap-1 p-3 rounded-lg border transition-all",
+                                    isSelected 
+                                      ? "bg-[#bba7db] text-white border-[#bba7db]" 
+                                      : "hover-elevate border-border"
+                                  )}
+                                  data-testid={`status-${status.key}`}
+                                >
+                                  <Icon className="w-5 h-5" />
+                                  <span className="text-sm font-medium">{status.name}</span>
+                                  <span className={cn(
+                                    "text-[10px] text-center",
+                                    isSelected ? "text-white/80" : "text-muted-foreground"
+                                  )}>
+                                    {status.description}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Basic Info */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Basic Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={selectionForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Name</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="e.g., Kitchen Splashback Tiles"
+                              {...field}
+                              data-testid="input-selection-name"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={selectionForm.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Description</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Describe what this selection is for..."
+                              rows={3}
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-selection-description"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={selectionForm.control}
+                        name="category"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Category</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-category">
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {selectionCategories?.options?.map((opt) => (
+                                  <SelectItem key={opt.key} value={opt.name}>
+                                    {opt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={selectionForm.control}
+                        name="room"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Location/Room</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-room">
+                                  <SelectValue placeholder="Select room" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {locationCategories?.options?.map((opt) => (
+                                  <SelectItem key={opt.key} value={opt.name}>
+                                    {opt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={selectionForm.control}
+                        name="allowance"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Budget Allowance</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                                <Input 
+                                  type="number"
+                                  placeholder="0.00"
+                                  step="0.01"
+                                  min="0"
+                                  className="pl-10"
+                                  value={field.value ? (field.value / 100).toFixed(2) : ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
+                                  }}
+                                  data-testid="input-allowance"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={selectionForm.control}
+                        name="deadline"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Decision Deadline</FormLabel>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <FormControl>
+                                  <Button
+                                    variant="outline"
+                                    className={cn(
+                                      "w-full pl-3 text-left font-normal",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                    data-testid="button-deadline"
+                                  >
+                                    {field.value ? (
+                                      format(new Date(field.value), "PPP")
+                                    ) : (
+                                      <span>Pick a date</span>
+                                    )}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                  </Button>
+                                </FormControl>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={field.value ? new Date(field.value) : undefined}
+                                  onSelect={field.onChange}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Client Permissions */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Client Permissions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={selectionForm.control}
+                      name="clientCanChange"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">Allow Changes</FormLabel>
+                            <FormDescription>
+                              Client can change their selection after choosing
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="switch-client-can-change"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={selectionForm.control}
+                      name="clientCanSeePrice"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">Show Pricing</FormLabel>
+                            <FormDescription>
+                              Client can see pricing information for options
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="switch-client-can-see-price"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+              </form>
+            </Form>
           </div>
         )}
       </div>
+
+      {/* Sticky Footer - Only show on Details tab */}
+      {activeTab === "details" && (
+        <div className="sticky bottom-0 left-0 right-0 bg-background border-t px-4 py-3 flex items-center justify-end gap-2 z-10">
+          <Button
+            variant="outline"
+            onClick={goBack}
+            data-testid="button-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveSelection}
+            disabled={updateSelectionMutation.isPending || !hasUnsavedChanges}
+            data-testid="button-save-selection"
+          >
+            {updateSelectionMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Save Changes
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Add/Edit Option Dialog */}
       <Dialog 
@@ -606,171 +947,81 @@ export default function SelectionDetail() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pr-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Option Name</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="e.g., Subway Tile White"
-                          {...field}
-                          data-testid="input-option-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <Form {...optionForm}>
+              <form onSubmit={optionForm.handleSubmit(onOptionSubmit)} className="space-y-4 pr-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={optionForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Option Name</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="e.g., Subway Tile White"
+                            {...field}
+                            data-testid="input-option-name"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="brand"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Brand</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="e.g., Concept Tile & Timber"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-option-brand"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        placeholder="Describe this option..."
-                        rows={2}
-                        {...field}
-                        value={field.value || ""}
-                        data-testid="input-option-description"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="sku"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>SKU</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="Product code"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-option-sku"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="quantity"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quantity</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number"
-                          min="1"
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
-                          data-testid="input-option-quantity"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="unitType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Unit Type</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="ea, m2, linear_m"
-                          {...field}
-                          data-testid="input-option-unit-type"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Pricing Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium">Pricing</h3>
-                  <Select
-                    value={gstInclusive ? "inc" : "ex"}
-                    onValueChange={(value) => handleGstChange(value === "inc")}
-                  >
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="GST on expenses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ex">GST exclusive</SelectItem>
-                      <SelectItem value="inc">GST inclusive</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <FormField
+                    control={optionForm.control}
+                    name="brand"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Brand</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="e.g., Concept Tile"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-option-brand"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-                
+
+                <FormField
+                  control={optionForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea 
+                          placeholder="Describe this option..."
+                          rows={2}
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-option-description"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <FormField
-                    control={form.control}
-                    name="unitCost"
+                    control={optionForm.control}
+                    name="sku"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Unit Cost</FormLabel>
+                        <FormLabel>SKU</FormLabel>
                         <FormControl>
-                          <div className="relative">
-                            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                            <Input 
-                              type="number"
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              className="pl-10"
-                              {...field}
-                              value={field.value ? (field.value / 100).toFixed(2) : ""}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const centValue = value ? Math.round(parseFloat(value) * 100) : undefined;
-                                field.onChange(centValue);
-                                handleUnitCostChange(centValue);
-                              }}
-                              data-testid="input-option-unit-cost"
-                            />
-                          </div>
+                          <Input 
+                            placeholder="Product code"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-option-sku"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -778,28 +1029,19 @@ export default function SelectionDetail() {
                   />
 
                   <FormField
-                    control={form.control}
-                    name="markupPercent"
+                    control={optionForm.control}
+                    name="quantity"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Markup %</FormLabel>
+                        <FormLabel>Quantity</FormLabel>
                         <FormControl>
-                          <div className="relative">
-                            <Input 
-                              type="number"
-                              placeholder="0"
-                              min="0"
-                              className="pr-8"
-                              {...field}
-                              value={field.value || ""}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                field.onChange(value ? parseInt(value) : undefined);
-                              }}
-                              data-testid="input-option-markup"
-                            />
-                            <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm">%</span>
-                          </div>
+                          <Input 
+                            type="number"
+                            min="1"
+                            {...field}
+                            onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                            data-testid="input-option-quantity"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -807,79 +1049,154 @@ export default function SelectionDetail() {
                   />
 
                   <FormField
-                    control={form.control}
-                    name="totalCost"
+                    control={optionForm.control}
+                    name="unitType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Total Cost</FormLabel>
+                        <FormLabel>Unit Type</FormLabel>
                         <FormControl>
-                          <div className="relative">
-                            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                            <Input 
-                              type="number"
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              className="pl-10"
-                              {...field}
-                              value={field.value ? (field.value / 100).toFixed(2) : ""}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
-                              }}
-                              data-testid="input-option-total-cost"
-                            />
-                          </div>
+                          <Input 
+                            placeholder="ea, m2, linear_m"
+                            {...field}
+                            data-testid="input-option-unit-type"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-              </div>
 
-              {/* URL Field */}
-              <FormField
-                control={form.control}
-                name="url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Product URL</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="url"
-                        placeholder="https://www.bunnings.com.au..."
-                        {...field}
-                        value={field.value || ""}
-                        data-testid="input-option-url"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Attachments Section */}
-              <div className="space-y-3">
-                <FormLabel>Attachments</FormLabel>
-                <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
-                  <div className="text-muted-foreground">
-                    <p className="text-sm">Drag and drop files here, or click to browse</p>
-                    <p className="text-xs mt-1">Upload product images, spec sheets, or other documents</p>
+                {/* Pricing Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-medium">Pricing</h3>
+                    <Select
+                      value={gstInclusive ? "inc" : "ex"}
+                      onValueChange={(value) => handleGstChange(value === "inc")}
+                    >
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="GST on expenses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ex">GST exclusive</SelectItem>
+                        <SelectItem value="inc">GST inclusive</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    className="mt-3"
-                    data-testid="button-upload-attachment"
-                  >
-                    Choose Files
-                  </Button>
-                </div>
-              </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <FormField
+                      control={optionForm.control}
+                      name="unitCost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Unit Cost</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                              <Input 
+                                type="number"
+                                placeholder="0.00"
+                                step="0.01"
+                                min="0"
+                                className="pl-10"
+                                value={field.value ? (field.value / 100).toFixed(2) : ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  const centValue = value ? Math.round(parseFloat(value) * 100) : undefined;
+                                  field.onChange(centValue);
+                                  handleUnitCostChange(centValue);
+                                }}
+                                data-testid="input-option-unit-cost"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <div className="flex items-center justify-end space-x-3 pt-4 mt-6">
+                    <FormField
+                      control={optionForm.control}
+                      name="markupPercent"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Markup %</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input 
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                className="pr-8"
+                                value={field.value || ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  field.onChange(value ? parseInt(value) : undefined);
+                                }}
+                                data-testid="input-option-markup"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={optionForm.control}
+                      name="totalCost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Total Cost</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                              <Input 
+                                type="number"
+                                placeholder="0.00"
+                                step="0.01"
+                                min="0"
+                                className="pl-10"
+                                value={field.value ? (field.value / 100).toFixed(2) : ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
+                                }}
+                                data-testid="input-option-total-cost"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <FormField
+                  control={optionForm.control}
+                  name="url"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Product URL</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="url"
+                          placeholder="https://..."
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-option-url"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex items-center justify-end space-x-3 pt-4 mt-6 border-t">
                   <Button 
                     type="button" 
                     variant="outline" 
@@ -894,7 +1211,7 @@ export default function SelectionDetail() {
                     data-testid="button-save-option"
                   >
                     {(createOptionMutation.isPending || updateOptionMutation.isPending) && (
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
                     )}
                     {editingOption ? "Update Option" : "Add Option"}
                   </Button>

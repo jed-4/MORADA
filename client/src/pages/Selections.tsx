@@ -210,13 +210,14 @@ function SelectionCardCompact({
   const selectionType = (selection as any).selectionType || 'selection';
 
   const statusConfig = {
-    draft: { color: '#eab308', bg: '#eab30815' },
-    pending: { color: '#3b82f6', bg: '#3b82f615' },
-    approved: { color: '#22c55e', bg: '#22c55e15' },
-    completed: { color: '#16a34a', bg: '#16a34a15' },
+    draft: { color: '#eab308', bg: '#eab30815', label: 'Draft' },
+    pending: { color: '#3b82f6', bg: '#3b82f615', label: 'Open' },
+    approved: { color: '#22c55e', bg: '#22c55e15', label: 'Approved' },
+    completed: { color: '#16a34a', bg: '#16a34a15', label: 'Completed' },
   };
 
-  const { color: statusColor, bg: statusBg } = statusConfig[selection.status as keyof typeof statusConfig] || statusConfig.draft;
+  const statusInfo = statusConfig[selection.status as keyof typeof statusConfig] || statusConfig.draft;
+  const { color: statusColor, bg: statusBg } = statusInfo;
 
   return (
     <Card
@@ -246,7 +247,7 @@ function SelectionCardCompact({
                   borderColor: `${statusColor}30`
                 }}
               >
-                {selection.status}
+                {statusInfo.label}
               </Badge>
             </div>
 
@@ -644,18 +645,19 @@ export default function Selections() {
   // Status badge component
   const StatusBadge = ({ status }: { status: string }) => {
     const config = {
-      draft: { icon: Clock, color: "text-yellow-600 bg-yellow-50 border-yellow-200" },
-      pending: { icon: AlertCircle, color: "text-blue-600 bg-blue-50 border-blue-200" },
-      approved: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200" },
-      completed: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200" },
+      draft: { icon: Clock, color: "text-yellow-600 bg-yellow-50 border-yellow-200", label: "Draft" },
+      pending: { icon: AlertCircle, color: "text-blue-600 bg-blue-50 border-blue-200", label: "Open" },
+      approved: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200", label: "Approved" },
+      completed: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200", label: "Completed" },
     };
     
-    const { icon: Icon, color } = config[status as keyof typeof config] || config.draft;
+    const statusInfo = config[status as keyof typeof config] || config.draft;
+    const { icon: Icon, color } = statusInfo;
     
     return (
-      <Badge variant="outline" className={`${color} capitalize`}>
+      <Badge variant="outline" className={`${color}`}>
         <Icon className="w-3 h-3 mr-1" />
-        {status}
+        {statusInfo.label}
       </Badge>
     );
   };
@@ -672,10 +674,10 @@ export default function Selections() {
     })
   );
 
-  // Kanban columns
+  // Kanban columns - using "Open" instead of "Pending" for client portal terminology
   const kanbanColumns = [
     { id: 'draft', title: 'Draft', color: '#eab308' },
-    { id: 'pending', title: 'Pending', color: '#3b82f6' },
+    { id: 'pending', title: 'Open', color: '#3b82f6' },
     { id: 'approved', title: 'Approved', color: '#22c55e' },
     { id: 'completed', title: 'Completed', color: '#16a34a' },
   ];
@@ -1186,7 +1188,7 @@ export default function Selections() {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="pending">Open</SelectItem>
                           <SelectItem value="approved">Approved</SelectItem>
                           <SelectItem value="completed">Completed</SelectItem>
                         </SelectContent>

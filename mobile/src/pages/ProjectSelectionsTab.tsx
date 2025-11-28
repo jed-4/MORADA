@@ -2,7 +2,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { Selection } from "@shared/schema";
 import { useState } from "react";
-import { Plus, Search, Loader2, Calendar, DollarSign, MapPin, Tag, ChevronRight, Edit2, Trash2 } from "lucide-react";
+import { Plus, Search, Loader2, Calendar, DollarSign, MapPin, Tag, ChevronRight } from "lucide-react";
 import { BottomSheet } from "@/components/BottomSheet";
 import { MobileInput } from "@/components/ui/MobileInput";
 import { MobileTextarea } from "@/components/ui/MobileTextarea";
@@ -13,32 +13,22 @@ import { apiRequest, queryClient, getApiBaseUrl } from "@lib/queryClient";
 import { ImpactStyle } from "@capacitor/haptics";
 import { getHaptics } from "@/lib/capacitor";
 import { format } from "date-fns";
-
-const statusOptions = [
-  { value: "all", label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "pending", label: "Pending" },
-  { value: "approved", label: "Approved" },
-  { value: "declined", label: "Declined" },
-];
-
-const statusColors: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-600 dark:text-gray-400" },
-  pending: { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-400" },
-  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" },
-  declined: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" },
-};
+import { SelectionDetailPage } from "./SelectionDetailPage";
+import { useSelectionStatusOptions } from "@/hooks/useSelectionStatusOptions";
 
 export function ProjectSelectionsTab() {
   const { currentProject } = useProject();
+  const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedSelection, setSelectedSelection] = useState<Selection | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedSelectionId, setSelectedSelectionId] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  
+  const filterOptions = [
+    { key: "all", name: "All", icon: null },
+    ...statusOptions
+  ];
 
-  // Form state
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formCategory, setFormCategory] = useState("");
@@ -81,32 +71,6 @@ export function ProjectSelectionsTab() {
     },
   });
 
-  const updateSelectionMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Selection> }) => {
-      return await apiRequest(`/api/selections/${id}`, "PATCH", data);
-    },
-    onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", { projectId: currentProject?.id }] });
-      const Haptics = await getHaptics();
-      await Haptics.impact({ style: ImpactStyle.Medium });
-      closeAddSheet();
-      setIsDetailOpen(false);
-    },
-  });
-
-  const deleteSelectionMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return await apiRequest(`/api/selections/${id}`, "DELETE", {});
-    },
-    onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selections", { projectId: currentProject?.id }] });
-      const Haptics = await getHaptics();
-      await Haptics.impact({ style: ImpactStyle.Heavy });
-      setIsDetailOpen(false);
-      setSelectedSelection(null);
-    },
-  });
-
   const resetForm = () => {
     setFormName("");
     setFormDescription("");
@@ -114,7 +78,6 @@ export function ProjectSelectionsTab() {
     setFormRoom("");
     setFormStatus("draft");
     setFormAllowance("");
-    setIsEditing(false);
   };
 
   const closeAddSheet = () => {
@@ -122,19 +85,7 @@ export function ProjectSelectionsTab() {
     resetForm();
   };
 
-  const openEditSheet = (selection: Selection) => {
-    setFormName(selection.name);
-    setFormDescription(selection.description || "");
-    setFormCategory(selection.category || "");
-    setFormRoom(selection.room || "");
-    setFormStatus(selection.status);
-    setFormAllowance(selection.allowance != null ? (selection.allowance / 100).toString() : "");
-    setIsEditing(true);
-    setIsAddOpen(true);
-  };
-
   const handleSubmit = () => {
-    // Parse allowance - handle empty string vs $0 properly
     let allowanceInCents: number | undefined = undefined;
     if (formAllowance !== "") {
       const parsed = parseFloat(formAllowance);
@@ -150,20 +101,12 @@ export function ProjectSelectionsTab() {
       room: formRoom || undefined,
       status: formStatus,
       allowance: allowanceInCents,
+      selectionType: "selection",
     };
 
-    if (isEditing && selectedSelection) {
-      updateSelectionMutation.mutate({ id: selectedSelection.id, data });
-    } else {
-      createSelectionMutation.mutate(data);
-    }
+    createSelectionMutation.mutate(data);
   };
 
-  const handleStatusChange = (selection: Selection, newStatus: string) => {
-    updateSelectionMutation.mutate({ id: selection.id, data: { status: newStatus } });
-  };
-
-  // Filter to only show "selection" type items (not "design" items) and apply search/status filters
   const projectSelections = selections.filter((s) => (s as any).selectionType === "selection" || !(s as any).selectionType);
   
   const filteredSelections = projectSelections.filter((selection) => {
@@ -175,16 +118,14 @@ export function ProjectSelectionsTab() {
     return matchesSearch && matchesStatus;
   });
 
-  // Status counts (based on filtered projectSelections, not all selections)
   const statusCounts: Record<string, number> = {
     all: projectSelections.length,
     draft: projectSelections.filter((s) => s.status === "draft").length,
     pending: projectSelections.filter((s) => s.status === "pending").length,
     approved: projectSelections.filter((s) => s.status === "approved").length,
-    declined: projectSelections.filter((s) => s.status === "declined").length,
+    completed: projectSelections.filter((s) => s.status === "completed").length,
   };
 
-  // Format currency - show cents when present, handle $0 allowance
   const formatCurrency = (cents: number | null | undefined) => {
     if (cents === null || cents === undefined) return null;
     const dollars = cents / 100;
@@ -197,11 +138,21 @@ export function ProjectSelectionsTab() {
     }).format(dollars);
   };
 
+
   if (!currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
         <p className="text-muted-foreground">Please select a project</p>
       </div>
+    );
+  }
+
+  if (selectedSelectionId) {
+    return (
+      <SelectionDetailPage 
+        selectionId={selectedSelectionId} 
+        onBack={() => setSelectedSelectionId(null)} 
+      />
     );
   }
 
@@ -224,18 +175,18 @@ export function ProjectSelectionsTab() {
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-1">
-          {statusOptions.map((status) => (
+          {filterOptions.map((status) => (
             <button
-              key={status.value}
-              onClick={() => setStatusFilter(status.value)}
+              key={status.key}
+              onClick={() => setStatusFilter(status.key)}
               className={`h-6 px-2.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-                statusFilter === status.value
+                statusFilter === status.key
                   ? "bg-[#bba7db] text-white"
                   : "bg-muted text-muted-foreground hover-elevate"
               }`}
-              data-testid={`filter-${status.value}`}
+              data-testid={`filter-${status.key}`}
             >
-              {status.label} ({statusCounts[status.value]})
+              {status.name} ({statusCounts[status.key] || 0})
             </button>
           ))}
         </div>
@@ -274,10 +225,7 @@ export function ProjectSelectionsTab() {
             {filteredSelections.map((selection) => (
               <div
                 key={selection.id}
-                onClick={() => {
-                  setSelectedSelection(selection);
-                  setIsDetailOpen(true);
-                }}
+                onClick={() => setSelectedSelectionId(selection.id)}
                 className="p-3 bg-card border rounded-lg cursor-pointer hover-elevate active-elevate-2"
                 data-testid={`selection-card-${selection.id}`}
               >
@@ -291,8 +239,8 @@ export function ProjectSelectionsTab() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`h-6 px-2 flex items-center justify-center rounded-md text-xs font-medium ${statusColors[selection.status]?.bg || "bg-muted"} ${statusColors[selection.status]?.text || "text-muted-foreground"}`}>
-                      {selection.status.charAt(0).toUpperCase() + selection.status.slice(1)}
+                    <span className={`h-6 px-2 flex items-center justify-center rounded-md text-xs font-medium ${getStatusInfo(selection.status).bgClass} ${getStatusInfo(selection.status).textClass}`}>
+                      {getStatusLabel(selection.status)}
                     </span>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </div>
@@ -333,126 +281,10 @@ export function ProjectSelectionsTab() {
         <Plus className="w-6 h-6" />
       </button>
 
-      {/* Detail Sheet */}
-      <BottomSheet isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)}>
-        {selectedSelection && (
-          <div className="p-4">
-            <div className="flex items-start justify-between gap-2 mb-4">
-              <div>
-                <h2 className="text-xl font-bold">{selectedSelection.name}</h2>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`h-6 px-2 flex items-center justify-center rounded-md text-xs font-medium ${statusColors[selectedSelection.status]?.bg || "bg-muted"} ${statusColors[selectedSelection.status]?.text || "text-muted-foreground"}`}>
-                    {selectedSelection.status.charAt(0).toUpperCase() + selectedSelection.status.slice(1)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            {selectedSelection.description && (
-              <div className="mb-4">
-                <p className="text-sm text-muted-foreground">{selectedSelection.description}</p>
-              </div>
-            )}
-
-            {/* Details Grid */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {selectedSelection.allowance != null && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                    <DollarSign className="w-4 h-4" />
-                    <span className="text-xs font-medium">Allowance</span>
-                  </div>
-                  <p className="font-semibold">{formatCurrency(selectedSelection.allowance)}</p>
-                </div>
-              )}
-              {selectedSelection.category && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                    <Tag className="w-4 h-4" />
-                    <span className="text-xs font-medium">Category</span>
-                  </div>
-                  <p className="font-semibold">{selectedSelection.category}</p>
-                </div>
-              )}
-              {selectedSelection.room && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                    <MapPin className="w-4 h-4" />
-                    <span className="text-xs font-medium">Location</span>
-                  </div>
-                  <p className="font-semibold">{selectedSelection.room}</p>
-                </div>
-              )}
-              {selectedSelection.deadline && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                    <Calendar className="w-4 h-4" />
-                    <span className="text-xs font-medium">Deadline</span>
-                  </div>
-                  <p className="font-semibold">{format(new Date(selectedSelection.deadline), "MMM d, yyyy")}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Status Picker */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Change Status</label>
-              <div className="flex flex-wrap gap-2">
-                {statusOptions.filter(s => s.value !== "all").map((status) => (
-                  <button
-                    key={status.value}
-                    onClick={() => handleStatusChange(selectedSelection, status.value)}
-                    disabled={updateSelectionMutation.isPending}
-                    className={`h-8 px-3 rounded-md text-sm font-medium transition-colors ${
-                      selectedSelection.status === status.value
-                        ? "bg-[#bba7db] text-white"
-                        : "border hover-elevate"
-                    }`}
-                    data-testid={`status-select-${status.value}`}
-                  >
-                    {status.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-3">
-              <MobileButton
-                variant="outline"
-                onClick={() => {
-                  openEditSheet(selectedSelection);
-                  setIsDetailOpen(false);
-                }}
-                className="flex-1"
-                data-testid="button-edit-selection"
-              >
-                <Edit2 className="w-4 h-4 mr-2" />
-                Edit
-              </MobileButton>
-              <MobileButton
-                variant="outline"
-                onClick={() => {
-                  if (confirm("Are you sure you want to delete this selection?")) {
-                    deleteSelectionMutation.mutate(selectedSelection.id);
-                  }
-                }}
-                className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
-                disabled={deleteSelectionMutation.isPending}
-                data-testid="button-delete-selection"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </MobileButton>
-            </div>
-          </div>
-        )}
-      </BottomSheet>
-
-      {/* Add/Edit Sheet */}
+      {/* Add Selection Sheet */}
       <BottomSheet isOpen={isAddOpen} onClose={closeAddSheet}>
-        <div className="p-4">
-          <h2 className="text-xl font-bold mb-6">{isEditing ? "Edit Selection" : "Add Selection"}</h2>
+        <div className="p-4 pb-8">
+          <h2 className="text-xl font-bold mb-6">Add Selection</h2>
           
           <div className="space-y-4">
             <MobileInput
@@ -529,14 +361,11 @@ export function ProjectSelectionsTab() {
               </MobileButton>
               <MobileButton
                 onClick={handleSubmit}
-                disabled={!formName || createSelectionMutation.isPending || updateSelectionMutation.isPending}
+                disabled={!formName || createSelectionMutation.isPending}
                 className="flex-1"
                 data-testid="button-save-selection"
               >
-                {(createSelectionMutation.isPending || updateSelectionMutation.isPending) 
-                  ? "Saving..." 
-                  : isEditing ? "Save Changes" : "Add Selection"
-                }
+                {createSelectionMutation.isPending ? "Saving..." : "Add Selection"}
               </MobileButton>
             </div>
           </div>
