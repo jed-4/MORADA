@@ -1,16 +1,13 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -34,6 +31,9 @@ import {
   Clock,
   AlertCircle,
   FileText,
+  LayoutList,
+  Calendar,
+  DollarSign,
 } from "lucide-react";
 import { type ClientInvoice, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -55,8 +55,6 @@ export default function ClientInvoices() {
 
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
-  const [syncFilter, setSyncFilter] = useState("all");
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) {
@@ -96,7 +94,6 @@ export default function ClientInvoices() {
 
   const formatCurrency = (amount: number) => {
     const dollars = amount / 100;
-    // Check if it's a whole number
     const isWholeNumber = dollars % 1 === 0;
     
     return new Intl.NumberFormat("en-AU", {
@@ -112,45 +109,48 @@ export default function ClientInvoices() {
     return format(new Date(date), "dd MMM yyyy");
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, size: "sm" | "md" = "md") => {
+    const sizeClass = size === "sm" ? "h-4 px-1.5 text-[10px]" : "";
+    const iconClass = size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1";
+    
     switch (status) {
       case "draft":
         return (
-          <Badge variant="secondary" data-testid={`badge-status-draft`}>
-            <FileText className="w-3 h-3 mr-1" />
+          <Badge variant="secondary" className={sizeClass} data-testid={`badge-status-draft`}>
+            <FileText className={iconClass} />
             Draft
           </Badge>
         );
       case "sent":
         return (
-          <Badge variant="default" data-testid={`badge-status-sent`}>
-            <Clock className="w-3 h-3 mr-1" />
+          <Badge variant="default" className={sizeClass} data-testid={`badge-status-sent`}>
+            <Clock className={iconClass} />
             Sent
           </Badge>
         );
       case "partial":
         return (
-          <Badge variant="outline" className="border-yellow-500 text-yellow-700" data-testid={`badge-status-partial`}>
-            <AlertCircle className="w-3 h-3 mr-1" />
+          <Badge variant="outline" className={`border-yellow-500 text-yellow-700 ${sizeClass}`} data-testid={`badge-status-partial`}>
+            <AlertCircle className={iconClass} />
             Partial
           </Badge>
         );
       case "paid":
         return (
-          <Badge variant="outline" className="border-green-500 text-green-700" data-testid={`badge-status-paid`}>
-            <CheckCircle className="w-3 h-3 mr-1" />
+          <Badge variant="outline" className={`border-green-500 text-green-700 ${sizeClass}`} data-testid={`badge-status-paid`}>
+            <CheckCircle className={iconClass} />
             Paid
           </Badge>
         );
       case "overdue":
         return (
-          <Badge variant="destructive" data-testid={`badge-status-overdue`}>
-            <AlertCircle className="w-3 h-3 mr-1" />
+          <Badge variant="destructive" className={sizeClass} data-testid={`badge-status-overdue`}>
+            <AlertCircle className={iconClass} />
             Overdue
           </Badge>
         );
       default:
-        return <Badge variant="outline" data-testid={`badge-status-${status}`}>{status}</Badge>;
+        return <Badge variant="outline" className={sizeClass} data-testid={`badge-status-${status}`}>{status}</Badge>;
     }
   };
 
@@ -167,25 +167,34 @@ export default function ClientInvoices() {
     });
   }, [invoices, searchQuery]);
 
+  const statusCounts = useMemo(() => {
+    return {
+      all: invoices.length,
+      draft: invoices.filter((i) => i.status === "draft").length,
+      sent: invoices.filter((i) => i.status === "sent").length,
+      partial: invoices.filter((i) => i.status === "partial").length,
+      paid: invoices.filter((i) => i.status === "paid").length,
+      overdue: invoices.filter((i) => i.status === "overdue").length,
+    };
+  }, [invoices]);
+
   const summary = useMemo(() => {
     const total = invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
     const paid = invoices.reduce((sum, inv) => sum + inv.paidAmount, 0);
     const balance = total - paid;
 
-    // Calculate breakdown based on invoicing method
     const contractPrice = invoices
       .filter((inv) => inv.invoicingMethod === "progress_payments")
       .reduce((sum, inv) => sum + inv.subtotal, 0);
     
     const variations = invoices.reduce((sum, inv) => sum + (inv.markupAmount || 0), 0);
     
-    // For cost plus, we'd show bills/timesheets instead
     const costPlusTotal = invoices
       .filter((inv) => inv.invoicingMethod === "cost_plus")
       .reduce((sum, inv) => sum + inv.subtotal, 0);
 
     const paidPercent = total > 0 ? (paid / total) * 100 : 0;
-    const invoicedPercent = 100; // All invoices are already invoiced
+    const invoicedPercent = 100;
     const remainingPercent = total > 0 ? (balance / total) * 100 : 0;
 
     return {
@@ -218,253 +227,279 @@ export default function ClientInvoices() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" data-testid="page-client-invoices">
-      {/* Header */}
-      <div className="flex-none p-6 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
+    <div className="flex flex-col h-full" data-testid="page-client-invoices">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
             Client Invoices
-          </h1>
-          <Button onClick={handleCreateInvoice} data-testid="button-create-invoice">
-            <Plus className="h-4 w-4 mr-2" />
-            Create
-          </Button>
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-invoice-count">
+            {filteredInvoices.length} invoices
+          </Badge>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleCreateInvoice}
+            data-testid="button-create-invoice"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Create Invoice</span>
+          </button>
         </div>
       </div>
 
-      {/* Summary Banner */}
-      <div className="flex-none px-6 pt-6">
-        <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-600 p-6 text-white" data-testid="summary-banner">
-          <div className="relative z-10">
-            <div className="mb-6">
-              <div className="text-sm font-medium opacity-90 mb-2" data-testid="text-total-label">
-                Total Amount
-              </div>
-              <div className="text-4xl font-bold" data-testid="text-total-amount">
-                {formatCurrency(summary.total)}
-              </div>
-            </div>
+      {/* Row 2 - Filters & Search (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+            data-testid="button-list-view"
+          >
+            <LayoutList className="w-3 h-3" />
+            <span>Table</span>
+          </button>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Breakdown */}
-              <div>
-                <div className="text-sm font-medium opacity-90 mb-3" data-testid="text-breakdown-label">
-                  Breakdown
-                </div>
-                <div className="space-y-2">
-                  {currentProject?.invoicingMethod === "cost_plus" ? (
-                    <>
-                      <div className="flex items-center justify-between" data-testid="breakdown-bills">
-                        <span className="text-sm opacity-90">Bills/Timesheets</span>
-                        <span className="font-semibold">{formatCurrency(summary.costPlusTotal)}</span>
-                      </div>
-                      <div className="flex items-center justify-between" data-testid="breakdown-markup">
-                        <span className="text-sm opacity-90">Markup</span>
-                        <span className="font-semibold">{formatCurrency(summary.variations)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between" data-testid="breakdown-contract">
-                        <span className="text-sm opacity-90">Contract Price</span>
-                        <span className="font-semibold">{formatCurrency(summary.contractPrice)}</span>
-                      </div>
-                      <div className="flex items-center justify-between" data-testid="breakdown-variations">
-                        <span className="text-sm opacity-90">Variations</span>
-                        <span className="font-semibold">{formatCurrency(summary.variations)}</span>
-                      </div>
-                      <div className="flex items-center justify-between" data-testid="breakdown-allowances">
-                        <span className="text-sm opacity-90">Allowances Difference</span>
-                        <span className="font-semibold">{formatCurrency(0)}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
+          <div className="w-px h-4 bg-border mx-1" />
 
-              {/* Metrics */}
-              <div className="md:col-span-2">
-                <div className="text-sm font-medium opacity-90 mb-3" data-testid="text-metrics-label">
-                  Metrics
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div data-testid="metric-paid">
-                    <div className="text-2xl font-bold">{summary.paidPercent.toFixed(0)}%</div>
-                    <div className="text-sm opacity-90">Paid</div>
-                    <div className="text-xs mt-1 font-medium">{formatCurrency(summary.paid)}</div>
-                  </div>
-                  <div data-testid="metric-invoiced">
-                    <div className="text-2xl font-bold">{summary.invoicedPercent.toFixed(0)}%</div>
-                    <div className="text-sm opacity-90">Invoiced</div>
-                    <div className="text-xs mt-1 font-medium">{formatCurrency(summary.total)}</div>
-                  </div>
-                  <div data-testid="metric-remaining">
-                    <div className="text-2xl font-bold">{summary.remainingPercent.toFixed(0)}%</div>
-                    <div className="text-sm opacity-90">Remaining</div>
-                    <div className="text-xs mt-1 font-medium">{formatCurrency(summary.balance)}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex-none px-6 pt-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
               placeholder="Search invoices..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
               data-testid="input-search"
             />
           </div>
-          
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-            <SelectTrigger className="w-[150px]" data-testid="select-status">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((status) => (
-                <SelectItem key={status.value} value={status.value} data-testid={`select-status-${status.value}`}>
-                  {status.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
 
-          <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-date">
-              <SelectValue placeholder="Date" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" data-testid="select-date-all">All Dates</SelectItem>
-              <SelectItem value="this-month" data-testid="select-date-this-month">This Month</SelectItem>
-              <SelectItem value="last-month" data-testid="select-date-last-month">Last Month</SelectItem>
-              <SelectItem value="this-year" data-testid="select-date-this-year">This Year</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Status Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="filter-status-popover"
+              >
+                <span>Status</span>
+                {selectedStatus !== "all" && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="start">
+              <div className="space-y-1">
+                {STATUS_OPTIONS.map((status) => (
+                  <button
+                    key={status.value}
+                    onClick={() => setSelectedStatus(status.value)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-between ${
+                      selectedStatus === status.value ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    }`}
+                    data-testid={`filter-status-${status.value}`}
+                  >
+                    <span>{status.label}</span>
+                    {statusCounts[status.value as keyof typeof statusCounts] > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {statusCounts[status.value as keyof typeof statusCounts]}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
 
-          <Select value={syncFilter} onValueChange={setSyncFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-sync">
-              <SelectValue placeholder="Sync" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" data-testid="select-sync-all">All</SelectItem>
-              <SelectItem value="synced" data-testid="select-sync-synced">Synced</SelectItem>
-              <SelectItem value="not-synced" data-testid="select-sync-not-synced">Not Synced</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Summary totals */}
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span data-testid="text-summary-total">Total: <span className="font-medium text-foreground">{formatCurrency(summary.total)}</span></span>
+          <span data-testid="text-summary-paid">Paid: <span className="font-medium text-green-600">{formatCurrency(summary.paid)}</span></span>
+          <span data-testid="text-summary-balance">Balance: <span className="font-medium text-foreground">{formatCurrency(summary.balance)}</span></span>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto px-6 pt-6 pb-6">
-        <div className="border rounded-md">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead data-testid="table-header-id">ID</TableHead>
-                <TableHead data-testid="table-header-name">Name</TableHead>
-                {!projectIdFromUrl && <TableHead data-testid="table-header-project">Project</TableHead>}
-                <TableHead data-testid="table-header-creation-date">Creation Date</TableHead>
-                <TableHead data-testid="table-header-due-date">Due Date</TableHead>
-                <TableHead data-testid="table-header-total">Total</TableHead>
-                <TableHead data-testid="table-header-paid">Paid</TableHead>
-                <TableHead data-testid="table-header-due">Due</TableHead>
-                <TableHead data-testid="table-header-sync">Sync</TableHead>
-                <TableHead data-testid="table-header-status">Status</TableHead>
-                <TableHead data-testid="table-header-actions">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {invoicesLoading ? (
+      {/* Summary Banner - Compact */}
+      <div className="flex-shrink-0 px-2 py-2">
+        <div className="relative overflow-hidden rounded-md bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-600 p-3 text-white" data-testid="summary-banner">
+          <div className="relative z-10">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs font-medium opacity-90 mb-0.5" data-testid="text-total-label">
+                  Total Amount
+                </div>
+                <div className="text-xl font-bold" data-testid="text-total-amount">
+                  {formatCurrency(summary.total)}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6">
+                {/* Breakdown */}
+                <div className="text-right">
+                  <div className="text-[10px] font-medium opacity-90 mb-1">Breakdown</div>
+                  <div className="space-y-0.5 text-xs">
+                    {currentProject?.invoicingMethod === "cost_plus" ? (
+                      <>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="opacity-90">Bills/Timesheets</span>
+                          <span className="font-semibold">{formatCurrency(summary.costPlusTotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="opacity-90">Markup</span>
+                          <span className="font-semibold">{formatCurrency(summary.variations)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="opacity-90">Contract</span>
+                          <span className="font-semibold">{formatCurrency(summary.contractPrice)}</span>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="opacity-90">Variations</span>
+                          <span className="font-semibold">{formatCurrency(summary.variations)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div className="flex items-center gap-4">
+                  <div className="text-center" data-testid="metric-paid">
+                    <div className="text-lg font-bold">{summary.paidPercent.toFixed(0)}%</div>
+                    <div className="text-[10px] opacity-90">Paid</div>
+                  </div>
+                  <div className="text-center" data-testid="metric-invoiced">
+                    <div className="text-lg font-bold">{summary.invoicedPercent.toFixed(0)}%</div>
+                    <div className="text-[10px] opacity-90">Invoiced</div>
+                  </div>
+                  <div className="text-center" data-testid="metric-remaining">
+                    <div className="text-lg font-bold">{summary.remainingPercent.toFixed(0)}%</div>
+                    <div className="text-[10px] opacity-90">Remaining</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto px-2 pb-2">
+        {invoicesLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground text-sm">Loading invoices...</p>
+          </div>
+        ) : filteredInvoices.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-muted-foreground text-sm">
+              {invoices.length === 0 ? "No invoices found" : "No matching invoices"}
+            </p>
+            {invoices.length === 0 && (
+              <button
+                className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                onClick={handleCreateInvoice}
+                data-testid="button-add-first-invoice"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create First Invoice
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="border rounded-md">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={projectIdFromUrl ? 10 : 11} className="text-center py-8">
-                    <span className="text-muted-foreground" data-testid="text-loading">Loading invoices...</span>
-                  </TableCell>
+                  <TableHead className="text-xs" data-testid="table-header-id">ID</TableHead>
+                  <TableHead className="text-xs" data-testid="table-header-name">Name</TableHead>
+                  {!projectIdFromUrl && <TableHead className="text-xs" data-testid="table-header-project">Project</TableHead>}
+                  <TableHead className="text-xs" data-testid="table-header-creation-date">Created</TableHead>
+                  <TableHead className="text-xs" data-testid="table-header-due-date">Due</TableHead>
+                  <TableHead className="text-xs text-right" data-testid="table-header-total">Total</TableHead>
+                  <TableHead className="text-xs text-right" data-testid="table-header-paid">Paid</TableHead>
+                  <TableHead className="text-xs text-right" data-testid="table-header-balance">Balance</TableHead>
+                  <TableHead className="text-xs text-center w-10" data-testid="table-header-sync">Sync</TableHead>
+                  <TableHead className="text-xs" data-testid="table-header-status">Status</TableHead>
+                  <TableHead className="text-xs w-16" data-testid="table-header-actions"></TableHead>
                 </TableRow>
-              ) : filteredInvoices.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={projectIdFromUrl ? 10 : 11} className="text-center py-8">
-                    <span className="text-muted-foreground" data-testid="text-no-invoices">No invoices found</span>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredInvoices.map((invoice) => (
+              </TableHeader>
+              <TableBody>
+                {filteredInvoices.map((invoice) => (
                   <TableRow
                     key={invoice.id}
                     className="cursor-pointer hover-elevate"
                     onClick={() => handleRowClick(invoice.id)}
                     data-testid={`row-invoice-${invoice.id}`}
                   >
-                    <TableCell data-testid={`cell-id-${invoice.id}`}>
+                    <TableCell className="font-medium text-xs" data-testid={`cell-id-${invoice.id}`}>
                       {invoice.invoiceNumber}
                     </TableCell>
-                    <TableCell data-testid={`cell-name-${invoice.id}`}>
+                    <TableCell className="text-xs" data-testid={`cell-name-${invoice.id}`}>
                       Invoice {invoice.invoiceNumber}
                     </TableCell>
                     {!projectIdFromUrl && (
                       <TableCell data-testid={`cell-project-${invoice.id}`}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <ProjectIcon
                             icon={projects.find(p => p.id === invoice.projectId)?.icon || 'Briefcase'}
                             color={projects.find(p => p.id === invoice.projectId)?.color || '#3b82f6'}
-                            className="w-4 h-4"
+                            className="w-3 h-3"
                           />
-                          <span>{getProjectName(invoice.projectId)}</span>
+                          <span className="text-xs">{getProjectName(invoice.projectId)}</span>
                         </div>
                       </TableCell>
                     )}
-                    <TableCell data-testid={`cell-creation-date-${invoice.id}`}>
-                      {formatDate(invoice.invoiceDate)}
-                    </TableCell>
-                    <TableCell data-testid={`cell-due-date-${invoice.id}`}>
-                      {formatDate(invoice.dueDate)}
-                    </TableCell>
-                    <TableCell data-testid={`cell-total-${invoice.id}`}>
-                      {formatCurrency(invoice.totalAmount)}
-                    </TableCell>
-                    <TableCell data-testid={`cell-paid-${invoice.id}`}>
-                      {formatCurrency(invoice.paidAmount)}
-                    </TableCell>
-                    <TableCell data-testid={`cell-balance-${invoice.id}`}>
-                      {formatCurrency(invoice.balanceAmount)}
-                    </TableCell>
-                    <TableCell data-testid={`cell-sync-${invoice.id}`}>
-                      <div className="flex items-center justify-center">
-                        {invoice.sentDate ? (
-                          <CheckCircle className="h-4 w-4 text-green-600" data-testid={`icon-synced-${invoice.id}`} />
-                        ) : (
-                          <Clock className="h-4 w-4 text-muted-foreground" data-testid={`icon-not-synced-${invoice.id}`} />
-                        )}
+                    <TableCell className="text-xs" data-testid={`cell-creation-date-${invoice.id}`}>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-muted-foreground" />
+                        {formatDate(invoice.invoiceDate)}
                       </div>
                     </TableCell>
+                    <TableCell className="text-xs" data-testid={`cell-due-date-${invoice.id}`}>
+                      {formatDate(invoice.dueDate)}
+                    </TableCell>
+                    <TableCell className="text-xs font-medium text-right" data-testid={`cell-total-${invoice.id}`}>
+                      {formatCurrency(invoice.totalAmount)}
+                    </TableCell>
+                    <TableCell className="text-xs text-right text-green-600" data-testid={`cell-paid-${invoice.id}`}>
+                      {formatCurrency(invoice.paidAmount)}
+                    </TableCell>
+                    <TableCell className="text-xs font-medium text-right" data-testid={`cell-balance-${invoice.id}`}>
+                      {formatCurrency(invoice.balanceAmount)}
+                    </TableCell>
+                    <TableCell className="text-center" data-testid={`cell-sync-${invoice.id}`}>
+                      {invoice.sentDate ? (
+                        <CheckCircle className="h-3 w-3 text-green-600 inline" data-testid={`icon-synced-${invoice.id}`} />
+                      ) : (
+                        <Clock className="h-3 w-3 text-muted-foreground inline" data-testid={`icon-not-synced-${invoice.id}`} />
+                      )}
+                    </TableCell>
                     <TableCell data-testid={`cell-status-${invoice.id}`}>
-                      {getStatusBadge(invoice.status)}
+                      {getStatusBadge(invoice.status, "sm")}
                     </TableCell>
                     <TableCell data-testid={`cell-actions-${invoice.id}`}>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleRowClick(invoice.id);
                           }}
                           data-testid={`button-view-${invoice.id}`}
                         >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                          <Eye className="h-3 w-3" />
+                        </button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" data-testid={`button-menu-${invoice.id}`}>
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
+                            <button className="h-6 w-6 rounded hover-elevate flex items-center justify-center" data-testid={`button-menu-${invoice.id}`}>
+                              <MoreVertical className="h-3 w-3" />
+                            </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
                             <DropdownMenuItem data-testid={`menu-edit-${invoice.id}`}>
@@ -481,11 +516,11 @@ export default function ClientInvoices() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </div>
   );
