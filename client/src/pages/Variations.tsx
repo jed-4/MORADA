@@ -1,11 +1,15 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -14,7 +18,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, FileText, CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react";
+import { 
+  Plus, 
+  FileText, 
+  CheckCircle, 
+  XCircle, 
+  Clock, 
+  AlertCircle,
+  LayoutList,
+  Columns3,
+  Search,
+  DollarSign,
+  Calendar
+} from "lucide-react";
 import { type Variation, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
@@ -34,8 +50,9 @@ export default function Variations() {
   const projectIdFromUrl = params.projectId || "";
   const pageTitle = usePageTitle({ pageName: "Variations" });
 
-  const [activeTab, setActiveTab] = useState("table");
+  const [currentView, setCurrentView] = useState<"table" | "kanban">("table");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) {
@@ -68,13 +85,8 @@ export default function Variations() {
     return project?.name || "Unknown Project";
   };
 
-  const getProject = (projectId: string) => {
-    return projects.find((p) => p.id === projectId);
-  };
-
   const formatCurrency = (amount: number) => {
     const dollars = amount / 100;
-    // Check if it's a whole number
     const isWholeNumber = dollars % 1 === 0;
     
     return new Intl.NumberFormat("en-AU", {
@@ -90,45 +102,47 @@ export default function Variations() {
     return format(new Date(date), "dd MMM yyyy");
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, size: "sm" | "md" = "md") => {
+    const sizeClass = size === "sm" ? "h-4 px-1.5 text-[10px]" : "";
+    
     switch (status) {
       case "draft":
         return (
-          <Badge variant="secondary" data-testid={`badge-status-draft`}>
-            <FileText className="w-3 h-3 mr-1" />
+          <Badge variant="secondary" className={sizeClass} data-testid={`badge-status-draft`}>
+            <FileText className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />
             Draft
           </Badge>
         );
       case "action":
         return (
-          <Badge variant="destructive" data-testid={`badge-status-action`}>
-            <AlertCircle className="w-3 h-3 mr-1" />
+          <Badge variant="destructive" className={sizeClass} data-testid={`badge-status-action`}>
+            <AlertCircle className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />
             Action
           </Badge>
         );
       case "pending":
         return (
-          <Badge variant="default" data-testid={`badge-status-pending`}>
-            <Clock className="w-3 h-3 mr-1" />
+          <Badge variant="default" className={sizeClass} data-testid={`badge-status-pending`}>
+            <Clock className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />
             Pending
           </Badge>
         );
       case "approved":
         return (
-          <Badge variant="outline" className="border-green-500 text-green-700" data-testid={`badge-status-approved`}>
-            <CheckCircle className="w-3 h-3 mr-1" />
+          <Badge variant="outline" className={`border-green-500 text-green-700 ${sizeClass}`} data-testid={`badge-status-approved`}>
+            <CheckCircle className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />
             Approved
           </Badge>
         );
       case "rejected":
         return (
-          <Badge variant="outline" className="border-red-500 text-red-700" data-testid={`badge-status-rejected`}>
-            <XCircle className="w-3 h-3 mr-1" />
+          <Badge variant="outline" className={`border-red-500 text-red-700 ${sizeClass}`} data-testid={`badge-status-rejected`}>
+            <XCircle className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />
             Rejected
           </Badge>
         );
       default:
-        return <Badge variant="outline" data-testid={`badge-status-${status}`}>{status}</Badge>;
+        return <Badge variant="outline" className={sizeClass} data-testid={`badge-status-${status}`}>{status}</Badge>;
     }
   };
 
@@ -159,6 +173,16 @@ export default function Variations() {
     };
   }, [variations]);
 
+  const filteredVariations = useMemo(() => {
+    return variations.filter((v) => {
+      const matchesSearch = 
+        v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.variationNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
+    });
+  }, [variations, searchTerm]);
+
   const TableView = () => (
     <div className="border rounded-md">
       <Table>
@@ -176,17 +200,19 @@ export default function Variations() {
           {variationsLoading ? (
             <TableRow>
               <TableCell colSpan={projectIdFromUrl ? 5 : 6} className="text-center py-8">
-                <span className="text-muted-foreground" data-testid="text-loading">Loading variations...</span>
+                <span className="text-muted-foreground text-sm" data-testid="text-loading">Loading variations...</span>
               </TableCell>
             </TableRow>
-          ) : variations.length === 0 ? (
+          ) : filteredVariations.length === 0 ? (
             <TableRow>
               <TableCell colSpan={projectIdFromUrl ? 5 : 6} className="text-center py-8">
-                <span className="text-muted-foreground" data-testid="text-no-variations">No variations found</span>
+                <span className="text-muted-foreground text-sm" data-testid="text-no-variations">
+                  {variations.length === 0 ? "No variations found" : "No matching variations"}
+                </span>
               </TableCell>
             </TableRow>
           ) : (
-            variations.map((variation) => (
+            filteredVariations.map((variation) => (
               <TableRow
                 key={variation.id}
                 className="cursor-pointer hover-elevate"
@@ -230,20 +256,20 @@ export default function Variations() {
 
   const KanbanView = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4" data-testid="kanban-view">
-      {STATUS_OPTIONS.slice(1).map((statusOption) => (
-        <div key={statusOption.key} className="flex flex-col gap-3">
-          <div className="flex items-center justify-between px-3 py-2 bg-muted rounded-md">
-            <h3 className="font-medium text-sm" data-testid={`kanban-column-${statusOption.key}`}>
-              {statusOption.label}
-            </h3>
-            <Badge variant="secondary" data-testid={`kanban-count-${statusOption.key}`}>
-              {variations.filter((v) => v.status === statusOption.key).length}
-            </Badge>
-          </div>
-          <div className="flex flex-col gap-2">
-            {variations
-              .filter((v) => v.status === statusOption.key)
-              .map((variation) => (
+      {STATUS_OPTIONS.slice(1).map((statusOption) => {
+        const columnVariations = filteredVariations.filter((v) => v.status === statusOption.key);
+        return (
+          <div key={statusOption.key} className="flex flex-col gap-3">
+            <div className="flex items-center justify-between px-3 py-2 bg-muted rounded-md">
+              <h3 className="font-medium text-sm" data-testid={`kanban-column-${statusOption.key}`}>
+                {statusOption.label}
+              </h3>
+              <Badge variant="secondary" data-testid={`kanban-count-${statusOption.key}`}>
+                {columnVariations.length}
+              </Badge>
+            </div>
+            <div className="flex flex-col gap-2">
+              {columnVariations.map((variation) => (
                 <Card
                   key={variation.id}
                   className="p-3 cursor-pointer hover-elevate"
@@ -286,6 +312,60 @@ export default function Variations() {
                   </div>
                 </Card>
               ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const CardListView = () => (
+    <div className="space-y-1">
+      {filteredVariations.map((variation) => (
+        <div
+          key={variation.id}
+          className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+          onClick={() => handleRowClick(variation.id)}
+          data-testid={`variation-card-${variation.id}`}
+        >
+          <div className="flex items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-sm line-clamp-1" data-testid={`variation-name-${variation.id}`}>
+                  {variation.name}
+                </h3>
+                <span className="text-xs text-muted-foreground">
+                  {variation.variationNumber}
+                </span>
+              </div>
+              {variation.description && (
+                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                  {variation.description}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {!projectIdFromUrl && (
+                <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`variation-project-${variation.id}`}>
+                  {getProjectName(variation.projectId)}
+                </Badge>
+              )}
+
+              {getStatusBadge(variation.status, "sm")}
+
+              <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`variation-total-${variation.id}`}>
+                <DollarSign className="h-3 w-3" />
+                <span className="font-medium">{formatCurrency(variation.totalAmount)}</span>
+              </div>
+
+              {variation.approvalDeadline && (
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`variation-deadline-${variation.id}`}>
+                  <Calendar className="h-3 w-3" />
+                  <span>{formatDate(variation.approvalDeadline)}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ))}
@@ -293,59 +373,140 @@ export default function Variations() {
   );
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" data-testid="page-variations">
-      <div className="flex-none p-6 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
+    <div className="flex flex-col h-full" data-testid="page-variations">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {pageTitle}
-          </h1>
-          <Button onClick={handleAddVariation} data-testid="button-add-variation">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Variation
-          </Button>
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-variation-count">
+            {filteredVariations.length} variations
+          </Badge>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleAddVariation}
+            data-testid="button-add-variation"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Variation</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex-none px-6 pt-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="tabs-view">
-          <TabsList data-testid="tabs-list">
-            <TabsTrigger value="table" data-testid="tab-trigger-table">
-              Table
-            </TabsTrigger>
-            <TabsTrigger value="kanban" data-testid="tab-trigger-kanban">
-              Kanban
-            </TabsTrigger>
-          </TabsList>
+      {/* Row 2 - View Tabs & Filters (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          {/* View Tabs */}
+          <button
+            onClick={() => setCurrentView('table')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              currentView === 'table' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-table-view"
+          >
+            <LayoutList className="w-3 h-3" />
+            <span>Table</span>
+          </button>
+          <button
+            onClick={() => setCurrentView('kanban')}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              currentView === 'kanban' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-kanban-view"
+          >
+            <Columns3 className="w-3 h-3" />
+            <span>Kanban</span>
+          </button>
 
-          <div className="flex flex-wrap gap-2 mt-4">
-            {STATUS_OPTIONS.map((status) => (
-              <Badge
-                key={status.key}
-                variant={selectedStatus === status.key ? "default" : "outline"}
-                className="cursor-pointer hover-elevate"
-                onClick={() => setSelectedStatus(status.key)}
-                data-testid={`filter-status-${status.key}`}
+          <div className="w-px h-4 bg-border mx-1" />
+
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search variations..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="variations-search-input"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="filter-status-popover"
               >
-                {status.label}
-                {statusCounts[status.key as keyof typeof statusCounts] > 0 && (
-                  <span className="ml-1.5">
-                    ({statusCounts[status.key as keyof typeof statusCounts]})
-                  </span>
+                <span>Status</span>
+                {selectedStatus !== "all" && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
                 )}
-              </Badge>
-            ))}
-          </div>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="start">
+              <div className="space-y-1">
+                {STATUS_OPTIONS.map((status) => (
+                  <button
+                    key={status.key}
+                    onClick={() => setSelectedStatus(status.key)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-between ${
+                      selectedStatus === status.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    }`}
+                    data-testid={`filter-status-${status.key}`}
+                  >
+                    <span>{status.label}</span>
+                    {statusCounts[status.key as keyof typeof statusCounts] > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {statusCounts[status.key as keyof typeof statusCounts]}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
 
-          <div className="mt-6">
-            <TabsContent value="table" className="mt-0" data-testid="tab-content-table">
-              <TableView />
-            </TabsContent>
-
-            <TabsContent value="kanban" className="mt-0" data-testid="tab-content-kanban">
-              <KanbanView />
-            </TabsContent>
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-2">
+        {variationsLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground text-sm">Loading variations...</p>
           </div>
-        </Tabs>
+        ) : filteredVariations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-muted-foreground text-sm">
+              {variations.length === 0 ? "No variations found" : "No matching variations"}
+            </p>
+            {variations.length === 0 && (
+              <button
+                className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                onClick={handleAddVariation}
+                data-testid="button-add-first-variation"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add First Variation
+              </button>
+            )}
+          </div>
+        ) : currentView === "table" ? (
+          <TableView />
+        ) : (
+          <KanbanView />
+        )}
       </div>
     </div>
   );
