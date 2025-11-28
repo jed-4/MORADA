@@ -1763,11 +1763,13 @@ export type Activity = typeof activities.$inferSelect;
 // Site Diary Templates (company-wide, reusable across projects)
 export const siteDiaryTemplates = pgTable("site_diary_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").references(() => companies.id),
   name: text("name").notNull(),
   description: text("description"),
   fields: json("fields").notNull().default([]), // Array of field definitions: [{id, title, type, required, options, order}]
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
+  isDefault: boolean("is_default").notNull().default(false), // Only one template per company can be default
   isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1801,6 +1803,8 @@ export const insertSiteDiaryTemplateSchema = createInsertSchema(siteDiaryTemplat
     order: z.number(),
     maxPhotos: z.number().optional(),
   })),
+  isDefault: z.boolean().optional(),
+  companyId: z.string().optional(),
 });
 
 export type InsertSiteDiaryTemplate = z.infer<typeof insertSiteDiaryTemplateSchema>;
