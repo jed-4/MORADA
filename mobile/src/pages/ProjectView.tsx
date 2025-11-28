@@ -31,6 +31,7 @@ import { ProjectEstimatesTab } from "./ProjectEstimatesTab";
 import { ProjectProposalsTab } from "./ProjectProposalsTab";
 import { ProjectTimesheetsTab } from "./ProjectTimesheetsTab";
 import { ProjectOverviewTab } from "./ProjectOverviewTab";
+import { ProjectAllowancesTab } from "./ProjectAllowancesTab";
 
 export function ProjectView() {
   const routeParams = useProjectRoute();
@@ -81,7 +82,7 @@ export function ProjectView() {
     { key: "rfq", content: <ProjectRFQTab /> },
     { key: "rfi", content: <ProjectRFITab /> },
     { key: "proposals", content: <ProjectProposalsTab /> },
-    { key: "allowances", content: <ProjectComingSoonTab title="Allowances" /> },
+    { key: "allowances", content: <ProjectAllowancesTab /> },
     { key: "defects", content: <ProjectDefectsTab /> },
     { key: "pos", content: <ProjectPOsTab /> },
     { key: "variations", content: <ProjectVariationsTab /> },
