@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -52,38 +52,47 @@ export default function SystemConfigurationPage() {
     queryKey: ["/api/system-configuration"],
   });
 
+  const defaultValues = {
+    language: "en-AU",
+    measurementSystem: "metric",
+    currency: "AUD",
+    currencySymbol: "$",
+    timezone: "Australia/Sydney",
+    temperatureFormat: "celsius",
+    dateFormat: "DD/MM/YYYY",
+    timeFormat: "12h",
+    estimatePrefix: "EST-",
+    variationPrefix: "VAR-",
+    clientInvoicePrefix: "INV-",
+    billPrefix: "BILL-",
+    purchaseOrderPrefix: "PO-",
+    rfqPrefix: "RFQ-",
+    rfiPrefix: "RFI-",
+    proposalPrefix: "PROP-",
+    estimateStartNumber: 1000,
+    variationStartNumber: 1000,
+    clientInvoiceStartNumber: 1000,
+    billStartNumber: 1000,
+    purchaseOrderStartNumber: 1000,
+    rfqStartNumber: 1000,
+    rfiStartNumber: 1000,
+    proposalStartNumber: 1000,
+    gstRate: "10.00",
+    fiscalYearStart: "07-01",
+    defaultPaymentTerms: "Net 30",
+  };
+
   const form = useForm({
     resolver: zodResolver(formSchema),
-    values: config || {
-      language: "en-AU",
-      measurementSystem: "metric",
-      currency: "AUD",
-      currencySymbol: "$",
-      timezone: "Australia/Sydney",
-      temperatureFormat: "celsius",
-      dateFormat: "DD/MM/YYYY",
-      timeFormat: "12h",
-      estimatePrefix: "EST-",
-      variationPrefix: "VAR-",
-      clientInvoicePrefix: "INV-",
-      billPrefix: "BILL-",
-      purchaseOrderPrefix: "PO-",
-      rfqPrefix: "RFQ-",
-      rfiPrefix: "RFI-",
-      proposalPrefix: "PROP-",
-      estimateStartNumber: 1000,
-      variationStartNumber: 1000,
-      clientInvoiceStartNumber: 1000,
-      billStartNumber: 1000,
-      purchaseOrderStartNumber: 1000,
-      rfqStartNumber: 1000,
-      rfiStartNumber: 1000,
-      proposalStartNumber: 1000,
-      gstRate: "10.00",
-      fiscalYearStart: "07-01",
-      defaultPaymentTerms: "Net 30",
-    },
+    defaultValues,
   });
+
+  // Reset form when config data loads
+  useEffect(() => {
+    if (config) {
+      form.reset(config);
+    }
+  }, [config, form]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -114,6 +123,16 @@ export default function SystemConfigurationPage() {
     return (
       <div className="p-6">
         <div className="flex items-center gap-2 mb-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/settings")}
+            className="mr-2"
+            data-testid="button-back-to-settings"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
           <Settings className="h-6 w-6" />
           <h1 className="text-2xl font-semibold">System Configuration</h1>
         </div>
@@ -126,6 +145,16 @@ export default function SystemConfigurationPage() {
     return (
       <div className="p-6">
         <div className="flex items-center gap-2 mb-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/settings")}
+            className="mr-2"
+            data-testid="button-back-to-settings"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
           <Settings className="h-6 w-6" />
           <h1 className="text-2xl font-semibold">System Configuration</h1>
         </div>
