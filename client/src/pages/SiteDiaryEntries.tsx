@@ -13,18 +13,35 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { 
   BookOpen, 
   Plus, 
   Calendar as CalendarIcon,
   FileText,
-  Image as ImageIcon,
   Upload,
   X,
   Edit,
   Trash2,
-  Eye
+  Eye,
+  Search,
+  LayoutList,
+  MoreVertical,
+  Clock,
+  User,
+  Cloud,
+  Thermometer
 } from "lucide-react";
 import { format } from "date-fns";
 import type { 
@@ -45,26 +62,23 @@ export default function SiteDiaryEntries() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [isCreating, setIsCreating] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // If we have a projectId from the URL, use it automatically
   useEffect(() => {
     if (projectIdFromUrl) {
       setSelectedProjectId(projectIdFromUrl);
     }
   }, [projectIdFromUrl]);
 
-  // Fetch projects
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  // Fetch templates
   const { data: templates = [] } = useQuery<SiteDiaryTemplate[]>({
     queryKey: ["/api/site-diary-templates"],
   });
 
-  // Fetch entries for selected project
-  const { data: entries = [] } = useQuery<SiteDiaryEntry[]>({
+  const { data: entries = [], isLoading } = useQuery<SiteDiaryEntry[]>({
     queryKey: ["/api/projects", selectedProjectId, "site-diary-entries"],
     enabled: !!selectedProjectId,
   });
@@ -73,70 +87,33 @@ export default function SiteDiaryEntries() {
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const isProjectFromUrl = !!projectIdFromUrl;
 
-  return (
-    <div className="h-full flex flex-col p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Site Diary</h1>
-          <p className="text-muted-foreground mt-1">
-            Record daily construction activities and progress
-          </p>
-        </div>
-        {selectedProjectId && selectedTemplateId && !isCreating && (
-          <Button onClick={() => setIsCreating(true)} data-testid="button-create-entry">
-            <Plus className="h-4 w-4 mr-2" />
-            New Entry
-          </Button>
-        )}
-      </div>
+  const filteredEntries = entries.filter((entry) => {
+    if (!selectedTemplateId || selectedTemplateId === "all") return true;
+    return entry.templateId === selectedTemplateId;
+  }).filter((entry) => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      entry.title.toLowerCase().includes(searchLower) ||
+      entry.templateName?.toLowerCase().includes(searchLower)
+    );
+  });
 
-      {/* Project & Template Selection */}
-      {!isCreating && (
-        <div className={isProjectFromUrl ? "max-w-md" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
-          {/* Only show project selector if not in a project context */}
-          {!isProjectFromUrl && (
-            <div className="space-y-2">
-              <Label>Select Project</Label>
-              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                <SelectTrigger data-testid="select-project">
-                  <SelectValue placeholder="Choose a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+  const handleAddEntry = () => {
+    if (!selectedTemplateId || selectedTemplateId === "all") {
+      toast({
+        title: "Select a template",
+        description: "Please select a specific template to create an entry",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsCreating(true);
+  };
 
-          <div className="space-y-2">
-            <Label>Select Template</Label>
-            <Select 
-              value={selectedTemplateId} 
-              onValueChange={setSelectedTemplateId}
-              disabled={!selectedProjectId}
-            >
-              <SelectTrigger data-testid="select-template">
-                <SelectValue placeholder="Choose a template" />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
-
-      {/* Entry Form or List */}
-      {isCreating && selectedTemplate && selectedProjectId ? (
+  if (isCreating && selectedTemplate && selectedProjectId) {
+    return (
+      <div className="flex flex-col h-full p-2">
         <EntryForm
           template={selectedTemplate}
           projectId={selectedProjectId}
@@ -149,19 +126,282 @@ export default function SiteDiaryEntries() {
             });
           }}
         />
-      ) : (
-        <EntriesList 
-          entries={entries} 
-          selectedProjectId={selectedProjectId}
-          selectedTemplateId={selectedTemplateId}
-          isProjectFromUrl={isProjectFromUrl}
-        />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full" data-testid="page-site-diary">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            Site Diary
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-entry-count">
+            {filteredEntries.length} entries
+          </Badge>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleAddEntry}
+            disabled={!selectedProjectId}
+            data-testid="button-add-site-diary"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Site Diary</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2 - Filters & Search (36px) */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+            data-testid="button-list-view"
+          >
+            <LayoutList className="w-3 h-3" />
+            <span>List</span>
+          </button>
+
+          <div className="w-px h-4 bg-border mx-1" />
+
+          {/* Search */}
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search entries..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="site-diary-search-input"
+            />
+          </div>
+
+          {/* Project Filter (only when not in project context) */}
+          {!isProjectFromUrl && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button 
+                  className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="filter-project-popover"
+                >
+                  <span>Project</span>
+                  {selectedProjectId && (
+                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                      1
+                    </Badge>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-2" align="start">
+                <div className="space-y-1">
+                  {projects.map((project) => (
+                    <button
+                      key={project.id}
+                      onClick={() => setSelectedProjectId(project.id)}
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+                        selectedProjectId === project.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                      }`}
+                      data-testid={`filter-project-${project.id}`}
+                    >
+                      {project.name}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {/* Template Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="filter-template-popover"
+              >
+                <span>Template</span>
+                {selectedTemplateId && selectedTemplateId !== "all" && (
+                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    1
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="start">
+              <div className="space-y-1">
+                <button
+                  onClick={() => setSelectedTemplateId("all")}
+                  className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+                    selectedTemplateId === "all" || !selectedTemplateId ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                  }`}
+                  data-testid="filter-template-all"
+                >
+                  All Templates
+                </button>
+                {templates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => setSelectedTemplateId(template.id)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+                      selectedTemplateId === template.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    }`}
+                    data-testid={`filter-template-${template.id}`}
+                  >
+                    {template.name}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-2">
+        {!selectedProjectId ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <BookOpen className="h-12 w-12 text-muted-foreground" />
+            <p className="text-muted-foreground text-sm">
+              {isProjectFromUrl ? "No site diary entries" : "Select a project to view entries"}
+            </p>
+          </div>
+        ) : isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground text-sm">Loading entries...</p>
+          </div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <FileText className="h-12 w-12 text-muted-foreground" />
+            <p className="text-muted-foreground text-sm">
+              {entries.length === 0 ? "No site diary entries yet" : "No matching entries"}
+            </p>
+            {entries.length === 0 && selectedTemplateId && selectedTemplateId !== "all" && (
+              <button
+                className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                onClick={handleAddEntry}
+                data-testid="button-add-first-entry"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add First Entry
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {filteredEntries.map((entry) => (
+              <SiteDiaryCard key={entry.id} entry={entry} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// Entry Form Component
+function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
+  const fieldValues = entry.fieldValues as Record<string, any> || {};
+  
+  const getWeatherDisplay = () => {
+    const weather = fieldValues.weather || fieldValues.weatherConditions;
+    if (weather) return weather;
+    return null;
+  };
+
+  const getTemperatureDisplay = () => {
+    const temp = fieldValues.temperature || fieldValues.temp;
+    if (temp) return `${temp}°C`;
+    return null;
+  };
+
+  const weather = getWeatherDisplay();
+  const temperature = getTemperatureDisplay();
+
+  return (
+    <div 
+      className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+      data-testid={`site-diary-card-${entry.id}`}
+    >
+      <div className="flex items-start gap-2">
+        {/* Title and Content */}
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-sm mb-1 line-clamp-1" data-testid={`entry-title-${entry.id}`}>
+            {entry.title}
+          </h3>
+          {fieldValues.notes || fieldValues.description || fieldValues.summary ? (
+            <p className="text-xs text-muted-foreground line-clamp-2">
+              {fieldValues.notes || fieldValues.description || fieldValues.summary}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Metadata Column */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Template */}
+          <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`entry-template-${entry.id}`}>
+            {entry.templateName}
+          </Badge>
+
+          {/* Weather */}
+          {weather && (
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`entry-weather-${entry.id}`}>
+              <Cloud className="w-2.5 h-2.5 mr-0.5" />
+              {weather}
+            </Badge>
+          )}
+
+          {/* Temperature */}
+          {temperature && (
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`entry-temp-${entry.id}`}>
+              <Thermometer className="w-2.5 h-2.5 mr-0.5" />
+              {temperature}
+            </Badge>
+          )}
+
+          {/* Date */}
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
+            <CalendarIcon className="h-3 w-3" />
+            <span>{format(new Date(entry.entryDateTime), "MMM d, yyyy")}</span>
+          </div>
+
+          {/* Share indicator */}
+          {entry.shareWithClient && (
+            <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+              Shared
+            </Badge>
+          )}
+
+          {/* Actions */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`entry-menu-trigger-${entry.id}`}>
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem data-testid={`entry-view-${entry.id}`}>
+                <Eye className="h-4 w-4 mr-2" />
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid={`entry-edit-${entry.id}`}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive" data-testid={`entry-delete-${entry.id}`}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EntryForm({ 
   template, 
   projectId, 
@@ -178,20 +418,17 @@ function EntryForm({
   const { toast } = useToast();
   const templateFields = (template.fields as TemplateFieldDefinition[]) || [];
 
-  // Build dynamic schema based on template fields
   const buildFormSchema = () => {
     const fieldSchemas: Record<string, z.ZodTypeAny> = {};
     
     templateFields.forEach(field => {
       if (field.required) {
         if (field.type === 'number') {
-          // For required numbers, ensure it's not empty string before coercing
           fieldSchemas[field.id] = z.string()
             .min(1, "Required")
             .transform(val => Number(val))
             .pipe(z.number());
         } else if (field.type === 'checkbox') {
-          // For required checkboxes, normalize to boolean and ensure it's true
           fieldSchemas[field.id] = z.any()
             .transform(val => val === true || val === "true")
             .pipe(z.boolean().refine(val => val === true, {
@@ -204,12 +441,10 @@ function EntryForm({
         }
       } else {
         if (field.type === 'number') {
-          // For optional numbers, transform empty to undefined, otherwise to number
           fieldSchemas[field.id] = z.string()
             .transform(val => val === '' ? undefined : Number(val))
             .pipe(z.number().optional());
         } else if (field.type === 'checkbox') {
-          // Normalize checkbox values to boolean
           fieldSchemas[field.id] = z.any()
             .transform(val => val === true || val === "true")
             .pipe(z.boolean().optional());
@@ -282,53 +517,50 @@ function EntryForm({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="py-3">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>New Site Diary Entry</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
+            <CardTitle className="text-base">New Site Diary Entry</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
               {projectName} • {template.name}
             </p>
           </div>
-          <Button variant="ghost" onClick={onCancel} data-testid="button-cancel-entry">
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onCancel} data-testid="button-cancel-entry">
             <X className="h-4 w-4" />
           </Button>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="py-2">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Title Field */}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
             <FormField
               control={form.control}
               name="title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Entry Title *</FormLabel>
+                  <FormLabel className="text-xs">Entry Title *</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Daily Progress - Framing" {...field} data-testid="input-entry-title" />
+                    <Input placeholder="e.g., Daily Progress - Framing" className="h-8 text-sm" {...field} data-testid="input-entry-title" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Date Field */}
             <FormField
               control={form.control}
               name="entryDateTime"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Entry Date *</FormLabel>
+                  <FormLabel className="text-xs">Entry Date *</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} data-testid="input-entry-date" />
+                    <Input type="date" className="h-8 text-sm" {...field} data-testid="input-entry-date" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Dynamic Template Fields */}
             {templateFields.map((templateField) => (
               <FormField
                 key={templateField.id}
@@ -336,7 +568,7 @@ function EntryForm({
                 name={templateField.id as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
+                    <FormLabel className="text-xs">
                       {templateField.title}
                       {templateField.required && " *"}
                     </FormLabel>
@@ -345,6 +577,7 @@ function EntryForm({
                         <Input 
                           {...field} 
                           value={field.value as string || ''} 
+                          className="h-8 text-sm"
                           data-testid={`input-field-${templateField.id}`}
                         />
                       )}
@@ -352,6 +585,7 @@ function EntryForm({
                         <Textarea 
                           {...field} 
                           value={field.value as string || ''} 
+                          className="text-sm min-h-[60px]"
                           data-testid={`textarea-field-${templateField.id}`}
                         />
                       )}
@@ -360,6 +594,7 @@ function EntryForm({
                           type="number" 
                           {...field} 
                           value={field.value as number || ''} 
+                          className="h-8 text-sm"
                           data-testid={`input-number-${templateField.id}`}
                         />
                       )}
@@ -368,6 +603,7 @@ function EntryForm({
                           type="date" 
                           {...field} 
                           value={field.value as string || ''} 
+                          className="h-8 text-sm"
                           data-testid={`input-date-${templateField.id}`}
                         />
                       )}
@@ -376,7 +612,7 @@ function EntryForm({
                           value={field.value as string || ''} 
                           onValueChange={field.onChange}
                         >
-                          <SelectTrigger data-testid={`select-field-${templateField.id}`}>
+                          <SelectTrigger className="h-8 text-sm" data-testid={`select-field-${templateField.id}`}>
                             <SelectValue placeholder="Select an option" />
                           </SelectTrigger>
                           <SelectContent>
@@ -398,9 +634,9 @@ function EntryForm({
                         </div>
                       )}
                       {(templateField.type === 'file' || templateField.type === 'photo-gallery') && (
-                        <div className="border-2 border-dashed rounded-md p-4 text-center">
-                          <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                          <p className="text-sm text-muted-foreground">
+                        <div className="border-2 border-dashed rounded-md p-3 text-center">
+                          <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                          <p className="text-xs text-muted-foreground">
                             {templateField.type === 'photo-gallery' 
                               ? "Photo upload (max 3) - Coming soon" 
                               : "File upload - Coming soon"}
@@ -414,16 +650,16 @@ function EntryForm({
               />
             ))}
 
-            {/* Actions */}
-            <div className="flex gap-2 pt-4">
+            <div className="flex gap-2 pt-2">
               <Button 
                 type="submit" 
+                size="sm"
                 disabled={createMutation.isPending}
                 data-testid="button-submit-entry"
               >
                 {createMutation.isPending ? "Creating..." : "Create Entry"}
               </Button>
-              <Button type="button" variant="outline" onClick={onCancel}>
+              <Button type="button" variant="outline" size="sm" onClick={onCancel}>
                 Cancel
               </Button>
             </div>
@@ -431,84 +667,5 @@ function EntryForm({
         </Form>
       </CardContent>
     </Card>
-  );
-}
-
-// Entries List Component
-function EntriesList({ 
-  entries, 
-  selectedProjectId,
-  selectedTemplateId,
-  isProjectFromUrl 
-}: { 
-  entries: SiteDiaryEntry[]; 
-  selectedProjectId: string;
-  selectedTemplateId: string;
-  isProjectFromUrl: boolean;
-}) {
-  if (!selectedProjectId || !selectedTemplateId) {
-    return (
-      <Card>
-        <CardContent className="p-12 text-center">
-          <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">
-            {isProjectFromUrl ? "No Site Diaries" : "Select Project and Template"}
-          </h3>
-          <p className="text-muted-foreground">
-            {isProjectFromUrl 
-              ? "Select a template above to create your first site diary entry"
-              : "Choose a project and template to view or create site diary entries"
-            }
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (entries.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-12 text-center">
-          <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">No Entries Yet</h3>
-          <p className="text-muted-foreground">
-            Create your first site diary entry using the "New Entry" button above
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <h3 className="text-lg font-medium">Recent Entries</h3>
-      <div className="space-y-3">
-        {entries.map((entry) => (
-          <Card key={entry.id} className="hover-elevate">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h4 className="font-medium">{entry.title}</h4>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {format(new Date(entry.entryDateTime), 'PPP')}
-                  </p>
-                  <div className="flex gap-2 mt-2">
-                    <Badge variant="secondary">{entry.templateName}</Badge>
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" data-testid={`button-view-entry-${entry.id}`}>
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" data-testid={`button-edit-entry-${entry.id}`}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
   );
 }
