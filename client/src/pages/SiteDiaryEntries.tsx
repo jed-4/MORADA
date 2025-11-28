@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { 
   BookOpen, 
   Plus, 
@@ -41,7 +42,8 @@ import {
   Clock,
   User,
   Cloud,
-  Thermometer
+  Thermometer,
+  ChevronDown
 } from "lucide-react";
 import { format } from "date-fns";
 import type { 
@@ -56,6 +58,7 @@ import { z } from "zod";
 
 export default function SiteDiaryEntries() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const params = useParams();
   const projectIdFromUrl = params.projectId;
   
@@ -83,7 +86,6 @@ export default function SiteDiaryEntries() {
     enabled: !!selectedProjectId,
   });
 
-  const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const isProjectFromUrl = !!projectIdFromUrl;
 
@@ -100,10 +102,10 @@ export default function SiteDiaryEntries() {
   });
 
   const handleAddEntry = () => {
-    if (!selectedTemplateId || selectedTemplateId === "all") {
+    if (templates.length === 0) {
       toast({
-        title: "Select a template",
-        description: "Please select a specific template to create an entry",
+        title: "No templates available",
+        description: "Please create a site diary template first",
         variant: "destructive",
       });
       return;
@@ -111,11 +113,11 @@ export default function SiteDiaryEntries() {
     setIsCreating(true);
   };
 
-  if (isCreating && selectedTemplate && selectedProjectId) {
+  if (isCreating && selectedProjectId) {
     return (
       <div className="flex flex-col h-full p-2">
-        <EntryForm
-          template={selectedTemplate}
+        <EntryFormWithTemplateSelector
+          templates={templates}
           projectId={selectedProjectId}
           projectName={selectedProject?.name || ""}
           onCancel={() => setIsCreating(false)}
@@ -402,17 +404,90 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
   );
 }
 
-function EntryForm({ 
-  template, 
+function EntryFormWithTemplateSelector({ 
+  templates,
   projectId, 
   projectName,
   onCancel, 
   onSuccess 
 }: { 
-  template: SiteDiaryTemplate; 
+  templates: SiteDiaryTemplate[];
   projectId: string;
   projectName: string;
   onCancel: () => void; 
+  onSuccess: () => void;
+}) {
+  const { user } = useAuth();
+  
+  // Find default template or use first available
+  const defaultTemplate = templates.find(t => t.isDefault) || templates[0];
+  const [selectedTemplateId, setSelectedTemplateId] = useState(defaultTemplate?.id || "");
+  const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
+
+  if (!selectedTemplate) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">No templates available</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-base">New Site Diary Entry</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">{projectName}</p>
+          </div>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onCancel} data-testid="button-cancel-entry">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {/* Template Selector */}
+        <div className="mt-3">
+          <Label className="text-xs font-medium">Template</Label>
+          <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+            <SelectTrigger className="h-8 mt-1" data-testid="select-template">
+              <SelectValue placeholder="Select template" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  <div className="flex items-center gap-2">
+                    <span>{template.name}</span>
+                    {template.isDefault && (
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1">Default</Badge>
+                    )}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent className="py-2">
+        <EntryFormFields
+          key={selectedTemplate.id}
+          template={selectedTemplate}
+          projectId={projectId}
+          onSuccess={onSuccess}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function EntryFormFields({ 
+  template, 
+  projectId, 
+  onSuccess 
+}: { 
+  template: SiteDiaryTemplate; 
+  projectId: string;
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
@@ -516,156 +591,136 @@ function EntryForm({
   };
 
   return (
-    <Card>
-      <CardHeader className="py-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">New Site Diary Entry</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {projectName} • {template.name}
-            </p>
-          </div>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onCancel} data-testid="button-cancel-entry">
-            <X className="h-4 w-4" />
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+        <FormField
+          control={form.control}
+          name="title"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-xs">Entry Title *</FormLabel>
+              <FormControl>
+                <Input placeholder="e.g., Daily Progress - Framing" className="h-8 text-sm" {...field} data-testid="input-entry-title" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="entryDateTime"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-xs">Entry Date *</FormLabel>
+              <FormControl>
+                <Input type="date" className="h-8 text-sm" {...field} data-testid="input-entry-date" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {templateFields.map((templateField) => (
+          <FormField
+            key={templateField.id}
+            control={form.control}
+            name={templateField.id as any}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs">
+                  {templateField.title}
+                  {templateField.required && " *"}
+                </FormLabel>
+                <FormControl>
+                  {templateField.type === 'text' && (
+                    <Input 
+                      {...field} 
+                      value={field.value as string || ''} 
+                      className="h-8 text-sm"
+                      data-testid={`input-field-${templateField.id}`}
+                    />
+                  )}
+                  {templateField.type === 'textarea' && (
+                    <Textarea 
+                      {...field} 
+                      value={field.value as string || ''} 
+                      className="text-sm min-h-[60px]"
+                      data-testid={`textarea-field-${templateField.id}`}
+                    />
+                  )}
+                  {templateField.type === 'number' && (
+                    <Input 
+                      type="number" 
+                      {...field} 
+                      value={field.value as number || ''} 
+                      className="h-8 text-sm"
+                      data-testid={`input-number-${templateField.id}`}
+                    />
+                  )}
+                  {templateField.type === 'date' && (
+                    <Input 
+                      type="date" 
+                      {...field} 
+                      value={field.value as string || ''} 
+                      className="h-8 text-sm"
+                      data-testid={`input-date-${templateField.id}`}
+                    />
+                  )}
+                  {templateField.type === 'select' && (
+                    <Select 
+                      value={field.value as string || ''} 
+                      onValueChange={field.onChange}
+                    >
+                      <SelectTrigger className="h-8 text-sm" data-testid={`select-field-${templateField.id}`}>
+                        <SelectValue placeholder="Select an option" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templateField.options?.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {templateField.type === 'checkbox' && (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        checked={field.value as boolean || false}
+                        onCheckedChange={field.onChange}
+                        data-testid={`checkbox-field-${templateField.id}`}
+                      />
+                    </div>
+                  )}
+                  {(templateField.type === 'file' || templateField.type === 'photo-gallery') && (
+                    <div className="border-2 border-dashed rounded-md p-3 text-center">
+                      <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                      <p className="text-xs text-muted-foreground">
+                        {templateField.type === 'photo-gallery' 
+                          ? "Photo upload (max 3) - Coming soon" 
+                          : "File upload - Coming soon"}
+                      </p>
+                    </div>
+                  )}
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ))}
+
+        <div className="flex gap-2 pt-2">
+          <Button 
+            type="submit" 
+            size="sm"
+            disabled={createMutation.isPending}
+            data-testid="button-submit-entry"
+          >
+            {createMutation.isPending ? "Creating..." : "Create Entry"}
           </Button>
         </div>
-      </CardHeader>
-      <CardContent className="py-2">
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs">Entry Title *</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Daily Progress - Framing" className="h-8 text-sm" {...field} data-testid="input-entry-title" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="entryDateTime"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs">Entry Date *</FormLabel>
-                  <FormControl>
-                    <Input type="date" className="h-8 text-sm" {...field} data-testid="input-entry-date" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {templateFields.map((templateField) => (
-              <FormField
-                key={templateField.id}
-                control={form.control}
-                name={templateField.id as any}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-xs">
-                      {templateField.title}
-                      {templateField.required && " *"}
-                    </FormLabel>
-                    <FormControl>
-                      {templateField.type === 'text' && (
-                        <Input 
-                          {...field} 
-                          value={field.value as string || ''} 
-                          className="h-8 text-sm"
-                          data-testid={`input-field-${templateField.id}`}
-                        />
-                      )}
-                      {templateField.type === 'textarea' && (
-                        <Textarea 
-                          {...field} 
-                          value={field.value as string || ''} 
-                          className="text-sm min-h-[60px]"
-                          data-testid={`textarea-field-${templateField.id}`}
-                        />
-                      )}
-                      {templateField.type === 'number' && (
-                        <Input 
-                          type="number" 
-                          {...field} 
-                          value={field.value as number || ''} 
-                          className="h-8 text-sm"
-                          data-testid={`input-number-${templateField.id}`}
-                        />
-                      )}
-                      {templateField.type === 'date' && (
-                        <Input 
-                          type="date" 
-                          {...field} 
-                          value={field.value as string || ''} 
-                          className="h-8 text-sm"
-                          data-testid={`input-date-${templateField.id}`}
-                        />
-                      )}
-                      {templateField.type === 'select' && (
-                        <Select 
-                          value={field.value as string || ''} 
-                          onValueChange={field.onChange}
-                        >
-                          <SelectTrigger className="h-8 text-sm" data-testid={`select-field-${templateField.id}`}>
-                            <SelectValue placeholder="Select an option" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {templateField.options?.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      {templateField.type === 'checkbox' && (
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            checked={field.value as boolean || false}
-                            onCheckedChange={field.onChange}
-                            data-testid={`checkbox-field-${templateField.id}`}
-                          />
-                        </div>
-                      )}
-                      {(templateField.type === 'file' || templateField.type === 'photo-gallery') && (
-                        <div className="border-2 border-dashed rounded-md p-3 text-center">
-                          <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                          <p className="text-xs text-muted-foreground">
-                            {templateField.type === 'photo-gallery' 
-                              ? "Photo upload (max 3) - Coming soon" 
-                              : "File upload - Coming soon"}
-                          </p>
-                        </div>
-                      )}
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ))}
-
-            <div className="flex gap-2 pt-2">
-              <Button 
-                type="submit" 
-                size="sm"
-                disabled={createMutation.isPending}
-                data-testid="button-submit-entry"
-              >
-                {createMutation.isPending ? "Creating..." : "Create Entry"}
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={onCancel}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+      </form>
+    </Form>
   );
 }

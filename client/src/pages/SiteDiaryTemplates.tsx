@@ -30,7 +30,9 @@ import {
   Edit3,
   Trash2,
   Copy,
+  Star,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { TemplateFormDialog } from "@/components/site-diary/TemplateFormDialog";
 
@@ -39,10 +41,32 @@ export default function SiteDiaryTemplates() {
   const [editingTemplate, setEditingTemplate] = useState<SiteDiaryTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Fetch templates
   const { data: templates = [], isLoading } = useQuery<SiteDiaryTemplate[]>({
     queryKey: ["/api/site-diary-templates"],
+  });
+
+  // Set default mutation
+  const setDefaultMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      await apiRequest(`/api/site-diary-templates/${templateId}/set-default`, 'POST');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
+      toast({
+        title: "Default template updated",
+        description: "This template will now be used by default for new site diary entries.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to set default template.",
+        variant: "destructive",
+      });
+    },
   });
 
   // Delete mutation
@@ -161,7 +185,15 @@ export default function SiteDiaryTemplates() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg truncate">{template.name}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg truncate">{template.name}</CardTitle>
+                      {template.isDefault && (
+                        <Badge variant="secondary" className="text-xs bg-[#bba7db]/20 text-[#bba7db]">
+                          <Star className="h-3 w-3 mr-1 fill-current" />
+                          Default
+                        </Badge>
+                      )}
+                    </div>
                     {template.description && (
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                         {template.description}
@@ -180,6 +212,15 @@ export default function SiteDiaryTemplates() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {!template.isDefault && (
+                        <DropdownMenuItem
+                          onClick={() => setDefaultMutation.mutate(template.id)}
+                          data-testid={`button-set-default-${template.id}`}
+                        >
+                          <Star className="h-4 w-4 mr-2" />
+                          Set as Default
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         onClick={() => setEditingTemplate(template)}
                         data-testid={`button-edit-${template.id}`}
