@@ -33,7 +33,6 @@ import {
   Pencil, 
   Trash2,
   MapPin,
-  AlertTriangle,
   Wrench,
   Clock
 } from "lucide-react";
@@ -311,7 +310,7 @@ export default function Defects() {
             )}
           </div>
         ) : currentView === "list" ? (
-          /* Card-based List View */
+          /* Card-based List View with aligned columns */
           <div className="space-y-1">
             {filteredDefects.map((defect) => {
               const statusInfo = getStatusInfo(defect.status);
@@ -325,10 +324,10 @@ export default function Defects() {
                   data-testid={`defect-card-${defect.id}`}
                   onDoubleClick={() => setEditingDefect(defect)}
                 >
-                  <div className="flex items-start gap-2">
-                    {/* Title and Description */}
+                  <div className="flex items-center gap-3">
+                    {/* Title and Description - flexible width */}
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm mb-1 line-clamp-1" data-testid={`defect-title-${defect.id}`}>
+                      <h3 className="font-semibold text-sm line-clamp-1" data-testid={`defect-title-${defect.id}`}>
                         {defect.title}
                       </h3>
                       {defect.description && (
@@ -338,11 +337,11 @@ export default function Defects() {
                       )}
                     </div>
 
-                    {/* Metadata Column - Chips */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {/* Status Badge */}
+                    {/* Fixed-width columns for metadata alignment */}
+                    {/* Status Column */}
+                    <div className="w-20 flex-shrink-0">
                       <Badge 
-                        className="h-4 px-1.5 text-[10px]"
+                        className="h-5 px-1.5 text-[10px] w-full justify-center"
                         style={{
                           backgroundColor: `#${statusInfo.color}`,
                           color: "#fff",
@@ -351,51 +350,65 @@ export default function Defects() {
                       >
                         {statusInfo.label}
                       </Badge>
+                    </div>
 
-                      {/* Priority Badge */}
+                    {/* Priority Column - color coded, no icon */}
+                    <div className="w-16 flex-shrink-0">
                       <Badge 
-                        variant="outline"
-                        className="h-4 px-1.5 text-[10px]"
+                        className="h-5 px-1.5 text-[10px] w-full justify-center"
                         style={{
-                          borderColor: `#${priorityInfo.color}`,
-                          color: `#${priorityInfo.color}`,
+                          backgroundColor: `#${priorityInfo.color}`,
+                          color: "#fff",
                         }}
                         data-testid={`defect-priority-${defect.id}`}
                       >
-                        <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />
                         {priorityInfo.label}
                       </Badge>
+                    </div>
 
-                      {/* Type Badge */}
-                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]" data-testid={`defect-type-${defect.id}`}>
+                    {/* Type Column */}
+                    <div className="w-24 flex-shrink-0">
+                      <Badge variant="secondary" className="h-5 px-1.5 text-[10px] w-full justify-center" data-testid={`defect-type-${defect.id}`}>
                         {getTypeLabel(defect.type)}
                       </Badge>
+                    </div>
 
-                      {/* Trade Badge */}
-                      {tradeLabel && (
-                        <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`defect-trade-${defect.id}`}>
+                    {/* Trade Column */}
+                    <div className="w-24 flex-shrink-0">
+                      {tradeLabel ? (
+                        <Badge variant="outline" className="h-5 px-1.5 text-[10px] w-full justify-center" data-testid={`defect-trade-${defect.id}`}>
                           <Wrench className="w-2.5 h-2.5 mr-0.5" />
                           {tradeLabel}
                         </Badge>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">—</span>
                       )}
+                    </div>
 
-                      {/* Location */}
-                      {defect.location && (
+                    {/* Location Column */}
+                    <div className="w-24 flex-shrink-0">
+                      {defect.location ? (
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`defect-location-${defect.id}`}>
-                          <MapPin className="h-3 w-3" />
-                          <span className="max-w-[80px] truncate">{defect.location}</span>
+                          <MapPin className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">{defect.location}</span>
                         </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">—</span>
                       )}
+                    </div>
 
-                      {/* Date */}
+                    {/* Date Column */}
+                    <div className="w-16 flex-shrink-0">
                       {defect.createdAt && (
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Clock className="h-3 w-3" />
+                          <Clock className="h-3 w-3 flex-shrink-0" />
                           <span>{format(new Date(defect.createdAt), "MMM d")}</span>
                         </div>
                       )}
+                    </div>
 
-                      {/* Actions Menu */}
+                    {/* Actions Menu */}
+                    <div className="w-6 flex-shrink-0">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button

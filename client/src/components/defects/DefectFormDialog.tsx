@@ -1,6 +1,7 @@
+import { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useParams } from "wouter";
 import { insertDefectSchema, type Defect, type InsertDefect } from "@shared/schema";
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Form,
@@ -29,11 +31,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useDefectStatusOptions } from "@/hooks/useDefectStatusOptions";
 import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
 import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
 import { useDefectTradeOptions } from "@/hooks/useDefectTradeOptions";
+import { Upload, X, Image as ImageIcon } from "lucide-react";
 
 interface DefectFormDialogProps {
   open: boolean;
@@ -44,29 +48,104 @@ interface DefectFormDialogProps {
 export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialogProps) {
   const { projectId } = useParams<{ projectId: string }>();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [photos, setPhotos] = useState<Array<{ url: string; name: string; file?: File }>>([]);
+  const [isUploading, setIsUploading] = useState(false);
   
   const { statusOptions } = useDefectStatusOptions();
   const { priorityOptions } = useDefectPriorityOptions();
   const { typeOptions } = useDefectTypeOptions();
   const tradeOptions = useDefectTradeOptions();
 
+  const getDefaultValues = (): Partial<InsertDefect> => ({
+    projectId: projectId || "",
+    title: "",
+    description: "",
+    location: "",
+    status: (statusOptions[0]?.key as InsertDefect["status"]) || "open",
+    priority: (priorityOptions[0]?.key as InsertDefect["priority"]) || "medium",
+    type: (typeOptions[0]?.key as InsertDefect["type"]) || "builder",
+    trade: "",
+  });
+
   const form = useForm<InsertDefect>({
     resolver: zodResolver(insertDefectSchema),
-    defaultValues: defect || {
-      projectId: projectId || "",
-      title: "",
-      description: "",
-      location: "",
-      status: statusOptions[0]?.key || "",
-      priority: priorityOptions[0]?.key || "",
-      type: typeOptions[0]?.key || "",
-      trade: tradeOptions[0]?.value || "",
-    },
+    defaultValues: getDefaultValues(),
   });
+
+  useEffect(() => {
+    if (open) {
+      if (defect) {
+        form.reset({
+          projectId: defect.projectId,
+          title: defect.title,
+          description: defect.description || "",
+          location: defect.location || "",
+          status: defect.status as InsertDefect["status"],
+          priority: defect.priority as InsertDefect["priority"],
+          type: defect.type as InsertDefect["type"],
+          trade: defect.trade || "",
+          notes: defect.notes || "",
+          assignedContactId: defect.assignedContactId || undefined,
+          assignedContactName: defect.assignedContactName || undefined,
+          dueDate: defect.dueDate || undefined,
+          dateIdentified: defect.dateIdentified || undefined,
+        });
+        const existingAttachments = (defect.attachments as Array<{ url: string; name: string }>) || [];
+        setPhotos(existingAttachments);
+      } else {
+        form.reset(getDefaultValues());
+        setPhotos([]);
+      }
+    }
+  }, [open, defect, projectId, statusOptions, priorityOptions, typeOptions]);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    try {
+      const newPhotos: Array<{ url: string; name: string; file?: File }> = [];
+      
+      for (const file of Array.from(files)) {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        
+        newPhotos.push({
+          url: dataUrl,
+          name: file.name,
+          file,
+        });
+      }
+      
+      setPhotos(prev => [...prev, ...newPhotos]);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to upload photos",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertDefect) => {
-      return apiRequest("/api/defects", "POST", data);
+      const attachments = photos.map(p => ({ url: p.url, name: p.name }));
+      return apiRequest("/api/defects", "POST", { ...data, attachments });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
@@ -76,6 +155,7 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
       });
       onOpenChange(false);
       form.reset();
+      setPhotos([]);
     },
     onError: () => {
       toast({
@@ -88,7 +168,8 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertDefect) => {
-      return apiRequest(`/api/defects/${defect?.id}`, "PATCH", data);
+      const attachments = photos.map(p => ({ url: p.url, name: p.name }));
+      return apiRequest(`/api/defects/${defect?.id}`, "PATCH", { ...data, attachments });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/defects"] });
@@ -124,6 +205,9 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
           <DialogTitle data-testid="dialog-title">
             {defect ? "Edit Defect" : "Create Defect"}
           </DialogTitle>
+          <DialogDescription>
+            {defect ? "Update the details of this defect." : "Record a new defect for this project."}
+          </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -242,13 +326,19 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Trade</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ""}>
+                    <Select 
+                      onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)} 
+                      value={field.value || "__none__"}
+                    >
                       <FormControl>
                         <SelectTrigger data-testid="select-trade">
                           <SelectValue placeholder="Select trade" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
+                        <SelectItem value="__none__" data-testid="select-item-trade-none">
+                          No trade
+                        </SelectItem>
                         {tradeOptions.map((option) => (
                           <SelectItem
                             key={option.value}
@@ -304,6 +394,64 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
                 </FormItem>
               )}
             />
+
+            {/* Photos Section */}
+            <div className="space-y-2">
+              <Label>Photos</Label>
+              <div className="flex flex-wrap gap-2">
+                {photos.map((photo, index) => (
+                  <div 
+                    key={index} 
+                    className="relative w-20 h-20 rounded-md overflow-hidden border bg-muted group"
+                  >
+                    <img 
+                      src={photo.url} 
+                      alt={photo.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(index)}
+                      className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      data-testid={`button-remove-photo-${index}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                
+                {/* Upload Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="w-20 h-20 rounded-md border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1 hover:border-muted-foreground/50 hover:bg-muted/50 transition-colors"
+                  data-testid="button-upload-photo"
+                >
+                  {isUploading ? (
+                    <span className="text-[10px] text-muted-foreground">Uploading...</span>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground">Add Photo</span>
+                    </>
+                  )}
+                </button>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                  data-testid="input-photo-upload"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Upload photos of the defect to help document the issue.
+              </p>
+            </div>
 
             <DialogFooter>
               <Button
