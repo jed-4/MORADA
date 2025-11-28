@@ -6495,6 +6495,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get default site diary template for company (must be before :id route)
+  app.get("/api/site-diary-templates/default/:companyId", async (req, res) => {
+    try {
+      const template = await storage.getDefaultSiteDiaryTemplate(req.params.companyId);
+      if (!template) {
+        // Return null if no default set - not an error
+        return res.json(null);
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch default template",
+        details: error.message 
+      });
+    }
+  });
+
   app.get("/api/site-diary-templates/:id", async (req, res) => {
     try {
       const template = await storage.getSiteDiaryTemplate(req.params.id);
@@ -6505,6 +6522,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Set a template as the default for a company
+  app.post("/api/site-diary-templates/:id/set-default", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const template = await storage.setDefaultSiteDiaryTemplate(req.params.id, user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to set default template",
         details: error.message 
       });
     }

@@ -543,6 +543,8 @@ export interface IStorage {
   // Site Diary Templates CRUD (company-wide)
   getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]>;
   getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined>;
+  getDefaultSiteDiaryTemplate(companyId: string): Promise<schema.SiteDiaryTemplate | undefined>;
+  setDefaultSiteDiaryTemplate(id: string, companyId: string): Promise<schema.SiteDiaryTemplate | undefined>;
   createSiteDiaryTemplate(template: schema.InsertSiteDiaryTemplate): Promise<schema.SiteDiaryTemplate>;
   updateSiteDiaryTemplate(id: string, template: Partial<schema.InsertSiteDiaryTemplate>): Promise<schema.SiteDiaryTemplate | undefined>;
   deleteSiteDiaryTemplate(id: string): Promise<boolean>;
@@ -4327,6 +4329,33 @@ export class MemStorage implements IStorage {
   async getSiteDiaryTemplate(id: string): Promise<schema.SiteDiaryTemplate | undefined> {
     const template = this.siteDiaryTemplates.get(id);
     return template ? structuredClone(template) : undefined;
+  }
+
+  async getDefaultSiteDiaryTemplate(companyId: string): Promise<schema.SiteDiaryTemplate | undefined> {
+    const templates = Array.from(this.siteDiaryTemplates.values())
+      .filter(t => !t.isArchived && t.companyId === companyId && t.isDefault);
+    return templates.length > 0 ? structuredClone(templates[0]) : undefined;
+  }
+
+  async setDefaultSiteDiaryTemplate(id: string, companyId: string): Promise<schema.SiteDiaryTemplate | undefined> {
+    // First unset any existing default for this company
+    for (const [key, template] of this.siteDiaryTemplates.entries()) {
+      if (template.companyId === companyId && template.isDefault && key !== id) {
+        this.siteDiaryTemplates.set(key, { ...template, isDefault: false, updatedAt: new Date() });
+      }
+    }
+    // Then set the new default
+    const existing = this.siteDiaryTemplates.get(id);
+    if (!existing) return undefined;
+    
+    const updated: schema.SiteDiaryTemplate = {
+      ...existing,
+      isDefault: true,
+      companyId,
+      updatedAt: new Date(),
+    };
+    this.siteDiaryTemplates.set(id, updated);
+    return structuredClone(updated);
   }
 
   async createSiteDiaryTemplate(template: schema.InsertSiteDiaryTemplate): Promise<schema.SiteDiaryTemplate> {
@@ -9887,6 +9916,49 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in getSiteDiaryTemplate:", error);
+      throw error;
+    }
+  }
+
+  async getDefaultSiteDiaryTemplate(companyId: string): Promise<schema.SiteDiaryTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.siteDiaryTemplates)
+        .where(
+          and(
+            eq(schema.siteDiaryTemplates.companyId, companyId),
+            eq(schema.siteDiaryTemplates.isDefault, true),
+            eq(schema.siteDiaryTemplates.isArchived, false)
+          )
+        )
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getDefaultSiteDiaryTemplate:", error);
+      throw error;
+    }
+  }
+
+  async setDefaultSiteDiaryTemplate(id: string, companyId: string): Promise<schema.SiteDiaryTemplate | undefined> {
+    try {
+      // First unset any existing default for this company
+      await db.update(schema.siteDiaryTemplates)
+        .set({ isDefault: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.siteDiaryTemplates.companyId, companyId),
+            eq(schema.siteDiaryTemplates.isDefault, true)
+          )
+        );
+      
+      // Then set the new default and update companyId
+      const result = await db.update(schema.siteDiaryTemplates)
+        .set({ isDefault: true, companyId, updatedAt: new Date() })
+        .where(eq(schema.siteDiaryTemplates.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in setDefaultSiteDiaryTemplate:", error);
       throw error;
     }
   }
