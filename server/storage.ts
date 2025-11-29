@@ -76,7 +76,14 @@ import {
   type ScopeItem, type InsertScopeItem,
   type ScopeStage, type InsertScopeStage,
   type ScopeTemplate, type InsertScopeTemplate,
-  type ScopeGearPhoto, type InsertScopeGearPhoto
+  type ScopeGearPhoto, type InsertScopeGearPhoto,
+  type PurchaseOrder, type InsertPurchaseOrder,
+  type PurchaseOrderItem, type InsertPurchaseOrderItem,
+  type PurchaseOrderAttachment, type InsertPurchaseOrderAttachment,
+  type PurchaseOrderSignature, type InsertPurchaseOrderSignature,
+  type PurchaseOrderTemplate, type InsertPurchaseOrderTemplate,
+  type FavoriteSupplier, type InsertFavoriteSupplier,
+  type FavoriteCostCode, type InsertFavoriteCostCode
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -727,6 +734,51 @@ export interface IStorage {
   createMessage(message: InsertMessage): Promise<Message>;
   updateMessage(id: string, message: Partial<InsertMessage>): Promise<Message | undefined>;
   deleteMessage(id: string): Promise<boolean>;
+
+  // Purchase Orders CRUD
+  getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string): Promise<PurchaseOrder[]>;
+  getPurchaseOrder(id: string): Promise<PurchaseOrder | undefined>;
+  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  updatePurchaseOrder(id: string, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
+  deletePurchaseOrder(id: string): Promise<boolean>;
+  getNextPONumber(companyId: string, poType: "main" | "site"): Promise<string>;
+
+  // Purchase Order Items CRUD
+  getPurchaseOrderItems(purchaseOrderId: string): Promise<PurchaseOrderItem[]>;
+  getPurchaseOrderItem(id: string): Promise<PurchaseOrderItem | undefined>;
+  createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem>;
+  updatePurchaseOrderItem(id: string, item: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined>;
+  deletePurchaseOrderItem(id: string): Promise<boolean>;
+  reorderPurchaseOrderItems(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
+
+  // Purchase Order Attachments CRUD
+  getPurchaseOrderAttachments(purchaseOrderId: string): Promise<PurchaseOrderAttachment[]>;
+  createPurchaseOrderAttachment(attachment: InsertPurchaseOrderAttachment): Promise<PurchaseOrderAttachment>;
+  deletePurchaseOrderAttachment(id: string): Promise<boolean>;
+
+  // Purchase Order Signatures CRUD
+  getPurchaseOrderSignatures(purchaseOrderId: string): Promise<PurchaseOrderSignature[]>;
+  createPurchaseOrderSignature(signature: InsertPurchaseOrderSignature): Promise<PurchaseOrderSignature>;
+  getPurchaseOrderBySignatureToken(token: string): Promise<PurchaseOrder | undefined>;
+
+  // Purchase Order Templates CRUD
+  getPurchaseOrderTemplates(companyId: string): Promise<PurchaseOrderTemplate[]>;
+  getPurchaseOrderTemplate(id: string, companyId: string): Promise<PurchaseOrderTemplate | undefined>;
+  createPurchaseOrderTemplate(template: InsertPurchaseOrderTemplate): Promise<PurchaseOrderTemplate>;
+  updatePurchaseOrderTemplate(id: string, template: Partial<InsertPurchaseOrderTemplate>, companyId: string): Promise<PurchaseOrderTemplate | undefined>;
+  deletePurchaseOrderTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Favorite Suppliers CRUD
+  getFavoriteSuppliers(userId: string, companyId: string): Promise<FavoriteSupplier[]>;
+  createFavoriteSupplier(supplier: InsertFavoriteSupplier): Promise<FavoriteSupplier>;
+  deleteFavoriteSupplier(id: string): Promise<boolean>;
+  reorderFavoriteSuppliers(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
+
+  // Favorite Cost Codes CRUD
+  getFavoriteCostCodes(userId: string, companyId: string): Promise<FavoriteCostCode[]>;
+  createFavoriteCostCode(costCode: InsertFavoriteCostCode): Promise<FavoriteCostCode>;
+  deleteFavoriteCostCode(id: string): Promise<boolean>;
+  reorderFavoriteCostCodes(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -12644,6 +12696,455 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteMessage:", error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // PURCHASE ORDERS
+  // ============================================
+
+  async getPurchaseOrders(companyId: string, projectId?: string, status?: string, poType?: string): Promise<PurchaseOrder[]> {
+    try {
+      const conditions = [eq(schema.purchaseOrders.companyId, companyId)];
+      
+      if (projectId) {
+        conditions.push(eq(schema.purchaseOrders.projectId, projectId));
+      }
+      if (status) {
+        conditions.push(eq(schema.purchaseOrders.status, status as any));
+      }
+      if (poType) {
+        conditions.push(eq(schema.purchaseOrders.poType, poType as any));
+      }
+      
+      const result = await db.select().from(schema.purchaseOrders)
+        .where(and(...conditions))
+        .orderBy(desc(schema.purchaseOrders.createdAt));
+      return result as PurchaseOrder[];
+    } catch (error) {
+      console.error("Database error in getPurchaseOrders:", error);
+      throw error;
+    }
+  }
+
+  async getPurchaseOrder(id: string): Promise<PurchaseOrder | undefined> {
+    try {
+      const result = await db.select().from(schema.purchaseOrders)
+        .where(eq(schema.purchaseOrders.id, id))
+        .limit(1);
+      return result[0] as PurchaseOrder | undefined;
+    } catch (error) {
+      console.error("Database error in getPurchaseOrder:", error);
+      throw error;
+    }
+  }
+
+  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
+    try {
+      const result = await db.insert(schema.purchaseOrders)
+        .values(po)
+        .returning();
+      return result[0] as PurchaseOrder;
+    } catch (error) {
+      console.error("Database error in createPurchaseOrder:", error);
+      throw error;
+    }
+  }
+
+  async updatePurchaseOrder(id: string, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
+    try {
+      const result = await db.update(schema.purchaseOrders)
+        .set({ ...po, updatedAt: new Date() })
+        .where(eq(schema.purchaseOrders.id, id))
+        .returning();
+      return result[0] as PurchaseOrder | undefined;
+    } catch (error) {
+      console.error("Database error in updatePurchaseOrder:", error);
+      throw error;
+    }
+  }
+
+  async deletePurchaseOrder(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.purchaseOrders)
+        .where(eq(schema.purchaseOrders.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deletePurchaseOrder:", error);
+      throw error;
+    }
+  }
+
+  async getNextPONumber(companyId: string, poType: "main" | "site"): Promise<string> {
+    try {
+      const year = new Date().getFullYear();
+      const prefix = poType === "site" ? "SPO" : "PO";
+      
+      // Get the highest PO number for this year and type
+      const result = await db.select({ poNumber: schema.purchaseOrders.poNumber })
+        .from(schema.purchaseOrders)
+        .where(
+          and(
+            eq(schema.purchaseOrders.companyId, companyId),
+            eq(schema.purchaseOrders.poType, poType),
+            sql`${schema.purchaseOrders.poNumber} LIKE ${prefix + '-' + year + '-%'}`
+          )
+        )
+        .orderBy(desc(schema.purchaseOrders.poNumber))
+        .limit(1);
+      
+      let nextNumber = 1;
+      if (result.length > 0 && result[0].poNumber) {
+        const parts = result[0].poNumber.split('-');
+        if (parts.length === 3) {
+          nextNumber = parseInt(parts[2], 10) + 1;
+        }
+      }
+      
+      return `${prefix}-${year}-${String(nextNumber).padStart(3, '0')}`;
+    } catch (error) {
+      console.error("Database error in getNextPONumber:", error);
+      throw error;
+    }
+  }
+
+  // Purchase Order Items
+  async getPurchaseOrderItems(purchaseOrderId: string): Promise<PurchaseOrderItem[]> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderItems)
+        .where(eq(schema.purchaseOrderItems.purchaseOrderId, purchaseOrderId))
+        .orderBy(asc(schema.purchaseOrderItems.displayOrder));
+      return result as PurchaseOrderItem[];
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderItems:", error);
+      throw error;
+    }
+  }
+
+  async getPurchaseOrderItem(id: string): Promise<PurchaseOrderItem | undefined> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderItems)
+        .where(eq(schema.purchaseOrderItems.id, id))
+        .limit(1);
+      return result[0] as PurchaseOrderItem | undefined;
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderItem:", error);
+      throw error;
+    }
+  }
+
+  async createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {
+    try {
+      const result = await db.insert(schema.purchaseOrderItems)
+        .values(item)
+        .returning();
+      return result[0] as PurchaseOrderItem;
+    } catch (error) {
+      console.error("Database error in createPurchaseOrderItem:", error);
+      throw error;
+    }
+  }
+
+  async updatePurchaseOrderItem(id: string, item: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined> {
+    try {
+      const result = await db.update(schema.purchaseOrderItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.purchaseOrderItems.id, id))
+        .returning();
+      return result[0] as PurchaseOrderItem | undefined;
+    } catch (error) {
+      console.error("Database error in updatePurchaseOrderItem:", error);
+      throw error;
+    }
+  }
+
+  async deletePurchaseOrderItem(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.purchaseOrderItems)
+        .where(eq(schema.purchaseOrderItems.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deletePurchaseOrderItem:", error);
+      throw error;
+    }
+  }
+
+  async reorderPurchaseOrderItems(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db.update(schema.purchaseOrderItems)
+          .set({ displayOrder: update.displayOrder })
+          .where(eq(schema.purchaseOrderItems.id, update.id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderPurchaseOrderItems:", error);
+      throw error;
+    }
+  }
+
+  // Purchase Order Attachments
+  async getPurchaseOrderAttachments(purchaseOrderId: string): Promise<PurchaseOrderAttachment[]> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderAttachments)
+        .where(eq(schema.purchaseOrderAttachments.purchaseOrderId, purchaseOrderId))
+        .orderBy(desc(schema.purchaseOrderAttachments.createdAt));
+      return result as PurchaseOrderAttachment[];
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderAttachments:", error);
+      throw error;
+    }
+  }
+
+  async createPurchaseOrderAttachment(attachment: InsertPurchaseOrderAttachment): Promise<PurchaseOrderAttachment> {
+    try {
+      const result = await db.insert(schema.purchaseOrderAttachments)
+        .values(attachment)
+        .returning();
+      return result[0] as PurchaseOrderAttachment;
+    } catch (error) {
+      console.error("Database error in createPurchaseOrderAttachment:", error);
+      throw error;
+    }
+  }
+
+  async deletePurchaseOrderAttachment(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.purchaseOrderAttachments)
+        .where(eq(schema.purchaseOrderAttachments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deletePurchaseOrderAttachment:", error);
+      throw error;
+    }
+  }
+
+  // Purchase Order Signatures
+  async getPurchaseOrderSignatures(purchaseOrderId: string): Promise<PurchaseOrderSignature[]> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderSignatures)
+        .where(eq(schema.purchaseOrderSignatures.purchaseOrderId, purchaseOrderId))
+        .orderBy(desc(schema.purchaseOrderSignatures.signedAt));
+      return result as PurchaseOrderSignature[];
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderSignatures:", error);
+      throw error;
+    }
+  }
+
+  async createPurchaseOrderSignature(signature: InsertPurchaseOrderSignature): Promise<PurchaseOrderSignature> {
+    try {
+      const result = await db.insert(schema.purchaseOrderSignatures)
+        .values(signature)
+        .returning();
+      return result[0] as PurchaseOrderSignature;
+    } catch (error) {
+      console.error("Database error in createPurchaseOrderSignature:", error);
+      throw error;
+    }
+  }
+
+  async getPurchaseOrderBySignatureToken(token: string): Promise<PurchaseOrder | undefined> {
+    try {
+      const sig = await db.select().from(schema.purchaseOrderSignatures)
+        .where(eq(schema.purchaseOrderSignatures.signatureToken, token))
+        .limit(1);
+      
+      if (sig.length === 0) return undefined;
+      
+      return this.getPurchaseOrder(sig[0].purchaseOrderId);
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderBySignatureToken:", error);
+      throw error;
+    }
+  }
+
+  // Purchase Order Templates
+  async getPurchaseOrderTemplates(companyId: string): Promise<PurchaseOrderTemplate[]> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderTemplates)
+        .where(
+          and(
+            eq(schema.purchaseOrderTemplates.companyId, companyId),
+            eq(schema.purchaseOrderTemplates.isActive, true)
+          )
+        )
+        .orderBy(asc(schema.purchaseOrderTemplates.name));
+      return result as PurchaseOrderTemplate[];
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getPurchaseOrderTemplate(id: string, companyId: string): Promise<PurchaseOrderTemplate | undefined> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderTemplates)
+        .where(
+          and(
+            eq(schema.purchaseOrderTemplates.id, id),
+            eq(schema.purchaseOrderTemplates.companyId, companyId)
+          )
+        )
+        .limit(1);
+      return result[0] as PurchaseOrderTemplate | undefined;
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createPurchaseOrderTemplate(template: InsertPurchaseOrderTemplate): Promise<PurchaseOrderTemplate> {
+    try {
+      const result = await db.insert(schema.purchaseOrderTemplates)
+        .values(template)
+        .returning();
+      return result[0] as PurchaseOrderTemplate;
+    } catch (error) {
+      console.error("Database error in createPurchaseOrderTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updatePurchaseOrderTemplate(id: string, template: Partial<InsertPurchaseOrderTemplate>, companyId: string): Promise<PurchaseOrderTemplate | undefined> {
+    try {
+      const result = await db.update(schema.purchaseOrderTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.purchaseOrderTemplates.id, id),
+            eq(schema.purchaseOrderTemplates.companyId, companyId)
+          )
+        )
+        .returning();
+      return result[0] as PurchaseOrderTemplate | undefined;
+    } catch (error) {
+      console.error("Database error in updatePurchaseOrderTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deletePurchaseOrderTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.update(schema.purchaseOrderTemplates)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.purchaseOrderTemplates.id, id),
+            eq(schema.purchaseOrderTemplates.companyId, companyId)
+          )
+        );
+      return true;
+    } catch (error) {
+      console.error("Database error in deletePurchaseOrderTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Favorite Suppliers
+  async getFavoriteSuppliers(userId: string, companyId: string): Promise<FavoriteSupplier[]> {
+    try {
+      const result = await db.select().from(schema.favoriteSuppliers)
+        .where(
+          and(
+            eq(schema.favoriteSuppliers.userId, userId),
+            eq(schema.favoriteSuppliers.companyId, companyId)
+          )
+        )
+        .orderBy(asc(schema.favoriteSuppliers.displayOrder));
+      return result as FavoriteSupplier[];
+    } catch (error) {
+      console.error("Database error in getFavoriteSuppliers:", error);
+      throw error;
+    }
+  }
+
+  async createFavoriteSupplier(supplier: InsertFavoriteSupplier): Promise<FavoriteSupplier> {
+    try {
+      const result = await db.insert(schema.favoriteSuppliers)
+        .values(supplier)
+        .returning();
+      return result[0] as FavoriteSupplier;
+    } catch (error) {
+      console.error("Database error in createFavoriteSupplier:", error);
+      throw error;
+    }
+  }
+
+  async deleteFavoriteSupplier(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.favoriteSuppliers)
+        .where(eq(schema.favoriteSuppliers.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteFavoriteSupplier:", error);
+      throw error;
+    }
+  }
+
+  async reorderFavoriteSuppliers(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db.update(schema.favoriteSuppliers)
+          .set({ displayOrder: update.displayOrder })
+          .where(eq(schema.favoriteSuppliers.id, update.id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderFavoriteSuppliers:", error);
+      throw error;
+    }
+  }
+
+  // Favorite Cost Codes
+  async getFavoriteCostCodes(userId: string, companyId: string): Promise<FavoriteCostCode[]> {
+    try {
+      const result = await db.select().from(schema.favoriteCostCodes)
+        .where(
+          and(
+            eq(schema.favoriteCostCodes.userId, userId),
+            eq(schema.favoriteCostCodes.companyId, companyId)
+          )
+        )
+        .orderBy(asc(schema.favoriteCostCodes.displayOrder));
+      return result as FavoriteCostCode[];
+    } catch (error) {
+      console.error("Database error in getFavoriteCostCodes:", error);
+      throw error;
+    }
+  }
+
+  async createFavoriteCostCode(costCode: InsertFavoriteCostCode): Promise<FavoriteCostCode> {
+    try {
+      const result = await db.insert(schema.favoriteCostCodes)
+        .values(costCode)
+        .returning();
+      return result[0] as FavoriteCostCode;
+    } catch (error) {
+      console.error("Database error in createFavoriteCostCode:", error);
+      throw error;
+    }
+  }
+
+  async deleteFavoriteCostCode(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.favoriteCostCodes)
+        .where(eq(schema.favoriteCostCodes.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteFavoriteCostCode:", error);
+      throw error;
+    }
+  }
+
+  async reorderFavoriteCostCodes(updates: Array<{id: string, displayOrder: number}>): Promise<void> {
+    try {
+      for (const update of updates) {
+        await db.update(schema.favoriteCostCodes)
+          .set({ displayOrder: update.displayOrder })
+          .where(eq(schema.favoriteCostCodes.id, update.id));
+      }
+    } catch (error) {
+      console.error("Database error in reorderFavoriteCostCodes:", error);
       throw error;
     }
   }

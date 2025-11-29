@@ -3264,3 +3264,307 @@ export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
 
 export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
 export type RfqFollowUp = typeof rfqFollowUps.$inferSelect;
+
+// ============================================
+// PURCHASE ORDERS
+// ============================================
+
+// Purchase Order type enum (main = office, site = quick field PO)
+export const purchaseOrderTypeEnum = pgEnum("purchase_order_type", ["main", "site"]);
+
+// Purchase Order status enum
+export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
+  "draft",
+  "pending_approval",
+  "sent",
+  "acknowledged",
+  "accepted",
+  "partially_received",
+  "completed",
+  "billed",
+  "cancelled"
+]);
+
+// Purchase Order GST mode
+export const purchaseOrderGstModeEnum = pgEnum("purchase_order_gst_mode", ["inclusive", "exclusive", "gst_free"]);
+
+// Purchase Orders table
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // PO identification
+  poNumber: text("po_number").notNull(), // Auto-generated: PO-2025-001 or SPO-2025-001
+  poType: purchaseOrderTypeEnum("po_type").notNull().default("main"),
+  
+  // Supplier (from contacts with contactType = 'supplier')
+  supplierId: varchar("supplier_id").references(() => contacts.id),
+  supplierName: text("supplier_name"), // Cached for display and quick POs without contact
+  
+  // Description & Scope
+  title: text("title"), // Brief title/description
+  description: text("description"), // Brief description
+  scope: text("scope"), // Detailed scope of work (rich text)
+  
+  // Terms & Conditions
+  termsAndConditionsId: varchar("terms_and_conditions_id"), // Reference to T&C template
+  termsAndConditions: text("terms_and_conditions"), // Actual T&C content
+  
+  // Dates
+  poDate: timestamp("po_date").notNull().defaultNow(),
+  requiredByDate: timestamp("required_by_date"),
+  
+  // Delivery
+  deliveryAddress: text("delivery_address"),
+  deliveryInstructions: text("delivery_instructions"),
+  
+  // Financial
+  gstMode: purchaseOrderGstModeEnum("gst_mode").notNull().default("inclusive"),
+  subtotal: integer("subtotal").notNull().default(0), // In cents
+  gstAmount: integer("gst_amount").notNull().default(0), // In cents
+  total: integer("total").notNull().default(0), // In cents
+  
+  // Status & Workflow
+  status: purchaseOrderStatusEnum("status").notNull().default("draft"),
+  
+  // Approval (for site POs with thresholds)
+  requiresApproval: boolean("requires_approval").notNull().default(false),
+  approvalThreshold: integer("approval_threshold"), // Auto-approve below this amount (cents)
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  
+  // Sending
+  sentAt: timestamp("sent_at"),
+  sentToEmail: text("sent_to_email"),
+  
+  // Notes
+  internalNotes: text("internal_notes"), // Internal only, not on PDF
+  
+  // Source tracking (for imports)
+  sourceEstimateId: varchar("source_estimate_id").references(() => estimates.id),
+  sourceQuoteIds: json("source_quote_ids").default([]), // Array of RFQ quote IDs if converted from quotes
+  
+  // Creator
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  
+  // Metadata
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("purchase_orders_company_idx").on(table.companyId),
+  projectIdx: index("purchase_orders_project_idx").on(table.projectId),
+  statusIdx: index("purchase_orders_status_idx").on(table.status),
+  poNumberIdx: index("purchase_orders_po_number_idx").on(table.poNumber),
+}));
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  poType: z.enum(["main", "site"]).default("main"),
+  status: z.enum(["draft", "pending_approval", "sent", "acknowledged", "accepted", "partially_received", "completed", "billed", "cancelled"]).default("draft"),
+  gstMode: z.enum(["inclusive", "exclusive", "gst_free"]).default("inclusive"),
+  poDate: z.coerce.date().default(() => new Date()),
+  requiredByDate: z.coerce.date().optional(),
+  subtotal: z.number().default(0),
+  gstAmount: z.number().default(0),
+  total: z.number().default(0),
+  sourceQuoteIds: z.array(z.string()).optional(),
+});
+
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+// Purchase Order Items (line items)
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  
+  // Item details
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
+  unit: text("unit"), // e.g., "each", "m2", "lm", "hours"
+  unitPrice: integer("unit_price").notNull().default(0), // In cents
+  total: integer("total").notNull().default(0), // In cents (quantity * unitPrice)
+  
+  // GST
+  isGstFree: boolean("is_gst_free").notNull().default(false),
+  gstAmount: integer("gst_amount").notNull().default(0), // In cents
+  
+  // Cost tracking
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  
+  // Source tracking (if imported from estimate)
+  sourceEstimateItemId: varchar("source_estimate_item_id").references(() => estimateItems.id),
+  
+  // Order for drag-and-drop reordering
+  displayOrder: integer("display_order").notNull().default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  quantity: z.string().default("1"),
+  unitPrice: z.number().default(0),
+  total: z.number().default(0),
+  gstAmount: z.number().default(0),
+  displayOrder: z.number().default(0),
+});
+
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+
+// Purchase Order Attachments (photos, documents)
+export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileType: text("file_type"), // MIME type
+  fileSize: integer("file_size"), // In bytes
+  
+  // For OCR receipts
+  isReceipt: boolean("is_receipt").notNull().default(false),
+  ocrData: json("ocr_data"), // Raw OCR results if processed
+  
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderAttachmentSchema = createInsertSchema(purchaseOrderAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPurchaseOrderAttachment = z.infer<typeof insertPurchaseOrderAttachmentSchema>;
+export type PurchaseOrderAttachment = typeof purchaseOrderAttachments.$inferSelect;
+
+// Purchase Order Signatures (for supplier acceptance)
+export const purchaseOrderSignatures = pgTable("purchase_order_signatures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  
+  // Signer details
+  signerName: text("signer_name").notNull(),
+  signerEmail: text("signer_email"),
+  signerRole: text("signer_role"), // e.g., "Supplier Representative"
+  
+  // Signature
+  signatureImageUrl: text("signature_image_url"), // Base64 or URL
+  signedAt: timestamp("signed_at").notNull(),
+  
+  // Audit trail
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Token for supplier portal link
+  signatureToken: text("signature_token").unique(),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderSignatureSchema = createInsertSchema(purchaseOrderSignatures).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  signedAt: z.coerce.date(),
+});
+
+export type InsertPurchaseOrderSignature = z.infer<typeof insertPurchaseOrderSignatureSchema>;
+export type PurchaseOrderSignature = typeof purchaseOrderSignatures.$inferSelect;
+
+// Purchase Order Templates (for quick reuse)
+export const purchaseOrderTemplates = pgTable("purchase_order_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  name: text("name").notNull(), // e.g., "Standard Framing Pack"
+  description: text("description"),
+  
+  // Default values
+  scope: text("scope"),
+  termsAndConditionsId: varchar("terms_and_conditions_id"),
+  
+  // Template items stored as JSON
+  items: json("items").default([]), // Array of {description, quantity, unit, unitPrice, costCodeId}
+  
+  // Favorite cost codes for quick selection (for site POs)
+  favoriteCostCodeIds: json("favorite_cost_code_ids").default([]), // Array of cost code IDs
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderTemplateSchema = createInsertSchema(purchaseOrderTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.string().optional(),
+    unit: z.string().optional(),
+    unitPrice: z.number().optional(),
+    costCodeId: z.string().optional(),
+  })).optional(),
+  favoriteCostCodeIds: z.array(z.string()).optional(),
+});
+
+export type InsertPurchaseOrderTemplate = z.infer<typeof insertPurchaseOrderTemplateSchema>;
+export type PurchaseOrderTemplate = typeof purchaseOrderTemplates.$inferSelect;
+
+// Favorite Suppliers (for quick site PO creation)
+export const favoriteSuppliers = pgTable("favorite_suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  supplierId: varchar("supplier_id").references(() => contacts.id),
+  supplierName: text("supplier_name").notNull(), // For quick picks like "Bunnings"
+  
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("favorite_suppliers_user_idx").on(table.userId),
+}));
+
+export const insertFavoriteSupplierSchema = createInsertSchema(favoriteSuppliers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFavoriteSupplier = z.infer<typeof insertFavoriteSupplierSchema>;
+export type FavoriteSupplier = typeof favoriteSuppliers.$inferSelect;
+
+// Favorite Cost Codes (for quick site PO creation - user-specific)
+export const favoriteCostCodes = pgTable("favorite_cost_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  costCodeId: varchar("cost_code_id").notNull().references(() => costCodes.id),
+  
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("favorite_cost_codes_user_idx").on(table.userId),
+}));
+
+export const insertFavoriteCostCodeSchema = createInsertSchema(favoriteCostCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFavoriteCostCode = z.infer<typeof insertFavoriteCostCodeSchema>;
+export type FavoriteCostCode = typeof favoriteCostCodes.$inferSelect;
