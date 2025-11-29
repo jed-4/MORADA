@@ -221,11 +221,14 @@ export default function Allowances() {
 
   if (!currentProject) {
     return (
-      <div className="p-6">
-        <div className="text-center text-muted-foreground">
-          <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Please select a project to view allowances.</p>
+      <div className="flex flex-col items-center justify-center h-full py-16">
+        <div className="w-12 h-12 rounded-full bg-[#bba7db]/10 flex items-center justify-center mb-4">
+          <DollarSign className="w-6 h-6 text-[#bba7db]" />
         </div>
+        <h3 className="text-sm font-semibold text-foreground mb-1">No Project Selected</h3>
+        <p className="text-xs text-muted-foreground text-center max-w-xs">
+          Please select a project to view allowances.
+        </p>
       </div>
     );
   }
@@ -398,17 +401,23 @@ export default function Allowances() {
       {/* Table Content Area */}
       <div className="flex-1 overflow-auto p-2">
         {filteredAllowances.length === 0 ? (
-          <Card className="p-12 text-center">
-            <DollarSign className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Allowances</h3>
-            <p className="text-muted-foreground">
+          <div className="flex flex-col items-center justify-center h-full py-16">
+            <div className="w-12 h-12 rounded-full bg-[#bba7db]/10 flex items-center justify-center mb-4">
+              <DollarSign className="w-6 h-6 text-[#bba7db]" />
+            </div>
+            <h3 className="text-sm font-semibold text-foreground mb-1">
               {allowances.length === 0 
-                ? "Create estimate items with Prime Cost or Provisional Sum allowances to see them here."
+                ? "No Allowances Yet"
+                : "No Matching Allowances"}
+            </h3>
+            <p className="text-xs text-muted-foreground text-center max-w-xs">
+              {allowances.length === 0 
+                ? "Add Prime Cost or Provisional Sum items in your estimates to track allowances here."
                 : searchTerm || statusFilter || typeFilter !== "all"
-                  ? "No allowances match your filters."
+                  ? "Try adjusting your search or filters."
                   : "No allowances found for the selected estimate."}
             </p>
-          </Card>
+          </div>
         ) : (
           <Card>
             <Table>
