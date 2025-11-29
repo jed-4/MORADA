@@ -265,6 +265,7 @@ export default function PurchaseOrderDetail() {
   // poId is always a real ID now - creation happens in PurchaseOrders.tsx before navigation
   const poId = rawPoId;
 
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
   const [scopeText, setScopeText] = useState("");
@@ -325,6 +326,7 @@ export default function PurchaseOrderDetail() {
 
   useEffect(() => {
     if (purchaseOrder) {
+      setTitle(purchaseOrder.title || "");
       setDescription(purchaseOrder.description || "");
       setScope(purchaseOrder.scope || "");
       setTermsAndConditions(purchaseOrder.termsAndConditions || "");
@@ -407,6 +409,7 @@ export default function PurchaseOrderDetail() {
     setIsSaving(true);
     try {
       await updatePoMutation.mutateAsync({
+        title,
         description,
         scope,
         termsAndConditions,
@@ -617,19 +620,35 @@ export default function PurchaseOrderDetail() {
           <div className="col-span-2 space-y-6">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Description</CardTitle>
+                <CardTitle className="text-base">PO Details</CardTitle>
               </CardHeader>
-              <CardContent>
-                <Input
-                  value={description}
-                  onChange={(e) => {
-                    setDescription(e.target.value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  placeholder="Brief description of this purchase order"
-                  disabled={isLocked}
-                  data-testid="input-po-description"
-                />
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Name</label>
+                  <Input
+                    value={title}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="e.g., Kitchen Materials, Bathroom Fixtures"
+                    disabled={isLocked}
+                    data-testid="input-po-title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Description</label>
+                  <Input
+                    value={description}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Brief description of this purchase order"
+                    disabled={isLocked}
+                    data-testid="input-po-description"
+                  />
+                </div>
               </CardContent>
             </Card>
 

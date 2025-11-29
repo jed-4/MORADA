@@ -632,57 +632,61 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Row 3 - Search + Status Filters + Supplier + Columns */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+      <div className="h-10 bg-gray-50/80 dark:bg-gray-900/50 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
         {/* Search */}
-        <div className="relative w-48">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+        <div className="relative w-52">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search POs..."
+            placeholder="Search by name, PO#, supplier..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-7 pr-2 py-0 h-6 text-xs border"
+            className="pl-8 pr-2 py-0 h-7 text-xs bg-white dark:bg-gray-950 border rounded-md"
             data-testid="po-search-input"
           />
         </div>
 
-        <div className="w-px h-4 bg-border" />
+        <div className="w-px h-5 bg-border/60" />
 
-        {/* Status Filter */}
-        <div className="flex items-center gap-0.5">
+        {/* Status Filter Pills */}
+        <div className="flex items-center gap-1">
           {STATUS_OPTIONS.map((status) => (
             <button
               key={status.key}
               onClick={() => setSelectedStatus(status.key)}
-              className={`h-5 px-1.5 text-[10px] border rounded ${
+              className={`h-6 px-2 text-[11px] font-medium rounded-full transition-all ${
                 selectedStatus === status.key
-                  ? "bg-[#bba7db] text-white border-[#bba7db]/20"
-                  : "hover-elevate"
-              } active-elevate-2`}
+                  ? "bg-[#bba7db] text-white shadow-sm"
+                  : "bg-white dark:bg-gray-900 border hover-elevate"
+              }`}
               data-testid={`filter-status-${status.key}`}
             >
               {status.label === "All Statuses" ? "All" : status.label}
               {statusCounts[status.key] > 0 && (
-                <span className="ml-0.5 opacity-70">({statusCounts[status.key]})</span>
+                <span className={`ml-1 ${selectedStatus === status.key ? "opacity-80" : "text-muted-foreground"}`}>
+                  {statusCounts[status.key]}
+                </span>
               )}
             </button>
           ))}
         </div>
 
-        <div className="w-px h-4 bg-border" />
+        <div className="w-px h-5 bg-border/60" />
 
         {/* Supplier Filter */}
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                selectedSupplierId 
+                  ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
+                  : "bg-white dark:bg-gray-900 border hover-elevate"
+              }`}
               data-testid="filter-supplier-popover"
             >
-              <span>{selectedSupplierId ? suppliersMap.get(selectedSupplierId)?.name || "Supplier" : "Supplier"}</span>
-              {selectedSupplierId && (
-                <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                  1
-                </Badge>
-              )}
+              <span className="truncate max-w-[120px]">
+                {selectedSupplierId ? suppliersMap.get(selectedSupplierId)?.name || "Supplier" : "Supplier"}
+              </span>
+              <ChevronDown className="w-3 h-3 opacity-60" />
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-56 p-2" align="start">
@@ -719,18 +723,20 @@ export default function PurchaseOrders() {
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              className="h-7 w-7 text-xs bg-white dark:bg-gray-900 border rounded-md hover-elevate flex items-center justify-center"
               data-testid="button-columns"
               title="Configure columns"
             >
-              <Columns3 className="w-3.5 h-3.5" />
+              <Columns3 className="w-4 h-4" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="end">
+          <PopoverContent className="w-52 p-2" align="end">
             <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground px-2 py-1 flex items-center justify-between">
-                <span>Columns</span>
-                <span className="text-[10px]">{DEFAULT_COLUMN_ORDER.length - hiddenColumnCount}/{DEFAULT_COLUMN_ORDER.length}</span>
+              <div className="text-xs font-semibold text-foreground px-2 py-1.5 flex items-center justify-between border-b mb-1">
+                <span>Table Columns</span>
+                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                  {DEFAULT_COLUMN_ORDER.length - hiddenColumnCount}/{DEFAULT_COLUMN_ORDER.length}
+                </Badge>
               </div>
               <DndContext
                 sensors={sensors}
@@ -794,7 +800,7 @@ export default function PurchaseOrders() {
         ) : (
           <Card className="border-2 overflow-hidden">
             <div className="overflow-x-auto">
-              <Table>
+              <Table style={{ tableLayout: "fixed" }}>
                 <TableHeader>
                   <TableRow className="bg-gray-50/50 dark:bg-gray-900/50 border-b-2 border-[#bba7db]/20">
                     {columnPrefs.order.map((key) => {
@@ -813,10 +819,12 @@ export default function PurchaseOrders() {
                           </div>
                           {!isLast && (
                             <div
-                              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#bba7db]/50 group-hover:bg-[#bba7db]/20 transition-colors"
+                              className="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-col-resize group/resize"
                               onMouseDown={(e) => handleResizeStart(e, key)}
                               data-testid={`resize-handle-${key}`}
-                            />
+                            >
+                              <div className="w-0.5 h-full mx-auto bg-transparent group-hover/resize:bg-[#bba7db] transition-colors" />
+                            </div>
                           )}
                         </TableHead>
                       );
