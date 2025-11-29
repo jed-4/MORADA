@@ -5693,9 +5693,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Debug: log user info
-      console.log("Creating PO with user:", { id: req.user.id, companyId: req.user.companyId });
-
       const poData = {
         ...req.body,
         poNumber,
@@ -5703,7 +5700,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: req.user.companyId,
         createdById: req.user.id
       };
-      console.log("PO data being validated:", poData);
 
       const validationResult = insertPurchaseOrderSchema.safeParse(poData);
 
