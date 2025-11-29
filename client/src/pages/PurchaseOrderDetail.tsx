@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -259,8 +259,24 @@ export default function PurchaseOrderDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const poId = params.id || params.poId;
+  const rawPoId = params.id || params.poId;
   const projectIdFromUrl = params.projectId;
+  const isNewPO = rawPoId === "new";
+  
+  // Track creation attempt to prevent loops - never retry automatically
+  const createAttemptedRef = useRef(false);
+  const [createError, setCreateError] = useState(false);
+  
+  // Derive poId from URL params only (not from internal state)
+  const poId = isNewPO ? null : rawPoId;
+  
+  // Reset creation tracking when navigating away from /new
+  useEffect(() => {
+    if (!isNewPO) {
+      createAttemptedRef.current = false;
+      setCreateError(false);
+    }
+  }, [isNewPO]);
 
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
@@ -276,6 +292,7 @@ export default function PurchaseOrderDetail() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImportScopeDialogOpen, setIsImportScopeDialogOpen] = useState(false);
+  const [isCreatingPO, setIsCreatingPO] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -286,14 +303,55 @@ export default function PurchaseOrderDetail() {
     })
   );
 
+  // Create new PO mutation
+  const createPoMutation = useMutation({
+    mutationFn: async (data: { projectId?: string; type: string }) => {
+      return apiRequest("POST", "/api/purchase-orders", data);
+    },
+    onSuccess: (newPO: PurchaseOrder) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setIsCreatingPO(false);
+      setCreateError(false); // Clear error on success (in case this was a retry)
+      // Navigate to the new PO URL (SPA navigation)
+      const basePath = projectIdFromUrl
+        ? `/projects/${projectIdFromUrl}/purchase-orders/${newPO.id}`
+        : `/purchase-orders/${newPO.id}`;
+      setLocation(basePath);
+    },
+    onError: (error: any) => {
+      setIsCreatingPO(false);
+      setCreateError(true); // Set/keep error true
+      // createAttemptedRef stays true - prevent automatic retries
+      toast({
+        title: "Error creating purchase order",
+        description: error.message || "Failed to create purchase order",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Auto-create PO when navigating to /new (only once, never auto-retry)
+  useEffect(() => {
+    if (isNewPO && !createAttemptedRef.current && !createError) {
+      createAttemptedRef.current = true;
+      setIsCreatingPO(true);
+      createPoMutation.mutate({
+        projectId: projectIdFromUrl || undefined,
+        type: "main", // Always create standard PO
+      });
+    }
+  }, [isNewPO, projectIdFromUrl, createError]);
+
   const { data: purchaseOrder, isLoading: poLoading } = useQuery<PurchaseOrder>({
     queryKey: ["/api/purchase-orders", poId],
-    enabled: !!poId,
+    enabled: !!poId, // Enable when we have a valid poId (either from URL or created)
+    retry: false,
   });
 
   const { data: poItems = [], isLoading: itemsLoading } = useQuery<PurchaseOrderItem[]>({
     queryKey: ["/api/purchase-orders", poId, "items"],
     enabled: !!poId,
+    retry: false,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -415,6 +473,7 @@ export default function PurchaseOrderDetail() {
   };
 
   const handleItemUpdate = (itemId: string, updates: Partial<PurchaseOrderItem>) => {
+    if (!poId) return;
     setItems((prev) =>
       prev.map((item) => (item.id === itemId ? { ...item, ...updates } : item))
     );
@@ -422,6 +481,7 @@ export default function PurchaseOrderDetail() {
   };
 
   const handleItemDelete = (itemId: string) => {
+    if (!poId) return;
     setItems((prev) => prev.filter((item) => item.id !== itemId));
     deleteItemMutation.mutate(itemId);
   };
@@ -450,7 +510,7 @@ export default function PurchaseOrderDetail() {
     const { active, over } = event;
     setActiveItemId(null);
 
-    if (!over || active.id === over.id) return;
+    if (!poId || !over || active.id === over.id) return;
 
     const oldIndex = items.findIndex((item) => item.id === active.id);
     const newIndex = items.findIndex((item) => item.id === over.id);
@@ -501,6 +561,54 @@ export default function PurchaseOrderDetail() {
   };
 
   const isLocked = purchaseOrder?.status !== "draft";
+
+  // Show error state if creation failed
+  if (isNewPO && createError) {
+    const listPath = projectIdFromUrl
+      ? `/projects/${projectIdFromUrl}/purchase-orders`
+      : "/purchase-orders";
+    
+    const handleRetry = () => {
+      // Keep createError true until mutation resolves - set isCreatingPO and call mutate
+      createAttemptedRef.current = true;
+      setIsCreatingPO(true);
+      createPoMutation.mutate({
+        projectId: projectIdFromUrl || undefined,
+        type: "main",
+      });
+    };
+    
+    const handleBackToList = () => {
+      // Clear the ref before navigation so next visit starts fresh
+      createAttemptedRef.current = false;
+      setLocation(listPath);
+    };
+    
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertCircle className="w-8 h-8 text-destructive" />
+        <p className="text-muted-foreground">Failed to create purchase order</p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleBackToList}>
+            Back to Purchase Orders
+          </Button>
+          <Button onClick={handleRetry}>
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while creating new PO
+  if (isNewPO || isCreatingPO || createPoMutation.isPending) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        <p className="text-muted-foreground">Creating purchase order...</p>
+      </div>
+    );
+  }
 
   if (poLoading) {
     return (
