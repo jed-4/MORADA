@@ -5693,13 +5693,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const validationResult = insertPurchaseOrderSchema.safeParse({
+      // Debug: log user info
+      console.log("Creating PO with user:", { id: req.user.id, companyId: req.user.companyId });
+
+      const poData = {
         ...req.body,
         poNumber,
         poType,
         companyId: req.user.companyId,
         createdById: req.user.id
-      });
+      };
+      console.log("PO data being validated:", poData);
+
+      const validationResult = insertPurchaseOrderSchema.safeParse(poData);
 
       if (!validationResult.success) {
         return res.status(400).json({ 
