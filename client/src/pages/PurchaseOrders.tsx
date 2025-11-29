@@ -20,8 +20,26 @@ import {
   Hammer,
   Loader2,
   Columns3,
-  Check
+  Check,
+  GripVertical
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -81,38 +99,109 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 type POType = "all" | "main" | "site";
 
-const COLUMN_DEFINITIONS = [
-  { key: "poNumber", label: "PO Number", defaultVisible: true },
-  { key: "type", label: "Type", defaultVisible: true },
-  { key: "project", label: "Project", defaultVisible: true },
-  { key: "supplier", label: "Supplier", defaultVisible: true },
-  { key: "description", label: "Description", defaultVisible: true },
-  { key: "date", label: "Date", defaultVisible: true },
-  { key: "status", label: "Status", defaultVisible: true },
-  { key: "amount", label: "Amount", defaultVisible: true },
-] as const;
+type ColumnKey = "poNumber" | "type" | "project" | "supplier" | "description" | "date" | "status" | "amount";
 
-type ColumnKey = typeof COLUMN_DEFINITIONS[number]["key"];
+const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
+  "poNumber", "type", "project", "supplier", "description", "date", "status", "amount"
+];
+
+const COLUMN_LABELS: Record<ColumnKey, string> = {
+  poNumber: "PO Number",
+  type: "Type",
+  project: "Project",
+  supplier: "Supplier",
+  description: "Description",
+  date: "Date",
+  status: "Status",
+  amount: "Amount",
+};
 
 function getDefaultColumnVisibility(): Record<ColumnKey, boolean> {
-  return COLUMN_DEFINITIONS.reduce((acc, col) => {
-    acc[col.key] = col.defaultVisible;
+  return DEFAULT_COLUMN_ORDER.reduce((acc, key) => {
+    acc[key] = true;
     return acc;
   }, {} as Record<ColumnKey, boolean>);
 }
 
-function loadColumnVisibility(): Record<ColumnKey, boolean> {
+interface ColumnPreferences {
+  visibility: Record<ColumnKey, boolean>;
+  order: ColumnKey[];
+}
+
+function loadColumnPreferences(): ColumnPreferences {
   try {
-    const saved = localStorage.getItem("po-column-visibility");
+    const saved = localStorage.getItem("po-column-preferences");
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Merge with defaults to handle new columns
-      return { ...getDefaultColumnVisibility(), ...parsed };
+      return {
+        visibility: { ...getDefaultColumnVisibility(), ...parsed.visibility },
+        order: parsed.order?.length === DEFAULT_COLUMN_ORDER.length ? parsed.order : DEFAULT_COLUMN_ORDER,
+      };
     }
   } catch (e) {
     // Ignore parse errors
   }
-  return getDefaultColumnVisibility();
+  return {
+    visibility: getDefaultColumnVisibility(),
+    order: DEFAULT_COLUMN_ORDER,
+  };
+}
+
+function saveColumnPreferences(prefs: ColumnPreferences) {
+  localStorage.setItem("po-column-preferences", JSON.stringify(prefs));
+}
+
+function SortableColumnItem({ 
+  columnKey, 
+  label, 
+  isVisible, 
+  onToggle 
+}: { 
+  columnKey: ColumnKey; 
+  label: string; 
+  isVisible: boolean; 
+  onToggle: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: columnKey });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="p-1 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+      >
+        <GripVertical className="w-3 h-3" />
+      </div>
+      <button
+        onClick={onToggle}
+        className="flex-1 text-left px-1 py-1.5 text-sm flex items-center justify-between"
+        data-testid={`toggle-column-${columnKey}`}
+      >
+        <span>{label}</span>
+        {isVisible && (
+          <Check className="w-4 h-4 text-[#bba7db]" />
+        )}
+      </button>
+    </div>
+  );
 }
 
 function formatCurrency(cents: number): string {
@@ -138,19 +227,45 @@ export default function PurchaseOrders() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [newPOProjectId, setNewPOProjectId] = useState<string>("");
-  const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(loadColumnVisibility);
+  const [columnPrefs, setColumnPrefs] = useState<ColumnPreferences>(loadColumnPreferences);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const toggleColumn = (key: ColumnKey) => {
-    setColumnVisibility(prev => {
-      const updated = { ...prev, [key]: !prev[key] };
-      localStorage.setItem("po-column-visibility", JSON.stringify(updated));
+    setColumnPrefs(prev => {
+      const updated = {
+        ...prev,
+        visibility: { ...prev.visibility, [key]: !prev.visibility[key] },
+      };
+      saveColumnPreferences(updated);
       return updated;
     });
   };
 
+  const handleColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setColumnPrefs(prev => {
+        const oldIndex = prev.order.indexOf(active.id as ColumnKey);
+        const newIndex = prev.order.indexOf(over.id as ColumnKey);
+        const newOrder = arrayMove(prev.order, oldIndex, newIndex);
+        const updated = { ...prev, order: newOrder };
+        saveColumnPreferences(updated);
+        return updated;
+      });
+    }
+  };
+
   const hiddenColumnCount = useMemo(() => {
-    return COLUMN_DEFINITIONS.filter(col => !columnVisibility[col.key]).length;
-  }, [columnVisibility]);
+    return DEFAULT_COLUMN_ORDER.filter(key => !columnPrefs.visibility[key]).length;
+  }, [columnPrefs.visibility]);
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -499,36 +614,39 @@ export default function PurchaseOrders() {
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               data-testid="button-columns"
+              title="Configure columns"
             >
-              <Columns3 className="w-3 h-3" />
-              <span>Columns</span>
-              {hiddenColumnCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1">
-                  {COLUMN_DEFINITIONS.length - hiddenColumnCount}/{COLUMN_DEFINITIONS.length}
-                </Badge>
-              )}
+              <Columns3 className="w-3.5 h-3.5" />
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-48 p-2" align="end">
             <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground px-2 py-1">
-                Toggle Columns
+              <div className="text-xs font-medium text-muted-foreground px-2 py-1 flex items-center justify-between">
+                <span>Columns</span>
+                <span className="text-[10px]">{DEFAULT_COLUMN_ORDER.length - hiddenColumnCount}/{DEFAULT_COLUMN_ORDER.length}</span>
               </div>
-              {COLUMN_DEFINITIONS.map((col) => (
-                <button
-                  key={col.key}
-                  onClick={() => toggleColumn(col.key)}
-                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-between"
-                  data-testid={`toggle-column-${col.key}`}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleColumnDragEnd}
+              >
+                <SortableContext
+                  items={columnPrefs.order}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <span>{col.label}</span>
-                  {columnVisibility[col.key] && (
-                    <Check className="w-4 h-4 text-[#bba7db]" />
-                  )}
-                </button>
-              ))}
+                  {columnPrefs.order.map((key) => (
+                    <SortableColumnItem
+                      key={key}
+                      columnKey={key}
+                      label={COLUMN_LABELS[key]}
+                      isVisible={columnPrefs.visibility[key]}
+                      onToggle={() => toggleColumn(key)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           </PopoverContent>
         </Popover>
@@ -572,30 +690,29 @@ export default function PurchaseOrders() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 dark:bg-gray-900">
-                {columnVisibility.poNumber && (
-                  <TableHead className="w-[100px] text-xs font-medium">PO Number</TableHead>
-                )}
-                {columnVisibility.type && (
-                  <TableHead className="w-[80px] text-xs font-medium">Type</TableHead>
-                )}
-                {columnVisibility.project && (
-                  <TableHead className="text-xs font-medium">Project</TableHead>
-                )}
-                {columnVisibility.supplier && (
-                  <TableHead className="text-xs font-medium">Supplier</TableHead>
-                )}
-                {columnVisibility.description && (
-                  <TableHead className="text-xs font-medium">Description</TableHead>
-                )}
-                {columnVisibility.date && (
-                  <TableHead className="w-[100px] text-xs font-medium">Date</TableHead>
-                )}
-                {columnVisibility.status && (
-                  <TableHead className="w-[100px] text-xs font-medium">Status</TableHead>
-                )}
-                {columnVisibility.amount && (
-                  <TableHead className="w-[100px] text-xs font-medium text-right">Amount</TableHead>
-                )}
+                {columnPrefs.order.map((key) => {
+                  if (!columnPrefs.visibility[key]) return null;
+                  switch (key) {
+                    case "poNumber":
+                      return <TableHead key={key} className="w-[100px] text-xs font-medium">PO Number</TableHead>;
+                    case "type":
+                      return <TableHead key={key} className="w-[80px] text-xs font-medium">Type</TableHead>;
+                    case "project":
+                      return <TableHead key={key} className="text-xs font-medium">Project</TableHead>;
+                    case "supplier":
+                      return <TableHead key={key} className="text-xs font-medium">Supplier</TableHead>;
+                    case "description":
+                      return <TableHead key={key} className="text-xs font-medium">Description</TableHead>;
+                    case "date":
+                      return <TableHead key={key} className="w-[100px] text-xs font-medium">Date</TableHead>;
+                    case "status":
+                      return <TableHead key={key} className="w-[100px] text-xs font-medium">Status</TableHead>;
+                    case "amount":
+                      return <TableHead key={key} className="w-[100px] text-xs font-medium text-right">Amount</TableHead>;
+                    default:
+                      return null;
+                  }
+                })}
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -612,60 +729,75 @@ export default function PurchaseOrders() {
                     onClick={() => handleRowClick(po.id)}
                     data-testid={`po-row-${po.id}`}
                   >
-                    {columnVisibility.poNumber && (
-                      <TableCell className="text-xs font-medium text-[#bba7db]">
-                        {po.poNumber}
-                      </TableCell>
-                    )}
-                    {columnVisibility.type && (
-                      <TableCell>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-[10px] ${
-                            po.poType === "site" 
-                              ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
-                              : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
-                          }`}
-                        >
-                          {po.poType === "site" ? "Site" : "Standard"}
-                        </Badge>
-                      </TableCell>
-                    )}
-                    {columnVisibility.project && (
-                      <TableCell className="text-xs">
-                        {project?.name || <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                    )}
-                    {columnVisibility.supplier && (
-                      <TableCell className="text-xs">
-                        {supplier?.name || <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                    )}
-                    {columnVisibility.description && (
-                      <TableCell className="text-xs max-w-[200px] truncate">
-                        {po.description || <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                    )}
-                    {columnVisibility.date && (
-                      <TableCell className="text-xs text-muted-foreground">
-                        {po.createdAt ? format(new Date(po.createdAt), "dd MMM yyyy") : "-"}
-                      </TableCell>
-                    )}
-                    {columnVisibility.status && (
-                      <TableCell>
-                        <Badge 
-                          variant="secondary" 
-                          className={`text-[10px] capitalize ${statusStyle.bg} ${statusStyle.text}`}
-                        >
-                          {po.status}
-                        </Badge>
-                      </TableCell>
-                    )}
-                    {columnVisibility.amount && (
-                      <TableCell className="text-xs text-right font-medium">
-                        {formatCurrency(po.totalAmountCents || 0)}
-                      </TableCell>
-                    )}
+                    {columnPrefs.order.map((key) => {
+                      if (!columnPrefs.visibility[key]) return null;
+                      switch (key) {
+                        case "poNumber":
+                          return (
+                            <TableCell key={key} className="text-xs font-medium text-[#bba7db]">
+                              {po.poNumber}
+                            </TableCell>
+                          );
+                        case "type":
+                          return (
+                            <TableCell key={key}>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[10px] ${
+                                  po.poType === "site" 
+                                    ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
+                                    : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                                }`}
+                              >
+                                {po.poType === "site" ? "Site" : "Standard"}
+                              </Badge>
+                            </TableCell>
+                          );
+                        case "project":
+                          return (
+                            <TableCell key={key} className="text-xs">
+                              {project?.name || <span className="text-muted-foreground">-</span>}
+                            </TableCell>
+                          );
+                        case "supplier":
+                          return (
+                            <TableCell key={key} className="text-xs">
+                              {supplier?.name || <span className="text-muted-foreground">-</span>}
+                            </TableCell>
+                          );
+                        case "description":
+                          return (
+                            <TableCell key={key} className="text-xs max-w-[200px] truncate">
+                              {po.description || <span className="text-muted-foreground">-</span>}
+                            </TableCell>
+                          );
+                        case "date":
+                          return (
+                            <TableCell key={key} className="text-xs text-muted-foreground">
+                              {po.createdAt ? format(new Date(po.createdAt), "dd MMM yyyy") : "-"}
+                            </TableCell>
+                          );
+                        case "status":
+                          return (
+                            <TableCell key={key}>
+                              <Badge 
+                                variant="secondary" 
+                                className={`text-[10px] capitalize ${statusStyle.bg} ${statusStyle.text}`}
+                              >
+                                {po.status}
+                              </Badge>
+                            </TableCell>
+                          );
+                        case "amount":
+                          return (
+                            <TableCell key={key} className="text-xs text-right font-medium">
+                              {formatCurrency(po.totalAmountCents || 0)}
+                            </TableCell>
+                          );
+                        default:
+                          return null;
+                      }
+                    })}
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
