@@ -43,6 +43,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import type { PurchaseOrder, Project, Contact } from "@shared/schema";
 
 const STATUS_OPTIONS = [
@@ -85,6 +100,8 @@ export default function PurchaseOrders() {
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
+  const [newPOProjectId, setNewPOProjectId] = useState<string>("");
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -94,15 +111,15 @@ export default function PurchaseOrders() {
 
   // Create new PO mutation - creates the PO first, then navigates to it
   const createPoMutation = useMutation({
-    mutationFn: async (data: { projectId?: string; type: string }) => {
+    mutationFn: async (data: { projectId: string; type: string }) => {
       return apiRequest("/api/purchase-orders", "POST", data);
     },
     onSuccess: (newPO: PurchaseOrder) => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      // Navigate to the newly created PO
-      const basePath = isProjectContext
-        ? `/projects/${projectIdFromUrl}/purchase-orders/${newPO.id}`
-        : `/purchase-orders/${newPO.id}`;
+      setIsProjectDialogOpen(false);
+      setNewPOProjectId("");
+      // Navigate to the newly created PO (use the PO's projectId for the URL)
+      const basePath = `/projects/${newPO.projectId}/purchase-orders/${newPO.id}`;
       setLocation(basePath);
     },
     onError: (error: any) => {
@@ -217,9 +234,30 @@ export default function PurchaseOrders() {
   }, [filteredPOs]);
 
   const handleNewPO = () => {
-    // Create the PO first, then navigate on success (handled in mutation's onSuccess)
+    if (isProjectContext && projectIdFromUrl) {
+      // In project context - create PO directly
+      createPoMutation.mutate({
+        projectId: projectIdFromUrl,
+        type: "main",
+      });
+    } else {
+      // Not in project context - show project selection dialog
+      setNewPOProjectId(projects.length > 0 ? projects[0].id : "");
+      setIsProjectDialogOpen(true);
+    }
+  };
+
+  const handleCreatePOWithProject = () => {
+    if (!newPOProjectId) {
+      toast({
+        title: "Project required",
+        description: "Please select a project for this purchase order",
+        variant: "destructive",
+      });
+      return;
+    }
     createPoMutation.mutate({
-      projectId: projectIdFromUrl || undefined,
+      projectId: newPOProjectId,
       type: "main",
     });
   };
@@ -541,6 +579,56 @@ export default function PurchaseOrders() {
           </Table>
         )}
       </div>
+
+      {/* Project Selection Dialog */}
+      <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Purchase Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="project">Select Project</Label>
+              <Select value={newPOProjectId} onValueChange={setNewPOProjectId}>
+                <SelectTrigger id="project" data-testid="select-project">
+                  <SelectValue placeholder="Choose a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsProjectDialogOpen(false)}
+              disabled={createPoMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreatePOWithProject}
+              disabled={!newPOProjectId || createPoMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              data-testid="button-create-po"
+            >
+              {createPoMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Purchase Order"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

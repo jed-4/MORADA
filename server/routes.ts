@@ -5681,8 +5681,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
+      // Auto-generate PO number if not provided
+      const poType = req.body.type || req.body.poType || "main";
+      const poNumber = req.body.poNumber || await storage.getNextPONumber(req.user.companyId, poType);
+
+      // projectId is required - if not provided, return an error
+      if (!req.body.projectId) {
+        return res.status(400).json({ 
+          error: "Project required", 
+          details: "Please select a project for this purchase order" 
+        });
+      }
+
       const validationResult = insertPurchaseOrderSchema.safeParse({
         ...req.body,
+        poNumber,
+        poType,
         companyId: req.user.companyId,
         createdById: req.user.id
       });
