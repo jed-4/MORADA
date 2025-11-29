@@ -18,7 +18,9 @@ import {
   Trash2,
   Building2,
   Hammer,
-  Loader2
+  Loader2,
+  Columns3,
+  Check
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -79,6 +81,40 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 type POType = "all" | "main" | "site";
 
+const COLUMN_DEFINITIONS = [
+  { key: "poNumber", label: "PO Number", defaultVisible: true },
+  { key: "type", label: "Type", defaultVisible: true },
+  { key: "project", label: "Project", defaultVisible: true },
+  { key: "supplier", label: "Supplier", defaultVisible: true },
+  { key: "description", label: "Description", defaultVisible: true },
+  { key: "date", label: "Date", defaultVisible: true },
+  { key: "status", label: "Status", defaultVisible: true },
+  { key: "amount", label: "Amount", defaultVisible: true },
+] as const;
+
+type ColumnKey = typeof COLUMN_DEFINITIONS[number]["key"];
+
+function getDefaultColumnVisibility(): Record<ColumnKey, boolean> {
+  return COLUMN_DEFINITIONS.reduce((acc, col) => {
+    acc[col.key] = col.defaultVisible;
+    return acc;
+  }, {} as Record<ColumnKey, boolean>);
+}
+
+function loadColumnVisibility(): Record<ColumnKey, boolean> {
+  try {
+    const saved = localStorage.getItem("po-column-visibility");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Merge with defaults to handle new columns
+      return { ...getDefaultColumnVisibility(), ...parsed };
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return getDefaultColumnVisibility();
+}
+
 function formatCurrency(cents: number): string {
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
@@ -102,6 +138,19 @@ export default function PurchaseOrders() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [newPOProjectId, setNewPOProjectId] = useState<string>("");
+  const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(loadColumnVisibility);
+
+  const toggleColumn = (key: ColumnKey) => {
+    setColumnVisibility(prev => {
+      const updated = { ...prev, [key]: !prev[key] };
+      localStorage.setItem("po-column-visibility", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const hiddenColumnCount = useMemo(() => {
+    return COLUMN_DEFINITIONS.filter(col => !columnVisibility[col.key]).length;
+  }, [columnVisibility]);
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -362,7 +411,7 @@ export default function PurchaseOrders() {
         </div>
       </div>
 
-      {/* Row 3 - Search + Status Filters + Supplier */}
+      {/* Row 3 - Search + Status Filters + Supplier + Columns */}
       <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
         {/* Search */}
         <div className="relative w-48">
@@ -442,6 +491,47 @@ export default function PurchaseOrders() {
             </div>
           </PopoverContent>
         </Popover>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Column Visibility */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+              data-testid="button-columns"
+            >
+              <Columns3 className="w-3 h-3" />
+              <span>Columns</span>
+              {hiddenColumnCount > 0 && (
+                <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1">
+                  {COLUMN_DEFINITIONS.length - hiddenColumnCount}/{COLUMN_DEFINITIONS.length}
+                </Badge>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-2" align="end">
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground px-2 py-1">
+                Toggle Columns
+              </div>
+              {COLUMN_DEFINITIONS.map((col) => (
+                <button
+                  key={col.key}
+                  onClick={() => toggleColumn(col.key)}
+                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-between"
+                  data-testid={`toggle-column-${col.key}`}
+                >
+                  <span>{col.label}</span>
+                  {columnVisibility[col.key] && (
+                    <Check className="w-4 h-4 text-[#bba7db]" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Table Content */}
@@ -482,14 +572,30 @@ export default function PurchaseOrders() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 dark:bg-gray-900">
-                <TableHead className="w-[100px] text-xs font-medium">PO Number</TableHead>
-                <TableHead className="w-[80px] text-xs font-medium">Type</TableHead>
-                <TableHead className="text-xs font-medium">Project</TableHead>
-                <TableHead className="text-xs font-medium">Supplier</TableHead>
-                <TableHead className="text-xs font-medium">Description</TableHead>
-                <TableHead className="w-[100px] text-xs font-medium">Date</TableHead>
-                <TableHead className="w-[100px] text-xs font-medium">Status</TableHead>
-                <TableHead className="w-[100px] text-xs font-medium text-right">Amount</TableHead>
+                {columnVisibility.poNumber && (
+                  <TableHead className="w-[100px] text-xs font-medium">PO Number</TableHead>
+                )}
+                {columnVisibility.type && (
+                  <TableHead className="w-[80px] text-xs font-medium">Type</TableHead>
+                )}
+                {columnVisibility.project && (
+                  <TableHead className="text-xs font-medium">Project</TableHead>
+                )}
+                {columnVisibility.supplier && (
+                  <TableHead className="text-xs font-medium">Supplier</TableHead>
+                )}
+                {columnVisibility.description && (
+                  <TableHead className="text-xs font-medium">Description</TableHead>
+                )}
+                {columnVisibility.date && (
+                  <TableHead className="w-[100px] text-xs font-medium">Date</TableHead>
+                )}
+                {columnVisibility.status && (
+                  <TableHead className="w-[100px] text-xs font-medium">Status</TableHead>
+                )}
+                {columnVisibility.amount && (
+                  <TableHead className="w-[100px] text-xs font-medium text-right">Amount</TableHead>
+                )}
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -506,44 +612,60 @@ export default function PurchaseOrders() {
                     onClick={() => handleRowClick(po.id)}
                     data-testid={`po-row-${po.id}`}
                   >
-                    <TableCell className="text-xs font-medium text-[#bba7db]">
-                      {po.poNumber}
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant="outline" 
-                        className={`text-[10px] ${
-                          po.poType === "site" 
-                            ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
-                            : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
-                        }`}
-                      >
-                        {po.poType === "site" ? "Site" : "Standard"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {project?.name || <span className="text-muted-foreground">-</span>}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {supplier?.name || <span className="text-muted-foreground">-</span>}
-                    </TableCell>
-                    <TableCell className="text-xs max-w-[200px] truncate">
-                      {po.description || <span className="text-muted-foreground">-</span>}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {po.createdAt ? format(new Date(po.createdAt), "dd MMM yyyy") : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant="secondary" 
-                        className={`text-[10px] capitalize ${statusStyle.bg} ${statusStyle.text}`}
-                      >
-                        {po.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-right font-medium">
-                      {formatCurrency(po.totalAmountCents || 0)}
-                    </TableCell>
+                    {columnVisibility.poNumber && (
+                      <TableCell className="text-xs font-medium text-[#bba7db]">
+                        {po.poNumber}
+                      </TableCell>
+                    )}
+                    {columnVisibility.type && (
+                      <TableCell>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[10px] ${
+                            po.poType === "site" 
+                              ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
+                              : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                          }`}
+                        >
+                          {po.poType === "site" ? "Site" : "Standard"}
+                        </Badge>
+                      </TableCell>
+                    )}
+                    {columnVisibility.project && (
+                      <TableCell className="text-xs">
+                        {project?.name || <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                    )}
+                    {columnVisibility.supplier && (
+                      <TableCell className="text-xs">
+                        {supplier?.name || <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                    )}
+                    {columnVisibility.description && (
+                      <TableCell className="text-xs max-w-[200px] truncate">
+                        {po.description || <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                    )}
+                    {columnVisibility.date && (
+                      <TableCell className="text-xs text-muted-foreground">
+                        {po.createdAt ? format(new Date(po.createdAt), "dd MMM yyyy") : "-"}
+                      </TableCell>
+                    )}
+                    {columnVisibility.status && (
+                      <TableCell>
+                        <Badge 
+                          variant="secondary" 
+                          className={`text-[10px] capitalize ${statusStyle.bg} ${statusStyle.text}`}
+                        >
+                          {po.status}
+                        </Badge>
+                      </TableCell>
+                    )}
+                    {columnVisibility.amount && (
+                      <TableCell className="text-xs text-right font-medium">
+                        {formatCurrency(po.totalAmountCents || 0)}
+                      </TableCell>
+                    )}
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
