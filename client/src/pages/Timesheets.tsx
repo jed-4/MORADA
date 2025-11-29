@@ -243,62 +243,71 @@ export default function Timesheets() {
   return (
     <div className="flex flex-col h-full">
       {/* Row 1: Title */}
-      <div className="flex items-center justify-between h-9 px-3 border-b border-border/50">
+      <div className="flex items-center justify-between h-10 px-3 border-b border-border/50">
         <h1 className="text-sm font-semibold">
           {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
         </h1>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
+            className="h-7 px-3 text-xs font-medium bg-white dark:bg-gray-900 border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
             data-testid="button-export-timesheets"
           >
-            <Download className="w-3.5 h-3.5 mr-1.5" />
+            <Download className="w-3.5 h-3.5" />
             Export
-          </Button>
-          <Button
-            size="sm"
+          </button>
+          <button
             onClick={() => {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
+            className="h-7 px-3 text-xs font-medium bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 active:bg-[#bba7db]/80 flex items-center gap-1.5 shadow-sm"
             data-testid="button-add-timesheet"
           >
-            <Clock className="w-3.5 h-3.5 mr-1.5" />
+            <Clock className="w-3.5 h-3.5" />
             Clock In
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* Row 2: Filters */}
-      <div className="flex items-center gap-1.5 h-9 px-2 border-b border-border flex-shrink-0">
+      <div className="flex items-center gap-2 h-10 px-3 bg-gray-50/80 dark:bg-gray-900/50 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter Chips */}
-        <div className="flex items-center gap-1.5 flex-1">
+        <div className="flex items-center gap-2 flex-1">
           {/* Search */}
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <div className="relative w-52">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
-              placeholder="Search..."
+              placeholder="Search timesheets..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               data-testid="input-search-timesheets"
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              className="pl-8 pr-2 py-0 h-7 text-xs bg-white dark:bg-gray-950 border rounded-md"
             />
           </div>
+          
+          <div className="w-px h-5 bg-border/60" />
 
           {/* Project Filter (only if not in project context) */}
           {!projectId && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-project">
+                <button 
+                  className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                    selectedProjects.length > 0 
+                      ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
+                      : "bg-white dark:bg-gray-900 border hover-elevate"
+                  }`}
+                  data-testid="button-filter-project"
+                >
                   <span>Project</span>
                   {selectedProjects.length > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                    <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                       {selectedProjects.length}
                     </Badge>
                   )}
+                  <ChevronDown className="w-3 h-3 opacity-60" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -324,13 +333,21 @@ export default function Timesheets() {
           {/* User Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-user">
+              <button 
+                className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                  selectedUsers.length > 0 
+                    ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
+                    : "bg-white dark:bg-gray-900 border hover-elevate"
+                }`}
+                data-testid="button-filter-user"
+              >
                 <span>User</span>
                 {selectedUsers.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                     {selectedUsers.length}
                   </Badge>
                 )}
+                <ChevronDown className="w-3 h-3 opacity-60" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -355,13 +372,21 @@ export default function Timesheets() {
           {/* Status Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-status">
+              <button 
+                className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                  selectedStatuses.length > 0 
+                    ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
+                    : "bg-white dark:bg-gray-900 border hover-elevate"
+                }`}
+                data-testid="button-filter-status"
+              >
                 <span>Status</span>
                 {selectedStatuses.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                     {selectedStatuses.length}
                   </Badge>
                 )}
+                <ChevronDown className="w-3 h-3 opacity-60" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -391,14 +416,22 @@ export default function Timesheets() {
           {/* Date Range Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-filter-date">
-                <CalendarRange className="w-3 h-3" />
+              <button 
+                className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                  dateRangeType !== "all" 
+                    ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
+                    : "bg-white dark:bg-gray-900 border hover-elevate"
+                }`}
+                data-testid="button-filter-date"
+              >
+                <CalendarRange className="w-3.5 h-3.5" />
                 <span>
                   {dateRangeType === "all" ? "All Time" : 
                    dateRangeType === "this-week" ? "This Week" :
                    dateRangeType === "last-week" ? "Last Week" :
                    "Custom"}
                 </span>
+                <ChevronDown className="w-3 h-3 opacity-60" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -426,8 +459,8 @@ export default function Timesheets() {
             <>
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-start-date">
-                    <CalendarIcon className="w-3 h-3" />
+                  <button className="h-7 px-3 text-xs bg-white dark:bg-gray-900 border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-start-date">
+                    <CalendarIcon className="w-3.5 h-3.5" />
                     <span>{customStartDate ? format(customStartDate, "dd MMM") : "Start"}</span>
                   </button>
                 </PopoverTrigger>
@@ -445,8 +478,8 @@ export default function Timesheets() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-end-date">
-                    <CalendarIcon className="w-3 h-3" />
+                  <button className="h-7 px-3 text-xs bg-white dark:bg-gray-900 border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-end-date">
+                    <CalendarIcon className="w-3.5 h-3.5" />
                     <span>{customEndDate ? format(customEndDate, "dd MMM") : "End"}</span>
                   </button>
                 </PopoverTrigger>
