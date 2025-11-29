@@ -191,8 +191,8 @@ export default function TeamManagement() {
 
   return (
     <div className="flex flex-col h-full" data-testid="team-management-page">
-      {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      {/* Row 1 - Title & Actions */}
+      <div className="h-10 bg-white dark:bg-gray-950 flex items-center justify-between px-3 border-b border-border/50 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs">
@@ -203,76 +203,76 @@ export default function TeamManagement() {
           </Badge>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {activeSection === "members" ? (
             <button
               onClick={() => setIsInviteDialogOpen(true)}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+              className="h-7 px-3 text-xs font-medium bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 active:bg-[#bba7db]/80 flex items-center gap-1.5 shadow-sm"
               data-testid="button-invite-user"
             >
-              <UserPlus className="w-3 h-3" />
+              <UserPlus className="w-3.5 h-3.5" />
               <span>Invite Member</span>
             </button>
           ) : (
             <button
               onClick={handleAddSupplier}
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+              className="h-7 px-3 text-xs font-medium bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 active:bg-[#bba7db]/80 flex items-center gap-1.5 shadow-sm"
               data-testid="button-add-supplier"
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
               <span>Add Supplier</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Row 2 - Search & Section Toggles (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          {/* Section Toggles */}
+      {/* Row 2 - Search & Section Toggles */}
+      <div className="h-10 bg-gray-50/80 dark:bg-gray-900/50 flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
+          {/* Section Toggle Pills */}
           <button
             onClick={() => setActiveSection('members')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+            className={`h-7 px-3 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 ${
               activeSection === 'members' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
+                ? 'bg-[#bba7db] text-white shadow-sm' 
+                : 'bg-white dark:bg-gray-900 border hover-elevate'
+            }`}
             data-testid="button-section-members"
           >
-            <Users className="w-3 h-3" />
+            <Users className="w-3.5 h-3.5" />
             <span>Team Members</span>
-            <Badge variant="secondary" className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">
+            <span className={`ml-0.5 ${activeSection === 'members' ? 'opacity-80' : 'text-muted-foreground'}`}>
               {filteredUsers.length}
-            </Badge>
+            </span>
           </button>
 
           <button
             onClick={() => setActiveSection('suppliers')}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+            className={`h-7 px-3 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 ${
               activeSection === 'suppliers' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
+                ? 'bg-[#bba7db] text-white shadow-sm' 
+                : 'bg-white dark:bg-gray-900 border hover-elevate'
+            }`}
             data-testid="button-section-suppliers"
           >
-            <Building2 className="w-3 h-3" />
+            <Building2 className="w-3.5 h-3.5" />
             <span>Suppliers</span>
-            <Badge variant="secondary" className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">
+            <span className={`ml-0.5 ${activeSection === 'suppliers' ? 'opacity-80' : 'text-muted-foreground'}`}>
               {filteredSuppliers.length}
-            </Badge>
+            </span>
           </button>
 
-          {/* Subtle Divider */}
-          <div className="w-px h-4 bg-border mx-1" />
+          {/* Divider */}
+          <div className="w-px h-5 bg-border/60" />
 
           {/* Search */}
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <div className="relative w-52">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               placeholder={activeSection === "members" ? "Search members..." : "Search suppliers..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              className="pl-8 pr-2 py-0 h-7 text-xs bg-white dark:bg-gray-950 border rounded-md"
               data-testid="input-search"
             />
           </div>
