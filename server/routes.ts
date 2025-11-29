@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
-import { randomBytes } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./replitAuth";
 import { sendInvitationEmail } from "./utils/email";
 import { 
@@ -90,7 +90,14 @@ import {
   insertScopeItemSchema,
   insertScopeStageSchema,
   insertScopeTemplateSchema,
-  insertScopeGearPhotoSchema
+  insertScopeGearPhotoSchema,
+  insertPurchaseOrderSchema,
+  insertPurchaseOrderItemSchema,
+  insertPurchaseOrderAttachmentSchema,
+  insertPurchaseOrderSignatureSchema,
+  insertPurchaseOrderTemplateSchema,
+  insertFavoriteSupplierSchema,
+  insertFavoriteCostCodeSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -5602,6 +5609,811 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete variation item" });
+    }
+  });
+
+  // ============================================
+  // PURCHASE ORDERS API ROUTES
+  // ============================================
+
+  // Get all purchase orders (with optional filters)
+  app.get("/api/purchase-orders", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const { projectId, status, poType } = req.query;
+      const purchaseOrders = await storage.getPurchaseOrders(
+        req.user.companyId,
+        projectId as string | undefined,
+        status as string | undefined,
+        poType as string | undefined
+      );
+      res.json(purchaseOrders);
+    } catch (error) {
+      console.error("Failed to fetch purchase orders:", error);
+      res.status(500).json({ error: "Failed to fetch purchase orders" });
+    }
+  });
+
+  // Get single purchase order
+  app.get("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const po = await storage.getPurchaseOrder(req.params.id);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      if (po.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      res.json(po);
+    } catch (error) {
+      console.error("Failed to fetch purchase order:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order" });
+    }
+  });
+
+  // Get next PO number
+  app.get("/api/purchase-orders/next-number/:type", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const poType = req.params.type as "main" | "site";
+      if (poType !== "main" && poType !== "site") {
+        return res.status(400).json({ error: "Invalid PO type. Must be 'main' or 'site'" });
+      }
+      const poNumber = await storage.getNextPONumber(req.user.companyId, poType);
+      res.json({ poNumber });
+    } catch (error) {
+      console.error("Failed to get next PO number:", error);
+      res.status(500).json({ error: "Failed to get next PO number" });
+    }
+  });
+
+  // Create purchase order
+  app.post("/api/purchase-orders", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const validationResult = insertPurchaseOrderSchema.safeParse({
+        ...req.body,
+        companyId: req.user.companyId,
+        createdById: req.user.id
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const po = await storage.createPurchaseOrder(validationResult.data);
+      res.status(201).json(po);
+    } catch (error) {
+      console.error("Failed to create purchase order:", error);
+      res.status(500).json({ error: "Failed to create purchase order" });
+    }
+  });
+
+  // Update purchase order
+  app.patch("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const existingPo = await storage.getPurchaseOrder(req.params.id);
+      if (!existingPo || existingPo.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const validationResult = insertPurchaseOrderSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const po = await storage.updatePurchaseOrder(req.params.id, validationResult.data);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      res.json(po);
+    } catch (error) {
+      console.error("Failed to update purchase order:", error);
+      res.status(500).json({ error: "Failed to update purchase order" });
+    }
+  });
+
+  // Delete purchase order
+  app.delete("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const existingPo = await storage.getPurchaseOrder(req.params.id);
+      if (!existingPo || existingPo.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const deleted = await storage.deletePurchaseOrder(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete purchase order:", error);
+      res.status(500).json({ error: "Failed to delete purchase order" });
+    }
+  });
+
+  // Send purchase order (change status and optionally send email)
+  app.post("/api/purchase-orders/:id/send", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const po = await storage.getPurchaseOrder(req.params.id);
+      if (!po || po.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const updatedPo = await storage.updatePurchaseOrder(req.params.id, {
+        status: "sent",
+        sentAt: new Date()
+      });
+
+      res.json(updatedPo);
+    } catch (error) {
+      console.error("Failed to send purchase order:", error);
+      res.status(500).json({ error: "Failed to send purchase order" });
+    }
+  });
+
+  // Helper to verify PO ownership
+  async function verifyPOOwnership(poId: string, companyId: string): Promise<boolean> {
+    const po = await storage.getPurchaseOrder(poId);
+    return po !== undefined && po.companyId === companyId;
+  }
+
+  // ============================================
+  // PURCHASE ORDER ITEMS API ROUTES
+  // ============================================
+
+  // Get items for a purchase order
+  app.get("/api/purchase-orders/:poId/items", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      const items = await storage.getPurchaseOrderItems(req.params.poId);
+      res.json(items);
+    } catch (error) {
+      console.error("Failed to fetch purchase order items:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order items" });
+    }
+  });
+
+  // Create purchase order item
+  app.post("/api/purchase-orders/:poId/items", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const validationResult = insertPurchaseOrderItemSchema.safeParse({
+        ...req.body,
+        purchaseOrderId: req.params.poId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createPurchaseOrderItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Failed to create purchase order item:", error);
+      res.status(500).json({ error: "Failed to create purchase order item" });
+    }
+  });
+
+  // Bulk create purchase order items (for import from estimate)
+  app.post("/api/purchase-orders/:poId/items/bulk", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const items = req.body.items;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "Items must be an array" });
+      }
+
+      const createdItems = [];
+      for (const item of items) {
+        const validationResult = insertPurchaseOrderItemSchema.safeParse({
+          ...item,
+          purchaseOrderId: req.params.poId
+        });
+
+        if (!validationResult.success) {
+          return res.status(400).json({ 
+            error: "Validation failed for one or more items", 
+            details: fromZodError(validationResult.error).toString() 
+          });
+        }
+
+        const created = await storage.createPurchaseOrderItem(validationResult.data);
+        createdItems.push(created);
+      }
+
+      res.status(201).json(createdItems);
+    } catch (error) {
+      console.error("Failed to bulk create purchase order items:", error);
+      res.status(500).json({ error: "Failed to bulk create purchase order items" });
+    }
+  });
+
+  // Helper to verify PO item ownership via its parent PO
+  async function verifyPOItemOwnership(itemId: string, companyId: string): Promise<boolean> {
+    const item = await storage.getPurchaseOrderItem(itemId);
+    if (!item) return false;
+    return verifyPOOwnership(item.purchaseOrderId, companyId);
+  }
+
+  // Update purchase order item
+  app.patch("/api/purchase-order-items/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOItemOwnership(req.params.id, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+
+      const validationResult = insertPurchaseOrderItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updatePurchaseOrderItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Failed to update purchase order item:", error);
+      res.status(500).json({ error: "Failed to update purchase order item" });
+    }
+  });
+
+  // Delete purchase order item
+  app.delete("/api/purchase-order-items/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOItemOwnership(req.params.id, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+
+      const deleted = await storage.deletePurchaseOrderItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete purchase order item:", error);
+      res.status(500).json({ error: "Failed to delete purchase order item" });
+    }
+  });
+
+  // Reorder purchase order items
+  app.post("/api/purchase-orders/:poId/items/reorder", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const updates = req.body.updates;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Updates must be an array" });
+      }
+
+      await storage.reorderPurchaseOrderItems(updates);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Failed to reorder purchase order items:", error);
+      res.status(500).json({ error: "Failed to reorder purchase order items" });
+    }
+  });
+
+  // ============================================
+  // PURCHASE ORDER ATTACHMENTS API ROUTES
+  // ============================================
+
+  // Get attachments for a purchase order
+  app.get("/api/purchase-orders/:poId/attachments", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      const attachments = await storage.getPurchaseOrderAttachments(req.params.poId);
+      res.json(attachments);
+    } catch (error) {
+      console.error("Failed to fetch purchase order attachments:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order attachments" });
+    }
+  });
+
+  // Create purchase order attachment
+  app.post("/api/purchase-orders/:poId/attachments", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const validationResult = insertPurchaseOrderAttachmentSchema.safeParse({
+        ...req.body,
+        purchaseOrderId: req.params.poId,
+        uploadedById: req.user.id
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const attachment = await storage.createPurchaseOrderAttachment(validationResult.data);
+      res.status(201).json(attachment);
+    } catch (error) {
+      console.error("Failed to create purchase order attachment:", error);
+      res.status(500).json({ error: "Failed to create purchase order attachment" });
+    }
+  });
+
+  // Helper to verify attachment ownership via its parent PO
+  async function verifyPOAttachmentOwnership(attachmentId: string, companyId: string): Promise<boolean> {
+    const attachment = await storage.getPurchaseOrderAttachment(attachmentId);
+    if (!attachment) return false;
+    return verifyPOOwnership(attachment.purchaseOrderId, companyId);
+  }
+
+  // Delete purchase order attachment
+  app.delete("/api/purchase-order-attachments/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOAttachmentOwnership(req.params.id, req.user.companyId)) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      const deleted = await storage.deletePurchaseOrderAttachment(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete purchase order attachment:", error);
+      res.status(500).json({ error: "Failed to delete purchase order attachment" });
+    }
+  });
+
+  // ============================================
+  // PURCHASE ORDER SIGNATURES API ROUTES
+  // ============================================
+
+  // Get signatures for a purchase order
+  app.get("/api/purchase-orders/:poId/signatures", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      const signatures = await storage.getPurchaseOrderSignatures(req.params.poId);
+      res.json(signatures);
+    } catch (error) {
+      console.error("Failed to fetch purchase order signatures:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order signatures" });
+    }
+  });
+
+  // Create signature request (generate token for supplier portal)
+  app.post("/api/purchase-orders/:poId/request-signature", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const signatureToken = randomUUID();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+
+      const signature = await storage.createPurchaseOrderSignature({
+        purchaseOrderId: req.params.poId,
+        signatureToken,
+        signerType: "supplier",
+        signerName: req.body.signerName || null,
+        signerEmail: req.body.signerEmail || null,
+        expiresAt
+      });
+
+      const signatureUrl = `/sign-po/${signatureToken}`;
+
+      res.status(201).json({ 
+        signature, 
+        signatureUrl,
+        expiresAt 
+      });
+    } catch (error) {
+      console.error("Failed to create signature request:", error);
+      res.status(500).json({ error: "Failed to create signature request" });
+    }
+  });
+
+  // Public route: Get PO for signing (via token)
+  app.get("/api/purchase-orders/sign/:token", async (req, res) => {
+    try {
+      const po = await storage.getPurchaseOrderBySignatureToken(req.params.token);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found or link expired" });
+      }
+
+      // Get items
+      const items = await storage.getPurchaseOrderItems(po.id);
+
+      res.json({ purchaseOrder: po, items });
+    } catch (error) {
+      console.error("Failed to fetch purchase order for signing:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order" });
+    }
+  });
+
+  // Public route: Submit signature
+  app.post("/api/purchase-orders/sign/:token", async (req, res) => {
+    try {
+      const po = await storage.getPurchaseOrderBySignatureToken(req.params.token);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found or link expired" });
+      }
+
+      // Find the pending signature by token
+      const signatures = await storage.getPurchaseOrderSignatures(po.id);
+      const pendingSignature = signatures.find(s => s.signatureToken === req.params.token && !s.signedAt);
+      
+      if (!pendingSignature) {
+        return res.status(400).json({ error: "Signature already submitted or expired" });
+      }
+
+      // Update the signature with the actual signature data
+      // Note: We'd need an update method - for now, we'll update the PO status
+      await storage.updatePurchaseOrder(po.id, {
+        status: "approved",
+        approvedAt: new Date()
+      });
+
+      res.json({ success: true, message: "Purchase order signed successfully" });
+    } catch (error) {
+      console.error("Failed to sign purchase order:", error);
+      res.status(500).json({ error: "Failed to sign purchase order" });
+    }
+  });
+
+  // ============================================
+  // PURCHASE ORDER TEMPLATES API ROUTES
+  // ============================================
+
+  // Get all templates for company
+  app.get("/api/purchase-order-templates", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const templates = await storage.getPurchaseOrderTemplates(req.user.companyId);
+      res.json(templates);
+    } catch (error) {
+      console.error("Failed to fetch purchase order templates:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order templates" });
+    }
+  });
+
+  // Get single template
+  app.get("/api/purchase-order-templates/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const template = await storage.getPurchaseOrderTemplate(req.params.id, req.user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      console.error("Failed to fetch purchase order template:", error);
+      res.status(500).json({ error: "Failed to fetch purchase order template" });
+    }
+  });
+
+  // Create template
+  app.post("/api/purchase-order-templates", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const validationResult = insertPurchaseOrderTemplateSchema.safeParse({
+        ...req.body,
+        companyId: req.user.companyId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const template = await storage.createPurchaseOrderTemplate(validationResult.data);
+      res.status(201).json(template);
+    } catch (error) {
+      console.error("Failed to create purchase order template:", error);
+      res.status(500).json({ error: "Failed to create purchase order template" });
+    }
+  });
+
+  // Update template
+  app.patch("/api/purchase-order-templates/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const validationResult = insertPurchaseOrderTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const template = await storage.updatePurchaseOrderTemplate(req.params.id, validationResult.data, req.user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      console.error("Failed to update purchase order template:", error);
+      res.status(500).json({ error: "Failed to update purchase order template" });
+    }
+  });
+
+  // Delete template (soft delete)
+  app.delete("/api/purchase-order-templates/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const deleted = await storage.deletePurchaseOrderTemplate(req.params.id, req.user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete purchase order template:", error);
+      res.status(500).json({ error: "Failed to delete purchase order template" });
+    }
+  });
+
+  // ============================================
+  // FAVORITE SUPPLIERS API ROUTES
+  // ============================================
+
+  // Get user's favorite suppliers
+  app.get("/api/favorite-suppliers", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const favorites = await storage.getFavoriteSuppliers(req.user.id, req.user.companyId);
+      res.json(favorites);
+    } catch (error) {
+      console.error("Failed to fetch favorite suppliers:", error);
+      res.status(500).json({ error: "Failed to fetch favorite suppliers" });
+    }
+  });
+
+  // Add favorite supplier
+  app.post("/api/favorite-suppliers", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const validationResult = insertFavoriteSupplierSchema.safeParse({
+        ...req.body,
+        userId: req.user.id,
+        companyId: req.user.companyId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const favorite = await storage.createFavoriteSupplier(validationResult.data);
+      res.status(201).json(favorite);
+    } catch (error) {
+      console.error("Failed to add favorite supplier:", error);
+      res.status(500).json({ error: "Failed to add favorite supplier" });
+    }
+  });
+
+  // Remove favorite supplier
+  app.delete("/api/favorite-suppliers/:id", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const deleted = await storage.deleteFavoriteSupplier(req.params.id, req.user.id, req.user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Favorite supplier not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to remove favorite supplier:", error);
+      res.status(500).json({ error: "Failed to remove favorite supplier" });
+    }
+  });
+
+  // Reorder favorite suppliers
+  app.post("/api/favorite-suppliers/reorder", async (req, res) => {
+    try {
+      const updates = req.body.updates;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Updates must be an array" });
+      }
+
+      await storage.reorderFavoriteSuppliers(updates);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Failed to reorder favorite suppliers:", error);
+      res.status(500).json({ error: "Failed to reorder favorite suppliers" });
+    }
+  });
+
+  // ============================================
+  // FAVORITE COST CODES API ROUTES
+  // ============================================
+
+  // Get user's favorite cost codes
+  app.get("/api/favorite-cost-codes", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const favorites = await storage.getFavoriteCostCodes(req.user.id, req.user.companyId);
+      res.json(favorites);
+    } catch (error) {
+      console.error("Failed to fetch favorite cost codes:", error);
+      res.status(500).json({ error: "Failed to fetch favorite cost codes" });
+    }
+  });
+
+  // Add favorite cost code
+  app.post("/api/favorite-cost-codes", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const validationResult = insertFavoriteCostCodeSchema.safeParse({
+        ...req.body,
+        userId: req.user.id,
+        companyId: req.user.companyId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const favorite = await storage.createFavoriteCostCode(validationResult.data);
+      res.status(201).json(favorite);
+    } catch (error) {
+      console.error("Failed to add favorite cost code:", error);
+      res.status(500).json({ error: "Failed to add favorite cost code" });
+    }
+  });
+
+  // Remove favorite cost code
+  app.delete("/api/favorite-cost-codes/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteFavoriteCostCode(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Favorite cost code not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to remove favorite cost code:", error);
+      res.status(500).json({ error: "Failed to remove favorite cost code" });
+    }
+  });
+
+  // Reorder favorite cost codes
+  app.post("/api/favorite-cost-codes/reorder", async (req, res) => {
+    try {
+      const updates = req.body.updates;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Updates must be an array" });
+      }
+
+      await storage.reorderFavoriteCostCodes(updates);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Failed to reorder favorite cost codes:", error);
+      res.status(500).json({ error: "Failed to reorder favorite cost codes" });
+    }
+  });
+
+  // ============================================
+  // IMPORT FROM ESTIMATE ROUTE
+  // ============================================
+
+  // Get estimate items for import
+  app.get("/api/purchase-orders/import/estimate-items/:estimateId", async (req, res) => {
+    try {
+      const estimateItems = await storage.getEstimateItems(req.params.estimateId);
+      res.json(estimateItems);
+    } catch (error) {
+      console.error("Failed to fetch estimate items for import:", error);
+      res.status(500).json({ error: "Failed to fetch estimate items" });
     }
   });
 

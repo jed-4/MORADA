@@ -74,6 +74,7 @@ import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
 import ProjectScope from "@/pages/ProjectScope";
 import ProjectTeam from "@/pages/ProjectTeam";
+import PurchaseOrders from "@/pages/PurchaseOrders";
 
 function Router() {
   const { user } = useAuth();
@@ -151,7 +152,9 @@ function Router() {
       <Route path="/projects/:projectId/allowances/:allowanceId" component={AllowanceDetail} />
       <Route path="/projects/:projectId/allowances" component={Allowances} />
       <Route path="/projects/:projectId/defects" component={Defects} />
-      <Route path="/projects/:projectId/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
+      <Route path="/projects/:projectId/purchase-orders" component={PurchaseOrders} />
+      <Route path="/projects/:projectId/purchase-orders/new" component={() => <ComingSoonPage section="purchase-order-detail" />} />
+      <Route path="/projects/:projectId/purchase-orders/:poId" component={() => <ComingSoonPage section="purchase-order-detail" />} />
       <Route path="/projects/:projectId/variations" component={Variations} />
       <Route path="/projects/:projectId/variations/new" component={VariationDetail} />
       <Route path="/projects/:projectId/variations/:variationId" component={VariationDetail} />
@@ -184,7 +187,9 @@ function Router() {
       <Route path="/selections" component={Selections} />
       <Route path="/selections/:id" component={SelectionDetail} />
       <Route path="/allowances" component={() => <ComingSoonPage section="allowances" />} />
-      <Route path="/purchase-orders" component={() => <ComingSoonPage section="purchase-orders" />} />
+      <Route path="/purchase-orders" component={PurchaseOrders} />
+      <Route path="/purchase-orders/new" component={() => <ComingSoonPage section="purchase-order-detail" />} />
+      <Route path="/purchase-orders/:id" component={() => <ComingSoonPage section="purchase-order-detail" />} />
       <Route path="/variations" component={Variations} />
       <Route path="/variations/new" component={VariationDetail} />
       <Route path="/variations/:id" component={VariationDetail} />

@@ -753,6 +753,7 @@ export interface IStorage {
 
   // Purchase Order Attachments CRUD
   getPurchaseOrderAttachments(purchaseOrderId: string): Promise<PurchaseOrderAttachment[]>;
+  getPurchaseOrderAttachment(id: string): Promise<PurchaseOrderAttachment | undefined>;
   createPurchaseOrderAttachment(attachment: InsertPurchaseOrderAttachment): Promise<PurchaseOrderAttachment>;
   deletePurchaseOrderAttachment(id: string): Promise<boolean>;
 
@@ -771,7 +772,7 @@ export interface IStorage {
   // Favorite Suppliers CRUD
   getFavoriteSuppliers(userId: string, companyId: string): Promise<FavoriteSupplier[]>;
   createFavoriteSupplier(supplier: InsertFavoriteSupplier): Promise<FavoriteSupplier>;
-  deleteFavoriteSupplier(id: string): Promise<boolean>;
+  deleteFavoriteSupplier(id: string, userId: string, companyId: string): Promise<boolean>;
   reorderFavoriteSuppliers(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
 
   // Favorite Cost Codes CRUD
@@ -12896,6 +12897,18 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getPurchaseOrderAttachment(id: string): Promise<PurchaseOrderAttachment | undefined> {
+    try {
+      const result = await db.select().from(schema.purchaseOrderAttachments)
+        .where(eq(schema.purchaseOrderAttachments.id, id))
+        .limit(1);
+      return result[0] as PurchaseOrderAttachment | undefined;
+    } catch (error) {
+      console.error("Database error in getPurchaseOrderAttachment:", error);
+      throw error;
+    }
+  }
+
   async createPurchaseOrderAttachment(attachment: InsertPurchaseOrderAttachment): Promise<PurchaseOrderAttachment> {
     try {
       const result = await db.insert(schema.purchaseOrderAttachments)
@@ -13071,11 +13084,18 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async deleteFavoriteSupplier(id: string): Promise<boolean> {
+  async deleteFavoriteSupplier(id: string, userId: string, companyId: string): Promise<boolean> {
     try {
-      await db.delete(schema.favoriteSuppliers)
-        .where(eq(schema.favoriteSuppliers.id, id));
-      return true;
+      const result = await db.delete(schema.favoriteSuppliers)
+        .where(
+          and(
+            eq(schema.favoriteSuppliers.id, id),
+            eq(schema.favoriteSuppliers.userId, userId),
+            eq(schema.favoriteSuppliers.companyId, companyId)
+          )
+        )
+        .returning();
+      return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteFavoriteSupplier:", error);
       throw error;
