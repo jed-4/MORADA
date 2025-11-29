@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -261,20 +261,9 @@ export default function PurchaseOrderDetail() {
 
   const rawPoId = params.id || params.poId;
   const projectIdFromUrl = params.projectId;
-  const isNewPO = rawPoId === "new";
   
-  // Track if we've attempted creation for this /new visit
-  const createAttemptedRef = useRef(false);
-  
-  // Derive poId from URL params only
-  const poId = isNewPO ? null : rawPoId;
-  
-  // Reset the creation attempt flag when URL changes away from /new
-  useEffect(() => {
-    if (!isNewPO) {
-      createAttemptedRef.current = false;
-    }
-  }, [rawPoId]);
+  // poId is always a real ID now - creation happens in PurchaseOrders.tsx before navigation
+  const poId = rawPoId;
 
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
@@ -300,42 +289,9 @@ export default function PurchaseOrderDetail() {
     })
   );
 
-  // Create new PO mutation
-  const createPoMutation = useMutation({
-    mutationFn: async (data: { projectId?: string; type: string }) => {
-      return apiRequest("POST", "/api/purchase-orders", data);
-    },
-    onSuccess: (newPO: PurchaseOrder) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      // Navigate to the new PO URL (SPA navigation)
-      const basePath = projectIdFromUrl
-        ? `/projects/${projectIdFromUrl}/purchase-orders/${newPO.id}`
-        : `/purchase-orders/${newPO.id}`;
-      setLocation(basePath);
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error creating purchase order",
-        description: error.message || "Failed to create purchase order",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Auto-create PO when navigating to /new - runs exactly once per visit
-  useEffect(() => {
-    if (isNewPO && !createAttemptedRef.current) {
-      createAttemptedRef.current = true;
-      createPoMutation.mutate({
-        projectId: projectIdFromUrl || undefined,
-        type: "main",
-      });
-    }
-  }, [isNewPO, projectIdFromUrl]);
-
   const { data: purchaseOrder, isLoading: poLoading } = useQuery<PurchaseOrder>({
     queryKey: ["/api/purchase-orders", poId],
-    enabled: !!poId, // Enable when we have a valid poId (either from URL or created)
+    enabled: !!poId,
     retry: false,
   });
 
@@ -552,60 +508,6 @@ export default function PurchaseOrderDetail() {
   };
 
   const isLocked = purchaseOrder?.status !== "draft";
-
-  // Show error state if creation failed
-  if (isNewPO && createPoMutation.isError) {
-    const listPath = projectIdFromUrl
-      ? `/projects/${projectIdFromUrl}/purchase-orders`
-      : "/purchase-orders";
-    
-    const handleRetry = () => {
-      createPoMutation.mutate({
-        projectId: projectIdFromUrl || undefined,
-        type: "main",
-      });
-    };
-    
-    const handleBackToList = () => {
-      createAttemptedRef.current = false;
-      setLocation(listPath);
-    };
-    
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <AlertCircle className="w-8 h-8 text-destructive" />
-        <p className="text-muted-foreground">Failed to create purchase order</p>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleBackToList}>
-            Back to Purchase Orders
-          </Button>
-          <Button onClick={handleRetry}>
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading while creating new PO
-  if (isNewPO && createPoMutation.isPending) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        <p className="text-muted-foreground">Creating purchase order...</p>
-      </div>
-    );
-  }
-  
-  // Show loading while waiting for mutation to start (brief moment after navigation)
-  if (isNewPO && !createPoMutation.isPending && !createPoMutation.isError && !createPoMutation.isSuccess) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        <p className="text-muted-foreground">Creating purchase order...</p>
-      </div>
-    );
-  }
 
   if (poLoading) {
     return (

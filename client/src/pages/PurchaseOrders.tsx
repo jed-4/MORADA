@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Plus, 
   Search, 
@@ -15,7 +17,8 @@ import {
   Copy,
   Trash2,
   Building2,
-  Hammer
+  Hammer,
+  Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -74,6 +77,8 @@ export default function PurchaseOrders() {
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId;
   const isProjectContext = !!projectIdFromUrl;
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<POType>("all");
@@ -86,6 +91,28 @@ export default function PurchaseOrders() {
       setSelectedProjectId(projectIdFromUrl);
     }
   }, [projectIdFromUrl]);
+
+  // Create new PO mutation - creates the PO first, then navigates to it
+  const createPoMutation = useMutation({
+    mutationFn: async (data: { projectId?: string; type: string }) => {
+      return apiRequest("POST", "/api/purchase-orders", data);
+    },
+    onSuccess: (newPO: PurchaseOrder) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      // Navigate to the newly created PO
+      const basePath = isProjectContext
+        ? `/projects/${projectIdFromUrl}/purchase-orders/${newPO.id}`
+        : `/purchase-orders/${newPO.id}`;
+      setLocation(basePath);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error creating purchase order",
+        description: error.message || "Failed to create purchase order",
+        variant: "destructive",
+      });
+    },
+  });
 
   const queryParams: Record<string, string> = {};
   if (selectedProjectId) {
@@ -190,10 +217,11 @@ export default function PurchaseOrders() {
   }, [filteredPOs]);
 
   const handleNewPO = () => {
-    const basePath = isProjectContext 
-      ? `/projects/${projectIdFromUrl}/purchase-orders/new`
-      : "/purchase-orders/new";
-    setLocation(basePath);
+    // Create the PO first, then navigate on success (handled in mutation's onSuccess)
+    createPoMutation.mutate({
+      projectId: projectIdFromUrl || undefined,
+      type: "main",
+    });
   };
 
   const handleRowClick = (poId: string) => {
@@ -230,11 +258,16 @@ export default function PurchaseOrders() {
 
         <button
           onClick={handleNewPO}
-          className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+          disabled={createPoMutation.isPending}
+          className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
           data-testid="button-new-po"
         >
-          <Plus className="w-3 h-3" />
-          <span>New PO</span>
+          {createPoMutation.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Plus className="w-3 h-3" />
+          )}
+          <span>{createPoMutation.isPending ? "Creating..." : "New PO"}</span>
         </button>
       </div>
 
@@ -393,12 +426,17 @@ export default function PurchaseOrders() {
             {!searchTerm && selectedStatus === "all" && selectedType === "all" && (
               <Button
                 onClick={handleNewPO}
+                disabled={createPoMutation.isPending}
                 className="bg-[#bba7db] hover:bg-[#bba7db]/90"
                 size="sm"
                 data-testid="button-empty-new-po"
               >
-                <Plus className="w-4 h-4 mr-2" />
-                New Purchase Order
+                {createPoMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                {createPoMutation.isPending ? "Creating..." : "New Purchase Order"}
               </Button>
             )}
           </div>
