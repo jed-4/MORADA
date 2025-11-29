@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation, useParams } from "wouter";
@@ -23,6 +23,7 @@ import {
   Check,
   GripVertical
 } from "lucide-react";
+import { Card } from "@/components/ui/card";
 import {
   DndContext,
   closestCenter,
@@ -99,21 +100,54 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 type POType = "all" | "main" | "site";
 
-type ColumnKey = "poNumber" | "type" | "project" | "supplier" | "description" | "date" | "status" | "amount";
+type ColumnKey = "poNumber" | "name" | "type" | "project" | "supplier" | "date" | "status" | "amount";
 
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
-  "poNumber", "type", "project", "supplier", "description", "date", "status", "amount"
+  "poNumber", "name", "type", "project", "supplier", "date", "status", "amount"
 ];
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
   poNumber: "PO Number",
+  name: "Name",
   type: "Type",
   project: "Project",
   supplier: "Supplier",
-  description: "Description",
   date: "Date",
   status: "Status",
   amount: "Amount",
+};
+
+const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  poNumber: 110,
+  name: 180,
+  type: 90,
+  project: 160,
+  supplier: 160,
+  date: 100,
+  status: 100,
+  amount: 110,
+};
+
+const MIN_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  poNumber: 80,
+  name: 100,
+  type: 70,
+  project: 100,
+  supplier: 100,
+  date: 80,
+  status: 80,
+  amount: 80,
+};
+
+const MAX_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  poNumber: 200,
+  name: 400,
+  type: 150,
+  project: 300,
+  supplier: 300,
+  date: 150,
+  status: 150,
+  amount: 180,
 };
 
 function getDefaultColumnVisibility(): Record<ColumnKey, boolean> {
@@ -126,6 +160,7 @@ function getDefaultColumnVisibility(): Record<ColumnKey, boolean> {
 interface ColumnPreferences {
   visibility: Record<ColumnKey, boolean>;
   order: ColumnKey[];
+  widths: Record<ColumnKey, number>;
 }
 
 function loadColumnPreferences(): ColumnPreferences {
@@ -133,9 +168,15 @@ function loadColumnPreferences(): ColumnPreferences {
     const saved = localStorage.getItem("po-column-preferences");
     if (saved) {
       const parsed = JSON.parse(saved);
+      // Ensure all columns are present (handles new columns being added)
+      const order = parsed.order?.filter((k: string) => DEFAULT_COLUMN_ORDER.includes(k as ColumnKey)) || [];
+      DEFAULT_COLUMN_ORDER.forEach(k => {
+        if (!order.includes(k)) order.push(k);
+      });
       return {
         visibility: { ...getDefaultColumnVisibility(), ...parsed.visibility },
-        order: parsed.order?.length === DEFAULT_COLUMN_ORDER.length ? parsed.order : DEFAULT_COLUMN_ORDER,
+        order: order.length === DEFAULT_COLUMN_ORDER.length ? order : DEFAULT_COLUMN_ORDER,
+        widths: { ...DEFAULT_COLUMN_WIDTHS, ...parsed.widths },
       };
     }
   } catch (e) {
@@ -144,6 +185,7 @@ function loadColumnPreferences(): ColumnPreferences {
   return {
     visibility: getDefaultColumnVisibility(),
     order: DEFAULT_COLUMN_ORDER,
+    widths: { ...DEFAULT_COLUMN_WIDTHS },
   };
 }
 
@@ -228,6 +270,10 @@ export default function PurchaseOrders() {
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [newPOProjectId, setNewPOProjectId] = useState<string>("");
   const [columnPrefs, setColumnPrefs] = useState<ColumnPreferences>(loadColumnPreferences);
+  
+  // Column resize state
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStateRef = useRef<{ columnId: ColumnKey; startX: number; startWidth: number } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -262,6 +308,64 @@ export default function PurchaseOrders() {
       });
     }
   };
+
+  // Column resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent, columnId: ColumnKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const currentWidth = columnPrefs.widths[columnId] || DEFAULT_COLUMN_WIDTHS[columnId];
+    resizeStateRef.current = {
+      columnId,
+      startX: e.clientX,
+      startWidth: currentWidth,
+    };
+    setIsResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [columnPrefs.widths]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeStateRef.current) return;
+      
+      const { columnId, startX, startWidth } = resizeStateRef.current;
+      const delta = e.clientX - startX;
+      const minWidth = MIN_COLUMN_WIDTHS[columnId];
+      const maxWidth = MAX_COLUMN_WIDTHS[columnId];
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + delta));
+      
+      setColumnPrefs(prev => ({
+        ...prev,
+        widths: { ...prev.widths, [columnId]: newWidth },
+      }));
+    };
+
+    const handleMouseUp = () => {
+      if (resizeStateRef.current) {
+        resizeStateRef.current = null;
+        setIsResizing(false);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        
+        // Save after resize ends
+        setColumnPrefs(prev => {
+          saveColumnPreferences(prev);
+          return prev;
+        });
+      }
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   const hiddenColumnCount = useMemo(() => {
     return DEFAULT_COLUMN_ORDER.filter(key => !columnPrefs.visibility[key]).length;
@@ -349,6 +453,7 @@ export default function PurchaseOrders() {
         const supplier = po.supplierId ? suppliersMap.get(po.supplierId) : null;
         return (
           po.poNumber?.toLowerCase().includes(term) ||
+          po.title?.toLowerCase().includes(term) ||
           po.description?.toLowerCase().includes(term) ||
           project?.name?.toLowerCase().includes(term) ||
           supplier?.name?.toLowerCase().includes(term)
@@ -653,7 +758,7 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Table Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto p-3">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-muted-foreground">Loading purchase orders...</div>
@@ -687,150 +792,159 @@ export default function PurchaseOrders() {
             )}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50 dark:bg-gray-900">
-                {columnPrefs.order.map((key) => {
-                  if (!columnPrefs.visibility[key]) return null;
-                  switch (key) {
-                    case "poNumber":
-                      return <TableHead key={key} className="w-[100px] text-xs font-medium">PO Number</TableHead>;
-                    case "type":
-                      return <TableHead key={key} className="w-[80px] text-xs font-medium">Type</TableHead>;
-                    case "project":
-                      return <TableHead key={key} className="text-xs font-medium">Project</TableHead>;
-                    case "supplier":
-                      return <TableHead key={key} className="text-xs font-medium">Supplier</TableHead>;
-                    case "description":
-                      return <TableHead key={key} className="text-xs font-medium">Description</TableHead>;
-                    case "date":
-                      return <TableHead key={key} className="w-[100px] text-xs font-medium">Date</TableHead>;
-                    case "status":
-                      return <TableHead key={key} className="w-[100px] text-xs font-medium">Status</TableHead>;
-                    case "amount":
-                      return <TableHead key={key} className="w-[100px] text-xs font-medium text-right">Amount</TableHead>;
-                    default:
-                      return null;
-                  }
-                })}
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredPOs.map((po) => {
-                const project = po.projectId ? projectsMap.get(po.projectId) : null;
-                const supplier = po.supplierId ? suppliersMap.get(po.supplierId) : null;
-                const statusStyle = STATUS_COLORS[po.status] || STATUS_COLORS.draft;
-
-                return (
-                  <TableRow 
-                    key={po.id} 
-                    className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900"
-                    onClick={() => handleRowClick(po.id)}
-                    data-testid={`po-row-${po.id}`}
-                  >
+          <Card className="border-2 overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/50 dark:bg-gray-900/50 border-b-2 border-[#bba7db]/20">
                     {columnPrefs.order.map((key) => {
                       if (!columnPrefs.visibility[key]) return null;
-                      switch (key) {
-                        case "poNumber":
-                          return (
-                            <TableCell key={key} className="text-xs font-medium text-[#bba7db]">
-                              {po.poNumber}
-                            </TableCell>
-                          );
-                        case "type":
-                          return (
-                            <TableCell key={key}>
-                              <Badge 
-                                variant="outline" 
-                                className={`text-[10px] ${
-                                  po.poType === "site" 
-                                    ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
-                                    : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
-                                }`}
-                              >
-                                {po.poType === "site" ? "Site" : "Standard"}
-                              </Badge>
-                            </TableCell>
-                          );
-                        case "project":
-                          return (
-                            <TableCell key={key} className="text-xs">
-                              {project?.name || <span className="text-muted-foreground">-</span>}
-                            </TableCell>
-                          );
-                        case "supplier":
-                          return (
-                            <TableCell key={key} className="text-xs">
-                              {supplier?.name || <span className="text-muted-foreground">-</span>}
-                            </TableCell>
-                          );
-                        case "description":
-                          return (
-                            <TableCell key={key} className="text-xs max-w-[200px] truncate">
-                              {po.description || <span className="text-muted-foreground">-</span>}
-                            </TableCell>
-                          );
-                        case "date":
-                          return (
-                            <TableCell key={key} className="text-xs text-muted-foreground">
-                              {po.createdAt ? format(new Date(po.createdAt), "dd MMM yyyy") : "-"}
-                            </TableCell>
-                          );
-                        case "status":
-                          return (
-                            <TableCell key={key}>
-                              <Badge 
-                                variant="secondary" 
-                                className={`text-[10px] capitalize ${statusStyle.bg} ${statusStyle.text}`}
-                              >
-                                {po.status}
-                              </Badge>
-                            </TableCell>
-                          );
-                        case "amount":
-                          return (
-                            <TableCell key={key} className="text-xs text-right font-medium">
-                              {formatCurrency(po.totalAmountCents || 0)}
-                            </TableCell>
-                          );
-                        default:
-                          return null;
-                      }
+                      const width = columnPrefs.widths[key] || DEFAULT_COLUMN_WIDTHS[key];
+                      const isLast = columnPrefs.order.filter(k => columnPrefs.visibility[k]).indexOf(key) === 
+                        columnPrefs.order.filter(k => columnPrefs.visibility[k]).length - 1;
+                      return (
+                        <TableHead 
+                          key={key} 
+                          className="text-xs font-semibold uppercase tracking-wide text-muted-foreground relative group"
+                          style={{ width: `${width}px`, minWidth: `${MIN_COLUMN_WIDTHS[key]}px` }}
+                        >
+                          <div className={`flex items-center ${key === "amount" ? "justify-end" : ""}`}>
+                            {COLUMN_LABELS[key]}
+                          </div>
+                          {!isLast && (
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#bba7db]/50 group-hover:bg-[#bba7db]/20 transition-colors"
+                              onMouseDown={(e) => handleResizeStart(e, key)}
+                              data-testid={`resize-handle-${key}`}
+                            />
+                          )}
+                        </TableHead>
+                      );
                     })}
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6">
-                            <MoreHorizontal className="w-3 h-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleRowClick(po.id)}>
-                            <ExternalLink className="w-4 h-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Send className="w-4 h-4 mr-2" />
-                            Send to Supplier
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Copy className="w-4 h-4 mr-2" />
-                            Duplicate
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-red-600">
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+                    <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredPOs.map((po, index) => {
+                    const project = po.projectId ? projectsMap.get(po.projectId) : null;
+                    const supplier = po.supplierId ? suppliersMap.get(po.supplierId) : null;
+                    const statusStyle = STATUS_COLORS[po.status] || STATUS_COLORS.draft;
+                    const isEven = index % 2 === 0;
+
+                    return (
+                      <TableRow 
+                        key={po.id} 
+                        className={`cursor-pointer hover-elevate transition-colors ${
+                          isEven ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
+                        }`}
+                        onClick={() => handleRowClick(po.id)}
+                        data-testid={`po-row-${po.id}`}
+                      >
+                        {columnPrefs.order.map((key) => {
+                          if (!columnPrefs.visibility[key]) return null;
+                          const width = columnPrefs.widths[key] || DEFAULT_COLUMN_WIDTHS[key];
+                          switch (key) {
+                            case "poNumber":
+                              return (
+                                <TableCell key={key} className="text-xs font-medium text-[#bba7db]" style={{ width: `${width}px` }}>
+                                  {po.poNumber}
+                                </TableCell>
+                              );
+                            case "name":
+                              return (
+                                <TableCell key={key} className="text-xs font-medium truncate" style={{ width: `${width}px`, maxWidth: `${width}px` }}>
+                                  {po.title || <span className="text-muted-foreground italic">Untitled</span>}
+                                </TableCell>
+                              );
+                            case "type":
+                              return (
+                                <TableCell key={key} style={{ width: `${width}px` }}>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`text-[10px] uppercase font-medium ${
+                                      po.poType === "site" 
+                                        ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
+                                        : "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                                    }`}
+                                  >
+                                    {po.poType === "site" ? "Site" : "Std"}
+                                  </Badge>
+                                </TableCell>
+                              );
+                            case "project":
+                              return (
+                                <TableCell key={key} className="text-xs truncate" style={{ width: `${width}px`, maxWidth: `${width}px` }}>
+                                  {project?.name || <span className="text-muted-foreground">-</span>}
+                                </TableCell>
+                              );
+                            case "supplier":
+                              return (
+                                <TableCell key={key} className="text-xs truncate" style={{ width: `${width}px`, maxWidth: `${width}px` }}>
+                                  {supplier?.name || <span className="text-muted-foreground">-</span>}
+                                </TableCell>
+                              );
+                            case "date":
+                              return (
+                                <TableCell key={key} className="text-xs text-muted-foreground" style={{ width: `${width}px` }}>
+                                  {po.poDate ? format(new Date(po.poDate), "dd MMM yyyy") : "-"}
+                                </TableCell>
+                              );
+                            case "status":
+                              return (
+                                <TableCell key={key} style={{ width: `${width}px` }}>
+                                  <Badge 
+                                    variant="secondary" 
+                                    className={`text-[10px] uppercase font-medium ${statusStyle.bg} ${statusStyle.text}`}
+                                  >
+                                    {po.status}
+                                  </Badge>
+                                </TableCell>
+                              );
+                            case "amount":
+                              return (
+                                <TableCell key={key} className="text-xs text-right font-semibold tabular-nums" style={{ width: `${width}px` }}>
+                                  {formatCurrency(po.totalAmountCents || 0)}
+                                </TableCell>
+                              );
+                            default:
+                              return null;
+                          }
+                        })}
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6">
+                                <MoreHorizontal className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleRowClick(po.id)}>
+                                <ExternalLink className="w-4 h-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <Send className="w-4 h-4 mr-2" />
+                                Send to Supplier
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <Copy className="w-4 h-4 mr-2" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-red-600">
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
         )}
       </div>
 
