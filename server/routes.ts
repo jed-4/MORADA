@@ -5934,7 +5934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Reorder purchase order items
+  // Reorder purchase order items (accepts array of item IDs in order)
   app.post("/api/purchase-orders/:poId/items/reorder", async (req, res) => {
     try {
       if (!req.user?.companyId) {
@@ -5944,16 +5944,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Purchase order not found" });
       }
 
-      const updates = req.body.updates;
-      if (!Array.isArray(updates)) {
-        return res.status(400).json({ error: "Updates must be an array" });
+      // Handle both formats: {updates: [...]} and {itemIds: [...]}
+      const itemIds = req.body.itemIds || req.body.updates?.map((u: any) => u.id);
+      if (!Array.isArray(itemIds)) {
+        return res.status(400).json({ error: "itemIds must be an array" });
       }
+
+      const updates = itemIds.map((id: string, index: number) => ({
+        id,
+        displayOrder: index,
+      }));
 
       await storage.reorderPurchaseOrderItems(updates);
       res.status(200).json({ success: true });
     } catch (error) {
       console.error("Failed to reorder purchase order items:", error);
       res.status(500).json({ error: "Failed to reorder purchase order items" });
+    }
+  });
+
+  // Update specific purchase order item (nested route)
+  app.patch("/api/purchase-orders/:poId/items/:itemId", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      // Verify item belongs to this PO
+      const existingItem = await storage.getPurchaseOrderItem(req.params.itemId);
+      if (!existingItem || existingItem.purchaseOrderId !== req.params.poId) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+
+      const validationResult = insertPurchaseOrderItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updatePurchaseOrderItem(req.params.itemId, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Failed to update purchase order item:", error);
+      res.status(500).json({ error: "Failed to update purchase order item" });
+    }
+  });
+
+  // Delete specific purchase order item (nested route)
+  app.delete("/api/purchase-orders/:poId/items/:itemId", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!await verifyPOOwnership(req.params.poId, req.user.companyId)) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      // Verify item belongs to this PO
+      const existingItem = await storage.getPurchaseOrderItem(req.params.itemId);
+      if (!existingItem || existingItem.purchaseOrderId !== req.params.poId) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+
+      const deleted = await storage.deletePurchaseOrderItem(req.params.itemId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Purchase order item not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete purchase order item:", error);
+      res.status(500).json({ error: "Failed to delete purchase order item" });
     }
   });
 
