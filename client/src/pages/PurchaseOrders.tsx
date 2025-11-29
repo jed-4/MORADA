@@ -95,7 +95,7 @@ export default function PurchaseOrders() {
   // Create new PO mutation - creates the PO first, then navigates to it
   const createPoMutation = useMutation({
     mutationFn: async (data: { projectId?: string; type: string }) => {
-      return apiRequest("POST", "/api/purchase-orders", data);
+      return apiRequest("/api/purchase-orders", "POST", data);
     },
     onSuccess: (newPO: PurchaseOrder) => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
