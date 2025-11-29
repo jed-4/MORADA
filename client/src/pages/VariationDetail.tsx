@@ -572,139 +572,205 @@ export default function VariationDetail() {
 
   return (
     <div className="flex h-full flex-col" data-testid="page-variation-detail">
-      <div className="border-b border-border p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="sm" 
+      <div className="flex-none border-b bg-background">
+        <div className="h-12 px-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleCancel}
               data-testid="button-back"
             >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Variations
+              <ArrowLeft className="w-4 h-4" />
             </Button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-                  {isEditMode ? form.watch("variationNumber") : "New Variation"}
-                </h1>
-                {isEditMode && variation?.status && getStatusBadge(variation.status)}
-              </div>
-              {projectName && (
-                <p className="text-sm text-muted-foreground" data-testid="text-project-name">
-                  {projectName}
-                </p>
-              )}
+
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold" data-testid="text-page-title">
+                {isEditMode ? form.watch("variationNumber") : "New Variation"}
+              </h1>
+              {isEditMode && variation?.status && getStatusBadge(variation.status)}
             </div>
+            
+            {projectName && (
+              <span className="text-sm text-muted-foreground" data-testid="text-project-name">
+                {projectName}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isEditMode && variationLoading && (
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            )}
+            {isEditMode && variation?.status === "draft" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => moveToActionMutation.mutate()}
+                disabled={moveToActionMutation.isPending}
+                data-testid="button-move-to-action"
+              >
+                {moveToActionMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                ) : (
+                  <Send className="w-4 h-4 mr-1" />
+                )}
+                Move to Action
+              </Button>
+            )}
+            {isEditMode && variation?.status === "action" && (
+              <Button
+                type="button"
+                size="sm"
+                className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                onClick={() => sendForApprovalMutation.mutate()}
+                disabled={sendForApprovalMutation.isPending}
+                data-testid="button-send-for-approval"
+              >
+                {sendForApprovalMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                ) : (
+                  <Send className="w-4 h-4 mr-1" />
+                )}
+                Send for Approval
+              </Button>
+            )}
+            {isEditMode && variation?.status === "pending" && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejectDialogOpen(true)}
+                  disabled={rejectMutation.isPending}
+                  data-testid="button-reject"
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  Reject
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-600/90 text-white"
+                  onClick={() => setApproveDialogOpen(true)}
+                  disabled={approveMutation.isPending}
+                  data-testid="button-approve"
+                >
+                  <Check className="w-4 h-4 mr-1" />
+                  Approve
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-auto">
-        <div className="p-6 max-w-6xl mx-auto">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <Card>
-                <CardContent className="pt-6 space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name *</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="Enter variation name" 
-                            {...field} 
-                            data-testid="input-name"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="max-w-7xl mx-auto p-6 grid grid-cols-3 gap-6">
+          <div className="col-span-2">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <Card>
+                  <CardContent className="pt-6 space-y-4">
                     <FormField
                       control={form.control}
-                      name="approvalDeadline"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel>Approval Deadline</FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "justify-start text-left font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                  data-testid="button-approval-deadline"
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value ? format(field.value, "PPP") : "Pick a date"}
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                                data-testid="calendar-approval-deadline"
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="daysChanged"
+                      name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Days Changed</FormLabel>
+                          <FormLabel>Name *</FormLabel>
                           <FormControl>
                             <Input 
-                              type="number" 
-                              placeholder="0" 
-                              {...field}
-                              onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
-                              value={field.value || ""}
-                              data-testid="input-days-changed"
+                              placeholder="Enter variation name" 
+                              {...field} 
+                              data-testid="input-name"
                             />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  </div>
 
-                  <FormField
-                    control={form.control}
-                    name="introductionText"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Introduction Text</FormLabel>
-                        <FormControl>
-                          <Textarea 
-                            placeholder="Enter introduction text" 
-                            className="resize-none min-h-[100px]"
-                            {...field} 
-                            data-testid="textarea-introduction"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="approvalDeadline"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-col">
+                            <FormLabel>Approval Deadline</FormLabel>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <FormControl>
+                                  <Button
+                                    variant="outline"
+                                    className={cn(
+                                      "justify-start text-left font-normal",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                    data-testid="button-approval-deadline"
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                  </Button>
+                                </FormControl>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={field.value}
+                                  onSelect={field.onChange}
+                                  initialFocus
+                                  data-testid="calendar-approval-deadline"
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="daysChanged"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Days Changed</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                placeholder="0" 
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                value={field.value || ""}
+                                data-testid="input-days-changed"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="introductionText"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Introduction Text</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Enter introduction text" 
+                              className="resize-none min-h-[80px]"
+                              {...field} 
+                              data-testid="textarea-introduction"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
 
               <Card>
                 <CardContent className="pt-6">
@@ -794,28 +860,6 @@ export default function VariationDetail() {
                       </div>
                     )}
 
-                    {costLines.length > 0 && (
-                      <div className="space-y-2 pt-4 border-t">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
-                          <span className="font-medium" data-testid="text-subtotal">
-                            {formatCurrency(calculateSubtotal())}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
-                          <span className="font-medium" data-testid="text-gst">
-                            {formatCurrency(calculateGST())}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                          <span data-testid="text-label-total">Total</span>
-                          <span data-testid="text-total">
-                            {formatCurrency(calculateTotal())}
-                          </span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -831,7 +875,7 @@ export default function VariationDetail() {
                         <FormControl>
                           <Textarea 
                             placeholder="Enter closing text" 
-                            className="resize-none min-h-[100px]"
+                            className="resize-none min-h-[80px]"
                             {...field} 
                             data-testid="textarea-closing"
                           />
@@ -846,7 +890,7 @@ export default function VariationDetail() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="space-y-4">
-                    <h3 className="text-lg font-medium" data-testid="text-attachments-title">Attachments</h3>
+                    <h3 className="text-base font-medium" data-testid="text-attachments-title">Attachments</h3>
                     <div className="text-center py-8 border rounded-lg border-dashed" data-testid="attachments-stub">
                       <p className="text-muted-foreground text-sm">Attachments section coming soon</p>
                     </div>
@@ -854,7 +898,7 @@ export default function VariationDetail() {
                 </CardContent>
               </Card>
 
-              <div className="flex justify-between items-center gap-3 pb-6">
+              <div className="flex justify-end items-center gap-3 pb-6">
                 <Button
                   type="button"
                   variant="outline"
@@ -863,87 +907,79 @@ export default function VariationDetail() {
                 >
                   Cancel
                 </Button>
-                <div className="flex items-center gap-3">
-                  {isEditMode && variation?.status === "draft" && (
-                    <Button
-                      type="button"
-                      variant="default"
-                      onClick={() => moveToActionMutation.mutate()}
-                      disabled={moveToActionMutation.isPending}
-                      data-testid="button-move-to-action"
-                    >
-                      {moveToActionMutation.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Moving...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="mr-2 h-4 w-4" />
-                          Move to Action
-                        </>
-                      )}
-                    </Button>
+                <Button
+                  type="submit"
+                  className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-save"
+                >
+                  {(createMutation.isPending || updateMutation.isPending) && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  {isEditMode && variation?.status === "action" && (
-                    <Button
-                      type="button"
-                      variant="default"
-                      onClick={() => sendForApprovalMutation.mutate()}
-                      disabled={sendForApprovalMutation.isPending}
-                      data-testid="button-send-for-approval"
-                    >
-                      {sendForApprovalMutation.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Sending...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="mr-2 h-4 w-4" />
-                          Send for Approval
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {isEditMode && variation?.status === "pending" && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={() => setRejectDialogOpen(true)}
-                        disabled={rejectMutation.isPending}
-                        data-testid="button-reject"
-                      >
-                        <X className="mr-2 h-4 w-4" />
-                        Reject
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="default"
-                        onClick={() => setApproveDialogOpen(true)}
-                        disabled={approveMutation.isPending}
-                        data-testid="button-approve"
-                      >
-                        <Check className="mr-2 h-4 w-4" />
-                        Approve
-                      </Button>
-                    </>
-                  )}
-                  <Button
-                    type="submit"
-                    disabled={createMutation.isPending || updateMutation.isPending}
-                    data-testid="button-save"
-                  >
-                    {(createMutation.isPending || updateMutation.isPending) && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {isEditMode ? "Save" : "Save"}
-                  </Button>
-                </div>
+                  {isEditMode ? "Save Changes" : "Create Variation"}
+                </Button>
               </div>
-            </form>
-          </Form>
+              </form>
+            </Form>
+          </div>
+
+          <div className="col-span-1">
+            <div className="sticky top-6 space-y-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <h3 className="text-base font-medium mb-4">Summary</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
+                      <span className="font-medium" data-testid="text-subtotal">
+                        {formatCurrency(calculateSubtotal())}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
+                      <span className="font-medium" data-testid="text-gst">
+                        {formatCurrency(calculateGST())}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-lg font-semibold pt-3 border-t">
+                      <span data-testid="text-label-total">Total</span>
+                      <span className="text-[#bba7db]" data-testid="text-total">
+                        {formatCurrency(calculateTotal())}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {isEditMode && variation?.daysChanged && variation.daysChanged !== 0 && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="text-base font-medium mb-4">Schedule Impact</h3>
+                    <div className="flex items-center gap-2">
+                      <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm">
+                        {variation.daysChanged > 0 ? "+" : ""}{variation.daysChanged} day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {isEditMode && variation?.approvalDeadline && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="text-base font-medium mb-4">Deadline</h3>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm">
+                        {format(new Date(variation.approvalDeadline), "PPP")}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

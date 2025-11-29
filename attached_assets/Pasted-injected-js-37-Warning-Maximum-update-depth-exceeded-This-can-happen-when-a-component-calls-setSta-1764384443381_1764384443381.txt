@@ -1,0 +1,20 @@
+injected.js:37 Warning: Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render.
+    at PurchaseOrderDetail (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/pages/PurchaseOrderDetail.tsx:349:18)
+    at Route (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:206:16)
+    at Switch (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ae993647:262:17)
+    at Router (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=W_q-LJQlCu3z9B2rEgR7I:93:20)
+    at main
+    at div
+    at div
+    at div
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at SidebarProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at SocketProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/lib/socket.tsx:22:34)
+    at ProjectProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ProjectContext.tsx:25:35)
+    at ThemeProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/contexts/ThemeContext.tsx:25:3)
+    at Provider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2M7HY3UG.js?v=ae993647:38:15)
+    at TooltipProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=ae993647:64:5)
+    at AuthWrapper (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/src/App.tsx?v=W_q-LJQlCu3z9B2rEgR7I:826:48)
+    at QueryClientProvider (https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ae993647:2805:3)
+    at App

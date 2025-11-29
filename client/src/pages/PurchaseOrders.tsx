@@ -391,26 +391,15 @@ export default function PurchaseOrders() {
                 : "Create your first purchase order to start tracking orders to suppliers."}
             </p>
             {!searchTerm && selectedStatus === "all" && selectedType === "all" && (
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => handleNewPO("main")}
-                  className="bg-[#bba7db] hover:bg-[#bba7db]/90"
-                  size="sm"
-                  data-testid="button-empty-new-main-po"
-                >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  Standard PO
-                </Button>
-                <Button
-                  onClick={() => handleNewPO("site")}
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-empty-new-site-po"
-                >
-                  <Hammer className="w-4 h-4 mr-2" />
-                  Site PO
-                </Button>
-              </div>
+              <Button
+                onClick={handleNewPO}
+                className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+                size="sm"
+                data-testid="button-empty-new-po"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Purchase Order
+              </Button>
             )}
           </div>
         ) : (
