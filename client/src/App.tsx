@@ -37,6 +37,7 @@ import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
 import ScopeTemplates from "@/pages/ScopeTemplates";
 import ChecklistTemplates from "@/pages/ChecklistTemplates";
+import NoteTemplates from "@/pages/NoteTemplates";
 import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
 import CostCodes from "@/pages/CostCodes";
 import Contacts from "@/pages/Contacts";
@@ -209,6 +210,7 @@ function Router() {
 
       {/* Business sections - Coming Soon */}
       <Route path="/templates" component={Templates} />
+      <Route path="/note-templates" component={NoteTemplates} />
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
       <Route path="/scope-templates" component={ScopeTemplates} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />

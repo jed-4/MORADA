@@ -22,7 +22,7 @@ const templateTypes = [
     title: "Notes",
     description: "Create reusable note templates with custom fields",
     icon: FileText,
-    url: "/systems?tab=notes",
+    url: "/note-templates",
     color: "text-blue-500",
     implemented: true,
   },
