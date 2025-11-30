@@ -43,7 +43,9 @@ import {
   Plus,
   GripVertical,
   Pencil,
+  Bell,
 } from "lucide-react";
+import { SetReminderDialog } from "@/components/SetReminderDialog";
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -77,6 +79,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   const [titleValue, setTitleValue] = useState(task?.title || "");
   const [isRepeatsOpen, setIsRepeatsOpen] = useState(false);
   const [subtaskInput, setSubtaskInput] = useState("");
+  const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -345,6 +348,16 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="bg-white border-gray-200">
+                {task && (
+                  <DropdownMenuItem 
+                    className="text-gray-900 hover:bg-gray-50"
+                    onClick={() => setShowReminderDialog(true)}
+                    data-testid="menu-item-set-reminder"
+                  >
+                    <Bell className="h-4 w-4 mr-2" />
+                    Set Reminder
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem className="text-gray-900 hover:bg-gray-50">Duplicate</DropdownMenuItem>
                 <DropdownMenuItem className="text-gray-900 hover:bg-gray-50">Delete</DropdownMenuItem>
               </DropdownMenuContent>
@@ -667,6 +680,16 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
           </div>
         </div>
       </DialogContent>
+
+      {/* Set Reminder Dialog */}
+      <SetReminderDialog
+        open={showReminderDialog}
+        onOpenChange={setShowReminderDialog}
+        linkedItemType="task"
+        linkedItemId={task?.id}
+        linkedItemTitle={task?.title}
+        projectId={projectId || task?.projectId}
+      />
     </Dialog>
   );
 }

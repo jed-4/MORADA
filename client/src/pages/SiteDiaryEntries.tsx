@@ -43,8 +43,10 @@ import {
   User,
   Cloud,
   Thermometer,
-  ChevronDown
+  ChevronDown,
+  Bell
 } from "lucide-react";
+import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { format } from "date-fns";
 import type { 
   Project, 
@@ -305,6 +307,7 @@ export default function SiteDiaryEntries() {
 }
 
 function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
+  const [showReminderDialog, setShowReminderDialog] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
   
   const getWeatherDisplay = () => {
@@ -392,6 +395,10 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowReminderDialog(true)} data-testid={`entry-set-reminder-${entry.id}`}>
+                <Bell className="h-4 w-4 mr-2" />
+                Set Reminder
+              </DropdownMenuItem>
               <DropdownMenuItem className="text-destructive" data-testid={`entry-delete-${entry.id}`}>
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
@@ -400,6 +407,16 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Set Reminder Dialog */}
+      <SetReminderDialog
+        open={showReminderDialog}
+        onOpenChange={setShowReminderDialog}
+        linkedItemType="site_diary"
+        linkedItemId={entry.id}
+        linkedItemTitle={entry.title}
+        projectId={entry.projectId}
+      />
     </div>
   );
 }

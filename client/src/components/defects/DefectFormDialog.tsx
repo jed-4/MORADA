@@ -37,7 +37,8 @@ import { useDefectStatusOptions } from "@/hooks/useDefectStatusOptions";
 import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
 import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
 import { useDefectTradeOptions } from "@/hooks/useDefectTradeOptions";
-import { Upload, X, Image as ImageIcon } from "lucide-react";
+import { Upload, X, Image as ImageIcon, Bell } from "lucide-react";
+import { SetReminderDialog } from "@/components/SetReminderDialog";
 
 interface DefectFormDialogProps {
   open: boolean;
@@ -51,6 +52,7 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<Array<{ url: string; name: string; file?: File }>>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showReminderDialog, setShowReminderDialog] = useState(false);
   
   const { statusOptions } = useDefectStatusOptions();
   const { priorityOptions } = useDefectPriorityOptions();
@@ -453,7 +455,20 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
               </p>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="gap-2">
+              {defect && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowReminderDialog(true)}
+                  className="mr-auto"
+                  data-testid="button-set-reminder"
+                >
+                  <Bell className="h-4 w-4 mr-1.5" />
+                  Set Reminder
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -470,6 +485,16 @@ export function DefectFormDialog({ open, onOpenChange, defect }: DefectFormDialo
           </form>
         </Form>
       </DialogContent>
+
+      {/* Set Reminder Dialog */}
+      <SetReminderDialog
+        open={showReminderDialog}
+        onOpenChange={setShowReminderDialog}
+        linkedItemType="defect"
+        linkedItemId={defect?.id}
+        linkedItemTitle={defect?.title}
+        projectId={projectId}
+      />
     </Dialog>
   );
 }

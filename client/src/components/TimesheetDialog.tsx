@@ -4,7 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Trash2, Clock } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Trash2, Clock, Bell } from "lucide-react";
+import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -86,6 +87,7 @@ export function TimesheetDialog({
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
   const startTimeViewportRef = useRef<HTMLDivElement>(null);
   const endTimeViewportRef = useRef<HTMLDivElement>(null);
+  const [showReminderDialog, setShowReminderDialog] = useState(false);
 
   // Fetch projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -730,7 +732,20 @@ export function TimesheetDialog({
               )}
             />
 
-            <DialogFooter>
+            <DialogFooter className="gap-2">
+              {timesheet && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowReminderDialog(true)}
+                  className="mr-auto"
+                  data-testid="button-set-reminder"
+                >
+                  <Bell className="h-4 w-4 mr-1.5" />
+                  Set Reminder
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -746,6 +761,16 @@ export function TimesheetDialog({
           </form>
         </Form>
       </DialogContent>
+
+      {/* Set Reminder Dialog */}
+      <SetReminderDialog
+        open={showReminderDialog}
+        onOpenChange={setShowReminderDialog}
+        linkedItemType="timesheet"
+        linkedItemId={timesheet?.id}
+        linkedItemTitle={timesheet ? `Timesheet: ${format(new Date(timesheet.date), "MMM d, yyyy")}` : undefined}
+        projectId={form.watch("projectId")}
+      />
     </Dialog>
   );
 }
