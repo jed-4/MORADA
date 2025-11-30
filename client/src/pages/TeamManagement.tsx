@@ -191,9 +191,9 @@ export default function TeamManagement() {
 
   return (
     <div className="flex flex-col h-full" data-testid="team-management-page">
-      {/* Row 1 - Title & Actions */}
-      <div className="h-10 bg-white dark:bg-gray-950 flex items-center justify-between px-3 border-b border-border/50 flex-shrink-0">
-        <div className="flex items-center gap-3">
+      {/* Row 1 - Title Bar */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-3 border-b border-border/50 flex-shrink-0">
+        <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs">
             {activeSection === "members" ? filteredUsers.length : filteredSuppliers.length}{" "}
@@ -202,80 +202,74 @@ export default function TeamManagement() {
               : (filteredSuppliers.length === 1 ? "supplier" : "suppliers")}
           </Badge>
         </div>
+      </div>
 
-        <div className="flex items-center gap-2">
+      {/* Row 2 - Section Tabs & Actions */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-3 flex-shrink-0">
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setActiveSection('members')}
+            className={`h-6 px-2 text-xs border rounded-md ${
+              activeSection === 'members' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-section-members"
+          >
+            <Users className="w-3 h-3" />
+            <span>Team Members</span>
+            <Badge variant="secondary" className="h-4 text-[10px] px-1">{filteredUsers.length}</Badge>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('suppliers')}
+            className={`h-6 px-2 text-xs border rounded-md ${
+              activeSection === 'suppliers' 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="button-section-suppliers"
+          >
+            <Building2 className="w-3 h-3" />
+            <span>Suppliers</span>
+            <Badge variant="secondary" className="h-4 text-[10px] px-1">{filteredSuppliers.length}</Badge>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5">
           {activeSection === "members" ? (
             <button
               onClick={() => setIsInviteDialogOpen(true)}
-              className="h-7 px-3 text-xs font-medium bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 active:bg-[#bba7db]/80 flex items-center gap-1.5 shadow-sm"
+              className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
               data-testid="button-invite-user"
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <UserPlus className="w-3 h-3" />
               <span>Invite Member</span>
             </button>
           ) : (
             <button
               onClick={handleAddSupplier}
-              className="h-7 px-3 text-xs font-medium bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 active:bg-[#bba7db]/80 flex items-center gap-1.5 shadow-sm"
+              className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
               data-testid="button-add-supplier"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
               <span>Add Supplier</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Row 2 - Search & Section Toggles */}
-      <div className="h-10 bg-gray-50/80 dark:bg-gray-900/50 flex items-center px-3 gap-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2">
-          {/* Section Toggle Pills */}
-          <button
-            onClick={() => setActiveSection('members')}
-            className={`h-7 px-3 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 ${
-              activeSection === 'members' 
-                ? 'bg-[#bba7db] text-white shadow-sm' 
-                : 'bg-white dark:bg-gray-900 border hover-elevate'
-            }`}
-            data-testid="button-section-members"
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Team Members</span>
-            <span className={`ml-0.5 ${activeSection === 'members' ? 'opacity-80' : 'text-muted-foreground'}`}>
-              {filteredUsers.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('suppliers')}
-            className={`h-7 px-3 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 ${
-              activeSection === 'suppliers' 
-                ? 'bg-[#bba7db] text-white shadow-sm' 
-                : 'bg-white dark:bg-gray-900 border hover-elevate'
-            }`}
-            data-testid="button-section-suppliers"
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Suppliers</span>
-            <span className={`ml-0.5 ${activeSection === 'suppliers' ? 'opacity-80' : 'text-muted-foreground'}`}>
-              {filteredSuppliers.length}
-            </span>
-          </button>
-
-          {/* Divider */}
-          <div className="w-px h-5 bg-border/60" />
-
-          {/* Search */}
-          <div className="relative w-52">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              placeholder={activeSection === "members" ? "Search members..." : "Search suppliers..."}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-2 py-0 h-7 text-xs bg-white dark:bg-gray-950 border rounded-md"
-              data-testid="input-search"
-            />
-          </div>
+      {/* Row 3 - Search & Filters */}
+      <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-2 gap-1.5 border-b border-border flex-shrink-0">
+        <div className="relative w-48">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <Input
+            placeholder={activeSection === "members" ? "Search members..." : "Search suppliers..."}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-7 pr-2 py-0 h-6 text-xs border"
+            data-testid="input-search"
+          />
         </div>
       </div>
 
@@ -467,13 +461,13 @@ function TeamMemberCard({
 
   return (
     <Card
-      className="h-20 transition-all duration-200 cursor-pointer hover-elevate"
+      className="h-20 border-2 transition-all duration-200 cursor-pointer hover-elevate"
       onClick={() => onView(user.id)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`team-member-card-${user.id}`}
     >
-      <CardContent className="p-2 h-full flex items-center gap-2">
+      <CardContent className="p-3 h-full flex items-center gap-3">
         <Avatar className="h-12 w-12 shrink-0">
           <AvatarFallback className="bg-[#bba7db]/10 text-[#bba7db] font-semibold">
             {getInitials(user.firstName, user.lastName)}
@@ -562,13 +556,13 @@ function SupplierCard({
 
   return (
     <Card
-      className="h-20 transition-all duration-200 cursor-pointer hover-elevate"
+      className="h-20 border-2 transition-all duration-200 cursor-pointer hover-elevate"
       onClick={() => onEdit(supplier)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`supplier-card-${supplier.id}`}
     >
-      <CardContent className="p-2 h-full flex items-center gap-2">
+      <CardContent className="p-3 h-full flex items-center gap-3">
         <Avatar className="h-12 w-12 shrink-0">
           <AvatarFallback className="bg-[#bba7db]/10 text-[#bba7db] font-semibold">
             {getInitials(supplier.name)}
