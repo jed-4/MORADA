@@ -2340,6 +2340,69 @@ export const insertScheduleTemplateSchema = createInsertSchema(scheduleTemplates
 export type InsertScheduleTemplate = z.infer<typeof insertScheduleTemplateSchema>;
 export type ScheduleTemplate = typeof scheduleTemplates.$inferSelect;
 
+// Estimate Templates (reusable estimate templates with hierarchical groups and line items)
+export const estimateTemplates = pgTable("estimate_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
+  templateData: json("template_data").notNull(), // Hierarchical structure with groups and line items
+  isPublic: boolean("is_public").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEstimateTemplateSchema = createInsertSchema(estimateTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()),
+});
+
+export type InsertEstimateTemplate = z.infer<typeof insertEstimateTemplateSchema>;
+export type EstimateTemplate = typeof estimateTemplates.$inferSelect;
+
+// Selection Templates (reusable selection templates with categories and items)
+export const selectionTemplates = pgTable("selection_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
+  templateData: json("template_data").notNull(), // Array of selection category objects with items
+  isPublic: boolean("is_public").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSelectionTemplateSchema = createInsertSchema(selectionTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateData: z.array(z.any()),
+});
+
+export type InsertSelectionTemplate = z.infer<typeof insertSelectionTemplateSchema>;
+export type SelectionTemplate = typeof selectionTemplates.$inferSelect;
+
+// Update schemas for estimate and selection templates
+export const updateEstimateTemplateSchema = insertEstimateTemplateSchema.partial();
+export type UpdateEstimateTemplate = z.infer<typeof updateEstimateTemplateSchema>;
+
+export const updateSelectionTemplateSchema = insertSelectionTemplateSchema.partial();
+export type UpdateSelectionTemplate = z.infer<typeof updateSelectionTemplateSchema>;
+
 // Update schemas for schedules
 export const updateScheduleSchema = insertScheduleSchema.partial();
 export type UpdateSchedule = z.infer<typeof updateScheduleSchema>;

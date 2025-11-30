@@ -42,8 +42,7 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
 
   const importMutation = useMutation({
     mutationFn: async (items: any[]) => {
-      const res = await apiRequest('POST', "/api/checklist-templates/import", { items });
-      return res.json();
+      return await apiRequest("/api/checklist-templates/import", "POST", { items });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });

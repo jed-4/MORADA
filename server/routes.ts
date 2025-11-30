@@ -68,6 +68,10 @@ import {
   updateScheduleItemSchema,
   insertScheduleTemplateSchema,
   updateScheduleTemplateSchema,
+  insertEstimateTemplateSchema,
+  updateEstimateTemplateSchema,
+  insertSelectionTemplateSchema,
+  updateSelectionTemplateSchema,
   insertActivityNoteSchema,
   insertCalendarViewSchema,
   insertTimesheetAllowanceSchema,
@@ -10256,6 +10260,258 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error applying schedule template:", error);
       res.status(500).json({ 
         error: "Failed to apply schedule template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Estimate Templates routes
+  app.get("/api/estimate-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getEstimateTemplates(user.companyId, category);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch estimate templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/estimate-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const template = await storage.getEstimateTemplate(req.params.id, user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Estimate template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch estimate template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/estimate-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertEstimateTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const templateData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+        createdBy: user.id,
+      };
+      const template = await storage.createEstimateTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create estimate template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/estimate-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getEstimateTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "Estimate template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
+      }
+      const validationResult = updateEstimateTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const updatedTemplate = await storage.updateEstimateTemplate(
+        req.params.id,
+        validationResult.data,
+        user.companyId
+      );
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update estimate template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/estimate-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getEstimateTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "Estimate template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
+      }
+      const success = await storage.deleteEstimateTemplate(req.params.id, user.companyId);
+      if (success) {
+        res.status(204).send();
+      } else {
+        res.status(500).json({ error: "Failed to delete template" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete estimate template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Selection Templates routes
+  app.get("/api/selection-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getSelectionTemplates(user.companyId, category);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch selection templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/selection-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const template = await storage.getSelectionTemplate(req.params.id, user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Selection template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch selection template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/selection-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertSelectionTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const templateData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+        createdBy: user.id,
+      };
+      const template = await storage.createSelectionTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create selection template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/selection-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getSelectionTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "Selection template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
+      }
+      const validationResult = updateSelectionTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const updatedTemplate = await storage.updateSelectionTemplate(
+        req.params.id,
+        validationResult.data,
+        user.companyId
+      );
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update selection template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/selection-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getSelectionTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "Selection template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
+      }
+      const success = await storage.deleteSelectionTemplate(req.params.id, user.companyId);
+      if (success) {
+        res.status(204).send();
+      } else {
+        res.status(500).json({ error: "Failed to delete template" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete selection template",
         details: error.message 
       });
     }

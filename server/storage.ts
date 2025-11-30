@@ -57,6 +57,8 @@ import {
   type Schedule, type InsertSchedule,
   type ScheduleItem, type InsertScheduleItem,
   type ScheduleTemplate, type InsertScheduleTemplate,
+  type EstimateTemplate, type InsertEstimateTemplate,
+  type SelectionTemplate, type InsertSelectionTemplate,
   type ActivityNote, type InsertActivityNote,
   type CalendarView, type InsertCalendarView,
   type Proposal, type InsertProposal,
@@ -652,6 +654,20 @@ export interface IStorage {
   createScheduleTemplate(template: InsertScheduleTemplate): Promise<ScheduleTemplate>;
   updateScheduleTemplate(id: string, template: Partial<InsertScheduleTemplate>, companyId: string): Promise<ScheduleTemplate | undefined>;
   deleteScheduleTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Estimate Templates CRUD
+  getEstimateTemplates(companyId: string, category?: string): Promise<EstimateTemplate[]>;
+  getEstimateTemplate(id: string, companyId: string): Promise<EstimateTemplate | undefined>;
+  createEstimateTemplate(template: InsertEstimateTemplate): Promise<EstimateTemplate>;
+  updateEstimateTemplate(id: string, template: Partial<InsertEstimateTemplate>, companyId: string): Promise<EstimateTemplate | undefined>;
+  deleteEstimateTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Selection Templates CRUD
+  getSelectionTemplates(companyId: string, category?: string): Promise<SelectionTemplate[]>;
+  getSelectionTemplate(id: string, companyId: string): Promise<SelectionTemplate | undefined>;
+  createSelectionTemplate(template: InsertSelectionTemplate): Promise<SelectionTemplate>;
+  updateSelectionTemplate(id: string, template: Partial<InsertSelectionTemplate>, companyId: string): Promise<SelectionTemplate | undefined>;
+  deleteSelectionTemplate(id: string, companyId: string): Promise<boolean>;
 
   // Calendar Views CRUD
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
@@ -11556,6 +11572,176 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteScheduleTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Estimate Templates CRUD
+  async getEstimateTemplates(companyId: string, category?: string): Promise<EstimateTemplate[]> {
+    try {
+      const conditions = [
+        eq(schema.estimateTemplates.isArchived, false),
+        or(
+          eq(schema.estimateTemplates.companyId, companyId),
+          eq(schema.estimateTemplates.isPublic, true)
+        )
+      ];
+      
+      if (category) {
+        conditions.push(eq(schema.estimateTemplates.category, category));
+      }
+      
+      return await db.select()
+        .from(schema.estimateTemplates)
+        .where(and(...conditions));
+    } catch (error) {
+      console.error("Database error in getEstimateTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getEstimateTemplate(id: string, companyId: string): Promise<EstimateTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.estimateTemplates)
+        .where(eq(schema.estimateTemplates.id, id))
+        .limit(1);
+      
+      const template = result[0];
+      if (template && (template.companyId === companyId || template.isPublic)) {
+        return template;
+      }
+      return undefined;
+    } catch (error) {
+      console.error("Database error in getEstimateTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createEstimateTemplate(template: InsertEstimateTemplate): Promise<EstimateTemplate> {
+    try {
+      const result = await db.insert(schema.estimateTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createEstimateTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateEstimateTemplate(id: string, template: Partial<InsertEstimateTemplate>, companyId: string): Promise<EstimateTemplate | undefined> {
+    try {
+      const result = await db.update(schema.estimateTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.estimateTemplates.id, id),
+          eq(schema.estimateTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateEstimateTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteEstimateTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.estimateTemplates)
+        .where(and(
+          eq(schema.estimateTemplates.id, id),
+          eq(schema.estimateTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteEstimateTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Selection Templates CRUD
+  async getSelectionTemplates(companyId: string, category?: string): Promise<SelectionTemplate[]> {
+    try {
+      const conditions = [
+        eq(schema.selectionTemplates.isArchived, false),
+        or(
+          eq(schema.selectionTemplates.companyId, companyId),
+          eq(schema.selectionTemplates.isPublic, true)
+        )
+      ];
+      
+      if (category) {
+        conditions.push(eq(schema.selectionTemplates.category, category));
+      }
+      
+      return await db.select()
+        .from(schema.selectionTemplates)
+        .where(and(...conditions));
+    } catch (error) {
+      console.error("Database error in getSelectionTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getSelectionTemplate(id: string, companyId: string): Promise<SelectionTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.selectionTemplates)
+        .where(eq(schema.selectionTemplates.id, id))
+        .limit(1);
+      
+      const template = result[0];
+      if (template && (template.companyId === companyId || template.isPublic)) {
+        return template;
+      }
+      return undefined;
+    } catch (error) {
+      console.error("Database error in getSelectionTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createSelectionTemplate(template: InsertSelectionTemplate): Promise<SelectionTemplate> {
+    try {
+      const result = await db.insert(schema.selectionTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createSelectionTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateSelectionTemplate(id: string, template: Partial<InsertSelectionTemplate>, companyId: string): Promise<SelectionTemplate | undefined> {
+    try {
+      const result = await db.update(schema.selectionTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.selectionTemplates.id, id),
+          eq(schema.selectionTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateSelectionTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteSelectionTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.selectionTemplates)
+        .where(and(
+          eq(schema.selectionTemplates.id, id),
+          eq(schema.selectionTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteSelectionTemplate:", error);
       throw error;
     }
   }

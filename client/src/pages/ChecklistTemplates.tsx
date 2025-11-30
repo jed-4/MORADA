@@ -1,33 +1,14 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
   type ChecklistTemplate,
-  type ChecklistTemplateGroup,
-  type ChecklistTemplateItem,
-  insertChecklistTemplateSchema,
 } from "@shared/schema";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +24,7 @@ import {
   Copy,
   Upload,
   Download,
+  Edit3,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTemplateFormDialog";
@@ -59,15 +41,13 @@ export default function ChecklistTemplates() {
     setLocation(`/checklist-templates/${templateId}`);
   };
 
-  // Fetch templates
   const { data: templates = [], isLoading } = useQuery<ChecklistTemplate[]>({
     queryKey: ["/api/checklist-templates"],
   });
 
-  // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest('DELETE', `/api/checklist-templates/${id}`);
+      await apiRequest(`/api/checklist-templates/${id}`, 'DELETE');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
@@ -85,11 +65,9 @@ export default function ChecklistTemplates() {
     },
   });
 
-  // Duplicate mutation
   const duplicateMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest('POST', `/api/checklist-templates/${id}/duplicate`);
-      return res.json();
+      return await apiRequest(`/api/checklist-templates/${id}/duplicate`, 'POST');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
@@ -107,15 +85,15 @@ export default function ChecklistTemplates() {
     },
   });
 
-  // Export mutation
   const handleExport = async () => {
     try {
-      const response = await fetch("/api/checklist-templates/export");
+      const response = await fetch("/api/checklist-templates/export", {
+        credentials: "include",
+      });
       if (!response.ok) throw new Error("Failed to export");
       
       const data = await response.json();
       
-      // Convert to CSV
       const headers = ["Template Name", "Description", "Type", "Group Name", "Item Description"];
       const csvRows = [
         headers.join(","),
@@ -150,12 +128,13 @@ export default function ChecklistTemplates() {
     }
   };
 
-  // Filter templates
-  const filteredTemplates = templates.filter(template =>
-    template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    template.type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTemplates = templates
+    .filter(template =>
+      template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      template.type.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -168,167 +147,187 @@ export default function ChecklistTemplates() {
   };
 
   return (
-    <div className="h-full flex flex-col p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Checklist Templates</h1>
-          <p className="text-muted-foreground mt-1">
-            Create and manage reusable checklist templates for tasks, jobs, estimations, and leads
-          </p>
+    <div className="h-full flex flex-col">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Title + Count */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            Checklist Templates
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
+            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
+          </Badge>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
+
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
             onClick={handleExport}
             data-testid="button-export-csv"
           >
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
-          <Button
-            variant="outline"
+            <Download className="w-3 h-3" />
+            <span>Export</span>
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsImportOpen(true)}
             data-testid="button-import-csv"
           >
-            <Upload className="h-4 w-4 mr-2" />
-            Import CSV
-          </Button>
-          <Button
+            <Upload className="w-3 h-3" />
+            <span>Import</span>
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsAddingTemplate(true)}
             data-testid="button-add-template"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            New Template
-          </Button>
+            <Plus className="w-3 h-3" />
+            <span>New Template</span>
+          </button>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative w-full max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search templates..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-          data-testid="input-search-templates"
-        />
-      </div>
-
-      {/* Templates Grid */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading templates...</p>
+      {/* Row 2 - Search & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search */}
+        <div className="flex items-center gap-1.5 flex-1">
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-templates"
+            />
           </div>
         </div>
-      ) : filteredTemplates.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <CheckSquare className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No templates found</h3>
-            <p className="text-muted-foreground text-center mb-4">
+      </div>
+
+      {/* Templates List */}
+      <div className="flex-1 overflow-auto p-4">
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            Loading templates...
+          </div>
+        ) : filteredTemplates.length === 0 ? (
+          <div className="text-center py-8">
+            <CheckSquare className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-sm font-medium mb-2">
+              {searchTerm ? "No templates found" : "No templates yet"}
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
               {searchTerm
                 ? "Try adjusting your search terms"
-                : "Get started by creating your first checklist template"}
+                : "Start by adding your first template"}
             </p>
             {!searchTerm && (
-              <Button onClick={() => setIsAddingTemplate(true)} data-testid="button-create-first-template">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Template
-              </Button>
+              <button 
+                onClick={() => setIsAddingTemplate(true)} 
+                className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                data-testid="button-create-first-template"
+              >
+                <Plus className="h-3 w-3" />
+                Add Your First Template
+              </button>
             )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTemplates.map((template) => (
-                <TableRow
-                  key={template.id}
-                  className="cursor-pointer hover-elevate"
-                  onClick={() => setLocation(`/checklist-templates/${template.id}`)}
-                  data-testid={`row-template-${template.id}`}
-                >
-                  <TableCell className="font-medium">{template.name}</TableCell>
-                  <TableCell>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredTemplates.map((template) => (
+              <div 
+                key={template.id} 
+                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+                onClick={() => setLocation(`/checklist-templates/${template.id}`)}
+                data-testid={`card-template-${template.id}`}
+              >
+                <div className="flex items-start gap-2">
+                  {/* Title and Description */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
+                      {template.name}
+                    </h3>
+                    {template.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {template.description}
+                      </p>
+                    )}
+                  </div>
+                  
+                  {/* Metadata */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Type badge */}
                     <Badge 
                       variant="secondary" 
-                      className={getTypeColor(template.type)}
+                      className={`h-4 px-1.5 text-[10px] ${getTypeColor(template.type)}`}
                       data-testid={`badge-type-${template.id}`}
                     >
                       {template.type}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-md">
-                    {template.description ? (
-                      <span className="text-sm text-muted-foreground line-clamp-1">
-                        {template.description}
+                    
+                    {/* Date */}
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <span>
+                        {template.createdAt ? format(new Date(template.createdAt), "MMM d, yyyy") : "-"}
                       </span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground italic">No description</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {template.createdAt ? format(new Date(template.createdAt), "MMM d, yyyy") : "-"}
-                  </TableCell>
-                  <TableCell>
+                    </div>
+                    
+                    {/* Actions */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-template-menu-${template.id}`}
+                          data-testid={`button-menu-${template.id}`}
                         >
-                          <MoreVertical className="h-4 w-4" />
+                          <MoreVertical className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLocation(`/checklist-templates/${template.id}`);
+                          }}
+                          data-testid={`button-edit-${template.id}`}
+                        >
+                          <Edit3 className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
                             duplicateMutation.mutate(template.id);
                           }}
-                          data-testid={`menu-duplicate-${template.id}`}
+                          data-testid={`button-duplicate-${template.id}`}
                         >
                           <Copy className="h-4 w-4 mr-2" />
                           Duplicate
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
                             deleteMutation.mutate(template.id);
                           }}
-                          className="text-destructive focus:text-destructive"
-                          data-testid={`menu-delete-${template.id}`}
+                          className="text-destructive"
+                          data-testid={`button-delete-${template.id}`}
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </Card>
-      )}
+        )}
+      </div>
 
       {/* Add Template Dialog */}
       <ChecklistTemplateFormDialog
