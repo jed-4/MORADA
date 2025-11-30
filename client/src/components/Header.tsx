@@ -18,6 +18,7 @@ import ThemeToggle from "./ThemeToggle";
 import { TimeClockWidget } from "./TimeClockWidget";
 import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
+import { NotificationBell } from "./NotificationBell";
 import { ProjectIcon } from "./ProjectIcon";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
@@ -287,6 +288,9 @@ export default function Header() {
 
         {/* Messages Dropdown */}
         <MessagesDropdown />
+
+        {/* Notifications Bell */}
+        <NotificationBell />
 
         {/* Time Clock Widget */}
         <TimeClockWidget />

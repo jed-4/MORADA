@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText } from "lucide-react";
+import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { FolderTree, type FolderTreeHandle } from "@/components/systems/FolderTr
 import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { NoteTemplatesLibrary, type NoteTemplatesLibraryHandle } from "@/components/systems/NoteTemplatesLibrary";
+import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
 
 export default function Systems() {
   // Get tab from URL query parameter
@@ -20,7 +21,7 @@ export default function Systems() {
 
   // Update active tab when URL changes
   useEffect(() => {
-    if (tabFromUrl && ["folders", "tasks", "workflows", "notes"].includes(tabFromUrl)) {
+    if (tabFromUrl && ["folders", "tasks", "workflows", "notes", "reminders"].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
@@ -30,6 +31,7 @@ export default function Systems() {
   const taskLibraryRef = useRef<TaskLibraryHandle>(null);
   const workflowBuilderRef = useRef<WorkflowBuilderHandle>(null);
   const noteTemplatesRef = useRef<NoteTemplatesLibraryHandle>(null);
+  const businessRemindersRef = useRef<BusinessRemindersHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -92,6 +94,20 @@ export default function Systems() {
               <span>Note Templates</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab("reminders")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "reminders"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-reminders"
+          >
+            <div className="flex items-center gap-1.5">
+              <Bell className="h-3 w-3" />
+              <span>Reminders</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -104,6 +120,7 @@ export default function Systems() {
         taskLibraryRef={taskLibraryRef}
         workflowBuilderRef={workflowBuilderRef}
         noteTemplatesRef={noteTemplatesRef}
+        businessRemindersRef={businessRemindersRef}
       />
 
       {/* Content Area */}
@@ -128,6 +145,11 @@ export default function Systems() {
             <NoteTemplatesLibrary ref={noteTemplatesRef} searchQuery={searchQuery} />
           </div>
         )}
+        {activeTab === "reminders" && (
+          <div className="h-full">
+            <BusinessReminders ref={businessRemindersRef} searchQuery={searchQuery} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -141,7 +163,8 @@ function SystemsControlBar({
   folderTreeRef,
   taskLibraryRef,
   workflowBuilderRef,
-  noteTemplatesRef
+  noteTemplatesRef,
+  businessRemindersRef
 }: { 
   activeTab: string;
   searchQuery: string;
@@ -150,6 +173,7 @@ function SystemsControlBar({
   taskLibraryRef: React.RefObject<TaskLibraryHandle>;
   workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
   noteTemplatesRef: React.RefObject<NoteTemplatesLibraryHandle>;
+  businessRemindersRef: React.RefObject<BusinessRemindersHandle>;
 }) {
   return (
     <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
@@ -178,6 +202,9 @@ function SystemsControlBar({
         )}
         {activeTab === "notes" && (
           <NoteTemplatesControls noteTemplatesRef={noteTemplatesRef} />
+        )}
+        {activeTab === "reminders" && (
+          <RemindersControls businessRemindersRef={businessRemindersRef} />
         )}
       </div>
     </div>
@@ -298,6 +325,33 @@ function NoteTemplatesControls({ noteTemplatesRef }: { noteTemplatesRef: React.R
       >
         <Plus className="w-3 h-3" />
         <span>New Template</span>
+      </Button>
+    </>
+  );
+}
+
+// Reminders tab controls
+function RemindersControls({ businessRemindersRef }: { businessRemindersRef: React.RefObject<BusinessRemindersHandle> }) {
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
+          <Power className="h-3 w-3 text-green-600" />
+          <span>Active</span>
+        </Badge>
+        <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
+          <PowerOff className="h-3 w-3 text-muted-foreground" />
+          <span>Inactive</span>
+        </Badge>
+      </div>
+      <Button
+        size="sm"
+        className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        onClick={() => businessRemindersRef.current?.openNewReminderDialog()}
+        data-testid="button-new-reminder"
+      >
+        <Plus className="w-3 h-3" />
+        <span>New Reminder</span>
       </Button>
     </>
   );

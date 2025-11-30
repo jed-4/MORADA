@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon } from "lucide-react";
+import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon, Bell } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { User } from "@shared/schema";
 import ComingSoonPage from "./ComingSoonPage";
@@ -14,6 +14,7 @@ import UserTasks from "@/components/user-workspace/UserTasks";
 import UserSchedule from "@/components/user-workspace/UserSchedule";
 import UserTime from "@/components/user-workspace/UserTime";
 import Memos from "@/components/user-workspace/Memos";
+import UserReminders from "@/components/user-workspace/UserReminders";
 import Messages from "./Messages";
 
 const USER_TABS = [
@@ -22,6 +23,7 @@ const USER_TABS = [
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
   { id: "schedule", label: "Schedule", icon: CalendarIcon, path: "schedule" },
   { id: "time", label: "Time", icon: Timer, path: "time" },
+  { id: "reminders", label: "Reminders", icon: Bell, path: "reminders" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
   { id: "notes", label: "Memos", icon: FileText, path: "notes" },
 ] as const;
@@ -75,6 +77,8 @@ export default function UserWorkspace() {
         return <UserSchedule user={user} isOwnPage={isOwnPage} />;
       case "time":
         return <UserTime user={user} isOwnPage={isOwnPage} />;
+      case "reminders":
+        return <UserReminders user={user} isOwnPage={isOwnPage} />;
       case "messages":
         return <Messages channelTypeFilter="dm" />;
       case "notes":
