@@ -269,7 +269,12 @@ export default function SiteDiaryTemplates() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTemplates.map((template) => (
-            <Card key={template.id} className="hover-elevate" data-testid={`card-template-${template.id}`}>
+            <Card 
+              key={template.id} 
+              className="hover-elevate cursor-pointer" 
+              onClick={() => setEditingTemplate(template)}
+              data-testid={`card-template-${template.id}`}
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
@@ -294,6 +299,7 @@ export default function SiteDiaryTemplates() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
+                        onClick={(e) => e.stopPropagation()}
                         data-testid={`button-menu-${template.id}`}
                       >
                         <MoreVertical className="h-4 w-4" />
