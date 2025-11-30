@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useSearch } from "wouter";
 import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,8 +10,20 @@ import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/system
 import { NoteTemplatesLibrary, type NoteTemplatesLibraryHandle } from "@/components/systems/NoteTemplatesLibrary";
 
 export default function Systems() {
-  const [activeTab, setActiveTab] = useState("folders");
+  // Get tab from URL query parameter
+  const searchString = useSearch();
+  const urlParams = new URLSearchParams(searchString);
+  const tabFromUrl = urlParams.get("tab");
+  
+  const [activeTab, setActiveTab] = useState(tabFromUrl || "folders");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Update active tab when URL changes
+  useEffect(() => {
+    if (tabFromUrl && ["folders", "tasks", "workflows", "notes"].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
   
   // Refs for accessing child component functions
   const folderTreeRef = useRef<FolderTreeHandle>(null);

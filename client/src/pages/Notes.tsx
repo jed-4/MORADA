@@ -966,54 +966,37 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
               />
 
               {/* Template Selector */}
-              {!editingNote && (
+              {!editingNote && noteTemplates.length > 0 && (
                 <div>
                   <label className="text-sm font-medium flex items-center gap-2">
                     <FileTemplate className="h-3 w-3" />
                     Apply Template
                   </label>
-                  {noteTemplates.length > 0 ? (
-                    <Select 
-                      value={selectedTemplate || "none"} 
-                      onValueChange={(value) => {
-                        if (value && value !== "none") {
-                          const template = noteTemplates.find(t => t.id === value);
-                          if (template) applyTemplate(template);
-                        } else {
-                          setSelectedTemplate(null);
-                          setTemplateFieldValues({});
-                        }
-                      }}
-                    >
-                      <SelectTrigger data-testid="note-template-select">
-                        <SelectValue placeholder="Choose a template..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No template</SelectItem>
-                        {noteTemplates.map((template) => (
-                          <SelectItem key={template.id} value={template.id}>
-                            {template.name}
-                            {template.isFormBased && " (Form)"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md border">
-                      No templates yet.{" "}
-                      <a 
-                        href="/systems" 
-                        className="text-[#bba7db] hover:underline font-medium"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleDialogClose();
-                          window.location.href = "/systems";
-                        }}
-                      >
-                        Create note templates in Systems → Note Templates
-                      </a>
-                    </div>
-                  )}
+                  <Select 
+                    value={selectedTemplate || "none"} 
+                    onValueChange={(value) => {
+                      if (value && value !== "none") {
+                        const template = noteTemplates.find(t => t.id === value);
+                        if (template) applyTemplate(template);
+                      } else {
+                        setSelectedTemplate(null);
+                        setTemplateFieldValues({});
+                      }
+                    }}
+                  >
+                    <SelectTrigger data-testid="note-template-select">
+                      <SelectValue placeholder="Choose a template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No template</SelectItem>
+                      {noteTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                          {template.isFormBased && " (Form)"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 
