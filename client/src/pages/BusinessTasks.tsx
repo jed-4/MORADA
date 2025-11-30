@@ -346,7 +346,7 @@ export default function BusinessTasks() {
   return (
     <div className="flex h-full flex-col" data-testid="business-tasks">
       {/* Row 2 - Views & Options (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View Tabs */}
         <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
           <button
@@ -484,7 +484,7 @@ export default function BusinessTasks() {
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter Dropdowns */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search */}

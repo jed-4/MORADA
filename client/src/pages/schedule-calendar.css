@@ -15,7 +15,7 @@
 
 /* Grey weekends - use class-based selector for all views */
 .rbc-weekend-day {
-  background-color: #f3f4f6 !important;
+  background-color: hsl(var(--muted) / 0.5) !important;
 }
 
 /* Lilac today vertical line */
@@ -30,20 +30,20 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background-color: #bba7db;
+  background-color: hsl(var(--primary));
   z-index: 3;
 }
 
 /* Lilac events with minimal margins */
 .rbc-event {
-  background-color: #bba7db !important;
+  background-color: hsl(var(--primary)) !important;
   border: none !important;
   padding: 2px 4px !important;
   margin: 0 !important;
 }
 
 .rbc-event:hover {
-  background-color: #a78ccb !important;
+  background-color: hsl(var(--primary) / 0.85) !important;
 }
 
 .rbc-event-label {
@@ -65,7 +65,7 @@
 
 /* No border lines */
 .rbc-day-slot .rbc-time-slot {
-  border-top: 1px solid #f3f4f6 !important;
+  border-top: 1px solid hsl(var(--border) / 0.5) !important;
 }
 
 .rbc-time-header-cell {
@@ -78,7 +78,7 @@
 }
 
 .rbc-month-view .rbc-event {
-  background-color: #bba7db !important;
+  background-color: hsl(var(--primary)) !important;
 }
 
 /* Header styling - 40px */
@@ -91,7 +91,7 @@
 
 /* Row hover states */
 .rbc-time-slot:hover {
-  background-color: #f9fafb !important;
+  background-color: hsl(var(--muted) / 0.3) !important;
 }
 
 /* Agenda view styling */

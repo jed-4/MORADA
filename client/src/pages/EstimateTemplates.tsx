@@ -483,7 +483,7 @@ export default function EstimateTemplates() {
   return (
     <div className="h-full flex flex-col">
       {/* Row 1 - Title & Actions */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             Estimate Templates
@@ -514,7 +514,7 @@ export default function EstimateTemplates() {
       </div>
 
       {/* Row 2 - Search & Filters */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5 flex-1">
           <div className="relative w-48">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />

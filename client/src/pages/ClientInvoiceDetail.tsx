@@ -753,7 +753,7 @@ export default function ClientInvoiceDetail() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
           {/* Row 1 - Title & Actions (36px) */}
-          <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+          <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -790,7 +790,7 @@ export default function ClientInvoiceDetail() {
           </div>
 
           {/* Row 2 - Summary Info (36px) */}
-          <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+          <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
             <div className="flex items-center gap-4 text-xs">
               <div className="flex items-center gap-1.5" data-testid="header-summary-total">
                 <span className="text-muted-foreground">Total:</span>
@@ -1567,7 +1567,7 @@ export default function ClientInvoiceDetail() {
 
           {/* Footer with Additional Actions - only shown for sent/partial invoices */}
           {isEditMode && (invoice?.status === "sent" || invoice?.status === "partial") && (
-            <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-end px-2 border-t border-border flex-shrink-0">
+            <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-end px-2 border-t border-border flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setPaymentDialogOpen(true)}

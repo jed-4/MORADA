@@ -50,15 +50,15 @@ interface FilterPanelProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: "todo", label: "To Do", color: "bg-slate-100" },
-  { value: "in-progress", label: "In Progress", color: "bg-blue-100" },
-  { value: "done", label: "Done", color: "bg-green-100" },
+  { value: "todo", label: "To Do", color: "bg-muted" },
+  { value: "in-progress", label: "In Progress", color: "bg-blue-500/20 dark:bg-blue-500/30" },
+  { value: "done", label: "Done", color: "bg-green-500/20 dark:bg-green-500/30" },
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: "high", label: "High", color: "bg-red-100" },
-  { value: "medium", label: "Medium", color: "bg-yellow-100" },
-  { value: "low", label: "Low", color: "bg-green-100" },
+  { value: "high", label: "High", color: "bg-red-500/20 dark:bg-red-500/30" },
+  { value: "medium", label: "Medium", color: "bg-yellow-500/20 dark:bg-yellow-500/30" },
+  { value: "low", label: "Low", color: "bg-green-500/20 dark:bg-green-500/30" },
 ];
 
 export default function FilterPanel({

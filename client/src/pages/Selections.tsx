@@ -748,7 +748,7 @@ export default function Selections() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Row 1 - Breadcrumbs & Add Button (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         {/* Left: Project Name (Breadcrumb style) */}
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
@@ -773,7 +773,7 @@ export default function Selections() {
       </div>
 
       {/* Row 2 - Search, Filters & Type Toggles (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filters + Divider + Type Toggles */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search */}

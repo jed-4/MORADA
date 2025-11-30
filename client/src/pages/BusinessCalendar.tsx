@@ -591,7 +591,7 @@ export default function BusinessCalendar() {
   return (
     <div className="flex flex-col h-full" data-testid="business-calendar">
       {/* Row 1 - Saved Views & Settings (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1">
           {/* View Tabs */}
           <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
@@ -649,7 +649,7 @@ export default function BusinessCalendar() {
       </div>
 
       {/* Row 2 - Filters & Controls (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Filters */}
         <div className="flex items-center gap-1">
           {/* Projects Filter */}

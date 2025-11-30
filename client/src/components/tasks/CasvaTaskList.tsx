@@ -227,7 +227,7 @@ export function CasvaTaskList({
     >
       <div className="border rounded-md bg-card overflow-hidden m-0">
         {/* Header */}
-        <div className="group/header flex items-center gap-3 h-8 px-2 border-b border-border bg-white sticky top-0 z-10 relative">
+        <div className="group/header flex items-center gap-3 h-8 px-2 border-b border-border bg-background sticky top-0 z-10 relative">
           <div className="w-4 flex-shrink-0"></div>
           {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
           <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>

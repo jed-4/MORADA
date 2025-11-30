@@ -45,7 +45,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   return (
     <div className="flex flex-col h-full" data-testid="user-tasks">
       {/* Header */}
-      <div className="h-10 bg-white flex items-center justify-between px-4 gap-4 border-b border-border flex-shrink-0">
+      <div className="h-10 bg-background flex items-center justify-between px-4 gap-4 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">
             {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}

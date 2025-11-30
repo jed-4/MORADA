@@ -104,7 +104,7 @@ export function CasvaScheduleList({
     <div className="border rounded-lg bg-card overflow-hidden">
       <ScrollArea style={{ maxHeight }} className="w-full">
         <Table>
-          <TableHeader className="sticky top-0 bg-white z-10">
+          <TableHeader className="sticky top-0 bg-background z-10">
             <TableRow className="hover:bg-transparent border-b h-8">
               <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>
               <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>
@@ -200,7 +200,7 @@ export function CasvaScheduleList({
       </ScrollArea>
       
       {/* Item Count Footer */}
-      <div className="px-2 h-8 border-t bg-white text-[10px] text-muted-foreground flex items-center justify-between">
+      <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
         <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
       </div>
     </div>

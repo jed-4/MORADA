@@ -252,7 +252,7 @@ export default function Bills() {
   return (
     <div className="flex flex-col h-full" data-testid="page-bills">
       {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {pageTitle}
@@ -354,7 +354,7 @@ export default function Bills() {
       </div>
 
       {/* Row 2 - Filters & Search (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           {/* View indicator */}
           <button

@@ -256,7 +256,7 @@ export default function Timesheets() {
           <button
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
-            className="h-7 px-3 text-xs font-medium bg-white dark:bg-gray-900 border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
+            className="h-7 px-3 text-xs font-medium bg-background dark:bg-gray-900 border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
             data-testid="button-export-timesheets"
           >
             <Download className="w-3.5 h-3.5" />
@@ -288,7 +288,7 @@ export default function Timesheets() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               data-testid="input-search-timesheets"
-              className="pl-8 pr-2 py-0 h-7 text-xs bg-white dark:bg-gray-950 border rounded-md"
+              className="pl-8 pr-2 py-0 h-7 text-xs bg-background dark:bg-gray-950 border rounded-md"
             />
           </div>
           
@@ -302,7 +302,7 @@ export default function Timesheets() {
                   className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
                     selectedProjects.length > 0 
                       ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
-                      : "bg-white dark:bg-gray-900 border hover-elevate"
+                      : "bg-background dark:bg-gray-900 border hover-elevate"
                   }`}
                   data-testid="button-filter-project"
                 >
@@ -342,7 +342,7 @@ export default function Timesheets() {
                 className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
                   selectedUsers.length > 0 
                     ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
-                    : "bg-white dark:bg-gray-900 border hover-elevate"
+                    : "bg-background dark:bg-gray-900 border hover-elevate"
                 }`}
                 data-testid="button-filter-user"
               >
@@ -381,7 +381,7 @@ export default function Timesheets() {
                 className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
                   selectedStatuses.length > 0 
                     ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
-                    : "bg-white dark:bg-gray-900 border hover-elevate"
+                    : "bg-background dark:bg-gray-900 border hover-elevate"
                 }`}
                 data-testid="button-filter-status"
               >
@@ -425,7 +425,7 @@ export default function Timesheets() {
                 className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
                   dateRangeType !== "all" 
                     ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
-                    : "bg-white dark:bg-gray-900 border hover-elevate"
+                    : "bg-background dark:bg-gray-900 border hover-elevate"
                 }`}
                 data-testid="button-filter-date"
               >
@@ -464,7 +464,7 @@ export default function Timesheets() {
             <>
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="h-7 px-3 text-xs bg-white dark:bg-gray-900 border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-start-date">
+                  <button className="h-7 px-3 text-xs bg-background dark:bg-gray-900 border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-start-date">
                     <CalendarIcon className="w-3.5 h-3.5" />
                     <span>{customStartDate ? format(customStartDate, "dd MMM") : "Start"}</span>
                   </button>
@@ -483,7 +483,7 @@ export default function Timesheets() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="h-7 px-3 text-xs bg-white dark:bg-gray-900 border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-end-date">
+                  <button className="h-7 px-3 text-xs bg-background dark:bg-gray-900 border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-end-date">
                     <CalendarIcon className="w-3.5 h-3.5" />
                     <span>{customEndDate ? format(customEndDate, "dd MMM") : "End"}</span>
                   </button>
@@ -538,7 +538,7 @@ export default function Timesheets() {
                       <TableRow 
                         key={timesheet.id}
                         className={`cursor-pointer hover-elevate transition-colors ${
-                          isEven ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
+                          isEven ? "bg-background dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
                         }`}
                         onClick={() => {
                           setSelectedTimesheet(timesheet);

@@ -550,7 +550,7 @@ export default function PersonalCalendar() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full" data-testid="personal-calendar">
-        <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
           <div className="flex items-center gap-3">
             <Skeleton className="h-4 w-32" />
           </div>
@@ -558,10 +558,10 @@ export default function PersonalCalendar() {
             <Skeleton className="h-6 w-24" />
           </div>
         </div>
-        <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
           <Skeleton className="h-6 w-48" />
         </div>
-        <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-1.5">
             <Skeleton className="h-6 w-20" />
             <Skeleton className="h-6 w-20" />
@@ -585,7 +585,7 @@ export default function PersonalCalendar() {
       {/* REDESIGNED 3-ROW COMPACT HEADER */}
       
       {/* Row 1 - Title & Views (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         {/* Left: Title */}
         <h2 className="text-sm font-semibold" data-testid="text-page-title">
           {userName} Calendar
@@ -649,7 +649,7 @@ export default function PersonalCalendar() {
       </div>
 
       {/* Row 2 - Filters & Controls (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Filters */}
         <div className="flex items-center gap-1">
           {/* Projects Filter */}

@@ -43,7 +43,7 @@ export const GridRow = React.memo(({
       ref={setNodeRef}
       role="row"
       style={style}
-      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-white dark:bg-card' : ''}`}
+      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card' : ''}`}
       data-testid={`row-item-${id}`}
       onClick={onClick}
     >

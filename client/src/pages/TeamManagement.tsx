@@ -192,7 +192,7 @@ export default function TeamManagement() {
   return (
     <div className="flex flex-col h-full" data-testid="team-management-page">
       {/* Row 1 - Title Bar */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-3 border-b border-border/50 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-3 border-b border-border/50 flex-shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs">
@@ -205,7 +205,7 @@ export default function TeamManagement() {
       </div>
 
       {/* Row 2 - Section Tabs & Actions */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-3 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 flex-shrink-0">
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setActiveSection('members')}
@@ -260,7 +260,7 @@ export default function TeamManagement() {
       </div>
 
       {/* Row 3 - Search & Filters */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-2 gap-1.5 border-b border-border flex-shrink-0">
         <div className="relative w-48">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           <Input

@@ -269,7 +269,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-6xl p-0 rounded-xl overflow-hidden bg-white border-gray-200 shadow-sm"
+        className="max-w-6xl p-0 rounded-xl overflow-hidden bg-background border-gray-200 shadow-sm"
         onKeyDown={handleKeyDown}
         data-testid="task-modal-asana"
       >
@@ -280,7 +280,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
           Edit task details, assignee, due date, and other properties
         </DialogDescription>
         {/* Header - Sticky */}
-        <div className="sticky top-0 z-10 bg-white flex items-start justify-between p-4 border-b border-gray-200">
+        <div className="sticky top-0 z-10 bg-background flex items-start justify-between p-4 border-b border-gray-200">
           <div className="flex items-start gap-2 flex-1">
             <Checkbox
               checked={isCompleted}
@@ -301,7 +301,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     setIsEditingTitle(false);
                   }
                 }}
-                className="text-xl font-bold bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                className="text-xl font-bold bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                 data-testid="input-task-title"
               />
             ) : (
@@ -347,7 +347,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-white border-gray-200">
+              <DropdownMenuContent align="end" className="bg-background border-gray-200">
                 {task && (
                   <DropdownMenuItem 
                     className="text-gray-900 hover:bg-gray-50"
@@ -375,7 +375,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
               {subtasks.map((subtask) => (
                 <div
                   key={subtask.id}
-                  className="flex items-center gap-2 p-2 rounded hover:bg-white group"
+                  className="flex items-center gap-2 p-2 rounded hover:bg-background group"
                   data-testid={`subtask-${subtask.id}`}
                 >
                   <GripVertical className="h-3 w-3 text-gray-400" />
@@ -398,7 +398,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       }
                     }}
                     placeholder="Subtask name"
-                    className="bg-white border-gray-300 text-gray-900 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="bg-background border-gray-300 text-gray-900 text-sm focus:ring-2 focus:ring-blue-500"
                     autoFocus
                     data-testid="input-add-subtask"
                   />
@@ -407,7 +407,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start text-gray-600 hover:text-gray-900 hover:bg-white"
+                  className="w-full justify-start text-gray-600 hover:text-gray-900 hover:bg-background"
                   onClick={() => setShowSubtaskInput(true)}
                   data-testid="button-add-subtask"
                 >
@@ -447,7 +447,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                         )}
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-white border-gray-200">
+                    <DropdownMenuContent className="bg-background border-gray-200">
                       {users.map((user) => (
                         <DropdownMenuItem
                           key={user.id}
@@ -473,7 +473,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     <Input
                       type="date"
                       {...form.register("dueDate")}
-                      className="h-7 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                      className="h-7 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                       data-testid="input-due-date"
                     />
                     {form.watch("dueDate") && (
@@ -495,7 +495,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   <Input
                     type="time"
                     {...form.register("startTime")}
-                    className="h-7 w-32 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    className="h-7 w-32 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                     data-testid="input-start-time"
                   />
                 </div>
@@ -506,7 +506,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   <Input
                     type="time"
                     {...form.register("endTime")}
-                    className="h-7 w-32 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    className="h-7 w-32 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                     data-testid="input-end-time"
                   />
                 </div>
@@ -518,10 +518,10 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     value={form.watch("priority")}
                     onValueChange={(value) => form.setValue("priority", value as any, { shouldDirty: true, shouldTouch: true })}
                   >
-                    <SelectTrigger className="h-7 w-32 bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
+                    <SelectTrigger className="h-7 w-32 bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-gray-200">
+                    <SelectContent className="bg-background border-gray-200">
                       {priorityOptions.map((option) => (
                         <SelectItem key={option.key} value={option.key} className="text-gray-900 hover:bg-gray-50">
                           {option.name}
@@ -541,10 +541,10 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     value={form.watch("status")}
                     onValueChange={(value) => form.setValue("status", value, { shouldDirty: true, shouldTouch: true })}
                   >
-                    <SelectTrigger className="h-7 w-40 bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
+                    <SelectTrigger className="h-7 w-40 bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-gray-200">
+                    <SelectContent className="bg-background border-gray-200">
                       {statusOptions.map((option) => (
                         <SelectItem key={option.key} value={option.key} className="text-gray-900 hover:bg-gray-50">
                           {option.name}
@@ -569,7 +569,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                           field.onChange(html);
                         }}
                         placeholder="What is this task about?"
-                        className="bg-white border-gray-300"
+                        className="bg-background border-gray-300"
                         data-testid="editor-description"
                       />
                     )}
@@ -596,10 +596,10 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                       value={form.watch("recurringType")}
                       onValueChange={(value) => form.setValue("recurringType", value as any, { shouldDirty: true, shouldTouch: true })}
                     >
-                      <SelectTrigger className="h-6 w-24 text-xs bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
+                      <SelectTrigger className="h-6 w-24 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
                         <SelectValue placeholder="Weekly" />
                       </SelectTrigger>
-                      <SelectContent className="bg-white border-gray-200">
+                      <SelectContent className="bg-background border-gray-200">
                         <SelectItem value="daily" className="text-gray-900 hover:bg-gray-50">Daily</SelectItem>
                         <SelectItem value="weekly" className="text-gray-900 hover:bg-gray-50">Weekly</SelectItem>
                         <SelectItem value="monthly" className="text-gray-900 hover:bg-gray-50">Monthly</SelectItem>
@@ -651,7 +651,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   </Avatar>
                   <Input
                     placeholder="Add a comment"
-                    className="flex-1 h-8 bg-white border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 h-8 bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
                     data-testid="input-add-comment"
                   />
                 </div>

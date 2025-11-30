@@ -321,7 +321,7 @@ export default function Estimates() {
   return (
     <div className="flex flex-col h-full" data-testid="estimates-page">
       {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         {/* Left: Title + Count */}
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
@@ -346,7 +346,7 @@ export default function Estimates() {
       </div>
 
       {/* Row 2 - View Tabs (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View Tabs */}
         <div className="flex items-center gap-0.5">
           <button
@@ -423,7 +423,7 @@ export default function Estimates() {
       </div>
 
       {/* Row 3 - Search & Filters (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search */}

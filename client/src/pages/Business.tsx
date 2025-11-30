@@ -77,14 +77,14 @@ export default function Business() {
   return (
     <div className="flex flex-col h-full" data-testid="business-page">
       {/* Row 1 - Title (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
         <h2 className="text-sm font-semibold" data-testid="text-page-title">
           Business
         </h2>
       </div>
 
       {/* Row 2 - Tabs (36px) - Underline Style */}
-      <div className="h-9 bg-white flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
+      <div className="h-9 bg-background flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
         {BUSINESS_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;

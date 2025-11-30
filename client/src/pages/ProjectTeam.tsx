@@ -103,7 +103,7 @@ export default function ProjectTeam() {
         {users.map((user: any, index: number) => (
           <TableRow 
             key={user.id} 
-            className={`hover-elevate ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+            className={`hover-elevate ${index % 2 === 0 ? 'bg-background' : 'bg-gray-50/50'}`}
             data-testid={`${type}-row-${user.id}`}
           >
             <TableCell className="py-2">
@@ -153,7 +153,7 @@ export default function ProjectTeam() {
   return (
     <div className="flex flex-col h-full" data-testid="project-team-page">
       {/* Row 1 - Title Bar */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold text-foreground">Project Team</h1>
         </div>
@@ -168,7 +168,7 @@ export default function ProjectTeam() {
       </div>
 
       {/* Row 2 - Search */}
-      <div className="h-9 bg-white flex items-center px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center px-2 border-b border-border flex-shrink-0">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
           <Input

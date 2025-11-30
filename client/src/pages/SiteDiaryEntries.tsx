@@ -137,7 +137,7 @@ export default function SiteDiaryEntries() {
   return (
     <div className="flex flex-col h-full" data-testid="page-site-diary">
       {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             Site Diary
@@ -161,7 +161,7 @@ export default function SiteDiaryEntries() {
       </div>
 
       {/* Row 2 - Filters & Search (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"

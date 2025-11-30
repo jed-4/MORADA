@@ -185,7 +185,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       ref={setNodeRef}
       role="row"
       style={style}
-      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-white dark:bg-card' : ''}`}
+      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card' : ''}`}
       data-testid={`row-item-${id}`}
     >
       <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
@@ -3898,7 +3898,7 @@ export default function EstimateDetail() {
       {/* UNIFIED 2-ROW HEADER - MATCHES TASKS */}
       
       {/* Row 1 - Breadcrumb + Actions (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         {/* Left: Breadcrumb Navigation */}
         <div className="flex items-center gap-2">
           <Button 
@@ -3988,7 +3988,7 @@ export default function EstimateDetail() {
       </div>
 
       {/* Row 2 - Filters + Controls (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Filter Chips */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search Input */}

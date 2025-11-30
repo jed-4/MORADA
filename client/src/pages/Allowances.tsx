@@ -237,14 +237,14 @@ export default function Allowances() {
     return (
       <div className="flex flex-col h-full bg-background">
         {/* Row 1 Skeleton */}
-        <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="animate-pulse h-4 bg-muted rounded w-48" />
             <div className="animate-pulse h-5 bg-muted rounded w-16" />
           </div>
         </div>
         {/* Row 2 Skeleton */}
-        <div className="h-9 bg-white flex items-center px-2 gap-2 border-b border-border flex-shrink-0">
+        <div className="h-9 bg-background flex items-center px-2 gap-2 border-b border-border flex-shrink-0">
           <div className="animate-pulse h-6 bg-muted rounded w-48" />
           <div className="animate-pulse h-6 bg-muted rounded w-40" />
           <div className="animate-pulse h-6 bg-muted rounded w-20" />
@@ -267,7 +267,7 @@ export default function Allowances() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Row 1 - Breadcrumbs & Count (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         {/* Left: Project Name (Breadcrumb style) */}
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
@@ -280,7 +280,7 @@ export default function Allowances() {
       </div>
 
       {/* Row 2 - Search, Filters & Type Toggles (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filters */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search */}

@@ -37,7 +37,7 @@ export function CasvaTaskCreateRow({
 
   return (
     <div 
-      className="flex items-center gap-3 h-10 px-2 border-t border-border bg-white"
+      className="flex items-center gap-3 h-10 px-2 border-t border-border bg-background"
       data-testid="task-create-row"
     >
       {/* Drag Handle Placeholder */}

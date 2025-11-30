@@ -147,7 +147,7 @@ export default function Header() {
   };
   
   return (
-    <header className="flex items-center justify-between px-2 py-1 border-b bg-white dark:bg-gray-950 sticky top-0 z-50">
+    <header className="flex items-center justify-between px-2 py-1 border-b bg-background dark:bg-gray-950 sticky top-0 z-50">
       <div className="flex items-center gap-2">
         {/* Logo */}
         <div className="flex items-center justify-center w-6 h-6 bg-primary rounded" data-testid="company-logo">

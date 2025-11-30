@@ -141,101 +141,102 @@
 }
 
 .dark {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
 
-  --opaque-button-border-intensity: 9;  /* In terms of percentages */
+  --opaque-button-border-intensity: 8;  /* In terms of percentages */
 
   /* Backgrounds applied on top of other backgrounds when hovered/active */
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
 
-  --background: 220 15% 9%; /* Dark grey background */
+  /* Soft Charcoal Theme - Professional & Easy on Eyes */
+  --background: 220 12% 16%; /* Soft charcoal - not too dark */
 
-  --foreground: 220 5% 90%;
+  --foreground: 220 10% 92%; /* Slightly warmer white */
 
-  --border: 220 15% 16%;
+  --border: 220 10% 24%; /* Subtle border */
 
-  --card: 220 20% 14%; /* Slightly lighter than background */
+  --card: 220 12% 20%; /* Elevated card surface */
 
-  --card-foreground: 220 5% 90%;
+  --card-foreground: 220 10% 92%;
 
-  --card-border: 220 15% 20%;
+  --card-border: 220 10% 26%;
 
-  --sidebar: 220 20% 14%; /* Same as card */
+  --sidebar: 220 12% 18%; /* Slightly darker than card for depth */
 
-  --sidebar-foreground: 220 5% 90%;
+  --sidebar-foreground: 220 10% 92%;
 
-  --sidebar-border: 220 15% 20%;
+  --sidebar-border: 220 10% 24%;
 
-  --sidebar-primary: 240 50% 70%; /* Periwinkle matching primary (brighter for dark mode) */
+  --sidebar-primary: 265 55% 72%; /* Brighter lilac for dark mode */
 
-  --sidebar-primary-foreground: 220 15% 12%;
+  --sidebar-primary-foreground: 220 12% 16%;
 
-  --sidebar-accent: 220 15% 20%;
+  --sidebar-accent: 220 12% 24%;
 
-  --sidebar-accent-foreground: 220 5% 90%;
+  --sidebar-accent-foreground: 220 10% 92%;
 
-  --sidebar-ring: 240 50% 70%; /* Periwinkle matching primary */
+  --sidebar-ring: 265 55% 72%;
 
-  --popover: 220 20% 18%;
+  --popover: 220 12% 22%;
 
-  --popover-foreground: 220 5% 90%;
+  --popover-foreground: 220 10% 92%;
 
-  --popover-border: 220 15% 24%;
+  --popover-border: 220 10% 28%;
 
-  /* SOFT PURPLE TEST #4: Periwinkle - Dark Mode */
-  --primary: 240 50% 70%; /* Brighter Periwinkle for dark mode */
+  /* Brighter Lilac Accent for Dark Mode */
+  --primary: 265 55% 72%; /* Brighter lilac that pops */
 
-  --primary-foreground: 220 15% 12%;
+  --primary-foreground: 220 12% 16%;
 
-  --secondary: 240 40% 80%; /* Lighter periwinkle for dark mode */
+  --secondary: 265 30% 28%; /* Muted lilac background */
 
-  --secondary-foreground: 240 50% 20%;
+  --secondary-foreground: 220 10% 92%;
 
-  --muted: 220 12% 18%;
+  --muted: 220 10% 22%;
 
-  --muted-foreground: 220 12% 68%;
+  --muted-foreground: 220 10% 60%;
 
-  --accent: 210 100% 50%; /* BOLD construction blue - brighter for dark mode */
+  --accent: 265 55% 72%; /* Match primary lilac */
 
-  --accent-foreground: 0 0% 98%;
+  --accent-foreground: 220 12% 16%;
 
-  /* Construction-specific colors - Dark Mode */
-  --success: 142 76% 46%; /* Brighter eucalyptus for dark mode */
+  /* Construction-specific colors - Dark Mode (brighter for visibility) */
+  --success: 142 70% 48%; /* Brighter green */
   
-  --warning: 265 50% 80%; /* Brighter lilac purple */
+  --warning: 38 92% 55%; /* Warm amber warning */
   
-  --destructive: 0 84% 65%;
+  --destructive: 0 75% 60%; /* Softer red */
 
-  --destructive-foreground: 220 15% 12%;
+  --destructive-foreground: 0 0% 98%;
   
   /* Additional construction colors - Dark Mode */
-  --construction-sand: 43 74% 76%;
-  --construction-steel: 210 11% 81%;
-  --construction-safety: 60 100% 60%;
+  --construction-sand: 43 70% 65%;
+  --construction-steel: 210 15% 70%;
+  --construction-safety: 48 95% 55%;
 
-  --input: 220 20% 35%;
-  --ring: 240 50% 70%;
-  --chart-1: 210 90% 65%;
-  --chart-2: 142 70% 65%;
-  --chart-3: 38 85% 70%;
-  --chart-4: 280 60% 70%;
-  --chart-5: 15 80% 70%;
+  --input: 220 10% 28%;
+  --ring: 265 55% 72%;
+  --chart-1: 210 80% 60%;
+  --chart-2: 142 65% 55%;
+  --chart-3: 38 85% 60%;
+  --chart-4: 280 55% 65%;
+  --chart-5: 15 75% 60%;
 
-  /* Enhanced shadows for dark mode depth */
-  --shadow-2xs: 0px 1px 2px 0px hsl(220 15% 5% / 0.18);
-  --shadow-xs: 0px 1px 3px 0px hsl(220 15% 5% / 0.22);
-  --shadow-sm: 0px 1px 2px 0px hsl(220 15% 5% / 0.28), 0px 1px 3px -1px hsl(220 15% 5% / 0.22);
-  --shadow: 0px 1px 3px 0px hsl(220 15% 5% / 0.32), 0px 1px 2px -1px hsl(220 15% 5% / 0.28);
-  --shadow-md: 0px 4px 6px -1px hsl(220 15% 5% / 0.38), 0px 2px 4px -1px hsl(220 15% 5% / 0.22);
-  --shadow-lg: 0px 10px 15px -3px hsl(220 15% 5% / 0.38), 0px 4px 6px -2px hsl(220 15% 5% / 0.18);
-  --shadow-xl: 0px 20px 25px -5px hsl(220 15% 5% / 0.40), 0px 10px 10px -5px hsl(220 15% 5% / 0.12);
-  --shadow-2xl: 0px 25px 50px -12px hsl(220 15% 5% / 0.55);
+  /* Softer shadows for charcoal theme */
+  --shadow-2xs: 0px 1px 2px 0px hsl(220 20% 8% / 0.20);
+  --shadow-xs: 0px 1px 3px 0px hsl(220 20% 8% / 0.25);
+  --shadow-sm: 0px 1px 2px 0px hsl(220 20% 8% / 0.30), 0px 1px 3px -1px hsl(220 20% 8% / 0.25);
+  --shadow: 0px 1px 3px 0px hsl(220 20% 8% / 0.35), 0px 1px 2px -1px hsl(220 20% 8% / 0.30);
+  --shadow-md: 0px 4px 6px -1px hsl(220 20% 8% / 0.40), 0px 2px 4px -1px hsl(220 20% 8% / 0.25);
+  --shadow-lg: 0px 10px 15px -3px hsl(220 20% 8% / 0.40), 0px 4px 6px -2px hsl(220 20% 8% / 0.20);
+  --shadow-xl: 0px 20px 25px -5px hsl(220 20% 8% / 0.45), 0px 10px 10px -5px hsl(220 20% 8% / 0.15);
+  --shadow-2xl: 0px 25px 50px -12px hsl(220 20% 8% / 0.55);
   
   /* Professional card shadow for dark mode */
-  --shadow-card: 0px 2px 4px -1px hsl(220 15% 5% / 0.25), 0px 1px 2px -1px hsl(220 15% 5% / 0.18);
-  --shadow-card-hover: 0px 4px 8px -1px hsl(220 15% 5% / 0.35), 0px 2px 4px -1px hsl(220 15% 5% / 0.22);
+  --shadow-card: 0px 2px 4px -1px hsl(220 20% 8% / 0.30), 0px 1px 2px -1px hsl(220 20% 8% / 0.20);
+  --shadow-card-hover: 0px 4px 8px -1px hsl(220 20% 8% / 0.40), 0px 2px 4px -1px hsl(220 20% 8% / 0.25);
 
 }
 

@@ -878,7 +878,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
               >
                 {/* Grid Header */}
                 <div 
-                  className="sticky top-0 z-10 bg-white border-b border-gray-200 grid items-center gap-4 px-4 h-9"
+                  className="sticky top-0 z-10 bg-background border-b border-gray-200 grid items-center gap-4 px-4 h-9"
                   style={{ gridTemplateColumns: "32px 120px 1fr 140px 120px 100px 32px" }}
                 >
                   <div></div>
@@ -891,7 +891,7 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                 </div>
                   
                 {/* Grid Body */}
-                <div className="bg-white">
+                <div className="bg-background">
                   {/* Regular ungrouped tasks */}
                   <SortableContext items={sortedTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
                     {sortedTasks.length === 0 ? (

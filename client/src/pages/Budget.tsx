@@ -154,10 +154,10 @@ export default function BudgetPage() {
   if (budgetLoading) {
     return (
       <div className="flex flex-col h-full">
-        <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-2 gap-4 flex-shrink-0">
+        <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-2 gap-4 flex-shrink-0">
           <Skeleton className="h-5 w-24" />
         </div>
-        <div className="h-9 bg-white dark:bg-gray-950 flex items-center px-2 border-b flex-shrink-0">
+        <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-2 border-b flex-shrink-0">
           <Skeleton className="h-6 w-32" />
         </div>
         <div className="p-2 space-y-2">
@@ -189,7 +189,7 @@ export default function BudgetPage() {
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
       {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-budget-title">
             {pageTitle}
@@ -220,7 +220,7 @@ export default function BudgetPage() {
       </div>
 
       {/* Row 2 - Tabs (36px) */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setActiveTab('costs')}

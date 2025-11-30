@@ -541,7 +541,7 @@ export default function PurchaseOrders() {
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
       {/* Row 1 - Breadcrumbs + Title + Actions */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0">
         <div className="flex items-center gap-2">
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
@@ -579,7 +579,7 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Row 2 - Type Tabs + Totals */}
-      <div className="h-9 bg-white dark:bg-gray-950 flex items-center justify-between px-3 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 flex-shrink-0">
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setSelectedType("all")}
@@ -640,7 +640,7 @@ export default function PurchaseOrders() {
             placeholder="Search by name, PO#, supplier..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-8 pr-2 py-0 h-7 text-xs bg-white dark:bg-gray-950 border rounded-md"
+            className="pl-8 pr-2 py-0 h-7 text-xs bg-background dark:bg-gray-950 border rounded-md"
             data-testid="po-search-input"
           />
         </div>
@@ -656,7 +656,7 @@ export default function PurchaseOrders() {
               className={`h-6 px-2 text-[11px] font-medium rounded-full transition-all ${
                 selectedStatus === status.key
                   ? "bg-[#bba7db] text-white shadow-sm"
-                  : "bg-white dark:bg-gray-900 border hover-elevate"
+                  : "bg-background dark:bg-gray-900 border hover-elevate"
               }`}
               data-testid={`filter-status-${status.key}`}
             >
@@ -679,7 +679,7 @@ export default function PurchaseOrders() {
               className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
                 selectedSupplierId 
                   ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
-                  : "bg-white dark:bg-gray-900 border hover-elevate"
+                  : "bg-background dark:bg-gray-900 border hover-elevate"
               }`}
               data-testid="filter-supplier-popover"
             >
@@ -723,7 +723,7 @@ export default function PurchaseOrders() {
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className="h-7 w-7 text-xs bg-white dark:bg-gray-900 border rounded-md hover-elevate flex items-center justify-center"
+              className="h-7 w-7 text-xs bg-background dark:bg-gray-900 border rounded-md hover-elevate flex items-center justify-center"
               data-testid="button-columns"
               title="Configure columns"
             >
@@ -843,7 +843,7 @@ export default function PurchaseOrders() {
                       <TableRow 
                         key={po.id} 
                         className={`cursor-pointer hover-elevate transition-colors ${
-                          isEven ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
+                          isEven ? "bg-background dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
                         }`}
                         onClick={() => handleRowClick(po.id)}
                         data-testid={`po-row-${po.id}`}

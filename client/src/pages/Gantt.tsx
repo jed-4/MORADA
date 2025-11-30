@@ -1407,7 +1407,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       >
                         {/* Left resize handle */}
                         <div
-                          className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                          className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleBarMouseDown(e, parentItem, 'resize-left');
@@ -1423,7 +1423,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         
                         {/* Right resize handle */}
                         <div
-                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleBarMouseDown(e, parentItem, 'resize-right');
@@ -1433,7 +1433,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         
                         {/* Dependency connector circle (right side) */}
                         <div
-                          className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
+                          className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-background border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleBarMouseDown(e, parentItem, 'dependency');
@@ -1484,7 +1484,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           >
                             {/* Left resize handle */}
                             <div
-                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 handleBarMouseDown(e, childItem, 'resize-left');
@@ -1500,7 +1500,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             
                             {/* Right resize handle */}
                             <div
-                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 handleBarMouseDown(e, childItem, 'resize-right');
@@ -1510,7 +1510,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             
                             {/* Dependency connector circle (right side) */}
                             <div
-                              className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
+                              className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-background border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 handleBarMouseDown(e, childItem, 'dependency');
