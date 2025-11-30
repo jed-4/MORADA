@@ -77,6 +77,7 @@ import { SocketProvider } from "@/lib/socket";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
+import RFQPortal from "@/pages/RFQPortal";
 import RFIs from "@/pages/RFIs";
 import RFIDetail from "@/pages/RFIDetail";
 import ProjectScope from "@/pages/ProjectScope";
@@ -89,6 +90,9 @@ function Router() {
   
   return (
     <Switch>
+      {/* Public portal routes (work for authenticated users too) */}
+      <Route path="/portal/rfq/:token" component={RFQPortal} />
+      
       <Route path="/" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
@@ -252,6 +256,7 @@ function UnauthenticatedRoutes() {
   return (
     <Switch>
       <Route path="/accept-invite/:token" component={AcceptInvitation} />
+      <Route path="/portal/rfq/:token" component={RFQPortal} />
       {/* Replit Auth handles login/signup via /api/login */}
       <Route path="/" component={LandingPage} />
       <Route component={LandingPage} />
