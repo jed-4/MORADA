@@ -35,6 +35,9 @@ import {
   type RfqItem, type InsertRfqItem,
   type RfqQuote, type InsertRfqQuote,
   type RfqFollowUp, type InsertRfqFollowUp,
+  type RfqPortalToken, type InsertRfqPortalToken,
+  type Rfi, type InsertRfi,
+  type RfiComment, type InsertRfiComment,
   type Bill, type InsertBill,
   type BillLineItem, type InsertBillLineItem,
   type BillApproval, type InsertBillApproval,
@@ -442,6 +445,27 @@ export interface IStorage {
   createRFQFollowUp(followUp: InsertRfqFollowUp): Promise<RfqFollowUp>;
   updateRFQFollowUp(id: string, followUp: Partial<InsertRfqFollowUp>): Promise<RfqFollowUp>;
   deleteRFQFollowUp(id: string): Promise<boolean>;
+
+  // RFQ Portal Tokens CRUD
+  getRFQPortalTokens(rfqId: string): Promise<RfqPortalToken[]>;
+  getRFQPortalTokenByToken(token: string): Promise<RfqPortalToken | undefined>;
+  createRFQPortalToken(portalToken: InsertRfqPortalToken): Promise<RfqPortalToken>;
+  updateRFQPortalToken(id: string, portalToken: Partial<InsertRfqPortalToken>): Promise<RfqPortalToken | undefined>;
+  deleteRFQPortalToken(id: string): Promise<boolean>;
+
+  // RFI (Request for Information) CRUD
+  getRFIs(companyId: string, projectId?: string): Promise<Rfi[]>;
+  getRFI(id: string): Promise<Rfi | undefined>;
+  createRFI(rfi: InsertRfi, companyId: string, userId: string, userName: string): Promise<Rfi>;
+  updateRFI(id: string, rfi: Partial<InsertRfi>): Promise<Rfi | undefined>;
+  deleteRFI(id: string): Promise<boolean>;
+  getNextRFINumber(companyId: string, projectId: string): Promise<string>;
+
+  // RFI Comments CRUD
+  getRFIComments(rfiId: string): Promise<RfiComment[]>;
+  createRFIComment(comment: InsertRfiComment): Promise<RfiComment>;
+  updateRFIComment(id: string, comment: Partial<InsertRfiComment>): Promise<RfiComment | undefined>;
+  deleteRFIComment(id: string): Promise<boolean>;
 
   // Bills CRUD
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
@@ -9185,6 +9209,236 @@ export class DbStorage implements IStorage {
       return deletedFollowUps.length > 0;
     } catch (error) {
       console.error("Database error in deleteRFQFollowUp:", error);
+      throw error;
+    }
+  }
+
+  // RFQ Portal Token Methods
+  async getRFQPortalTokens(rfqId: string): Promise<RfqPortalToken[]> {
+    try {
+      const tokens = await db.select()
+        .from(schema.rfqPortalTokens)
+        .where(eq(schema.rfqPortalTokens.rfqId, rfqId))
+        .orderBy(desc(schema.rfqPortalTokens.createdAt));
+      return tokens;
+    } catch (error) {
+      console.error("Database error in getRFQPortalTokens:", error);
+      throw error;
+    }
+  }
+
+  async getRFQPortalTokenByToken(token: string): Promise<RfqPortalToken | undefined> {
+    try {
+      const tokens = await db.select()
+        .from(schema.rfqPortalTokens)
+        .where(and(
+          eq(schema.rfqPortalTokens.token, token),
+          eq(schema.rfqPortalTokens.isActive, true)
+        ));
+      return tokens[0];
+    } catch (error) {
+      console.error("Database error in getRFQPortalTokenByToken:", error);
+      throw error;
+    }
+  }
+
+  async createRFQPortalToken(portalToken: InsertRfqPortalToken): Promise<RfqPortalToken> {
+    try {
+      const newTokens = await db.insert(schema.rfqPortalTokens)
+        .values(portalToken)
+        .returning();
+      return newTokens[0];
+    } catch (error) {
+      console.error("Database error in createRFQPortalToken:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQPortalToken(id: string, portalToken: Partial<InsertRfqPortalToken>): Promise<RfqPortalToken | undefined> {
+    try {
+      const updatedTokens = await db.update(schema.rfqPortalTokens)
+        .set(portalToken)
+        .where(eq(schema.rfqPortalTokens.id, id))
+        .returning();
+      return updatedTokens[0];
+    } catch (error) {
+      console.error("Database error in updateRFQPortalToken:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFQPortalToken(id: string): Promise<boolean> {
+    try {
+      const deletedTokens = await db.delete(schema.rfqPortalTokens)
+        .where(eq(schema.rfqPortalTokens.id, id))
+        .returning();
+      return deletedTokens.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFQPortalToken:", error);
+      throw error;
+    }
+  }
+
+  // RFI Methods
+  async getRFIs(companyId: string, projectId?: string): Promise<Rfi[]> {
+    try {
+      const conditions = [eq(schema.rfis.companyId, companyId)];
+      if (projectId) {
+        conditions.push(eq(schema.rfis.projectId, projectId));
+      }
+      const rfis = await db.select()
+        .from(schema.rfis)
+        .where(and(...conditions))
+        .orderBy(desc(schema.rfis.createdAt));
+      return rfis;
+    } catch (error) {
+      console.error("Database error in getRFIs:", error);
+      throw error;
+    }
+  }
+
+  async getRFI(id: string): Promise<Rfi | undefined> {
+    try {
+      const rfis = await db.select()
+        .from(schema.rfis)
+        .where(eq(schema.rfis.id, id));
+      return rfis[0];
+    } catch (error) {
+      console.error("Database error in getRFI:", error);
+      throw error;
+    }
+  }
+
+  async getNextRFINumber(companyId: string, projectId: string): Promise<string> {
+    try {
+      // Get project job number
+      const projects = await db.select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, projectId));
+      const project = projects[0];
+      const jobNumber = project?.jobNumber || "";
+
+      // Get system config for prefix
+      const config = await db.select()
+        .from(schema.systemConfiguration)
+        .limit(1);
+      const rfiPrefix = config[0]?.rfiPrefix || "RFI-";
+      const startNumber = config[0]?.rfiStartNumber || 1000;
+
+      // Get count of RFIs for this project
+      const existingRfis = await db.select()
+        .from(schema.rfis)
+        .where(eq(schema.rfis.projectId, projectId));
+      
+      const nextNum = startNumber + existingRfis.length;
+      const paddedNum = String(nextNum).padStart(3, '0');
+      
+      // Format: JOBNUMBER-RFI-001 or just RFI-001 if no job number
+      if (jobNumber) {
+        return `${jobNumber}-${rfiPrefix}${paddedNum}`;
+      }
+      return `${rfiPrefix}${paddedNum}`;
+    } catch (error) {
+      console.error("Database error in getNextRFINumber:", error);
+      throw error;
+    }
+  }
+
+  async createRFI(rfi: InsertRfi, companyId: string, userId: string, userName: string): Promise<Rfi> {
+    try {
+      const rfiNumber = await this.getNextRFINumber(companyId, rfi.projectId);
+      const newRfis = await db.insert(schema.rfis)
+        .values({
+          ...rfi,
+          companyId,
+          createdById: userId,
+          createdByName: userName,
+          rfiNumber,
+        })
+        .returning();
+      return newRfis[0];
+    } catch (error) {
+      console.error("Database error in createRFI:", error);
+      throw error;
+    }
+  }
+
+  async updateRFI(id: string, rfi: Partial<InsertRfi>): Promise<Rfi | undefined> {
+    try {
+      const updatedRfis = await db.update(schema.rfis)
+        .set({ ...rfi, updatedAt: new Date() })
+        .where(eq(schema.rfis.id, id))
+        .returning();
+      return updatedRfis[0];
+    } catch (error) {
+      console.error("Database error in updateRFI:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFI(id: string): Promise<boolean> {
+    try {
+      // First delete related comments
+      await db.delete(schema.rfiComments)
+        .where(eq(schema.rfiComments.rfiId, id));
+      
+      const deletedRfis = await db.delete(schema.rfis)
+        .where(eq(schema.rfis.id, id))
+        .returning();
+      return deletedRfis.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFI:", error);
+      throw error;
+    }
+  }
+
+  // RFI Comments Methods
+  async getRFIComments(rfiId: string): Promise<RfiComment[]> {
+    try {
+      const comments = await db.select()
+        .from(schema.rfiComments)
+        .where(eq(schema.rfiComments.rfiId, rfiId))
+        .orderBy(asc(schema.rfiComments.createdAt));
+      return comments;
+    } catch (error) {
+      console.error("Database error in getRFIComments:", error);
+      throw error;
+    }
+  }
+
+  async createRFIComment(comment: InsertRfiComment): Promise<RfiComment> {
+    try {
+      const newComments = await db.insert(schema.rfiComments)
+        .values(comment)
+        .returning();
+      return newComments[0];
+    } catch (error) {
+      console.error("Database error in createRFIComment:", error);
+      throw error;
+    }
+  }
+
+  async updateRFIComment(id: string, comment: Partial<InsertRfiComment>): Promise<RfiComment | undefined> {
+    try {
+      const updatedComments = await db.update(schema.rfiComments)
+        .set({ ...comment, updatedAt: new Date() })
+        .where(eq(schema.rfiComments.id, id))
+        .returning();
+      return updatedComments[0];
+    } catch (error) {
+      console.error("Database error in updateRFIComment:", error);
+      throw error;
+    }
+  }
+
+  async deleteRFIComment(id: string): Promise<boolean> {
+    try {
+      const deletedComments = await db.delete(schema.rfiComments)
+        .where(eq(schema.rfiComments.id, id))
+        .returning();
+      return deletedComments.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRFIComment:", error);
       throw error;
     }
   }

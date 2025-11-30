@@ -92,6 +92,7 @@ import {
   insertRfqItemSchema,
   insertRfqQuoteSchema,
   insertRfqFollowUpSchema,
+  insertRfiSchema,
   insertScopeItemSchema,
   insertScopeStageSchema,
   insertScopeTemplateSchema,
@@ -137,6 +138,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     // Public invitation endpoints
     if (/^\/invitations\/by-token\/[^/]+$/.test(path) || /^\/invitations\/[^/]+\/accept$/.test(path)) {
+      return next();
+    }
+    
+    // Public RFQ portal endpoints (suppliers submitting quotes)
+    if (path.startsWith('/portal/')) {
       return next();
     }
 
@@ -5350,6 +5356,302 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting RFQ follow-up:", error);
       res.status(500).json({ error: "Failed to delete RFQ follow-up" });
+    }
+  });
+
+  // RFQ Portal Token Routes
+  app.get("/api/rfqs/:rfqId/portal-tokens", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfq = await storage.getRFQ(req.params.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const tokens = await storage.getRFQPortalTokens(req.params.rfqId);
+      res.json(tokens);
+    } catch (error) {
+      console.error("Error fetching RFQ portal tokens:", error);
+      res.status(500).json({ error: "Failed to fetch portal tokens" });
+    }
+  });
+
+  app.post("/api/rfq-portal-tokens", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { rfqId, supplierEmail, supplierId, expiresAt } = req.body;
+      
+      const rfq = await storage.getRFQ(rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+      if (rfq.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const token = randomUUID();
+      const portalToken = await storage.createRFQPortalToken({
+        rfqId,
+        supplierId,
+        supplierEmail,
+        token,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        isActive: true,
+      });
+      res.status(201).json(portalToken);
+    } catch (error: any) {
+      console.error("Error creating RFQ portal token:", error);
+      res.status(500).json({ error: "Failed to create portal token" });
+    }
+  });
+
+  // Public RFQ Portal (no auth required for suppliers)
+  app.get("/api/portal/rfq/:token", async (req, res) => {
+    try {
+      const portalToken = await storage.getRFQPortalTokenByToken(req.params.token);
+      if (!portalToken) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      if (portalToken.expiresAt && new Date(portalToken.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "This link has expired" });
+      }
+
+      // Mark as viewed if first time
+      if (!portalToken.viewedAt) {
+        await storage.updateRFQPortalToken(portalToken.id, { viewedAt: new Date() });
+      }
+
+      const rfq = await storage.getRFQ(portalToken.rfqId);
+      if (!rfq) {
+        return res.status(404).json({ error: "RFQ not found" });
+      }
+
+      const items = await storage.getRFQItems(rfq.id);
+      
+      // Return limited RFQ info for supplier
+      res.json({
+        rfq: {
+          id: rfq.id,
+          rfqNumber: rfq.rfqNumber,
+          title: rfq.title,
+          description: rfq.description,
+          scope: rfq.scope,
+          dueDate: rfq.dueDate,
+          attachmentUrls: rfq.attachmentUrls,
+          attachmentFileNames: rfq.attachmentFileNames,
+        },
+        items,
+        supplierEmail: portalToken.supplierEmail,
+        alreadySubmitted: !!portalToken.quoteSubmittedId,
+      });
+    } catch (error) {
+      console.error("Error fetching portal RFQ:", error);
+      res.status(500).json({ error: "Failed to load quote request" });
+    }
+  });
+
+  app.post("/api/portal/rfq/:token/submit-quote", async (req, res) => {
+    try {
+      const portalToken = await storage.getRFQPortalTokenByToken(req.params.token);
+      if (!portalToken) {
+        return res.status(404).json({ error: "Invalid or expired link" });
+      }
+      if (portalToken.expiresAt && new Date(portalToken.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "This link has expired" });
+      }
+      if (portalToken.quoteSubmittedId) {
+        return res.status(400).json({ error: "Quote already submitted via this link" });
+      }
+
+      const { totalAmount, leadTime, validUntil, notes, supplierName, supplierEmail } = req.body;
+      
+      if (!totalAmount || totalAmount <= 0) {
+        return res.status(400).json({ error: "Quote amount is required" });
+      }
+
+      const quote = await storage.createRFQQuote({
+        rfqId: portalToken.rfqId,
+        supplierId: portalToken.supplierId || null,
+        supplierName: supplierName || "",
+        supplierEmail: supplierEmail || portalToken.supplierEmail || "",
+        totalAmount: Math.round(totalAmount * 100), // Convert to cents
+        leadTime: leadTime || null,
+        validUntil: validUntil ? new Date(validUntil) : null,
+        notes: notes || null,
+        submittedViaPortal: true,
+        submittedAt: new Date(),
+        status: "pending",
+      });
+
+      // Mark token as used
+      await storage.updateRFQPortalToken(portalToken.id, { 
+        quoteSubmittedId: quote.id 
+      });
+
+      res.status(201).json({ success: true, message: "Quote submitted successfully" });
+    } catch (error: any) {
+      console.error("Error submitting portal quote:", error);
+      res.status(500).json({ error: "Failed to submit quote" });
+    }
+  });
+
+  // RFI (Request for Information) Routes
+  app.get("/api/rfis", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const rfis = await storage.getRFIs(
+        req.user!.companyId!,
+        projectId as string | undefined
+      );
+      res.json(rfis);
+    } catch (error) {
+      console.error("Error fetching RFIs:", error);
+      res.status(500).json({ error: "Failed to fetch RFIs" });
+    }
+  });
+
+  app.get("/api/rfis/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfi = await storage.getRFI(req.params.id);
+      if (!rfi) {
+        return res.status(404).json({ error: "RFI not found" });
+      }
+      if (rfi.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      res.json(rfi);
+    } catch (error) {
+      console.error("Error fetching RFI:", error);
+      res.status(500).json({ error: "Failed to fetch RFI" });
+    }
+  });
+
+  app.post("/api/rfis", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertRfiSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const rfi = await storage.createRFI(
+        validationResult.data,
+        req.user!.companyId!,
+        req.user!.id,
+        `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.email || "Unknown"
+      );
+      res.status(201).json(rfi);
+    } catch (error: any) {
+      console.error("Error creating RFI:", error);
+      res.status(500).json({ error: "Failed to create RFI", details: error.message });
+    }
+  });
+
+  app.patch("/api/rfis/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existingRfi = await storage.getRFI(req.params.id);
+      if (!existingRfi) {
+        return res.status(404).json({ error: "RFI not found" });
+      }
+      if (existingRfi.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const validationResult = insertRfiSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
+        });
+      }
+
+      const rfi = await storage.updateRFI(req.params.id, validationResult.data);
+      res.json(rfi);
+    } catch (error: any) {
+      console.error("Error updating RFI:", error);
+      res.status(500).json({ error: "Failed to update RFI", details: error.message });
+    }
+  });
+
+  app.delete("/api/rfis/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const existingRfi = await storage.getRFI(req.params.id);
+      if (!existingRfi) {
+        return res.status(404).json({ error: "RFI not found" });
+      }
+      if (existingRfi.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const deleted = await storage.deleteRFI(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "RFI not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFI:", error);
+      res.status(500).json({ error: "Failed to delete RFI" });
+    }
+  });
+
+  // RFI Comments Routes
+  app.get("/api/rfis/:rfiId/comments", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const rfi = await storage.getRFI(req.params.rfiId);
+      if (!rfi) {
+        return res.status(404).json({ error: "RFI not found" });
+      }
+      if (rfi.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const comments = await storage.getRFIComments(req.params.rfiId);
+      res.json(comments);
+    } catch (error) {
+      console.error("Error fetching RFI comments:", error);
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/rfi-comments", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { rfiId, content, attachmentUrls, attachmentFileNames, isExternalResponse } = req.body;
+      
+      const rfi = await storage.getRFI(rfiId);
+      if (!rfi) {
+        return res.status(404).json({ error: "RFI not found" });
+      }
+      if (rfi.companyId !== req.user!.companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const comment = await storage.createRFIComment({
+        rfiId,
+        content,
+        attachmentUrls: attachmentUrls || [],
+        attachmentFileNames: attachmentFileNames || [],
+        createdById: req.user!.id,
+        createdByName: `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.email || "Unknown",
+        isExternalResponse: isExternalResponse || false,
+      });
+      res.status(201).json(comment);
+    } catch (error: any) {
+      console.error("Error creating RFI comment:", error);
+      res.status(500).json({ error: "Failed to create comment" });
+    }
+  });
+
+  app.delete("/api/rfi-comments/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const deleted = await storage.deleteRFIComment(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Comment not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting RFI comment:", error);
+      res.status(500).json({ error: "Failed to delete comment" });
     }
   });
 

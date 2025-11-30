@@ -3244,9 +3244,14 @@ export const rfqs = pgTable("rfqs", {
   
   // File attachments (plans, specs)
   attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`), // Array of file URLs
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`), // Original file names
   
   // PDF generation
   pdfUrl: text("pdf_url"), // Generated PDF URL
+  
+  // External tracking (for quotes requested outside the system)
+  isExternal: boolean("is_external").notNull().default(false),
+  externalNotes: text("external_notes"), // Notes about where RFQ was sent externally
   
   createdBy: varchar("created_by").notNull(),
   createdByName: text("created_by_name").notNull(),
@@ -3307,14 +3312,24 @@ export const rfqQuotes = pgTable("rfq_quotes", {
   
   supplierId: varchar("supplier_id").references(() => suppliers.id),
   supplierName: text("supplier_name"),
+  supplierEmail: text("supplier_email"), // For portal submissions
   
   totalAmount: integer("total_amount").notNull(), // In cents
+  leadTime: text("lead_time"), // e.g., "2-3 weeks"
+  validUntil: timestamp("valid_until"), // Quote expiry
   notes: text("notes"),
   attachments: json("attachments").default([]), // Array of {name, url, size}
   
   status: text("status").notNull().default("pending"), // "pending" | "accepted" | "declined"
   acceptedAt: timestamp("accepted_at"),
   declinedAt: timestamp("declined_at"),
+  
+  // Portal submission tracking
+  submittedViaPortal: boolean("submitted_via_portal").notNull().default(false),
+  submittedAt: timestamp("submitted_at"),
+  
+  // For conversion to PO
+  convertedToPurchaseOrderId: varchar("converted_to_purchase_order_id"),
   
   uploadedBy: varchar("uploaded_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -3359,6 +3374,147 @@ export const insertRfqFollowUpSchema = createInsertSchema(rfqFollowUps).omit({
 
 export type InsertRfqFollowUp = z.infer<typeof insertRfqFollowUpSchema>;
 export type RfqFollowUp = typeof rfqFollowUps.$inferSelect;
+
+// RFQ Portal Tokens (for external quote submission)
+export const rfqPortalTokens = pgTable("rfq_portal_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  
+  // Per-supplier tokens for tracking who submitted
+  supplierId: varchar("supplier_id"), // Optional - for tracking which supplier this token is for
+  supplierEmail: text("supplier_email"), // Email to send portal link to
+  
+  token: text("token").notNull().unique(), // Unique token for portal URL
+  expiresAt: timestamp("expires_at"), // Optional expiry
+  
+  // Usage tracking
+  viewedAt: timestamp("viewed_at"), // When supplier first viewed the RFQ
+  quoteSubmittedId: varchar("quote_submitted_id"), // Link to submitted quote
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertRfqPortalTokenSchema = createInsertSchema(rfqPortalTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRfqPortalToken = z.infer<typeof insertRfqPortalTokenSchema>;
+export type RfqPortalToken = typeof rfqPortalTokens.$inferSelect;
+
+// ============================================
+// RFI (Request for Information) System
+// ============================================
+
+export const rfiStatusEnum = pgEnum("rfi_status", ["draft", "submitted", "under_review", "answered", "closed"]);
+
+// RFIs table
+export const rfis = pgTable("rfis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfiNumber: text("rfi_number").notNull(), // e.g., "4504-RFI-001"
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  
+  // RFI details
+  subject: text("subject").notNull(), // Brief subject line
+  question: text("question").notNull(), // The actual question/request (rich text)
+  
+  // Directed to (who needs to answer)
+  directedToType: text("directed_to_type").notNull(), // "client" | "architect" | "engineer" | "consultant" | "subcontractor" | "other"
+  directedToContactId: varchar("directed_to_contact_id").references(() => contacts.id),
+  directedToName: text("directed_to_name"), // Display name
+  directedToEmail: text("directed_to_email"), // For sending
+  
+  // Response
+  response: text("response"), // The answer (rich text)
+  respondedById: varchar("responded_by_id").references(() => users.id),
+  respondedByName: text("responded_by_name"),
+  respondedAt: timestamp("responded_at"),
+  
+  // Dates
+  dueDate: timestamp("due_date"),
+  closedAt: timestamp("closed_at"),
+  
+  // Priority and status
+  priority: text("priority").notNull().default("normal"), // "low" | "normal" | "high" | "urgent"
+  status: rfiStatusEnum("status").notNull().default("draft"),
+  
+  // File attachments
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+  
+  // Response attachments
+  responseAttachmentUrls: text("response_attachment_urls").array().notNull().default(sql`'{}'`),
+  responseAttachmentFileNames: text("response_attachment_file_names").array().notNull().default(sql`'{}'`),
+  
+  // Email tracking
+  sentAt: timestamp("sent_at"),
+  sentToEmail: text("sent_to_email"),
+  
+  // PDF generation
+  pdfUrl: text("pdf_url"),
+  
+  // Creator
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("rfis_project_idx").on(table.projectId),
+  companyIdx: index("rfis_company_idx").on(table.companyId),
+  statusIdx: index("rfis_status_idx").on(table.status),
+}));
+
+export const insertRfiSchema = createInsertSchema(rfis).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  companyId: true,
+  createdById: true,
+  createdByName: true,
+  rfiNumber: true,
+}).extend({
+  subject: z.string().min(1, "Subject is required"),
+  question: z.string().min(10, "Question must be at least 10 characters"),
+  directedToType: z.enum(["client", "architect", "engineer", "consultant", "subcontractor", "other"]),
+  priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+  attachmentUrls: z.array(z.string()).optional(),
+  attachmentFileNames: z.array(z.string()).optional(),
+  dueDate: z.coerce.date().optional(),
+});
+
+export type InsertRfi = z.infer<typeof insertRfiSchema>;
+export type Rfi = typeof rfis.$inferSelect;
+
+// RFI Comments/Activity (for conversation thread)
+export const rfiComments = pgTable("rfi_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfiId: varchar("rfi_id").notNull().references(() => rfis.id, { onDelete: "cascade" }),
+  
+  content: text("content").notNull(),
+  
+  // Attachments
+  attachmentUrls: text("attachment_urls").array().notNull().default(sql`'{}'`),
+  attachmentFileNames: text("attachment_file_names").array().notNull().default(sql`'{}'`),
+  
+  // Who posted
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdByName: text("created_by_name").notNull(),
+  isExternalResponse: boolean("is_external_response").notNull().default(false), // If response came from external party
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfiCommentSchema = createInsertSchema(rfiComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertRfiComment = z.infer<typeof insertRfiCommentSchema>;
+export type RfiComment = typeof rfiComments.$inferSelect;
 
 // ============================================
 // PURCHASE ORDERS
