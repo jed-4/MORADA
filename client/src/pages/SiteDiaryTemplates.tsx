@@ -192,54 +192,68 @@ export default function SiteDiaryTemplates() {
     if (file) handleFileSelect(file);
   };
 
-  // Filter templates
-  const filteredTemplates = templates.filter(template =>
-    template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    template.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter and sort templates alphabetically
+  const filteredTemplates = templates
+    .filter(template =>
+      template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      template.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="h-full flex flex-col p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Site Diary Templates</h1>
-          <p className="text-muted-foreground mt-1">
-            Create and manage company-wide site diary templates
-          </p>
+    <div className="h-full flex flex-col">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Title + Count */}
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            Site Diary Templates
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
+            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
+          </Badge>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
+
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsImportDialogOpen(true)}
             data-testid="button-import-templates"
           >
-            <Upload className="h-4 w-4 mr-2" />
-            Import from Excel
-          </Button>
-          <Button
+            <Upload className="w-3 h-3" />
+            <span>Import</span>
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsAddingTemplate(true)}
             data-testid="button-add-template"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            New Template
-          </Button>
+            <Plus className="w-3 h-3" />
+            <span>New Template</span>
+          </button>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative w-full max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search templates..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-          data-testid="input-search-templates"
-        />
+      {/* Row 2 - Search & Filters (36px) */}
+      <div className="h-9 bg-white flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search */}
+        <div className="flex items-center gap-1.5 flex-1">
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-templates"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Templates List */}
+      <div className="flex-1 overflow-auto p-4">
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground text-sm">
           Loading templates...
@@ -256,15 +270,14 @@ export default function SiteDiaryTemplates() {
               : "Start by adding your first template"}
           </p>
           {!searchTerm && (
-            <Button 
-              size="sm"
+            <button 
               onClick={() => setIsAddingTemplate(true)} 
-              className="h-6 px-2 text-xs gap-1"
+              className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
               data-testid="button-create-first-template"
             >
               <Plus className="h-3 w-3" />
               Add Your First Template
-            </Button>
+            </button>
           )}
         </div>
       ) : (
@@ -375,6 +388,7 @@ export default function SiteDiaryTemplates() {
           ))}
         </div>
       )}
+      </div>
 
       {/* Add/Edit Template Dialog */}
       <TemplateFormDialog
