@@ -156,9 +156,6 @@ export default function ProjectTeam() {
       <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold text-foreground">Project Team</h1>
-          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-            {teamMembers.length}
-          </Badge>
         </div>
         <Button
           onClick={() => setIsAssignDialogOpen(true)}
@@ -194,9 +191,6 @@ export default function ProjectTeam() {
               <div className="flex items-center gap-2 px-4 py-3 border-b">
                 <Users className="h-4 w-4 text-[#bba7db]" />
                 <h2 className="text-sm font-semibold">Team Members</h2>
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                  {filteredTeamUsers.length}
-                </Badge>
               </div>
               {isLoading ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
@@ -224,9 +218,6 @@ export default function ProjectTeam() {
               <div className="flex items-center gap-2 px-4 py-3 border-b">
                 <Building2 className="h-4 w-4 text-[#bba7db]" />
                 <h2 className="text-sm font-semibold">Suppliers</h2>
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                  {filteredSupplierUsers.length}
-                </Badge>
               </div>
               {isLoading ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
