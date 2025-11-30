@@ -127,8 +127,8 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+      <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
           <DialogTitle data-testid="dialog-title-template">
             {template ? "Edit Template" : "Create Template"}
           </DialogTitle>
@@ -139,7 +139,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6">
+        <div className="flex-1 overflow-y-auto px-6">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
               <FormField
@@ -188,9 +188,9 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
               </div>
             </form>
           </Form>
-        </ScrollArea>
+        </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
+        <div className="flex-shrink-0 flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
           <Button
             type="button"
             variant="outline"
