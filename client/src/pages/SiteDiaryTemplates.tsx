@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -31,6 +32,9 @@ import {
   Trash2,
   Copy,
   Star,
+  Upload,
+  FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -40,6 +44,10 @@ export default function SiteDiaryTemplates() {
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SiteDiaryTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -115,6 +123,76 @@ export default function SiteDiaryTemplates() {
     },
   });
 
+  // Import mutation
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/site-diary-templates/import", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to import templates");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
+      setIsImportDialogOpen(false);
+      setSelectedFile(null);
+      toast({
+        title: "Import successful",
+        description: data.message || `Imported ${data.templatesCreated} templates`,
+      });
+      if (data.errors && data.errors.length > 0) {
+        toast({
+          title: "Some templates had errors",
+          description: data.errors.join(", "),
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Import failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleFileSelect = (file: File) => {
+    if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload an Excel file (.xlsx or .xls)",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSelectedFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  };
+
   // Filter templates
   const filteredTemplates = templates.filter(template =>
     template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -131,13 +209,23 @@ export default function SiteDiaryTemplates() {
             Create and manage company-wide site diary templates
           </p>
         </div>
-        <Button
-          onClick={() => setIsAddingTemplate(true)}
-          data-testid="button-add-template"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Template
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsImportDialogOpen(true)}
+            data-testid="button-import-templates"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Import from Excel
+          </Button>
+          <Button
+            onClick={() => setIsAddingTemplate(true)}
+            data-testid="button-add-template"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Template
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -280,6 +368,122 @@ export default function SiteDiaryTemplates() {
           setEditingTemplate(null);
         }}
       />
+
+      {/* Import Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={(open) => {
+        setIsImportDialogOpen(open);
+        if (!open) {
+          setSelectedFile(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Site Diary Templates</DialogTitle>
+            <DialogDescription>
+              Upload an Excel file containing your site diary templates. The file should have columns for Template Name, Item Number, Field Title, Field Type, and Field Options.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Hidden file input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileSelect(file);
+              }}
+              accept=".xlsx,.xls"
+              className="hidden"
+              data-testid="input-file-upload"
+            />
+
+            {/* Drop zone */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : selectedFile
+                  ? "border-green-500 bg-green-500/5"
+                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
+              }`}
+              data-testid="dropzone-file-upload"
+            >
+              {selectedFile ? (
+                <div className="flex flex-col items-center gap-2">
+                  <FileSpreadsheet className="h-10 w-10 text-green-500" />
+                  <p className="font-medium">{selectedFile.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {(selectedFile.size / 1024).toFixed(1)} KB
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFile(null);
+                    }}
+                  >
+                    Choose a different file
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <Upload className="h-10 w-10 text-muted-foreground" />
+                  <p className="font-medium">Drop your Excel file here</p>
+                  <p className="text-sm text-muted-foreground">
+                    or click to browse
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="text-xs text-muted-foreground">
+              <p className="font-medium mb-1">Expected Excel format:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>Template Name - Name of the template</li>
+                <li>Item Number - Field order (e.g., 1.0, 2.0)</li>
+                <li>Field Title - Display name of the field</li>
+                <li>Field Type - Text, Textarea, Multiple Choice, Date, etc.</li>
+                <li>Field Options - Pipe-separated options (e.g., Yes|No)</li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsImportDialogOpen(false);
+                setSelectedFile(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedFile && importMutation.mutate(selectedFile)}
+              disabled={!selectedFile || importMutation.isPending}
+              data-testid="button-confirm-import"
+            >
+              {importMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import Templates
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

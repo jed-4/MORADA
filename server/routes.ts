@@ -7709,6 +7709,153 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Import site diary templates from Excel
+  const siteDiaryImportUpload = multer({ storage: multer.memoryStorage() });
+  app.post("/api/site-diary-templates/import", siteDiaryImportUpload.single("file"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet) as any[];
+
+      if (data.length === 0) {
+        return res.status(400).json({ error: "Excel file is empty" });
+      }
+
+      // Group rows by template name
+      const templateGroups = new Map<string, any[]>();
+      for (const row of data) {
+        const templateName = row["Template Name"];
+        if (!templateName) continue;
+        if (!templateGroups.has(templateName)) {
+          templateGroups.set(templateName, []);
+        }
+        templateGroups.get(templateName)!.push(row);
+      }
+
+      const createdTemplates: any[] = [];
+      const errors: string[] = [];
+
+      // Map Excel field types to our field types
+      const mapFieldType = (excelType: string): "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "file" | "photo-gallery" => {
+        const normalizedType = (excelType || "").toLowerCase().trim();
+        switch (normalizedType) {
+          case "text": return "text";
+          case "textarea": return "textarea";
+          case "multiple choice": return "select";
+          case "date": return "date";
+          case "checkbox": return "checkbox";
+          case "heading": return "text"; // Headings become text fields
+          case "table": return "textarea"; // Tables become text areas
+          case "number": return "number";
+          default: return "text";
+        }
+      };
+
+      // Process each template
+      for (const [templateName, rows] of templateGroups) {
+        try {
+          const fields: any[] = [];
+          let fieldOrder = 0;
+
+          // Group by main field (Item Number X.0) and sub-fields (X.1, X.2, etc.)
+          const fieldGroups = new Map<string, any[]>();
+          for (const row of rows) {
+            const itemNumber = String(row["Item Number"] || "");
+            const mainFieldNum = itemNumber.split(".")[0];
+            if (!fieldGroups.has(mainFieldNum)) {
+              fieldGroups.set(mainFieldNum, []);
+            }
+            fieldGroups.get(mainFieldNum)!.push(row);
+          }
+
+          // Process each main field group
+          for (const [, groupRows] of fieldGroups) {
+            // Find the main field (X.0)
+            const mainRow = groupRows.find((r: any) => String(r["Item Number"] || "").endsWith(".0")) || groupRows[0];
+            const fieldTitle = mainRow["Field Title"];
+            const fieldType = mainRow["Field Type"];
+            const fieldOptions = mainRow["Field Options"];
+
+            if (!fieldTitle) continue;
+
+            // Parse options for select/multiple choice fields
+            let options: { label: string; value: string }[] | undefined;
+            if (fieldOptions && typeof fieldOptions === "string" && fieldOptions.trim()) {
+              options = fieldOptions.split("|").map((opt: string) => {
+                const trimmed = opt.trim();
+                return {
+                  label: trimmed,
+                  value: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+                };
+              });
+            }
+
+            // Handle table fields with sub-fields
+            let description = "";
+            if (fieldType === "Table") {
+              const subFields = groupRows.filter((r: any) => !String(r["Item Number"] || "").endsWith(".0"));
+              if (subFields.length > 0) {
+                description = "Columns: " + subFields.map((sf: any) => sf["Sub-field Title"]).filter(Boolean).join(", ");
+              }
+            }
+
+            const field = {
+              id: `field_${fieldOrder}_${Date.now()}`,
+              title: fieldTitle + (description ? ` (${description})` : ""),
+              type: mapFieldType(fieldType),
+              required: false,
+              options: options,
+              order: fieldOrder++,
+            };
+
+            fields.push(field);
+          }
+
+          // Create the template
+          const templateData = {
+            name: templateName.trim(),
+            description: `Imported from Excel on ${new Date().toLocaleDateString()}`,
+            fields: fields,
+            companyId: user.companyId,
+            createdBy: user.id,
+            createdByName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+            isDefault: false,
+          };
+
+          const template = await storage.createSiteDiaryTemplate(templateData);
+          createdTemplates.push(template);
+        } catch (err: any) {
+          errors.push(`Failed to create template "${templateName}": ${err.message}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Successfully imported ${createdTemplates.length} templates`,
+        templatesCreated: createdTemplates.length,
+        templates: createdTemplates,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (error: any) {
+      console.error("Error importing site diary templates:", error);
+      res.status(500).json({
+        error: "Failed to import templates",
+        details: error.message,
+      });
+    }
+  });
+
   // Site Diary Entry routes
   app.get("/api/projects/:projectId/site-diary-entries", async (req, res) => {
     try {
