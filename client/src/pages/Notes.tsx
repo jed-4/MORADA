@@ -18,7 +18,8 @@ import {
   type InsertNote,
   type CustomFieldDef,
   type CustomFieldOption,
-  type NoteTemplate
+  type NoteTemplate,
+  type User as UserType
 } from "@shared/schema";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
@@ -124,6 +125,11 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   // null prop explicitly means business/company-wide notes
   const effectiveProjectId = propProjectId !== undefined ? propProjectId : params.projectId;
 
+  // Fetch current user
+  const { data: currentUser } = useQuery<UserType>({
+    queryKey: ["/api/user"],
+  });
+
   // Fetch custom field definitions and templates
   const { data: customFieldDefsRaw = [], isLoading: isLoadingFields } = useQuery<CustomFieldDef[]>({
     queryKey: ["/api/custom-field-defs"],
@@ -162,22 +168,27 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   // Use proper z.infer type
   type NoteFormData = z.infer<typeof noteFormSchema>;
 
+  // Get current user's display name
+  const currentUserName = currentUser 
+    ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email || 'Unknown User'
+    : 'Unknown User';
+
   // Memoize default values to prevent form re-initialization
   const defaultValues = useMemo(() => ({
     title: "",
     content: "",
     contentHtml: "",
     contentText: "",
-    author: "Current User", // todo: get from auth context
-    ownerId: undefined,
-    ownerName: "Current User",
+    author: currentUserName,
+    ownerId: currentUser?.id,
+    ownerName: currentUserName,
     visibility: "team_only" as const,
     category: "General", // Default category
     customFields: customFieldDefs.reduce((acc, field) => {
       acc[field.key] = "";
       return acc;
     }, {} as Record<string, string>),
-  }), [customFieldDefs]);
+  }), [customFieldDefs, currentUserName, currentUser?.id]);
 
   // Use a ref to store stable default values for form resets
   const defaultValuesRef = useRef(defaultValues);
@@ -376,9 +387,9 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
         content: data.contentText || data.content || "",
         contentHtml: data.contentHtml,
         contentText: data.contentText,
-        author: data.author || "Current User",
-        ownerId: data.ownerId,
-        ownerName: data.ownerName || "Current User",
+        author: data.author || currentUserName,
+        ownerId: data.ownerId || currentUser?.id,
+        ownerName: data.ownerName || currentUserName,
         visibility: data.visibility || "team_only",
         projectId: effectiveProjectId,
         customFields: data.customFields || {},
@@ -410,7 +421,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       contentText: note.contentText || "",
       author: note.author,
       ownerId: note.ownerId || undefined,
-      ownerName: note.ownerName || "Current User",
+      ownerName: note.ownerName || currentUserName,
       visibility: (note.visibility as "team_only" | "everyone" | "project_team" | "private") || "team_only",
       projectId: note.projectId || undefined,
       category: note.category || "General",
