@@ -1,20 +1,23 @@
 import { useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, FileText, TrendingDown } from "lucide-react";
+import { Check, X, FileText, TrendingDown, ShoppingCart } from "lucide-react";
 import { format } from "date-fns";
-import type { RfqQuote } from "@shared/schema";
+import type { RfqQuote, Rfq } from "@shared/schema";
 
 interface QuoteComparisonViewProps {
   rfqId: string;
   quotes: RfqQuote[];
+  rfq?: Rfq;
 }
 
-export function QuoteComparisonView({ rfqId, quotes }: QuoteComparisonViewProps) {
+export function QuoteComparisonView({ rfqId, quotes, rfq }: QuoteComparisonViewProps) {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const acceptMutation = useMutation({
     mutationFn: async (quoteId: string) => {
@@ -59,6 +62,43 @@ export function QuoteComparisonView({ rfqId, quotes }: QuoteComparisonViewProps)
       toast({
         title: "Error declining quote",
         description: error.message || "Failed to decline quote. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const convertToPOMutation = useMutation({
+    mutationFn: async (quote: RfqQuote) => {
+      const poData = {
+        projectId: rfq?.projectId,
+        supplierId: quote.supplierId,
+        supplierName: quote.supplierName || "",
+        description: `PO from RFQ ${rfq?.rfqNumber} - ${rfq?.title || ""}`,
+        rfqId: rfqId,
+        rfqQuoteId: quote.id,
+        subtotal: quote.totalAmount,
+        gst: Math.round(quote.totalAmount * 0.1),
+        total: quote.totalAmount + Math.round(quote.totalAmount * 0.1),
+        status: "draft",
+      };
+      return apiRequest("/api/purchase-orders", "POST", poData);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({
+        title: "Purchase Order Created",
+        description: "The quote has been converted to a Purchase Order.",
+      });
+      if (rfq?.projectId) {
+        navigate(`/projects/${rfq.projectId}/purchase-orders/${data.id}`);
+      } else {
+        navigate(`/purchase-orders/${data.id}`);
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error creating Purchase Order",
+        description: error.message || "Failed to create Purchase Order. Please try again.",
         variant: "destructive",
       });
     },
@@ -158,6 +198,19 @@ export function QuoteComparisonView({ rfqId, quotes }: QuoteComparisonViewProps)
                       Decline
                     </Button>
                   </div>
+                )}
+
+                {quote.status === "accepted" && (
+                  <Button
+                    size="sm"
+                    onClick={() => convertToPOMutation.mutate(quote)}
+                    disabled={convertToPOMutation.isPending}
+                    className="w-full"
+                    data-testid={`button-convert-po-${quote.id}`}
+                  >
+                    <ShoppingCart className="h-4 w-4 mr-2" />
+                    {convertToPOMutation.isPending ? "Creating PO..." : "Convert to Purchase Order"}
+                  </Button>
                 )}
               </div>
             </Card>
@@ -291,6 +344,18 @@ export function QuoteComparisonView({ rfqId, quotes }: QuoteComparisonViewProps)
                       >
                         <X className="h-4 w-4 mr-2" />
                         Decline
+                      </Button>
+                    </div>
+                  ) : quote.status === "accepted" ? (
+                    <div className="flex justify-center">
+                      <Button
+                        size="sm"
+                        onClick={() => convertToPOMutation.mutate(quote)}
+                        disabled={convertToPOMutation.isPending}
+                        data-testid={`button-convert-po-${quote.id}`}
+                      >
+                        <ShoppingCart className="h-4 w-4 mr-2" />
+                        {convertToPOMutation.isPending ? "Creating..." : "Convert to PO"}
                       </Button>
                     </div>
                   ) : (

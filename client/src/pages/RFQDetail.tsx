@@ -386,7 +386,7 @@ export default function RFQDetail() {
                     No quotes received yet
                   </div>
                 ) : (
-                  <QuoteComparisonView rfqId={rfq.id} quotes={quotes} />
+                  <QuoteComparisonView rfqId={rfq.id} quotes={quotes} rfq={rfq} />
                 )}
               </CardContent>
             </Card>
