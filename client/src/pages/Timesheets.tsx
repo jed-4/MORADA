@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -236,9 +244,6 @@ export default function Timesheets() {
       description: `Exported ${filteredTimesheets.length} timesheets to ${fileName}`,
     });
   };
-
-  // Grid template with minimum widths
-  const gridTemplate = "minmax(100px, 0.6fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(80px, 0.4fr) minmax(100px, 0.5fr) minmax(100px, 0.5fr) minmax(100px, 0.5fr) minmax(100px, 0.5fr) minmax(180px, 1fr) minmax(120px, 0.6fr)";
 
   return (
     <div className="flex flex-col h-full">
@@ -497,156 +502,139 @@ export default function Timesheets() {
         </div>
       </div>
 
-      {/* Timesheets Grid */}
+      {/* Timesheets Table */}
       <div className="flex-1 overflow-auto p-3">
         {loadingTimesheets ? (
-          <Card className="p-8">
+          <Card className="border-2 p-8">
             <div className="text-center text-muted-foreground">Loading timesheets...</div>
           </Card>
         ) : filteredTimesheets.length === 0 ? (
-          <Card className="p-8">
+          <Card className="border-2 p-8">
             <div className="text-center text-muted-foreground">No timesheets found</div>
           </Card>
         ) : (
-          <Card className="overflow-hidden">
+          <Card className="border-2 overflow-hidden">
             <div className="overflow-x-auto">
-              {/* Header Row */}
-              <div 
-                className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
-                style={{ gridTemplateColumns: gridTemplate }}
-              >
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">User</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Project</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Time</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Break</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Duration</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Rate</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Total</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</div>
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Actions</div>
-              </div>
-
-              {/* Data Rows */}
-              {filteredTimesheets.map((timesheet) => (
-                <div 
-                  key={timesheet.id}
-                  className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
-                  style={{ gridTemplateColumns: gridTemplate }}
-                  onClick={() => {
-                    setSelectedTimesheet(timesheet);
-                    setIsDialogOpen(true);
-                  }}
-                  data-testid={`row-timesheet-${timesheet.id}`}
-                >
-                  {/* Date */}
-                  <div className="text-sm text-gray-900 dark:text-gray-100">
-                    {format(new Date(timesheet.date), "dd/MM/yy")}
-                  </div>
-
-                  {/* User */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
-                    {getUserName(timesheet.userId)}
-                  </div>
-
-                  {/* Project */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
-                    {getProjectName(timesheet.projectId)}
-                  </div>
-
-                  {/* Time */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    {timesheet.startTime && timesheet.endTime
-                      ? `${timesheet.startTime}-${timesheet.endTime}`
-                      : "-"}
-                  </div>
-
-                  {/* Break */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
-                  </div>
-
-                  {/* Duration */}
-                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {formatDuration(parseFloat(timesheet.duration))}
-                  </div>
-
-                  {/* Rate */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(2) : "0.00"}/hr
-                  </div>
-
-                  {/* Total */}
-                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
-                  </div>
-
-                  {/* Status */}
-                  <div>
-                    {timesheet.status === "approved" ? (
-                      <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 h-4 px-2 text-[10px]">
-                        Approved
-                      </Badge>
-                    ) : timesheet.status === "submitted" ? (
-                      <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 h-4 px-2 text-[10px]">
-                        Submitted
-                      </Badge>
-                    ) : timesheet.status === "rejected" ? (
-                      <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 h-4 px-2 text-[10px]">
-                        Rejected
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="h-4 px-2 text-[10px]">
-                        Draft
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* Description */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
-                    {timesheet.description || "-"}
-                  </div>
-
-                  {/* Actions */}
-                  <div onClick={(e) => e.stopPropagation()}>
-                    {timesheet.status === "draft" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => submitMutation.mutate(timesheet.id)}
-                        data-testid={`button-submit-${timesheet.id}`}
-                        className="text-xs"
+              <Table style={{ tableLayout: "fixed" }}>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/50 dark:bg-gray-900/50 border-b-2 border-[#bba7db]/20">
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[90px]">Date</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[140px]">User</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[180px]">Project</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[120px]">Time</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[70px]">Break</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[90px]">Duration</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[90px]">Rate</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[90px] text-right">Total</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[90px]">Status</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[180px]">Description</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[120px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTimesheets.map((timesheet, index) => {
+                    const isEven = index % 2 === 0;
+                    return (
+                      <TableRow 
+                        key={timesheet.id}
+                        className={`cursor-pointer hover-elevate transition-colors ${
+                          isEven ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
+                        }`}
+                        onClick={() => {
+                          setSelectedTimesheet(timesheet);
+                          setIsDialogOpen(true);
+                        }}
+                        data-testid={`row-timesheet-${timesheet.id}`}
                       >
-                        <Send className="w-3 h-3 mr-1" />
-                        Submit
-                      </Button>
-                    )}
-                    {timesheet.status === "submitted" && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => approveMutation.mutate(timesheet.id)}
-                          data-testid={`button-approve-${timesheet.id}`}
-                          className="text-xs text-green-600"
-                        >
-                          <Check className="w-3 h-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => rejectMutation.mutate(timesheet.id)}
-                          data-testid={`button-reject-${timesheet.id}`}
-                          className="text-xs text-red-600"
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                        <TableCell className="text-xs">
+                          {format(new Date(timesheet.date), "dd/MM/yy")}
+                        </TableCell>
+                        <TableCell className="text-xs truncate">
+                          {getUserName(timesheet.userId)}
+                        </TableCell>
+                        <TableCell className="text-xs truncate">
+                          {getProjectName(timesheet.projectId)}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {timesheet.startTime && timesheet.endTime
+                            ? `${timesheet.startTime}-${timesheet.endTime}`
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium">
+                          {formatDuration(parseFloat(timesheet.duration))}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(2) : "0.00"}/hr
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-right tabular-nums">
+                          ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
+                        </TableCell>
+                        <TableCell>
+                          {timesheet.status === "approved" ? (
+                            <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 text-[10px] uppercase font-medium">
+                              Approved
+                            </Badge>
+                          ) : timesheet.status === "submitted" ? (
+                            <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 text-[10px] uppercase font-medium">
+                              Submitted
+                            </Badge>
+                          ) : timesheet.status === "rejected" ? (
+                            <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 text-[10px] uppercase font-medium">
+                              Rejected
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px] uppercase font-medium">
+                              Draft
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]">
+                          {timesheet.description || "-"}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {timesheet.status === "draft" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => submitMutation.mutate(timesheet.id)}
+                              data-testid={`button-submit-${timesheet.id}`}
+                              className="h-6 px-2 text-xs"
+                            >
+                              <Send className="w-3 h-3 mr-1" />
+                              Submit
+                            </Button>
+                          )}
+                          {timesheet.status === "submitted" && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => approveMutation.mutate(timesheet.id)}
+                                data-testid={`button-approve-${timesheet.id}`}
+                                className="h-6 w-6 text-green-600"
+                              >
+                                <Check className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => rejectMutation.mutate(timesheet.id)}
+                                data-testid={`button-reject-${timesheet.id}`}
+                                className="h-6 w-6 text-red-600"
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           </Card>
         )}
