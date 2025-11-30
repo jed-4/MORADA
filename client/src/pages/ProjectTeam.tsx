@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { UserPlus, Trash2, Search, Users, Building2 } from "lucide-react";
@@ -27,7 +28,6 @@ export default function ProjectTeam() {
   const projectId = params?.projectId || "";
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeSection, setActiveSection] = useState<"team" | "suppliers">("team");
   const { toast } = useToast();
 
   const { data: teamMembers = [], isLoading } = useQuery({
@@ -37,12 +37,17 @@ export default function ProjectTeam() {
   const teamUsers = teamMembers.filter((user: any) => user.userCategory === "team");
   const supplierUsers = teamMembers.filter((user: any) => user.userCategory === "supplier");
 
-  const filteredUsers = (activeSection === "team" ? teamUsers : supplierUsers).filter((user: any) => {
-    if (!searchQuery) return true;
-    const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
-    return fullName.includes(searchQuery.toLowerCase()) || 
-           user.email?.toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  const filterUsers = (users: any[]) => {
+    if (!searchQuery) return users;
+    return users.filter((user: any) => {
+      const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
+      return fullName.includes(searchQuery.toLowerCase()) || 
+             user.email?.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  };
+
+  const filteredTeamUsers = filterUsers(teamUsers);
+  const filteredSupplierUsers = filterUsers(supplierUsers);
 
   const removeUserMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -76,6 +81,75 @@ export default function ProjectTeam() {
     return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
   };
 
+  const renderUserTable = (users: any[], type: "team" | "supplier") => (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/30">
+          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
+            User
+          </TableHead>
+          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
+            Email
+          </TableHead>
+          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
+            Role
+          </TableHead>
+          <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8 text-right">
+            Actions
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {users.map((user: any, index: number) => (
+          <TableRow 
+            key={user.id} 
+            className={`hover-elevate ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+            data-testid={`${type}-row-${user.id}`}
+          >
+            <TableCell className="py-2">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="text-xs bg-[#bba7db]/10 text-[#bba7db]">
+                    {getInitials(user.firstName, user.lastName)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="font-medium text-sm">
+                  {user.firstName} {user.lastName}
+                </span>
+              </div>
+            </TableCell>
+            <TableCell className="py-2 text-sm text-muted-foreground">
+              {user.email}
+            </TableCell>
+            <TableCell className="py-2">
+              <Badge 
+                className="text-[10px] px-1.5 py-0 h-5 rounded-full border no-default-hover-elevate no-default-active-elevate"
+                style={{
+                  backgroundColor: '#bba7db15',
+                  color: '#bba7db',
+                  borderColor: '#bba7db30'
+                }}
+              >
+                {user.role?.name || "No Role"}
+              </Badge>
+            </TableCell>
+            <TableCell className="py-2 text-right">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6"
+                onClick={() => handleRemoveUser(user.id)}
+                data-testid={`button-remove-${user.id}`}
+              >
+                <Trash2 className="h-3 w-3 text-destructive" />
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
   return (
     <div className="flex flex-col h-full" data-testid="project-team-page">
       {/* Row 1 - Title Bar */}
@@ -86,43 +160,6 @@ export default function ProjectTeam() {
             {teamMembers.length}
           </Badge>
         </div>
-      </div>
-
-      {/* Row 2 - Section Tabs + Actions */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-0.5" data-testid="tabs-team-sections">
-          <button
-            onClick={() => setActiveSection("team")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeSection === "team" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-team-members"
-          >
-            <Users className="h-3 w-3" />
-            Team Members
-            <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-1">
-              {teamUsers.length}
-            </Badge>
-          </button>
-          <button
-            onClick={() => setActiveSection("suppliers")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeSection === "suppliers" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-suppliers"
-          >
-            <Building2 className="h-3 w-3" />
-            Suppliers
-            <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-1">
-              {supplierUsers.length}
-            </Badge>
-          </button>
-        </div>
-
         <Button
           onClick={() => setIsAssignDialogOpen(true)}
           className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90"
@@ -133,7 +170,7 @@ export default function ProjectTeam() {
         </Button>
       </div>
 
-      {/* Row 3 - Search */}
+      {/* Row 2 - Search */}
       <div className="h-9 bg-white flex items-center px-2 border-b border-border flex-shrink-0">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -150,89 +187,64 @@ export default function ProjectTeam() {
 
       {/* Content */}
       <div className="flex-1 min-h-0 p-4 overflow-auto">
-        <Card className="border-2">
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading team members...
+        <div className="flex flex-col gap-6">
+          {/* Team Members Section */}
+          <Card className="border-2">
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 px-4 py-3 border-b">
+                <Users className="h-4 w-4 text-[#bba7db]" />
+                <h2 className="text-sm font-semibold">Team Members</h2>
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  {filteredTeamUsers.length}
+                </Badge>
               </div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {searchQuery 
-                  ? `No ${activeSection === "team" ? "team members" : "suppliers"} found matching "${searchQuery}"`
-                  : `No ${activeSection === "team" ? "team members" : "suppliers"} assigned to this project`
-                }
+              {isLoading ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Loading team members...
+                </div>
+              ) : filteredTeamUsers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  {searchQuery 
+                    ? `No team members found matching "${searchQuery}"`
+                    : "No team members assigned to this project"
+                  }
+                </div>
+              ) : (
+                renderUserTable(filteredTeamUsers, "team")
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Divider */}
+          <Separator />
+
+          {/* Suppliers Section */}
+          <Card className="border-2">
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 px-4 py-3 border-b">
+                <Building2 className="h-4 w-4 text-[#bba7db]" />
+                <h2 className="text-sm font-semibold">Suppliers</h2>
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  {filteredSupplierUsers.length}
+                </Badge>
               </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
-                      User
-                    </TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
-                      Email
-                    </TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8">
-                      Role
-                    </TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground h-8 text-right">
-                      Actions
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredUsers.map((user: any, index: number) => (
-                    <TableRow 
-                      key={user.id} 
-                      className={`hover-elevate ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
-                      data-testid={`${activeSection === "team" ? "team" : "supplier"}-row-${user.id}`}
-                    >
-                      <TableCell className="py-2">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="text-xs bg-[#bba7db]/10 text-[#bba7db]">
-                              {getInitials(user.firstName, user.lastName)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium text-sm">
-                            {user.firstName} {user.lastName}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-2 text-sm text-muted-foreground">
-                        {user.email}
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <Badge 
-                          className="text-[10px] px-1.5 py-0 h-5 rounded-full border no-default-hover-elevate no-default-active-elevate"
-                          style={{
-                            backgroundColor: '#bba7db15',
-                            color: '#bba7db',
-                            borderColor: '#bba7db30'
-                          }}
-                        >
-                          {user.role?.name || "No Role"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="py-2 text-right">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6"
-                          onClick={() => handleRemoveUser(user.id)}
-                          data-testid={`button-remove-${user.id}`}
-                        >
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+              {isLoading ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Loading suppliers...
+                </div>
+              ) : filteredSupplierUsers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  {searchQuery 
+                    ? `No suppliers found matching "${searchQuery}"`
+                    : "No suppliers assigned to this project"
+                  }
+                </div>
+              ) : (
+                renderUserTable(filteredSupplierUsers, "supplier")
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <AssignUserDialog
