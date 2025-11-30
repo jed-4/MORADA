@@ -102,7 +102,10 @@ import {
   insertPurchaseOrderSignatureSchema,
   insertPurchaseOrderTemplateSchema,
   insertFavoriteSupplierSchema,
-  insertFavoriteCostCodeSchema
+  insertFavoriteCostCodeSchema,
+  insertBusinessReminderSchema,
+  insertReminderSchema,
+  insertReminderNotificationSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -11709,6 +11712,343 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to seed task management data",
         details: error.message 
       });
+    }
+  });
+
+  // ==================== REMINDERS SYSTEM ====================
+
+  // Business Reminders (company-wide, admin managed)
+  app.get("/api/business-reminders", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const reminders = await storage.getBusinessReminders(user.companyId);
+      res.json(reminders);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch business reminders", details: error.message });
+    }
+  });
+
+  app.get("/api/business-reminders/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const reminder = await storage.getBusinessReminderById(req.params.id, user.companyId);
+      if (!reminder) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch business reminder", details: error.message });
+    }
+  });
+
+  app.post("/api/business-reminders", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertBusinessReminderSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const reminder = await storage.createBusinessReminder({
+        ...validationResult.data,
+        companyId: user.companyId,
+        createdById: user.id,
+      });
+      res.status(201).json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create business reminder", details: error.message });
+    }
+  });
+
+  app.patch("/api/business-reminders/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertBusinessReminderSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const reminder = await storage.updateBusinessReminder(req.params.id, user.companyId, validationResult.data);
+      if (!reminder) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update business reminder", details: error.message });
+    }
+  });
+
+  app.delete("/api/business-reminders/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const deleted = await storage.deleteBusinessReminder(req.params.id, user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete business reminder", details: error.message });
+    }
+  });
+
+  // Personal/Item Reminders
+  app.get("/api/reminders", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const options: { status?: string; linkedItemType?: string } = {};
+      if (req.query.status) options.status = req.query.status as string;
+      if (req.query.linkedItemType) options.linkedItemType = req.query.linkedItemType as string;
+      
+      const reminders = await storage.getReminders(user.id, user.companyId, options);
+      res.json(reminders);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch reminders", details: error.message });
+    }
+  });
+
+  app.get("/api/reminders/upcoming", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      const reminders = await storage.getUpcomingReminders(user.id, user.companyId, limit);
+      res.json(reminders);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch upcoming reminders", details: error.message });
+    }
+  });
+
+  app.get("/api/reminders/for-item/:itemType/:itemId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const reminders = await storage.getRemindersForItem(
+        req.params.itemType, 
+        req.params.itemId, 
+        user.companyId
+      );
+      res.json(reminders);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch reminders for item", details: error.message });
+    }
+  });
+
+  app.get("/api/reminders/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const reminder = await storage.getReminderById(req.params.id, user.companyId);
+      if (!reminder) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch reminder", details: error.message });
+    }
+  });
+
+  app.post("/api/reminders", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertReminderSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const reminder = await storage.createReminder({
+        ...validationResult.data,
+        companyId: user.companyId,
+        userId: user.id,
+        targetUserId: validationResult.data.targetUserId || user.id,
+      });
+      res.status(201).json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create reminder", details: error.message });
+    }
+  });
+
+  app.patch("/api/reminders/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertReminderSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const reminder = await storage.updateReminder(req.params.id, user.companyId, validationResult.data);
+      if (!reminder) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update reminder", details: error.message });
+    }
+  });
+
+  app.post("/api/reminders/:id/snooze", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { minutes } = req.body;
+      if (!minutes || typeof minutes !== 'number') {
+        return res.status(400).json({ error: "Minutes is required" });
+      }
+      const snoozedUntil = new Date(Date.now() + minutes * 60 * 1000);
+      const reminder = await storage.snoozeReminder(req.params.id, user.companyId, snoozedUntil);
+      if (!reminder) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to snooze reminder", details: error.message });
+    }
+  });
+
+  app.post("/api/reminders/:id/dismiss", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const reminder = await storage.dismissReminder(req.params.id, user.companyId);
+      if (!reminder) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.json(reminder);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to dismiss reminder", details: error.message });
+    }
+  });
+
+  app.delete("/api/reminders/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const deleted = await storage.deleteReminder(req.params.id, user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Reminder not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete reminder", details: error.message });
+    }
+  });
+
+  // Reminder Notifications
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const options: { status?: string; limit?: number } = {};
+      if (req.query.status) options.status = req.query.status as string;
+      if (req.query.limit) options.limit = parseInt(req.query.limit as string);
+      
+      const notifications = await storage.getReminderNotifications(user.id, options);
+      res.json(notifications);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch notifications", details: error.message });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const count = await storage.getUnreadNotificationCount(user.id);
+      res.json({ count });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch unread count", details: error.message });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const notification = await storage.markNotificationAsRead(req.params.id, user.id);
+      if (!notification) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+      res.json(notification);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to mark notification as read", details: error.message });
+    }
+  });
+
+  app.post("/api/notifications/read-all", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const count = await storage.markAllNotificationsAsRead(user.id);
+      res.json({ markedAsRead: count });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to mark all notifications as read", details: error.message });
+    }
+  });
+
+  app.post("/api/notifications/:id/dismiss", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const notification = await storage.dismissNotification(req.params.id, user.id);
+      if (!notification) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+      res.json(notification);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to dismiss notification", details: error.message });
     }
   });
 

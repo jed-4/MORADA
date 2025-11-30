@@ -3663,3 +3663,153 @@ export const insertFavoriteCostCodeSchema = createInsertSchema(favoriteCostCodes
 
 export type InsertFavoriteCostCode = z.infer<typeof insertFavoriteCostCodeSchema>;
 export type FavoriteCostCode = typeof favoriteCostCodes.$inferSelect;
+
+// ==================== REMINDERS SYSTEM ====================
+
+// Business Reminders (company-wide recurring reminders set by admins)
+export const businessReminders = pgTable("business_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Reminder details
+  title: text("title").notNull(), // "Fill in your timesheet"
+  description: text("description"),
+  
+  // Target type - what this reminder is for
+  targetType: text("target_type").notNull(), // "timesheet" | "site_diary" | "custom"
+  
+  // Schedule - when to send
+  scheduleType: text("schedule_type").notNull().default("daily"), // "daily" | "weekly" | "monthly" | "custom"
+  scheduleTime: text("schedule_time").notNull(), // "16:30" (24hr format)
+  scheduleDays: json("schedule_days").default([]), // [1,2,3,4,5] for Mon-Fri, or [1,15] for monthly
+  
+  // Who receives it
+  targetUsers: text("target_users").notNull().default("all"), // "all" | "field" | "office" | "specific"
+  specificUserIds: json("specific_user_ids").default([]), // Array of user IDs if targetUsers is "specific"
+  
+  // Delivery methods
+  sendInApp: boolean("send_in_app").notNull().default(true),
+  sendEmail: boolean("send_email").notNull().default(false),
+  sendPush: boolean("send_push").notNull().default(true),
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("business_reminders_company_idx").on(table.companyId),
+}));
+
+export const insertBusinessReminderSchema = createInsertSchema(businessReminders).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  scheduleDays: z.array(z.number()).optional(),
+  specificUserIds: z.array(z.string()).optional(),
+});
+
+export type InsertBusinessReminder = z.infer<typeof insertBusinessReminderSchema>;
+export type BusinessReminder = typeof businessReminders.$inferSelect;
+
+// Personal/Item Reminders (user-created reminders, can be attached to items)
+export const reminders = pgTable("reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // Who created/owns it
+  
+  // Reminder details
+  title: text("title").notNull(),
+  description: text("description"),
+  
+  // Optional item linking - flexible polymorphic relation
+  linkedItemType: text("linked_item_type"), // "task" | "site_diary" | "timesheet" | "defect" | "invoice" | "schedule" | null
+  linkedItemId: varchar("linked_item_id"), // ID of the linked item
+  linkedProjectId: varchar("linked_project_id").references(() => projects.id), // Project context if applicable
+  
+  // Who gets reminded (for item-attached, defaults to assignee)
+  targetUserId: varchar("target_user_id").notNull().references(() => users.id),
+  
+  // Schedule
+  reminderType: text("reminder_type").notNull().default("one_time"), // "one_time" | "recurring"
+  dueAt: timestamp("due_at"), // For one-time reminders
+  scheduleTime: text("schedule_time"), // "16:30" for recurring
+  schedulePattern: text("schedule_pattern"), // "daily" | "weekly" | "weekdays" | "custom"
+  scheduleDays: json("schedule_days").default([]), // [1,2,3,4,5] for custom days
+  
+  // Delivery methods
+  sendInApp: boolean("send_in_app").notNull().default(true),
+  sendEmail: boolean("send_email").notNull().default(false),
+  sendPush: boolean("send_push").notNull().default(true),
+  
+  // Status
+  status: text("status").notNull().default("active"), // "active" | "snoozed" | "completed" | "cancelled"
+  snoozedUntil: timestamp("snoozed_until"),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("reminders_user_idx").on(table.userId),
+  targetUserIdx: index("reminders_target_user_idx").on(table.targetUserId),
+  linkedItemIdx: index("reminders_linked_item_idx").on(table.linkedItemType, table.linkedItemId),
+  dueAtIdx: index("reminders_due_at_idx").on(table.dueAt),
+}));
+
+export const insertReminderSchema = createInsertSchema(reminders).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  scheduleDays: z.array(z.number()).optional(),
+  dueAt: z.string().or(z.date()).optional(),
+  snoozedUntil: z.string().or(z.date()).optional(),
+});
+
+export type InsertReminder = z.infer<typeof insertReminderSchema>;
+export type Reminder = typeof reminders.$inferSelect;
+
+// Reminder Notifications (delivery tracking)
+export const reminderNotifications = pgTable("reminder_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Source - either a business reminder or personal reminder
+  businessReminderId: varchar("business_reminder_id").references(() => businessReminders.id, { onDelete: "cascade" }),
+  reminderId: varchar("reminder_id").references(() => reminders.id, { onDelete: "cascade" }),
+  
+  // Target user
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Delivery status
+  deliveryMethod: text("delivery_method").notNull(), // "in_app" | "email" | "push"
+  status: text("status").notNull().default("pending"), // "pending" | "sent" | "delivered" | "read" | "dismissed" | "snoozed"
+  
+  // Timestamps
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+  readAt: timestamp("read_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  snoozedUntil: timestamp("snoozed_until"),
+  
+  // Message content (denormalized for history)
+  title: text("title").notNull(),
+  body: text("body"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("reminder_notifications_user_idx").on(table.userId),
+  statusIdx: index("reminder_notifications_status_idx").on(table.status),
+  scheduledForIdx: index("reminder_notifications_scheduled_for_idx").on(table.scheduledFor),
+}));
+
+export const insertReminderNotificationSchema = createInsertSchema(reminderNotifications).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  scheduledFor: z.string().or(z.date()),
+});
+
+export type InsertReminderNotification = z.infer<typeof insertReminderNotificationSchema>;
+export type ReminderNotification = typeof reminderNotifications.$inferSelect;

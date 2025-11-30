@@ -13606,6 +13606,424 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
+
+  // ==================== REMINDERS SYSTEM ====================
+
+  // Business Reminders (company-wide)
+  async getBusinessReminders(companyId: string): Promise<schema.BusinessReminder[]> {
+    try {
+      const result = await db.select().from(schema.businessReminders)
+        .where(eq(schema.businessReminders.companyId, companyId))
+        .orderBy(desc(schema.businessReminders.createdAt));
+      return result;
+    } catch (error) {
+      console.error("Database error in getBusinessReminders:", error);
+      throw error;
+    }
+  }
+
+  async getBusinessReminderById(id: string, companyId: string): Promise<schema.BusinessReminder | null> {
+    try {
+      const result = await db.select().from(schema.businessReminders)
+        .where(
+          and(
+            eq(schema.businessReminders.id, id),
+            eq(schema.businessReminders.companyId, companyId)
+          )
+        );
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in getBusinessReminderById:", error);
+      throw error;
+    }
+  }
+
+  async createBusinessReminder(reminder: schema.InsertBusinessReminder & { companyId: string }): Promise<schema.BusinessReminder> {
+    try {
+      const result = await db.insert(schema.businessReminders)
+        .values(reminder)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createBusinessReminder:", error);
+      throw error;
+    }
+  }
+
+  async updateBusinessReminder(id: string, companyId: string, data: Partial<schema.InsertBusinessReminder>): Promise<schema.BusinessReminder | null> {
+    try {
+      const result = await db.update(schema.businessReminders)
+        .set({ ...data, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.businessReminders.id, id),
+            eq(schema.businessReminders.companyId, companyId)
+          )
+        )
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in updateBusinessReminder:", error);
+      throw error;
+    }
+  }
+
+  async deleteBusinessReminder(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.businessReminders)
+        .where(
+          and(
+            eq(schema.businessReminders.id, id),
+            eq(schema.businessReminders.companyId, companyId)
+          )
+        )
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteBusinessReminder:", error);
+      throw error;
+    }
+  }
+
+  // Personal/Item Reminders
+  async getReminders(userId: string, companyId: string, options?: { status?: string; linkedItemType?: string }): Promise<schema.Reminder[]> {
+    try {
+      const conditions = [
+        eq(schema.reminders.companyId, companyId),
+        or(
+          eq(schema.reminders.userId, userId),
+          eq(schema.reminders.targetUserId, userId)
+        )
+      ];
+      
+      if (options?.status) {
+        conditions.push(eq(schema.reminders.status, options.status));
+      }
+      if (options?.linkedItemType) {
+        conditions.push(eq(schema.reminders.linkedItemType, options.linkedItemType));
+      }
+      
+      const result = await db.select().from(schema.reminders)
+        .where(and(...conditions))
+        .orderBy(asc(schema.reminders.dueAt));
+      return result;
+    } catch (error) {
+      console.error("Database error in getReminders:", error);
+      throw error;
+    }
+  }
+
+  async getUpcomingReminders(userId: string, companyId: string, limit: number = 10): Promise<schema.Reminder[]> {
+    try {
+      const now = new Date();
+      const result = await db.select().from(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.companyId, companyId),
+            eq(schema.reminders.targetUserId, userId),
+            eq(schema.reminders.status, "active"),
+            or(
+              gte(schema.reminders.dueAt, now),
+              isNull(schema.reminders.dueAt)
+            )
+          )
+        )
+        .orderBy(asc(schema.reminders.dueAt))
+        .limit(limit);
+      return result;
+    } catch (error) {
+      console.error("Database error in getUpcomingReminders:", error);
+      throw error;
+    }
+  }
+
+  async getReminderById(id: string, companyId: string): Promise<schema.Reminder | null> {
+    try {
+      const result = await db.select().from(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.id, id),
+            eq(schema.reminders.companyId, companyId)
+          )
+        );
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in getReminderById:", error);
+      throw error;
+    }
+  }
+
+  async getRemindersForItem(itemType: string, itemId: string, companyId: string): Promise<schema.Reminder[]> {
+    try {
+      const result = await db.select().from(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.companyId, companyId),
+            eq(schema.reminders.linkedItemType, itemType),
+            eq(schema.reminders.linkedItemId, itemId)
+          )
+        )
+        .orderBy(asc(schema.reminders.dueAt));
+      return result;
+    } catch (error) {
+      console.error("Database error in getRemindersForItem:", error);
+      throw error;
+    }
+  }
+
+  async createReminder(reminder: schema.InsertReminder & { companyId: string }): Promise<schema.Reminder> {
+    try {
+      const result = await db.insert(schema.reminders)
+        .values(reminder)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createReminder:", error);
+      throw error;
+    }
+  }
+
+  async updateReminder(id: string, companyId: string, data: Partial<schema.InsertReminder>): Promise<schema.Reminder | null> {
+    try {
+      const result = await db.update(schema.reminders)
+        .set({ ...data, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.reminders.id, id),
+            eq(schema.reminders.companyId, companyId)
+          )
+        )
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in updateReminder:", error);
+      throw error;
+    }
+  }
+
+  async snoozeReminder(id: string, companyId: string, snoozedUntil: Date): Promise<schema.Reminder | null> {
+    try {
+      const result = await db.update(schema.reminders)
+        .set({ 
+          status: "snoozed",
+          snoozedUntil,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(schema.reminders.id, id),
+            eq(schema.reminders.companyId, companyId)
+          )
+        )
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in snoozeReminder:", error);
+      throw error;
+    }
+  }
+
+  async dismissReminder(id: string, companyId: string): Promise<schema.Reminder | null> {
+    try {
+      const result = await db.update(schema.reminders)
+        .set({ 
+          status: "completed",
+          completedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(schema.reminders.id, id),
+            eq(schema.reminders.companyId, companyId)
+          )
+        )
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in dismissReminder:", error);
+      throw error;
+    }
+  }
+
+  async deleteReminder(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.id, id),
+            eq(schema.reminders.companyId, companyId)
+          )
+        )
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteReminder:", error);
+      throw error;
+    }
+  }
+
+  // Reminder Notifications
+  async getReminderNotifications(userId: string, options?: { status?: string; limit?: number }): Promise<schema.ReminderNotification[]> {
+    try {
+      const conditions = [eq(schema.reminderNotifications.userId, userId)];
+      
+      if (options?.status) {
+        conditions.push(eq(schema.reminderNotifications.status, options.status));
+      }
+      
+      let query = db.select().from(schema.reminderNotifications)
+        .where(and(...conditions))
+        .orderBy(desc(schema.reminderNotifications.scheduledFor));
+      
+      if (options?.limit) {
+        query = query.limit(options.limit) as typeof query;
+      }
+      
+      const result = await query;
+      return result;
+    } catch (error) {
+      console.error("Database error in getReminderNotifications:", error);
+      throw error;
+    }
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)::int` })
+        .from(schema.reminderNotifications)
+        .where(
+          and(
+            eq(schema.reminderNotifications.userId, userId),
+            or(
+              eq(schema.reminderNotifications.status, "sent"),
+              eq(schema.reminderNotifications.status, "delivered")
+            )
+          )
+        );
+      return result[0]?.count || 0;
+    } catch (error) {
+      console.error("Database error in getUnreadNotificationCount:", error);
+      throw error;
+    }
+  }
+
+  async createReminderNotification(notification: schema.InsertReminderNotification): Promise<schema.ReminderNotification> {
+    try {
+      const result = await db.insert(schema.reminderNotifications)
+        .values(notification)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createReminderNotification:", error);
+      throw error;
+    }
+  }
+
+  async markNotificationAsRead(id: string, userId: string): Promise<schema.ReminderNotification | null> {
+    try {
+      const result = await db.update(schema.reminderNotifications)
+        .set({ 
+          status: "read",
+          readAt: new Date()
+        })
+        .where(
+          and(
+            eq(schema.reminderNotifications.id, id),
+            eq(schema.reminderNotifications.userId, userId)
+          )
+        )
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in markNotificationAsRead:", error);
+      throw error;
+    }
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<number> {
+    try {
+      const result = await db.update(schema.reminderNotifications)
+        .set({ 
+          status: "read",
+          readAt: new Date()
+        })
+        .where(
+          and(
+            eq(schema.reminderNotifications.userId, userId),
+            or(
+              eq(schema.reminderNotifications.status, "sent"),
+              eq(schema.reminderNotifications.status, "delivered")
+            )
+          )
+        )
+        .returning();
+      return result.length;
+    } catch (error) {
+      console.error("Database error in markAllNotificationsAsRead:", error);
+      throw error;
+    }
+  }
+
+  async dismissNotification(id: string, userId: string): Promise<schema.ReminderNotification | null> {
+    try {
+      const result = await db.update(schema.reminderNotifications)
+        .set({ 
+          status: "dismissed",
+          dismissedAt: new Date()
+        })
+        .where(
+          and(
+            eq(schema.reminderNotifications.id, id),
+            eq(schema.reminderNotifications.userId, userId)
+          )
+        )
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Database error in dismissNotification:", error);
+      throw error;
+    }
+  }
+
+  async getDueReminders(before: Date): Promise<schema.Reminder[]> {
+    try {
+      const result = await db.select().from(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.status, "active"),
+            lte(schema.reminders.dueAt, before)
+          )
+        );
+      return result;
+    } catch (error) {
+      console.error("Database error in getDueReminders:", error);
+      throw error;
+    }
+  }
+
+  async getActiveBusinessRemindersForTime(time: string, dayOfWeek: number): Promise<schema.BusinessReminder[]> {
+    try {
+      const result = await db.select().from(schema.businessReminders)
+        .where(
+          and(
+            eq(schema.businessReminders.isActive, true),
+            eq(schema.businessReminders.scheduleTime, time)
+          )
+        );
+      // Filter by schedule pattern in JS since JSON contains is more complex
+      return result.filter(reminder => {
+        if (reminder.scheduleType === "daily") return true;
+        if (reminder.scheduleType === "weekly" || reminder.scheduleType === "custom") {
+          const days = (reminder.scheduleDays as number[]) || [];
+          return days.includes(dayOfWeek);
+        }
+        return false;
+      });
+    } catch (error) {
+      console.error("Database error in getActiveBusinessRemindersForTime:", error);
+      throw error;
+    }
+  }
 }
 
 // Create and initialize storage
