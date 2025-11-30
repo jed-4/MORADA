@@ -126,3 +126,123 @@ export async function sendInvitationEmail({
     throw error;
   }
 }
+
+interface SendReminderEmailParams {
+  to: string;
+  recipientName: string;
+  reminderTitle: string;
+  reminderDescription?: string;
+  linkedItemType?: string;
+  linkedItemTitle?: string;
+  priority?: string;
+}
+
+export async function sendReminderEmail({
+  to,
+  recipientName,
+  reminderTitle,
+  reminderDescription,
+  linkedItemType,
+  linkedItemTitle,
+  priority,
+}: SendReminderEmailParams) {
+  console.log(`📧 Attempting to send reminder email to ${to}`);
+  
+  const priorityColor = priority === 'high' ? '#ef4444' : priority === 'low' ? '#22c55e' : '#3b82f6';
+  const priorityLabel = priority === 'high' ? 'High Priority' : priority === 'low' ? 'Low Priority' : 'Normal';
+  
+  const linkedItemSection = linkedItemType && linkedItemTitle ? `
+    <p style="margin: 16px 0; padding: 16px; background-color: #f8fafc; border-radius: 8px; border-left: 4px solid #bba7db;">
+      <span style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Related ${linkedItemType.replace('_', ' ')}</span><br>
+      <span style="color: #1e293b; font-size: 15px; font-weight: 500;">${linkedItemTitle}</span>
+    </p>
+  ` : '';
+  
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'BuildPro <onboarding@resend.dev>',
+      to: [to],
+      subject: `Reminder: ${reminderTitle}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>BuildPro Reminder</title>
+          </head>
+          <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+            <table role="presentation" style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td align="center" style="padding: 40px 0;">
+                  <table role="presentation" style="width: 600px; max-width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                    <!-- Header -->
+                    <tr>
+                      <td style="padding: 32px 40px 16px; text-align: center; background: linear-gradient(135deg, #bba7db 0%, #9b87c4 100%); border-radius: 8px 8px 0 0;">
+                        <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">BuildPro Reminder</h1>
+                      </td>
+                    </tr>
+                    
+                    <!-- Body -->
+                    <tr>
+                      <td style="padding: 32px 40px;">
+                        <p style="margin: 0 0 8px; color: #64748b; font-size: 14px;">
+                          Hi ${recipientName},
+                        </p>
+                        
+                        <h2 style="margin: 16px 0; color: #1e293b; font-size: 20px; font-weight: 600;">
+                          ${reminderTitle}
+                        </h2>
+                        
+                        <span style="display: inline-block; padding: 4px 12px; background-color: ${priorityColor}20; color: ${priorityColor}; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                          ${priorityLabel}
+                        </span>
+                        
+                        ${reminderDescription ? `
+                          <p style="margin: 20px 0; color: #475569; font-size: 15px; line-height: 1.6;">
+                            ${reminderDescription}
+                          </p>
+                        ` : ''}
+                        
+                        ${linkedItemSection}
+                        
+                        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;">
+                        
+                        <p style="margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
+                          This is an automated reminder from BuildPro. Log in to your account to manage your reminders.
+                        </p>
+                      </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                      <td style="padding: 20px 40px; text-align: center; background-color: #f8fafc; border-radius: 0 0 8px 8px;">
+                        <p style="margin: 0; color: #94a3b8; font-size: 12px;">
+                          © ${new Date().getFullYear()} BuildPro. All rights reserved.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+        </html>
+      `,
+    });
+
+    if (error) {
+      console.error('❌ Resend API error:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to send reminder email: ${error.message || 'Unknown error'}`);
+    }
+
+    console.log('✅ Reminder email sent successfully!');
+    console.log(`   Email ID: ${data?.id}`);
+    console.log(`   Sent to: ${to}`);
+    return data;
+  } catch (error: any) {
+    console.error('❌ Error sending reminder email:');
+    console.error(`   Error message: ${error.message}`);
+    throw error;
+  }
+}

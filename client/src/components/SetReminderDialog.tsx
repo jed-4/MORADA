@@ -91,7 +91,7 @@ export function SetReminderDialog({
       const payload: any = {
         title: data.title,
         description: data.description,
-        triggerAt: new Date(data.triggerAt).toISOString(),
+        dueAt: new Date(data.triggerAt).toISOString(),
         priority: data.priority,
         reminderType: linkedItemType || "custom",
       };

@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { startReminderProcessor } from "./utils/reminderProcessor";
 import path from "path";
 import fs from "fs";
 
@@ -102,5 +103,7 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    
+    startReminderProcessor(1);
   });
 })();

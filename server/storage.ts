@@ -5599,6 +5599,24 @@ export class DbStorage implements IStorage {
     }));
   }
 
+  async getUsersByCompany(companyId: string): Promise<schema.User[]> {
+    try {
+      const results = await db
+        .select()
+        .from(schema.users)
+        .where(
+          and(
+            eq(schema.users.companyId, companyId),
+            eq(schema.users.isActive, true)
+          )
+        );
+      return results;
+    } catch (error) {
+      console.error("Database error in getUsersByCompany:", error);
+      throw error;
+    }
+  }
+
   async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
     const [preference] = await db
       .select()
