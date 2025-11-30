@@ -1,11 +1,12 @@
 import { useState, useRef } from "react";
-import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search } from "lucide-react";
+import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { FolderTree, type FolderTreeHandle } from "@/components/systems/FolderTree";
 import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
+import { NoteTemplatesLibrary, type NoteTemplatesLibraryHandle } from "@/components/systems/NoteTemplatesLibrary";
 
 export default function Systems() {
   const [activeTab, setActiveTab] = useState("folders");
@@ -15,6 +16,7 @@ export default function Systems() {
   const folderTreeRef = useRef<FolderTreeHandle>(null);
   const taskLibraryRef = useRef<TaskLibraryHandle>(null);
   const workflowBuilderRef = useRef<WorkflowBuilderHandle>(null);
+  const noteTemplatesRef = useRef<NoteTemplatesLibraryHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -63,6 +65,20 @@ export default function Systems() {
               <span>Workflows</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab("notes")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "notes"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-note-templates"
+          >
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3 w-3" />
+              <span>Note Templates</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -74,6 +90,7 @@ export default function Systems() {
         folderTreeRef={folderTreeRef}
         taskLibraryRef={taskLibraryRef}
         workflowBuilderRef={workflowBuilderRef}
+        noteTemplatesRef={noteTemplatesRef}
       />
 
       {/* Content Area */}
@@ -93,6 +110,11 @@ export default function Systems() {
             <WorkflowBuilder ref={workflowBuilderRef} searchQuery={searchQuery} />
           </div>
         )}
+        {activeTab === "notes" && (
+          <div className="h-full">
+            <NoteTemplatesLibrary ref={noteTemplatesRef} searchQuery={searchQuery} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -105,7 +127,8 @@ function SystemsControlBar({
   setSearchQuery,
   folderTreeRef,
   taskLibraryRef,
-  workflowBuilderRef
+  workflowBuilderRef,
+  noteTemplatesRef
 }: { 
   activeTab: string;
   searchQuery: string;
@@ -113,6 +136,7 @@ function SystemsControlBar({
   folderTreeRef: React.RefObject<FolderTreeHandle>;
   taskLibraryRef: React.RefObject<TaskLibraryHandle>;
   workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
+  noteTemplatesRef: React.RefObject<NoteTemplatesLibraryHandle>;
 }) {
   return (
     <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
@@ -138,6 +162,9 @@ function SystemsControlBar({
         )}
         {activeTab === "workflows" && (
           <WorkflowsControls workflowBuilderRef={workflowBuilderRef} />
+        )}
+        {activeTab === "notes" && (
+          <NoteTemplatesControls noteTemplatesRef={noteTemplatesRef} />
         )}
       </div>
     </div>
@@ -231,6 +258,33 @@ function WorkflowsControls({ workflowBuilderRef }: { workflowBuilderRef: React.R
       >
         <Plus className="w-3 h-3" />
         <span>New Workflow</span>
+      </Button>
+    </>
+  );
+}
+
+// Note Templates tab controls
+function NoteTemplatesControls({ noteTemplatesRef }: { noteTemplatesRef: React.RefObject<NoteTemplatesLibraryHandle> }) {
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
+          <Power className="h-3 w-3 text-green-600" />
+          <span>Active</span>
+        </Badge>
+        <Badge variant="outline" className="h-6 text-xs px-2 gap-1 no-default-hover-elevate no-default-active-elevate">
+          <PowerOff className="h-3 w-3 text-muted-foreground" />
+          <span>Inactive</span>
+        </Badge>
+      </div>
+      <Button
+        size="sm"
+        className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        onClick={() => noteTemplatesRef.current?.openNewTemplateDialog()}
+        data-testid="button-new-note-template"
+      >
+        <Plus className="w-3 h-3" />
+        <span>New Template</span>
       </Button>
     </>
   );

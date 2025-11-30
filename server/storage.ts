@@ -5,6 +5,7 @@ import {
   type CustomFieldDef, type InsertCustomFieldDef,
   type CustomFieldOption, type InsertCustomFieldOption,
   type NoteTemplate, type InsertNoteTemplate,
+  type NoteTemplateField, type InsertNoteTemplateField,
   type Project, type InsertProject,
   type TaskView, type InsertTaskView,
   type Estimate, type InsertEstimate,
@@ -162,7 +163,7 @@ export interface IStorage {
   acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
   // Notes CRUD operations
-  getNotes(projectId?: string | null, companyId?: string): Promise<Note[]>;
+  getNotes(projectId?: string | null, companyId?: string, userId?: string): Promise<Note[]>;
   getNote(id: string, companyId?: string): Promise<Note | undefined>;
   getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]>;
   createNote(note: InsertNote): Promise<Note>;
@@ -193,11 +194,19 @@ export interface IStorage {
   deleteCustomFieldOption(id: string): Promise<boolean>;
 
   // Note Templates CRUD
-  getNoteTemplates(ownerId?: string): Promise<NoteTemplate[]>;
-  getNoteTemplate(id: string): Promise<NoteTemplate | undefined>;
+  getNoteTemplates(companyId: string): Promise<NoteTemplate[]>;
+  getNoteTemplate(id: string, companyId: string): Promise<NoteTemplate | undefined>;
+  getNoteTemplateWithFields(id: string, companyId: string): Promise<{ template: NoteTemplate; fields: NoteTemplateField[] } | undefined>;
   createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate>;
-  updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined>;
-  deleteNoteTemplate(id: string): Promise<boolean>;
+  updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>, companyId: string): Promise<NoteTemplate | undefined>;
+  deleteNoteTemplate(id: string, companyId: string): Promise<boolean>;
+  
+  // Note Template Fields CRUD
+  getNoteTemplateFields(templateId: string): Promise<NoteTemplateField[]>;
+  createNoteTemplateField(field: InsertNoteTemplateField): Promise<NoteTemplateField>;
+  updateNoteTemplateField(id: string, field: Partial<InsertNoteTemplateField>): Promise<NoteTemplateField | undefined>;
+  deleteNoteTemplateField(id: string): Promise<boolean>;
+  reorderNoteTemplateFields(templateId: string, fieldIds: string[]): Promise<NoteTemplateField[]>;
 
   // Projects CRUD
   getProjects(ownerId?: string): Promise<Project[]>;
@@ -2257,13 +2266,15 @@ export class MemStorage implements IStorage {
   }
 
   // Notes CRUD operations
-  async getNotes(projectId?: string, companyId?: string): Promise<Note[]> {
+  async getNotes(projectId?: string, companyId?: string, userId?: string): Promise<Note[]> {
     const allNotes = Array.from(this.notes.values());
     
     // Filter by company if specified
     let filtered = allNotes;
     if (companyId) {
       filtered = allNotes.filter(note => {
+        // Include notes assigned to the user regardless of project
+        if (userId && note.assigneeId === userId) return true;
         if (!note.projectId) return false;
         const project = this.projects.get(note.projectId);
         return project?.companyId === companyId;
@@ -2478,18 +2489,26 @@ export class MemStorage implements IStorage {
   }
 
   // Note Templates CRUD
-  async getNoteTemplates(ownerId?: string): Promise<NoteTemplate[]> {
+  noteTemplateFields: Map<string, NoteTemplateField> = new Map();
+
+  async getNoteTemplates(companyId: string): Promise<NoteTemplate[]> {
     const allTemplates = Array.from(this.noteTemplates.values());
-    if (ownerId) {
-      return allTemplates.filter(template => 
-        template.ownerId === ownerId || template.isPublic
-      ).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    }
-    return allTemplates.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return allTemplates
+      .filter(template => template.companyId === companyId && template.isActive !== false)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async getNoteTemplate(id: string): Promise<NoteTemplate | undefined> {
-    return this.noteTemplates.get(id);
+  async getNoteTemplate(id: string, companyId: string): Promise<NoteTemplate | undefined> {
+    const template = this.noteTemplates.get(id);
+    if (!template || template.companyId !== companyId) return undefined;
+    return template;
+  }
+
+  async getNoteTemplateWithFields(id: string, companyId: string): Promise<{ template: NoteTemplate; fields: NoteTemplateField[] } | undefined> {
+    const template = await this.getNoteTemplate(id, companyId);
+    if (!template) return undefined;
+    const fields = await this.getNoteTemplateFields(id);
+    return { template, fields };
   }
 
   async createNoteTemplate(insertTemplate: InsertNoteTemplate): Promise<NoteTemplate> {
@@ -2505,6 +2524,8 @@ export class MemStorage implements IStorage {
       ownerId: insertTemplate.ownerId ?? null,
       ownerName: insertTemplate.ownerName ?? null,
       isPublic: insertTemplate.isPublic ?? false,
+      isFormBased: insertTemplate.isFormBased ?? false,
+      isActive: insertTemplate.isActive ?? true,
       defaultCustomFields: insertTemplate.defaultCustomFields ?? {},
       createdAt: now,
       updatedAt: now,
@@ -2513,9 +2534,9 @@ export class MemStorage implements IStorage {
     return template;
   }
 
-  async updateNoteTemplate(id: string, updateData: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined> {
+  async updateNoteTemplate(id: string, updateData: Partial<InsertNoteTemplate>, companyId: string): Promise<NoteTemplate | undefined> {
     const existingTemplate = this.noteTemplates.get(id);
-    if (!existingTemplate) return undefined;
+    if (!existingTemplate || existingTemplate.companyId !== companyId) return undefined;
 
     const updatedTemplate: NoteTemplate = {
       ...existingTemplate,
@@ -2526,8 +2547,70 @@ export class MemStorage implements IStorage {
     return updatedTemplate;
   }
 
-  async deleteNoteTemplate(id: string): Promise<boolean> {
+  async deleteNoteTemplate(id: string, companyId: string): Promise<boolean> {
+    const template = this.noteTemplates.get(id);
+    if (!template || template.companyId !== companyId) return false;
     return this.noteTemplates.delete(id);
+  }
+
+  // Note Template Fields CRUD
+  async getNoteTemplateFields(templateId: string): Promise<NoteTemplateField[]> {
+    const allFields = Array.from(this.noteTemplateFields.values());
+    return allFields
+      .filter(field => field.templateId === templateId)
+      .sort((a, b) => a.order - b.order);
+  }
+
+  async createNoteTemplateField(insertField: InsertNoteTemplateField): Promise<NoteTemplateField> {
+    const id = randomUUID();
+    const now = new Date();
+    const field: NoteTemplateField = {
+      ...insertField,
+      id,
+      description: insertField.description ?? null,
+      placeholder: insertField.placeholder ?? null,
+      defaultValue: insertField.defaultValue ?? null,
+      options: insertField.options ?? [],
+      required: insertField.required ?? false,
+      order: insertField.order ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.noteTemplateFields.set(id, field);
+    return field;
+  }
+
+  async updateNoteTemplateField(id: string, updateData: Partial<InsertNoteTemplateField>): Promise<NoteTemplateField | undefined> {
+    const existingField = this.noteTemplateFields.get(id);
+    if (!existingField) return undefined;
+
+    const updatedField: NoteTemplateField = {
+      ...existingField,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.noteTemplateFields.set(id, updatedField);
+    return updatedField;
+  }
+
+  async deleteNoteTemplateField(id: string): Promise<boolean> {
+    return this.noteTemplateFields.delete(id);
+  }
+
+  async reorderNoteTemplateFields(templateId: string, fieldIds: string[]): Promise<NoteTemplateField[]> {
+    const fields = await this.getNoteTemplateFields(templateId);
+    const reorderedFields: NoteTemplateField[] = [];
+    
+    for (let i = 0; i < fieldIds.length; i++) {
+      const field = fields.find(f => f.id === fieldIds[i]);
+      if (field) {
+        const updatedField = { ...field, order: i, updatedAt: new Date() };
+        this.noteTemplateFields.set(field.id, updatedField);
+        reorderedFields.push(updatedField);
+      }
+    }
+    
+    return reorderedFields;
   }
 
   // Tasks CRUD operations
@@ -6146,29 +6229,46 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
-  async getNotes(projectId?: string | null, companyId?: string): Promise<Note[]> {
+  async getNotes(projectId?: string | null, companyId?: string, userId?: string): Promise<Note[]> {
     try {
       // Simple query without join - filter by companyId on notes table
-      const conditions: any[] = [eq(schema.notes.type, "note")];
-      
-      // Filter by specific project if provided
-      // null means business/company-wide notes (projectId IS NULL)
-      // undefined means all notes (no project filter)
-      if (projectId === null) {
-        conditions.push(isNull(schema.notes.projectId));
-      } else if (projectId !== undefined) {
-        conditions.push(eq(schema.notes.projectId, projectId));
-      }
+      const baseConditions: any[] = [eq(schema.notes.type, "note")];
       
       // Always filter by company if provided
       if (companyId) {
-        conditions.push(eq(schema.notes.companyId, companyId));
+        baseConditions.push(eq(schema.notes.companyId, companyId));
+      }
+      
+      // Build project filter condition
+      let projectCondition: any = null;
+      if (projectId === null) {
+        // null means business/company-wide notes (projectId IS NULL)
+        projectCondition = isNull(schema.notes.projectId);
+      } else if (projectId !== undefined) {
+        // specific project
+        projectCondition = eq(schema.notes.projectId, projectId);
+      }
+      
+      // Build assignee condition if userId is provided
+      const assigneeCondition = userId ? eq(schema.notes.assigneeId, userId) : null;
+      
+      // Combine conditions: base conditions AND (project condition OR assignee condition)
+      let finalCondition: any;
+      if (projectCondition && assigneeCondition) {
+        finalCondition = and(...baseConditions, or(projectCondition, assigneeCondition));
+      } else if (projectCondition) {
+        finalCondition = and(...baseConditions, projectCondition);
+      } else if (assigneeCondition) {
+        // No project filter, but include notes assigned to user
+        finalCondition = and(...baseConditions);
+      } else {
+        finalCondition = and(...baseConditions);
       }
       
       const notes = await db
         .select()
         .from(schema.notes)
-        .where(and(...conditions))
+        .where(finalCondition)
         .orderBy(desc(schema.notes.createdAt));
       
       return notes as Note[];
@@ -6333,11 +6433,163 @@ export class DbStorage implements IStorage {
   async createCustomFieldOption(option: InsertCustomFieldOption): Promise<CustomFieldOption> { throw new Error("Not implemented"); }
   async updateCustomFieldOption(id: string, option: Partial<InsertCustomFieldOption>): Promise<CustomFieldOption | undefined> { return undefined; }
   async deleteCustomFieldOption(id: string): Promise<boolean> { return false; }
-  async getNoteTemplates(ownerId?: string): Promise<NoteTemplate[]> { return []; }
-  async getNoteTemplate(id: string): Promise<NoteTemplate | undefined> { return undefined; }
-  async createNoteTemplate(template: InsertNoteTemplate): Promise<NoteTemplate> { throw new Error("Not implemented"); }
-  async updateNoteTemplate(id: string, template: Partial<InsertNoteTemplate>): Promise<NoteTemplate | undefined> { return undefined; }
-  async deleteNoteTemplate(id: string): Promise<boolean> { return false; }
+  async getNoteTemplates(companyId: string): Promise<NoteTemplate[]> {
+    try {
+      const result = await db.select().from(schema.noteTemplates)
+        .where(and(
+          eq(schema.noteTemplates.companyId, companyId),
+          eq(schema.noteTemplates.isActive, true)
+        ))
+        .orderBy(desc(schema.noteTemplates.createdAt));
+      return result;
+    } catch (error) {
+      console.error("Database error in getNoteTemplates:", error);
+      return [];
+    }
+  }
+
+  async getNoteTemplate(id: string, companyId: string): Promise<NoteTemplate | undefined> {
+    try {
+      const result = await db.select().from(schema.noteTemplates)
+        .where(and(
+          eq(schema.noteTemplates.id, id),
+          eq(schema.noteTemplates.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getNoteTemplate:", error);
+      return undefined;
+    }
+  }
+
+  async getNoteTemplateWithFields(id: string, companyId: string): Promise<{ template: NoteTemplate; fields: NoteTemplateField[] } | undefined> {
+    try {
+      const template = await this.getNoteTemplate(id, companyId);
+      if (!template) return undefined;
+      const fields = await this.getNoteTemplateFields(id);
+      return { template, fields };
+    } catch (error) {
+      console.error("Database error in getNoteTemplateWithFields:", error);
+      return undefined;
+    }
+  }
+
+  async createNoteTemplate(insertTemplate: InsertNoteTemplate): Promise<NoteTemplate> {
+    const now = new Date();
+    const templateData = {
+      ...insertTemplate,
+      createdAt: now,
+      updatedAt: now
+    };
+    const result = await db.insert(schema.noteTemplates).values(templateData).returning();
+    return result[0];
+  }
+
+  async updateNoteTemplate(id: string, updateData: Partial<InsertNoteTemplate>, companyId: string): Promise<NoteTemplate | undefined> {
+    try {
+      const now = new Date();
+      const result = await db.update(schema.noteTemplates)
+        .set({ ...updateData, updatedAt: now })
+        .where(and(
+          eq(schema.noteTemplates.id, id),
+          eq(schema.noteTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateNoteTemplate:", error);
+      return undefined;
+    }
+  }
+
+  async deleteNoteTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.update(schema.noteTemplates)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(schema.noteTemplates.id, id),
+          eq(schema.noteTemplates.companyId, companyId)
+        ))
+        .returning({ id: schema.noteTemplates.id });
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteNoteTemplate:", error);
+      return false;
+    }
+  }
+
+  // Note Template Fields CRUD
+  async getNoteTemplateFields(templateId: string): Promise<NoteTemplateField[]> {
+    try {
+      const result = await db.select().from(schema.noteTemplateFields)
+        .where(eq(schema.noteTemplateFields.templateId, templateId))
+        .orderBy(asc(schema.noteTemplateFields.order));
+      return result;
+    } catch (error) {
+      console.error("Database error in getNoteTemplateFields:", error);
+      return [];
+    }
+  }
+
+  async createNoteTemplateField(insertField: InsertNoteTemplateField): Promise<NoteTemplateField> {
+    const now = new Date();
+    const fieldData = {
+      ...insertField,
+      createdAt: now,
+      updatedAt: now
+    };
+    const result = await db.insert(schema.noteTemplateFields).values(fieldData).returning();
+    return result[0];
+  }
+
+  async updateNoteTemplateField(id: string, updateData: Partial<InsertNoteTemplateField>): Promise<NoteTemplateField | undefined> {
+    try {
+      const now = new Date();
+      const result = await db.update(schema.noteTemplateFields)
+        .set({ ...updateData, updatedAt: now })
+        .where(eq(schema.noteTemplateFields.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateNoteTemplateField:", error);
+      return undefined;
+    }
+  }
+
+  async deleteNoteTemplateField(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.noteTemplateFields)
+        .where(eq(schema.noteTemplateFields.id, id))
+        .returning({ id: schema.noteTemplateFields.id });
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteNoteTemplateField:", error);
+      return false;
+    }
+  }
+
+  async reorderNoteTemplateFields(templateId: string, fieldIds: string[]): Promise<NoteTemplateField[]> {
+    try {
+      const reorderedFields: NoteTemplateField[] = [];
+      for (let i = 0; i < fieldIds.length; i++) {
+        const result = await db.update(schema.noteTemplateFields)
+          .set({ order: i, updatedAt: new Date() })
+          .where(and(
+            eq(schema.noteTemplateFields.id, fieldIds[i]),
+            eq(schema.noteTemplateFields.templateId, templateId)
+          ))
+          .returning();
+        if (result[0]) {
+          reorderedFields.push(result[0]);
+        }
+      }
+      return reorderedFields.sort((a, b) => a.order - b.order);
+    } catch (error) {
+      console.error("Database error in reorderNoteTemplateFields:", error);
+      return [];
+    }
+  }
   
   async getProjects(ownerId?: string): Promise<Project[]> {
     if (ownerId) {

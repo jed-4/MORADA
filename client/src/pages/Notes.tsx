@@ -5,6 +5,8 @@ import { useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +21,7 @@ import {
   type CustomFieldDef,
   type CustomFieldOption,
   type NoteTemplate,
+  type NoteTemplateField,
   type User as UserType
 } from "@shared/schema";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -61,6 +64,7 @@ import {
   Filter,
   Calendar,
   User,
+  UserPlus,
   FileText as FileTemplate,
   Settings,
   ArrowUpDown,
@@ -68,6 +72,7 @@ import {
   Pin,
   PinOff,
 } from "lucide-react";
+import { UserSelect } from "@/components/UserSelect";
 import { format } from "date-fns";
 import { z } from "zod";
 
@@ -91,6 +96,8 @@ const createNoteFormSchema = (customFields: CustomFieldDef[]) => {
     author: z.string(),
     ownerId: z.string().optional(),
     ownerName: z.string().optional(),
+    assigneeId: z.string().optional(),
+    assigneeName: z.string().optional(),
     visibility: z.enum(["team_only", "everyone", "project_team", "private"]).optional(),
     projectId: z.string().optional(),
     category: z.string().optional(),
@@ -115,6 +122,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedField, setSelectedField] = useState("All");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [templateFieldValues, setTemplateFieldValues] = useState<Record<string, any>>({});
   const [sortBy, setSortBy] = useState("newest");
   const { toast } = useToast();
   const { currentProject } = useProject();
@@ -138,6 +146,24 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const { data: noteTemplates = [], isLoading: isLoadingTemplates } = useQuery<NoteTemplate[]>({
     queryKey: ["/api/note-templates"],
   });
+
+  // Get the selected template object
+  const selectedTemplateObj = noteTemplates.find(t => t.id === selectedTemplate);
+
+  // Fetch template fields when a form-based template is selected
+  const { data: templateFieldsData } = useQuery<{ template: NoteTemplate; fields: NoteTemplateField[] }>({
+    queryKey: ["/api/note-templates", selectedTemplate, { includeFields: "true" }],
+    queryFn: async () => {
+      const response = await fetch(`/api/note-templates/${selectedTemplate}?includeFields=true`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch template fields");
+      return response.json();
+    },
+    enabled: !!selectedTemplate && selectedTemplateObj?.isFormBased === true,
+  });
+
+  const templateFields = templateFieldsData?.fields || [];
 
   // Use customFieldDefs directly - React Query already handles caching
   const customFieldDefs = customFieldDefsRaw;
@@ -182,6 +208,8 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     author: currentUserName,
     ownerId: currentUser?.id,
     ownerName: currentUserName,
+    assigneeId: undefined as string | undefined,
+    assigneeName: undefined as string | undefined,
     visibility: "team_only" as const,
     category: "General", // Default category
     customFields: customFieldDefs.reduce((acc, field) => {
@@ -208,6 +236,19 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
   });
+
+  // Fetch users for assignee lookup
+  const { data: users = [] } = useQuery<UserType[]>({
+    queryKey: ["/api/users"],
+  });
+
+  // Helper to get user name by ID
+  const getUserName = (userId: string | undefined | null): string | undefined => {
+    if (!userId) return undefined;
+    const user = users.find(u => u.id === userId);
+    if (!user) return undefined;
+    return `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown User';
+  };
 
   // React Query hooks - fetch notes filtered by current project (or all notes if no project selected)
   const { data: notes = [], isLoading } = useQuery<Note[]>({
@@ -381,20 +422,35 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
 
   const onSubmit = (data: NoteFormData) => {
     try {
+      let contentText = data.contentText || data.content || "";
+      let contentHtml = data.contentHtml || "";
+
+      // If using a form-based template, generate content from field values
+      if (selectedTemplateObj?.isFormBased && templateFields.length > 0) {
+        const generatedContent = generateContentFromTemplateFields();
+        contentText = generatedContent.text;
+        contentHtml = generatedContent.html;
+      }
+
       // Transform and validate form data using the schema
       const noteData = insertNoteSchema.parse({
         title: data.title || "",
-        content: data.contentText || data.content || "",
-        contentHtml: data.contentHtml,
-        contentText: data.contentText,
+        content: contentText,
+        contentHtml: contentHtml,
+        contentText: contentText,
         author: data.author || currentUserName,
         ownerId: data.ownerId || currentUser?.id,
         ownerName: data.ownerName || currentUserName,
+        assigneeId: data.assigneeId || undefined,
+        assigneeName: data.assigneeId ? getUserName(data.assigneeId) : undefined,
         visibility: data.visibility || "team_only",
         projectId: effectiveProjectId,
-        customFields: data.customFields || {},
+        customFields: selectedTemplateObj?.isFormBased 
+          ? { ...data.customFields, templateFields: templateFieldValues }
+          : data.customFields || {},
         category: data.category || "General",
         priority: (data.customFields as Record<string, string>)?.priority || "medium",
+        templateId: selectedTemplate || undefined,
       });
       
       if (editingNote) {
@@ -422,6 +478,8 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       author: note.author,
       ownerId: note.ownerId || undefined,
       ownerName: note.ownerName || currentUserName,
+      assigneeId: note.assigneeId || undefined,
+      assigneeName: note.assigneeName || undefined,
       visibility: (note.visibility as "team_only" | "everyone" | "project_team" | "private") || "team_only",
       projectId: note.projectId || undefined,
       category: note.category || "General",
@@ -432,18 +490,65 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   // Helper function to apply template data to form
   const applyTemplate = (template: NoteTemplate) => {
     const currentFormData = form.getValues();
-    form.reset({
-      ...currentFormData,
-      title: template.defaultTitle || currentFormData.title,
-      content: template.contentText || "",
-      contentHtml: template.contentHtml || "",
-      contentText: template.contentText || "",
-      customFields: {
-        ...(currentFormData.customFields as Record<string, string>),
-        ...(template.defaultCustomFields as Record<string, string>),
-      },
-    });
+    
+    if (template.isFormBased) {
+      form.reset({
+        ...currentFormData,
+        title: template.defaultTitle || currentFormData.title,
+        templateId: template.id,
+      });
+      setTemplateFieldValues({});
+    } else {
+      form.reset({
+        ...currentFormData,
+        title: template.defaultTitle || currentFormData.title,
+        content: template.contentText || "",
+        contentHtml: template.contentHtml || "",
+        contentText: template.contentText || "",
+        customFields: {
+          ...(currentFormData.customFields as Record<string, string>),
+          ...(template.defaultCustomFields as Record<string, string>),
+        },
+      });
+    }
     setSelectedTemplate(template.id);
+  };
+
+  // Generate formatted content from template field values
+  const generateContentFromTemplateFields = (): { html: string; text: string } => {
+    if (!selectedTemplateObj || !selectedTemplateObj.isFormBased || templateFields.length === 0) {
+      return { html: "", text: "" };
+    }
+
+    const lines: string[] = [];
+    const htmlLines: string[] = [];
+
+    templateFields.forEach(field => {
+      const value = templateFieldValues[field.key];
+      if (value !== undefined && value !== "") {
+        const displayValue = field.type === "checkbox" 
+          ? (value ? "Yes" : "No")
+          : field.type === "select"
+            ? ((field.options as { value: string; label: string }[])?.find(o => o.value === value)?.label || value)
+            : value;
+        
+        lines.push(`${field.label}: ${displayValue}`);
+        htmlLines.push(`<p><strong>${field.label}:</strong> ${displayValue}</p>`);
+      }
+    });
+
+    return {
+      text: lines.join("\n"),
+      html: htmlLines.join(""),
+    };
+  };
+
+  // Update template field value
+  const updateTemplateFieldValue = (key: string, value: any) => {
+    setTemplateFieldValues(prev => ({
+      ...prev,
+      [key]: value,
+    }));
   };
 
 
@@ -480,6 +585,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     setIsAddingNote(false);
     setEditingNote(null);
     setSelectedTemplate(null);
+    setTemplateFieldValues({});
     // Reset form to default values using ref to prevent dependency issues
     form.reset(defaultValuesRef.current);
   }, [form]);
@@ -647,6 +753,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                     <User className="h-3 w-3" />
                     <span>{note.author}</span>
                   </div>
+                  
+                  {/* Assignee */}
+                  {note.assigneeName && (
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <UserPlus className="h-3 w-3 text-[#bba7db]" />
+                      <span data-testid={`note-assignee-${note.id}`}>{note.assigneeName}</span>
+                    </div>
+                  )}
                   
                   {/* Actions */}
                   <DropdownMenu>
@@ -826,6 +940,31 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                 />
               </div>
 
+              {/* Assignee Field */}
+              <FormField
+                control={form.control}
+                name="assigneeId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-1">
+                      <UserPlus className="h-3 w-3" />
+                      Assign To
+                    </FormLabel>
+                    <FormControl>
+                      <UserSelect
+                        value={field.value || ""}
+                        onValueChange={field.onChange}
+                        placeholder="Select user to assign..."
+                        allowNone={true}
+                        noneLabel="No one assigned"
+                        data-testid="note-assignee-select"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Template Selector */}
               {!editingNote && noteTemplates.length > 0 && (
                 <div>
@@ -838,6 +977,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                         if (template) applyTemplate(template);
                       } else {
                         setSelectedTemplate(null);
+                        setTemplateFieldValues({});
                       }
                     }}
                   >
@@ -850,10 +990,95 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                       {noteTemplates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
                           {template.name}
+                          {template.isFormBased && " (Form)"}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {/* Form-based Template Fields */}
+              {selectedTemplateObj?.isFormBased && templateFields.length > 0 && (
+                <div className="space-y-4 p-4 bg-muted/50 rounded-lg border">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <FileTemplate className="h-4 w-4" />
+                    Template Fields - {selectedTemplateObj.name}
+                  </div>
+                  <div className="grid gap-4">
+                    {templateFields.map((field) => (
+                      <div key={field.id} className="space-y-2">
+                        <label className="text-sm font-medium flex items-center gap-1">
+                          {field.label}
+                          {field.isRequired && <span className="text-destructive">*</span>}
+                        </label>
+                        {field.description && (
+                          <p className="text-xs text-muted-foreground">{field.description}</p>
+                        )}
+                        {field.type === "text" && (
+                          <Input
+                            placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+                            value={templateFieldValues[field.key] || ""}
+                            onChange={(e) => updateTemplateFieldValue(field.key, e.target.value)}
+                            data-testid={`template-field-${field.key}`}
+                          />
+                        )}
+                        {field.type === "textarea" && (
+                          <Textarea
+                            placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+                            value={templateFieldValues[field.key] || ""}
+                            onChange={(e) => updateTemplateFieldValue(field.key, e.target.value)}
+                            className="min-h-[100px]"
+                            data-testid={`template-field-${field.key}`}
+                          />
+                        )}
+                        {field.type === "number" && (
+                          <Input
+                            type="number"
+                            placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+                            value={templateFieldValues[field.key] || ""}
+                            onChange={(e) => updateTemplateFieldValue(field.key, e.target.value)}
+                            data-testid={`template-field-${field.key}`}
+                          />
+                        )}
+                        {field.type === "date" && (
+                          <Input
+                            type="date"
+                            value={templateFieldValues[field.key] || ""}
+                            onChange={(e) => updateTemplateFieldValue(field.key, e.target.value)}
+                            data-testid={`template-field-${field.key}`}
+                          />
+                        )}
+                        {field.type === "checkbox" && (
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={templateFieldValues[field.key] || false}
+                              onCheckedChange={(checked) => updateTemplateFieldValue(field.key, checked)}
+                              data-testid={`template-field-${field.key}`}
+                            />
+                            <span className="text-sm">{field.placeholder || field.label}</span>
+                          </div>
+                        )}
+                        {field.type === "select" && (
+                          <Select
+                            value={templateFieldValues[field.key] || ""}
+                            onValueChange={(value) => updateTemplateFieldValue(field.key, value)}
+                          >
+                            <SelectTrigger data-testid={`template-field-${field.key}`}>
+                              <SelectValue placeholder={field.placeholder || `Select ${field.label.toLowerCase()}...`} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(field.options as { value: string; label: string }[] || []).map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -905,31 +1130,34 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                 </div>
               )}
               
-              <FormField
-                control={form.control}
-                name="contentHtml"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Content</FormLabel>
-                    <FormControl>
-                      <div className="min-h-[300px]">
-                        <RichTextEditor
-                          key={editingNote ? `edit-${editingNote.id}` : 'new'}
-                          content={field.value || ""}
-                          onChange={(html, text) => {
-                            field.onChange(html);
-                            form.setValue("contentText", text, { shouldValidate: false });
-                            form.setValue("content", text, { shouldValidate: false });
-                          }}
-                          placeholder="Enter note content..."
-                          data-testid="note-content-editor"
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Only show content editor if NOT using a form-based template */}
+              {!(selectedTemplateObj?.isFormBased && templateFields.length > 0) && (
+                <FormField
+                  control={form.control}
+                  name="contentHtml"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Content</FormLabel>
+                      <FormControl>
+                        <div className="min-h-[300px]">
+                          <RichTextEditor
+                            key={editingNote ? `edit-${editingNote.id}` : 'new'}
+                            content={field.value || ""}
+                            onChange={(html, text) => {
+                              field.onChange(html);
+                              form.setValue("contentText", text, { shouldValidate: false });
+                              form.setValue("content", text, { shouldValidate: false });
+                            }}
+                            placeholder="Enter note content..."
+                            data-testid="note-content-editor"
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => {

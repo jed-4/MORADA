@@ -1,0 +1,686 @@
+import { useState, useImperativeHandle, forwardRef, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Plus, FileText, MoreHorizontal, Pencil, Trash2, Power, PowerOff, FormInput, FileSpreadsheet, GripVertical, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { NoteTemplate, NoteTemplateField } from "@shared/schema";
+
+export interface NoteTemplatesLibraryHandle {
+  openNewTemplateDialog: () => void;
+}
+
+interface NoteTemplatesLibraryProps {
+  searchQuery?: string;
+}
+
+const FIELD_TYPES = [
+  { value: "text", label: "Text (Single Line)" },
+  { value: "textarea", label: "Text (Multi-line)" },
+  { value: "select", label: "Dropdown" },
+  { value: "date", label: "Date" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "number", label: "Number" },
+] as const;
+
+export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteTemplatesLibraryProps>(
+  ({ searchQuery = "" }, ref) => {
+    const { toast } = useToast();
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState<NoteTemplate | null>(null);
+    const [templateName, setTemplateName] = useState("");
+    const [templateDescription, setTemplateDescription] = useState("");
+    const [isFormBased, setIsFormBased] = useState(true);
+    const [templateFields, setTemplateFields] = useState<Partial<NoteTemplateField>[]>([]);
+    const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
+    const [isFieldDialogOpen, setIsFieldDialogOpen] = useState(false);
+    const [editingField, setEditingField] = useState<Partial<NoteTemplateField> | null>(null);
+    const [editingFieldIndex, setEditingFieldIndex] = useState<number | null>(null);
+
+    const { data: templates = [], isLoading } = useQuery<NoteTemplate[]>({
+      queryKey: ["/api/note-templates"],
+    });
+
+    const filteredTemplates = templates.filter(template =>
+      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (template.description?.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const createTemplateMutation = useMutation({
+      mutationFn: async (data: any) => {
+        return apiRequest("/api/note-templates", {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+      },
+      onSuccess: async (template: NoteTemplate) => {
+        if (isFormBased && templateFields.length > 0) {
+          for (let i = 0; i < templateFields.length; i++) {
+            const field = templateFields[i];
+            await apiRequest(`/api/note-templates/${template.id}/fields`, {
+              method: "POST",
+              body: JSON.stringify({
+                ...field,
+                order: i,
+              }),
+            });
+          }
+        }
+        queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
+        toast({ title: "Template created successfully" });
+        resetForm();
+      },
+      onError: () => {
+        toast({ title: "Failed to create template", variant: "destructive" });
+      },
+    });
+
+    const updateTemplateMutation = useMutation({
+      mutationFn: async ({ id, data }: { id: string; data: any }) => {
+        return apiRequest(`/api/note-templates/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        });
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
+        toast({ title: "Template updated successfully" });
+        resetForm();
+      },
+      onError: () => {
+        toast({ title: "Failed to update template", variant: "destructive" });
+      },
+    });
+
+    const deleteTemplateMutation = useMutation({
+      mutationFn: async (id: string) => {
+        return apiRequest(`/api/note-templates/${id}`, {
+          method: "DELETE",
+        });
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
+        toast({ title: "Template deleted successfully" });
+      },
+      onError: () => {
+        toast({ title: "Failed to delete template", variant: "destructive" });
+      },
+    });
+
+    const resetForm = () => {
+      setIsDialogOpen(false);
+      setEditingTemplate(null);
+      setTemplateName("");
+      setTemplateDescription("");
+      setIsFormBased(true);
+      setTemplateFields([]);
+    };
+
+    const openNewTemplateDialog = () => {
+      resetForm();
+      setIsDialogOpen(true);
+    };
+
+    const openEditDialog = (template: NoteTemplate) => {
+      setEditingTemplate(template);
+      setTemplateName(template.name);
+      setTemplateDescription(template.description || "");
+      setIsFormBased(template.isFormBased);
+      setTemplateFields([]);
+      setIsDialogOpen(true);
+    };
+
+    const handleSubmit = () => {
+      if (!templateName.trim()) {
+        toast({ title: "Template name is required", variant: "destructive" });
+        return;
+      }
+
+      const data = {
+        name: templateName.trim(),
+        description: templateDescription.trim() || undefined,
+        isFormBased,
+      };
+
+      if (editingTemplate) {
+        updateTemplateMutation.mutate({ id: editingTemplate.id, data });
+      } else {
+        createTemplateMutation.mutate(data);
+      }
+    };
+
+    const addField = () => {
+      setEditingField({
+        key: "",
+        label: "",
+        type: "text",
+        description: "",
+        placeholder: "",
+        required: false,
+        options: [],
+      });
+      setEditingFieldIndex(null);
+      setIsFieldDialogOpen(true);
+    };
+
+    const editField = (field: Partial<NoteTemplateField>, index: number) => {
+      setEditingField({ ...field });
+      setEditingFieldIndex(index);
+      setIsFieldDialogOpen(true);
+    };
+
+    const saveField = () => {
+      if (!editingField?.label?.trim()) {
+        toast({ title: "Field label is required", variant: "destructive" });
+        return;
+      }
+
+      const key = editingField.key || editingField.label.toLowerCase().replace(/\s+/g, "_");
+      const fieldData = { ...editingField, key };
+
+      if (editingFieldIndex !== null) {
+        const newFields = [...templateFields];
+        newFields[editingFieldIndex] = fieldData;
+        setTemplateFields(newFields);
+      } else {
+        setTemplateFields([...templateFields, fieldData]);
+      }
+
+      setIsFieldDialogOpen(false);
+      setEditingField(null);
+      setEditingFieldIndex(null);
+    };
+
+    const removeField = (index: number) => {
+      setTemplateFields(templateFields.filter((_, i) => i !== index));
+    };
+
+    const toggleExpanded = (id: string) => {
+      const newExpanded = new Set(expandedTemplates);
+      if (newExpanded.has(id)) {
+        newExpanded.delete(id);
+      } else {
+        newExpanded.add(id);
+      }
+      setExpandedTemplates(newExpanded);
+    };
+
+    useImperativeHandle(ref, () => ({
+      openNewTemplateDialog,
+    }));
+
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center h-64 text-muted-foreground">
+          Loading templates...
+        </div>
+      );
+    }
+
+    return (
+      <div className="h-full flex flex-col">
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-2">
+            {filteredTemplates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground">No note templates yet</h3>
+                <p className="text-sm text-muted-foreground/70 mb-4">
+                  Create templates to standardize your notes
+                </p>
+                <Button
+                  size="sm"
+                  className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+                  onClick={openNewTemplateDialog}
+                  data-testid="button-create-first-template"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Create Template
+                </Button>
+              </div>
+            ) : (
+              filteredTemplates.map((template) => (
+                <Card
+                  key={template.id}
+                  className="border-2 hover-elevate"
+                  data-testid={`card-template-${template.id}`}
+                >
+                  <Collapsible
+                    open={expandedTemplates.has(template.id)}
+                    onOpenChange={() => toggleExpanded(template.id)}
+                  >
+                    <div className="p-3 flex items-center justify-between gap-3">
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
+                          {expandedTemplates.has(template.id) ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </CollapsibleTrigger>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm truncate">{template.name}</span>
+                          {template.isFormBased ? (
+                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 no-default-hover-elevate no-default-active-elevate">
+                              <FormInput className="h-3 w-3" />
+                              Form
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 no-default-hover-elevate no-default-active-elevate">
+                              <FileSpreadsheet className="h-3 w-3" />
+                              Content
+                            </Badge>
+                          )}
+                          {template.isActive ? (
+                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 text-green-600 no-default-hover-elevate no-default-active-elevate">
+                              <Power className="h-3 w-3" />
+                              Active
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 text-muted-foreground no-default-hover-elevate no-default-active-elevate">
+                              <PowerOff className="h-3 w-3" />
+                              Inactive
+                            </Badge>
+                          )}
+                        </div>
+                        {template.description && (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {template.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-template-menu-${template.id}`}>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEditDialog(template)}>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => deleteTemplateMutation.mutate(template.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    <CollapsibleContent>
+                      <div className="px-3 pb-3 pt-0 border-t">
+                        <TemplateFieldsList templateId={template.id} />
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </Card>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle>
+                {editingTemplate ? "Edit Note Template" : "Create Note Template"}
+              </DialogTitle>
+            </DialogHeader>
+
+            <ScrollArea className="flex-1 pr-4">
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label htmlFor="template-name">Template Name</Label>
+                  <Input
+                    id="template-name"
+                    placeholder="e.g., Site Visit Report"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    data-testid="input-template-name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="template-description">Description</Label>
+                  <Textarea
+                    id="template-description"
+                    placeholder="Describe when to use this template..."
+                    value={templateDescription}
+                    onChange={(e) => setTemplateDescription(e.target.value)}
+                    rows={2}
+                    data-testid="input-template-description"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Form-based Template</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Define fields that users will fill in
+                    </p>
+                  </div>
+                  <Switch
+                    checked={isFormBased}
+                    onCheckedChange={setIsFormBased}
+                    data-testid="switch-form-based"
+                  />
+                </div>
+
+                {isFormBased && !editingTemplate && (
+                  <div className="space-y-2 border rounded-md p-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Template Fields</Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={addField}
+                        data-testid="button-add-field"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Field
+                      </Button>
+                    </div>
+
+                    {templateFields.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No fields added yet. Click "Add Field" to define form fields.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {templateFields.map((field, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center gap-2 p-2 bg-muted/50 rounded-md"
+                          >
+                            <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
+                            <div className="flex-1">
+                              <span className="text-sm font-medium">{field.label}</span>
+                              <Badge variant="outline" className="ml-2 h-5 text-[10px] no-default-hover-elevate no-default-active-elevate">
+                                {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
+                              </Badge>
+                              {field.required && (
+                                <Badge variant="secondary" className="ml-1 h-5 text-[10px]">
+                                  Required
+                                </Badge>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => editField(field, index)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive"
+                              onClick={() => removeField(index)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={resetForm}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+                onClick={handleSubmit}
+                disabled={createTemplateMutation.isPending || updateTemplateMutation.isPending}
+                data-testid="button-save-template"
+              >
+                {editingTemplate ? "Update" : "Create"} Template
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <FieldEditDialog
+          isOpen={isFieldDialogOpen}
+          onClose={() => {
+            setIsFieldDialogOpen(false);
+            setEditingField(null);
+            setEditingFieldIndex(null);
+          }}
+          field={editingField}
+          onFieldChange={setEditingField}
+          onSave={saveField}
+        />
+      </div>
+    );
+  }
+);
+
+NoteTemplatesLibrary.displayName = "NoteTemplatesLibrary";
+
+function TemplateFieldsList({ templateId }: { templateId: string }) {
+  const { data: result, isLoading } = useQuery<{ template: NoteTemplate; fields: NoteTemplateField[] }>({
+    queryKey: ["/api/note-templates", templateId, { includeFields: "true" }],
+    queryFn: async () => {
+      const response = await fetch(`/api/note-templates/${templateId}?includeFields=true`);
+      if (!response.ok) throw new Error("Failed to fetch template");
+      return response.json();
+    },
+  });
+
+  if (isLoading) {
+    return <div className="py-2 text-sm text-muted-foreground">Loading fields...</div>;
+  }
+
+  const fields = result?.fields || [];
+
+  if (fields.length === 0) {
+    return (
+      <div className="py-2 text-sm text-muted-foreground">
+        No fields defined for this template.
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-2 space-y-1">
+      <div className="text-xs font-medium text-muted-foreground mb-2">Template Fields:</div>
+      {fields.map((field) => (
+        <div key={field.id} className="flex items-center gap-2 text-sm">
+          <span className="font-medium">{field.label}</span>
+          <Badge variant="outline" className="h-5 text-[10px] no-default-hover-elevate no-default-active-elevate">
+            {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
+          </Badge>
+          {field.required && (
+            <Badge variant="secondary" className="h-5 text-[10px]">Required</Badge>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FieldEditDialog({
+  isOpen,
+  onClose,
+  field,
+  onFieldChange,
+  onSave,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  field: Partial<NoteTemplateField> | null;
+  onFieldChange: (field: Partial<NoteTemplateField> | null) => void;
+  onSave: () => void;
+}) {
+  const [optionText, setOptionText] = useState("");
+
+  if (!field) return null;
+
+  const addOption = () => {
+    if (!optionText.trim()) return;
+    const options = (field.options as { value: string; label: string }[]) || [];
+    onFieldChange({
+      ...field,
+      options: [...options, { value: optionText.toLowerCase().replace(/\s+/g, "_"), label: optionText }],
+    });
+    setOptionText("");
+  };
+
+  const removeOption = (index: number) => {
+    const options = (field.options as { value: string; label: string }[]) || [];
+    onFieldChange({
+      ...field,
+      options: options.filter((_, i) => i !== index),
+    });
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {field.id ? "Edit Field" : "Add Field"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="field-label">Field Label</Label>
+            <Input
+              id="field-label"
+              placeholder="e.g., Weather Conditions"
+              value={field.label || ""}
+              onChange={(e) => onFieldChange({ ...field, label: e.target.value })}
+              data-testid="input-field-label"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="field-type">Field Type</Label>
+            <Select
+              value={field.type || "text"}
+              onValueChange={(value) => onFieldChange({ ...field, type: value as any })}
+            >
+              <SelectTrigger id="field-type" data-testid="select-field-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FIELD_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="field-description">Help Text (Optional)</Label>
+            <Input
+              id="field-description"
+              placeholder="Instructions for this field..."
+              value={field.description || ""}
+              onChange={(e) => onFieldChange({ ...field, description: e.target.value })}
+              data-testid="input-field-description"
+            />
+          </div>
+
+          {(field.type === "text" || field.type === "textarea" || field.type === "number") && (
+            <div className="space-y-2">
+              <Label htmlFor="field-placeholder">Placeholder (Optional)</Label>
+              <Input
+                id="field-placeholder"
+                placeholder="Placeholder text..."
+                value={field.placeholder || ""}
+                onChange={(e) => onFieldChange({ ...field, placeholder: e.target.value })}
+                data-testid="input-field-placeholder"
+              />
+            </div>
+          )}
+
+          {field.type === "select" && (
+            <div className="space-y-2">
+              <Label>Dropdown Options</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add option..."
+                  value={optionText}
+                  onChange={(e) => setOptionText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addOption())}
+                  data-testid="input-option-text"
+                />
+                <Button variant="outline" size="sm" onClick={addOption} data-testid="button-add-option">
+                  Add
+                </Button>
+              </div>
+              <div className="space-y-1">
+                {((field.options as { value: string; label: string }[]) || []).map((option, index) => (
+                  <div key={index} className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+                    <span className="flex-1 text-sm">{option.label}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive"
+                      onClick={() => removeOption(index)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Switch
+              id="field-required"
+              checked={field.required || false}
+              onCheckedChange={(checked) => onFieldChange({ ...field, required: checked })}
+              data-testid="switch-field-required"
+            />
+            <Label htmlFor="field-required">Required field</Label>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
+            onClick={onSave}
+            data-testid="button-save-field"
+          >
+            Save Field
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

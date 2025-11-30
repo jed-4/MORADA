@@ -405,15 +405,18 @@ export type CustomFieldOption = typeof customFieldOptions.$inferSelect;
 // Note Templates
 export const noteTemplates = pgTable("note_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(), // Multi-tenancy support
   name: text("name").notNull(),
   description: text("description"),
   defaultTitle: text("default_title"),
   contentHtml: text("content_html"), // Template content with rich text
   contentText: text("content_text"), // Plain text version
   defaultCustomFields: json("default_custom_fields").default({}), // Record<string, any>
+  isFormBased: boolean("is_form_based").notNull().default(false), // If true, uses fields; if false, uses content
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
   isPublic: boolean("is_public").notNull().default(false), // Can other users see/use this template
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -426,6 +429,35 @@ export const insertNoteTemplateSchema = createInsertSchema(noteTemplates).omit({
 
 export type InsertNoteTemplate = z.infer<typeof insertNoteTemplateSchema>;
 export type NoteTemplate = typeof noteTemplates.$inferSelect;
+
+// Note Template Fields (for form-based templates)
+export const noteTemplateFields = pgTable("note_template_fields", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => noteTemplates.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // Unique field key for form data storage
+  label: text("label").notNull(), // Display label for the field
+  type: text("type").notNull(), // text, textarea, select, date, checkbox, number
+  description: text("description"), // Help text shown below field
+  placeholder: text("placeholder"), // Placeholder text for input fields
+  required: boolean("required").notNull().default(false),
+  order: integer("order").notNull().default(0), // Display order
+  options: json("options").default([]), // For select type: [{value: string, label: string}]
+  defaultValue: text("default_value"), // Default value for the field
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNoteTemplateFieldSchema = createInsertSchema(noteTemplateFields).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  type: z.enum(["text", "textarea", "select", "date", "checkbox", "number"]),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+});
+
+export type InsertNoteTemplateField = z.infer<typeof insertNoteTemplateFieldSchema>;
+export type NoteTemplateField = typeof noteTemplateFields.$inferSelect;
 
 // Project Types Constants
 export const PROJECT_TYPES = [

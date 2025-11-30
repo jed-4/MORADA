@@ -12,6 +12,7 @@ import {
   insertCustomFieldDefSchema,
   insertCustomFieldOptionSchema,
   insertNoteTemplateSchema,
+  insertNoteTemplateFieldSchema,
   insertProjectSchema,
   insertTaskViewSchema,
   insertEstimateSchema,
@@ -199,7 +200,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Handle "null" string to indicate business/company-wide notes
       const effectiveProjectId = projectId === "null" ? null : projectId as string | undefined;
       
-      const notes = await storage.getNotes(effectiveProjectId, companyId);
+      // Pass userId to also include notes assigned to the current user
+      const notes = await storage.getNotes(effectiveProjectId, companyId, user?.id);
       res.json(notes);
     } catch (error) {
       console.error("[Notes API] Error fetching notes:", error);
@@ -290,7 +292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if trying to pin a note
       if (validationResult.data.pinned === true) {
         // Count currently pinned notes for this project (excluding the note being updated)
-        const allNotes = await storage.getNotes(currentNote.projectId || undefined, companyId);
+        const allNotes = await storage.getNotes(currentNote.projectId || undefined, companyId, user?.id);
         const pinnedCount = allNotes.filter(n => n.pinned && n.id !== req.params.id).length;
         
         if (pinnedCount >= 3) {
@@ -1143,28 +1145,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Note Templates API Routes
   app.get("/api/note-templates", async (req, res) => {
     try {
-      const { ownerId } = req.query;
-      const templates = await storage.getNoteTemplates(ownerId as string | undefined);
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const templates = await storage.getNoteTemplates(companyId);
       res.json(templates);
     } catch (error) {
+      console.error("[Note Templates API] Error fetching templates:", error);
       res.status(500).json({ error: "Failed to fetch note templates" });
     }
   });
 
   app.get("/api/note-templates/:id", async (req, res) => {
     try {
-      const template = await storage.getNoteTemplate(req.params.id);
-      if (!template) {
-        return res.status(404).json({ error: "Note template not found" });
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
       }
-      res.json(template);
+      
+      const { includeFields } = req.query;
+      
+      if (includeFields === "true") {
+        const result = await storage.getNoteTemplateWithFields(req.params.id, companyId);
+        if (!result) {
+          return res.status(404).json({ error: "Note template not found" });
+        }
+        res.json(result);
+      } else {
+        const template = await storage.getNoteTemplate(req.params.id, companyId);
+        if (!template) {
+          return res.status(404).json({ error: "Note template not found" });
+        }
+        res.json(template);
+      }
     } catch (error) {
+      console.error("[Note Templates API] Error fetching template:", error);
       res.status(500).json({ error: "Failed to fetch note template" });
     }
   });
 
   app.post("/api/note-templates", async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const validationResult = insertNoteTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -1173,15 +1207,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const template = await storage.createNoteTemplate(validationResult.data);
+      const templateData = {
+        ...validationResult.data,
+        companyId,
+        ownerId: user?.id,
+        ownerName: user?.firstName && user?.lastName 
+          ? `${user.firstName} ${user.lastName}`.trim()
+          : user?.email || 'Unknown User',
+      };
+
+      const template = await storage.createNoteTemplate(templateData);
       res.status(201).json(template);
     } catch (error) {
+      console.error("[Note Templates API] Error creating template:", error);
       res.status(500).json({ error: "Failed to create note template" });
     }
   });
 
   app.patch("/api/note-templates/:id", async (req, res) => {
     try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const updateSchema = insertNoteTemplateSchema.partial();
       const validationResult = updateSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -1191,25 +1242,181 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const template = await storage.updateNoteTemplate(req.params.id, validationResult.data);
+      const template = await storage.updateNoteTemplate(req.params.id, validationResult.data, companyId);
       if (!template) {
         return res.status(404).json({ error: "Note template not found" });
       }
       res.json(template);
     } catch (error) {
+      console.error("[Note Templates API] Error updating template:", error);
       res.status(500).json({ error: "Failed to update note template" });
     }
   });
 
   app.delete("/api/note-templates/:id", async (req, res) => {
     try {
-      const success = await storage.deleteNoteTemplate(req.params.id);
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const success = await storage.deleteNoteTemplate(req.params.id, companyId);
       if (!success) {
         return res.status(404).json({ error: "Note template not found" });
       }
       res.status(204).send();
     } catch (error) {
+      console.error("[Note Templates API] Error deleting template:", error);
       res.status(500).json({ error: "Failed to delete note template" });
+    }
+  });
+
+  // Note Template Fields API Routes
+  app.get("/api/note-templates/:templateId/fields", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify template belongs to company
+      const template = await storage.getNoteTemplate(req.params.templateId, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Note template not found" });
+      }
+      
+      const fields = await storage.getNoteTemplateFields(req.params.templateId);
+      res.json(fields);
+    } catch (error) {
+      console.error("[Note Template Fields API] Error fetching fields:", error);
+      res.status(500).json({ error: "Failed to fetch template fields" });
+    }
+  });
+
+  app.post("/api/note-templates/:templateId/fields", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify template belongs to company
+      const template = await storage.getNoteTemplate(req.params.templateId, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Note template not found" });
+      }
+      
+      const validationResult = insertNoteTemplateFieldSchema.safeParse({
+        ...req.body,
+        templateId: req.params.templateId
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const field = await storage.createNoteTemplateField(validationResult.data);
+      res.status(201).json(field);
+    } catch (error) {
+      console.error("[Note Template Fields API] Error creating field:", error);
+      res.status(500).json({ error: "Failed to create template field" });
+    }
+  });
+
+  app.patch("/api/note-templates/:templateId/fields/:fieldId", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify template belongs to company
+      const template = await storage.getNoteTemplate(req.params.templateId, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Note template not found" });
+      }
+      
+      const updateSchema = insertNoteTemplateFieldSchema.partial().omit({ templateId: true });
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const field = await storage.updateNoteTemplateField(req.params.fieldId, validationResult.data);
+      if (!field) {
+        return res.status(404).json({ error: "Template field not found" });
+      }
+      res.json(field);
+    } catch (error) {
+      console.error("[Note Template Fields API] Error updating field:", error);
+      res.status(500).json({ error: "Failed to update template field" });
+    }
+  });
+
+  app.delete("/api/note-templates/:templateId/fields/:fieldId", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify template belongs to company
+      const template = await storage.getNoteTemplate(req.params.templateId, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Note template not found" });
+      }
+      
+      const success = await storage.deleteNoteTemplateField(req.params.fieldId);
+      if (!success) {
+        return res.status(404).json({ error: "Template field not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("[Note Template Fields API] Error deleting field:", error);
+      res.status(500).json({ error: "Failed to delete template field" });
+    }
+  });
+
+  app.post("/api/note-templates/:templateId/fields/reorder", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify template belongs to company
+      const template = await storage.getNoteTemplate(req.params.templateId, companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Note template not found" });
+      }
+      
+      const { fieldIds } = req.body;
+      if (!Array.isArray(fieldIds)) {
+        return res.status(400).json({ error: "fieldIds must be an array" });
+      }
+
+      const fields = await storage.reorderNoteTemplateFields(req.params.templateId, fieldIds);
+      res.json(fields);
+    } catch (error) {
+      console.error("[Note Template Fields API] Error reordering fields:", error);
+      res.status(500).json({ error: "Failed to reorder template fields" });
     }
   });
 
