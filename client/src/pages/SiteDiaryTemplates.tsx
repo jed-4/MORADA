@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -240,75 +239,97 @@ export default function SiteDiaryTemplates() {
         />
       </div>
 
-      {/* Templates Grid */}
+      {/* Templates List */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading templates...</p>
-          </div>
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          Loading templates...
         </div>
       ) : filteredTemplates.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No templates found</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              {searchTerm
-                ? "Try adjusting your search terms"
-                : "Get started by creating your first site diary template"}
-            </p>
-            {!searchTerm && (
-              <Button onClick={() => setIsAddingTemplate(true)} data-testid="button-create-first-template">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Template
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+        <div className="text-center py-8">
+          <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-sm font-medium mb-2">
+            {searchTerm ? "No templates found" : "No templates yet"}
+          </h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            {searchTerm
+              ? "Try adjusting your search terms"
+              : "Start by adding your first template"}
+          </p>
+          {!searchTerm && (
+            <Button 
+              size="sm"
+              onClick={() => setIsAddingTemplate(true)} 
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-create-first-template"
+            >
+              <Plus className="h-3 w-3" />
+              Add Your First Template
+            </Button>
+          )}
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-2">
           {filteredTemplates.map((template) => (
-            <Card 
+            <div 
               key={template.id} 
-              className="hover-elevate cursor-pointer" 
+              className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
               onClick={() => setEditingTemplate(template)}
               data-testid={`card-template-${template.id}`}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-lg truncate">{template.name}</CardTitle>
-                      {template.isDefault && (
-                        <Badge variant="secondary" className="text-xs bg-[#bba7db]/20 text-[#bba7db]">
-                          <Star className="h-3 w-3 mr-1 fill-current" />
-                          Default
-                        </Badge>
-                      )}
-                    </div>
-                    {template.description && (
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                        {template.description}
-                      </p>
-                    )}
+              <div className="flex items-start gap-2">
+                {/* Default indicator */}
+                {template.isDefault && (
+                  <div className="flex-shrink-0 pt-0.5">
+                    <Star className="h-3 w-3 text-[#bba7db] fill-current" data-testid={`template-default-indicator-${template.id}`} />
                   </div>
+                )}
+                
+                {/* Title and Description */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm mb-1 line-clamp-1">
+                    {template.name}
+                  </h3>
+                  {template.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-1">
+                      {template.description}
+                    </p>
+                  )}
+                </div>
+                
+                {/* Metadata */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Fields count */}
+                  <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                    {(template.fields as any[]).length} {(template.fields as any[]).length === 1 ? 'field' : 'fields'}
+                  </Badge>
+                  
+                  {/* Date */}
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <span>
+                      {format(new Date(template.updatedAt), "MMM d, yyyy")}
+                    </span>
+                  </div>
+                  
+                  {/* Actions */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => e.stopPropagation()}
                         data-testid={`button-menu-${template.id}`}
                       >
-                        <MoreVertical className="h-4 w-4" />
+                        <MoreVertical className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {!template.isDefault && (
                         <DropdownMenuItem
-                          onClick={() => setDefaultMutation.mutate(template.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDefaultMutation.mutate(template.id);
+                          }}
                           data-testid={`button-set-default-${template.id}`}
                         >
                           <Star className="h-4 w-4 mr-2" />
@@ -316,21 +337,30 @@ export default function SiteDiaryTemplates() {
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem
-                        onClick={() => setEditingTemplate(template)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTemplate(template);
+                        }}
                         data-testid={`button-edit-${template.id}`}
                       >
                         <Edit3 className="h-4 w-4 mr-2" />
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() => duplicateMutation.mutate(template)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicateMutation.mutate(template);
+                        }}
                         data-testid={`button-duplicate-${template.id}`}
                       >
                         <Copy className="h-4 w-4 mr-2" />
                         Duplicate
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() => deleteMutation.mutate(template.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMutation.mutate(template.id);
+                        }}
                         className="text-destructive"
                         data-testid={`button-delete-${template.id}`}
                       >
@@ -340,21 +370,8 @@ export default function SiteDiaryTemplates() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Badge variant="outline" className="text-xs">
-                      {(template.fields as any[]).length} {(template.fields as any[]).length === 1 ? 'field' : 'fields'}
-                    </Badge>
-                    <span>•</span>
-                    <span className="truncate">
-                      Updated {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
       )}
