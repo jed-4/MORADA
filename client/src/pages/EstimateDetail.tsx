@@ -154,6 +154,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
 ];
 
 // Sortable Row Component for drag & drop - CSS Grid based
+// Uses a wrapper to maintain height during drag and prevent layout collapse
 interface SortableRowProps {
   id: string;
   children: React.ReactNode;
@@ -177,24 +178,83 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     animateLayoutChanges: () => false,
   });
 
-  // Google Sheets approach: NO transforms at all during drag
-  // All items stay exactly in place - only the DragOverlay moves
-  // The drop indicator line shows where the item will land
-  // This prevents ALL layout shifting
-  const style = React.useMemo(() => ({
+  // Ref to measure the row height
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  const [measuredHeight, setMeasuredHeight] = React.useState<number>(40); // Default row height
+
+  // Measure height on mount and when content changes
+  React.useEffect(() => {
+    if (rowRef.current && !isDragging) {
+      const height = rowRef.current.offsetHeight;
+      if (height > 0) {
+        setMeasuredHeight(height);
+      }
+    }
+  }, [isDragging, children]);
+
+  // Combine refs for both measurement and sortable
+  const combinedRef = React.useCallback((node: HTMLDivElement | null) => {
+    (rowRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    setNodeRef(node);
+  }, [setNodeRef]);
+
+  // When dragging, dnd-kit sets the element to position:absolute with 0 dimensions
+  // We wrap it in a container that maintains the height to prevent layout collapse
+  if (isDragging) {
+    return (
+      <div 
+        style={{ 
+          height: measuredHeight, 
+          minHeight: measuredHeight,
+          backgroundColor: 'hsl(var(--muted))',
+          borderBottom: '1px solid hsl(var(--border))',
+        }}
+        className="relative"
+        data-testid={`row-placeholder-${id}`}
+      >
+        {/* Drop indicator line */}
+        {dropIndicator === 'above' && (
+          <div className="absolute -top-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+        )}
+        {dropIndicator === 'below' && (
+          <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+        )}
+        {/* Hidden actual sortable element - dnd-kit needs this but we hide it */}
+        <div
+          ref={combinedRef}
+          role="row"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: gridTemplate,
+            visibility: 'hidden',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+          }}
+        >
+          <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
+            {isDraggable && (
+              <div {...attributes} {...listeners}>
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  // Normal rendering when not dragging
+  const style = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    // NO transforms - items stay in place (Google Sheets style)
-    transform: undefined,
-    transition: undefined,
-    // Dim the dragged item to show it's being moved
-    opacity: isDragging ? 0.3 : 1,
-    backgroundColor: isDragging ? 'hsl(var(--muted))' : undefined,
-  }), [gridTemplate, isDragging]);
+  };
 
   return (
     <div
-      ref={setNodeRef}
+      ref={combinedRef}
       role="row"
       style={style}
       className={`relative ${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800`}
@@ -224,6 +284,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
 });
 
 // Sortable Group Component for drag & drop groups
+// Uses same placeholder approach as SortableRow to prevent layout collapse
 interface SortableGroupProps {
   id: string;
   children: (dragHandleProps: { attributes: any; listeners: any }) => React.ReactNode;
@@ -243,16 +304,56 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     animateLayoutChanges: () => false,
   });
 
-  // Google Sheets approach: NO transforms - groups stay in place during drag
-  const style = React.useMemo(() => ({
-    transform: undefined,
-    transition: undefined,
-    opacity: isDragging ? 0.4 : 1,
-    backgroundColor: isDragging ? 'hsl(var(--muted))' : undefined,
-  }), [isDragging]);
+  // Ref to measure the group height
+  const groupRef = React.useRef<HTMLDivElement>(null);
+  const [measuredHeight, setMeasuredHeight] = React.useState<number>(100); // Default group height
+
+  // Measure height on mount
+  React.useEffect(() => {
+    if (groupRef.current && !isDragging) {
+      const height = groupRef.current.offsetHeight;
+      if (height > 0) {
+        setMeasuredHeight(height);
+      }
+    }
+  }, [isDragging]);
+
+  // Combine refs
+  const combinedRef = React.useCallback((node: HTMLDivElement | null) => {
+    (groupRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    setNodeRef(node);
+  }, [setNodeRef]);
+
+  // When dragging, render placeholder to maintain height
+  if (isDragging) {
+    return (
+      <div 
+        style={{ 
+          height: measuredHeight, 
+          minHeight: measuredHeight,
+          backgroundColor: 'hsl(var(--muted))',
+          borderRadius: '0.5rem',
+          border: '2px dashed hsl(var(--border))',
+        }}
+        className={className}
+        data-testid={`group-placeholder-${id}`}
+      >
+        {/* Hidden actual sortable element */}
+        <div
+          ref={combinedRef}
+          style={{
+            visibility: 'hidden',
+            position: 'absolute',
+          }}
+        >
+          {children({ attributes, listeners })}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div ref={setNodeRef} style={style} className={className}>
+    <div ref={combinedRef} className={className}>
       {children({ attributes, listeners })}
     </div>
   );
