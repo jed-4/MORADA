@@ -658,9 +658,14 @@ export default function EstimateDetail() {
   // Mutation for reordering items with optimistic updates
   const reorderItemsMutation = useMutation({
     mutationFn: async ({ items, previousState }: { items: { id: string; order: number; groupId?: string | null }[], previousState?: any[] }) => {
+      console.log('[REORDER MUTATION] Received items to reorder:', items);
+      
       // Filter out any items that might not be persisted yet (temporary IDs, optimistic updates, etc.)
       // Only send items that exist in our current items data
       const currentItems = queryClient.getQueryData(["/api/estimates", effectiveEstimateId, "items"]) as EstimateItem[] || [];
+      console.log('[REORDER MUTATION] Current items in cache:', currentItems.length, 'items');
+      console.log('[REORDER MUTATION] Current item IDs:', currentItems.map((i: any) => i.id));
+      
       const validItems = items.filter((update: any) => {
         const existsInData = currentItems.some((item: any) => item.id === update.id);
         if (!existsInData) {
@@ -669,6 +674,8 @@ export default function EstimateDetail() {
         return existsInData;
       });
       
+      console.log('[REORDER MUTATION] Valid items after filter:', validItems.length, 'items');
+      console.log('[REORDER MUTATION] Sending to API:', validItems);
       
       if (validItems.length === 0) {
         console.warn('[REORDER MUTATION] No valid items to reorder, skipping');
@@ -901,6 +908,14 @@ export default function EstimateDetail() {
     
     // Don't show indicator on self
     if (overId === activeId) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Skip if hovering over a group header (we handle items only)
+    if (overId.startsWith('group-')) {
+      // For group headers, we could show indicator on the first item in the group
+      // For now, just clear the indicator
       setDropTarget(null);
       return;
     }

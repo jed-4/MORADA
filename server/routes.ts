@@ -2500,9 +2500,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Security: Verify all items belong to estimates in the user's company (batched query)
       // De-duplicate IDs first (frontend may send parent item twice when moving with sub-items)
       const itemIds = [...new Set(items.map(({ id }) => id))];
+      console.log('[REORDER] Verifying ownership for', itemIds.length, 'unique item IDs:', itemIds);
       const verificationResult = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
       if (!verificationResult.authorized) {
         console.error(`[REORDER] Security violation: item ${verificationResult.invalidItemId} does not belong to company ${companyId}`);
+        console.error(`[REORDER] All requested item IDs:`, itemIds);
         return res.status(404).json({ error: `Estimate item not found: ${verificationResult.invalidItemId}` });
       }
 
