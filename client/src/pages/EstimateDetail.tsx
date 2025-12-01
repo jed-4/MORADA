@@ -5360,8 +5360,8 @@ export default function EstimateDetail() {
               setEditingItemId(null);
             }
           }}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl">
-              <DialogHeader>
+            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col rounded-xl p-0">
+              <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
                 <DialogTitle>Edit Estimate Item</DialogTitle>
               </DialogHeader>
               <Form {...editForm}>
@@ -5375,7 +5375,8 @@ export default function EstimateDetail() {
                       }
                     }
                   );
-                })} className="space-y-4">
+                })} className="flex flex-col flex-1 overflow-hidden">
+                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                   <FormField
                     control={editForm.control}
                     name="name"
@@ -5909,7 +5910,8 @@ export default function EstimateDetail() {
                     />
                   </div>
 
-                  <div className="flex justify-end space-x-2 pt-4">
+                  </div>
+                  <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background shrink-0">
                     <Button
                       type="button"
                       variant="outline"
