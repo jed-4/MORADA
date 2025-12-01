@@ -176,13 +176,20 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     animateLayoutChanges: () => false,
   });
 
+  // Key fix: Do NOT apply transform to the dragged item - let it stay in place as a placeholder
+  // The DragOverlay handles showing the floating ghost that follows the cursor
+  // Only apply transform to OTHER items that need to shift to make room
   const style = React.useMemo(() => ({
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)',
-    opacity: isDragging ? 0.3 : 1,
-    backgroundColor: isDragging ? 'var(--muted)' : undefined,
+    // Only apply transform when NOT dragging (so other items shift, but dragged item stays as placeholder)
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: isDragging ? undefined : (transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)'),
+    // Dim the placeholder to show it's being dragged
+    opacity: isDragging ? 0.4 : 1,
+    backgroundColor: isDragging ? 'hsl(var(--muted))' : undefined,
+    // Keep the item in document flow when dragging (acts as placeholder)
+    position: 'relative' as const,
   }), [gridTemplate, transform, transition, isDragging]);
 
   return (
@@ -236,10 +243,12 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     animateLayoutChanges: () => false,
   });
 
+  // Same fix as SortableRow: don't apply transform to dragged group, let it stay as placeholder
   const style = React.useMemo(() => ({
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)',
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: isDragging ? undefined : (transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)'),
     opacity: isDragging ? 0.4 : 1,
+    backgroundColor: isDragging ? 'hsl(var(--muted))' : undefined,
   }), [transform, transition, isDragging]);
 
   return (
