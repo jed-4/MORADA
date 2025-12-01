@@ -881,29 +881,64 @@ export default function EstimateDetail() {
     setDropTarget(null);
   };
   
+  // Handle drag cancel - clear all drag state
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setDropTarget(null);
+  };
+  
   // Handle drag move - track position for Google Sheets-style indicator
   const handleDragMove = (event: any) => {
-    const { over, activatorEvent } = event;
+    const { over, active, delta } = event;
     
-    if (!over) {
+    if (!over || !active) {
       setDropTarget(null);
       return;
     }
     
     const overId = String(over.id);
+    const activeId = String(active.id);
     
-    // Get the target element's bounding rect
-    const targetElement = document.querySelector(`[data-testid="row-item-${overId}"]`);
-    if (targetElement && activatorEvent) {
-      const rect = targetElement.getBoundingClientRect();
-      const mouseY = (activatorEvent as MouseEvent).clientY || 0;
-      const midpoint = rect.top + rect.height / 2;
-      const position = mouseY < midpoint ? 'above' : 'below';
-      
+    // Don't show indicator on self
+    if (overId === activeId) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Get the over element's rect - this updates as we hover different elements
+    let overRect: { top: number; height: number } | null = null;
+    if (over.rect) {
+      overRect = over.rect;
+    } else {
+      // DOM fallback
+      const targetElement = document.querySelector(`[data-testid="row-item-${overId}"]`);
+      if (targetElement) {
+        const domRect = targetElement.getBoundingClientRect();
+        overRect = { top: domRect.top, height: domRect.height };
+      }
+    }
+    
+    if (!overRect) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Calculate the current drag position using the active element's initial rect + delta
+    // This gives us the live position of the dragged element
+    const activeInitialRect = active.rect?.current?.initial;
+    if (activeInitialRect && delta) {
+      const dragCenterY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
+      const overMidpoint = overRect.top + overRect.height / 2;
+      const position = dragCenterY < overMidpoint ? 'above' : 'below';
+      setDropTarget({ id: overId, position });
+    } else if (delta) {
+      // Fallback: use just delta direction if initial rect unavailable
+      // Positive delta.y means moving down, negative means moving up
+      const position = delta.y < 0 ? 'above' : 'below';
       setDropTarget({ id: overId, position });
     } else {
-      // Fallback: default to 'below' if we can't determine position
-      setDropTarget({ id: overId, position: 'below' });
+      // No reliable geometry - clear indicator
+      setDropTarget(null);
     }
   };
 
@@ -4461,7 +4496,7 @@ export default function EstimateDetail() {
                     </div>
                   </div>
                 ) : (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
                     <div className="space-y-4">
                       {/* Bulk Actions Toolbar */}
                       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
