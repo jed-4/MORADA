@@ -3574,6 +3574,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to update profile" });
     }
   });
+
+  // Toggle Gmail sending preference
+  app.post('/api/profile/gmail-sending', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { enabled } = req.body;
+      
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: "enabled must be a boolean" });
+      }
+
+      // If enabling, verify user has Google account connected
+      if (enabled) {
+        const user = await storage.getUser(userId);
+        if (!user?.googleCalendarAccessToken || !user?.googleCalendarRefreshToken) {
+          return res.status(400).json({ 
+            message: "Please connect your Google account first to enable Gmail sending" 
+          });
+        }
+      }
+
+      const updatedUser = await storage.updateUser(userId, {
+        useGmailForSending: enabled,
+      });
+
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      console.log(`📧 Gmail sending ${enabled ? 'enabled' : 'disabled'} for user ${userId}`);
+      
+      res.json({ 
+        success: true, 
+        useGmailForSending: updatedUser.useGmailForSending 
+      });
+    } catch (error) {
+      console.error("Error toggling Gmail sending:", error);
+      res.status(500).json({ message: "Failed to update Gmail sending preference" });
+    }
+  });
   
   // ============================================================
   // GOOGLE CALENDAR OAUTH ROUTES

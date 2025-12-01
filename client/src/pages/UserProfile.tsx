@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Calendar as CalendarIcon, Check, X, User as UserIcon, Mail, Phone, Building2 } from "lucide-react";
+import { Calendar as CalendarIcon, Check, X, User as UserIcon, Mail, Phone, Building2, Send } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
 import type { User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -112,6 +113,29 @@ export default function UserProfile() {
       toast({
         title: "Calendar disconnected",
         description: "Your Google Calendar has been disconnected.",
+      });
+    },
+  });
+
+  // Toggle Gmail sending preference
+  const toggleGmailSendingMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      return await apiRequest("/api/profile/gmail-sending", "POST", { enabled });
+    },
+    onSuccess: (_, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({
+        title: enabled ? "Gmail sending enabled" : "Gmail sending disabled",
+        description: enabled 
+          ? "BuildPro emails will now be sent from your Gmail address."
+          : "BuildPro will use the default email service.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update setting",
+        description: error.message || "Please try again.",
+        variant: "destructive",
       });
     },
   });
@@ -359,6 +383,42 @@ export default function UserProfile() {
                       <li>• Changes in BuildPro update your Google Calendar</li>
                       <li>• Automatic sync every hour</li>
                     </ul>
+                  </div>
+
+                  {/* Gmail Sending Toggle */}
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center">
+                          <Send className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <h4 className="font-medium">Send emails from your Gmail</h4>
+                          <p className="text-sm text-muted-foreground">
+                            RFQs, schedule updates, and notifications come from {googleCalendarEmail}
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={user?.useGmailForSending || false}
+                        onCheckedChange={(checked) => toggleGmailSendingMutation.mutate(checked)}
+                        disabled={toggleGmailSendingMutation.isPending || isTokenExpired}
+                        data-testid="switch-gmail-sending"
+                      />
+                    </div>
+                    {user?.useGmailForSending && (
+                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                        <p className="text-sm text-green-700 dark:text-green-300">
+                          <Check className="h-4 w-4 inline mr-1" />
+                          Emails sent by BuildPro will come from your Gmail. Replies go straight to your inbox.
+                        </p>
+                      </div>
+                    )}
+                    {isTokenExpired && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Reconnect your Google account to enable this feature.
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
