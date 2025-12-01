@@ -5,7 +5,8 @@ import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./replitAuth";
-import { sendInvitationEmail } from "./utils/email";
+import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
+import { GoogleOAuthService } from "./services/googleOAuthService";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -118,6 +119,14 @@ import { setupMessagingSocket } from "./messaging/socket";
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
   await setupAuth(app);
+  
+  // Initialize email services with Gmail support
+  try {
+    const googleOAuthService = new GoogleOAuthService(storage);
+    initializeEmailServices(storage, googleOAuthService);
+  } catch (error) {
+    console.warn('⚠️ Gmail email service not initialized - Google OAuth may not be configured');
+  }
   
   // Compatibility bridge: sync Passport user to legacy session fields
   // This allows old routes checking req.session.userId to work with Replit Auth
@@ -4572,7 +4581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const host = req.get('host');
       const inviteUrl = `${protocol}://${host}/accept-invite/${invitation.inviteToken}`;
       
-      // Send invitation email
+      // Send invitation email (use Gmail if inviter has it enabled)
       try {
         await sendInvitationEmail({
           to: invitation.email,
@@ -4582,6 +4591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           companyName: company?.name || 'the team',
           inviteUrl,
           recipientName: invitation.firstName || undefined,
+          userId: invitation.invitedBy, // Pass inviter's userId for Gmail sending
         });
         
         console.log(`Invitation email sent to ${invitation.email}`);
