@@ -170,15 +170,19 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     transform,
     transition,
     isDragging,
-  } = useSortable({ id, disabled: !isDraggable });
+  } = useSortable({ 
+    id, 
+    disabled: !isDraggable,
+    animateLayoutChanges: () => false,
+  });
 
   const style = React.useMemo(() => ({
     display: 'grid',
     gridTemplateColumns: gridTemplate,
     transform: CSS.Transform.toString(transform),
     transition: transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)',
-    opacity: isDragging ? 0 : 1,
-    visibility: isDragging ? 'hidden' as const : 'visible' as const,
+    opacity: isDragging ? 0.3 : 1,
+    backgroundColor: isDragging ? 'var(--muted)' : undefined,
   }), [gridTemplate, transform, transition, isDragging]);
 
   return (
@@ -227,17 +231,19 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ 
+    id,
+    animateLayoutChanges: () => false,
+  });
 
   const style = React.useMemo(() => ({
     transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
+    transition: transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: isDragging ? 0.4 : 1,
   }), [transform, transition, isDragging]);
 
   return (
-    <div ref={setNodeRef} style={style} className={`${className} ${isDragging ? 'shadow-lg' : ''}`}>
+    <div ref={setNodeRef} style={style} className={className}>
       {children({ attributes, listeners })}
     </div>
   );
