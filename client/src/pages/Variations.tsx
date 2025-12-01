@@ -373,7 +373,7 @@ export default function Variations() {
   );
 
   return (
-    <div className="flex flex-col h-full" data-testid="page-variations">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900" data-testid="page-variations">
       {/* Row 1 - Title & Actions (36px) */}
       <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">

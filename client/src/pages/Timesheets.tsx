@@ -246,9 +246,9 @@ export default function Timesheets() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
       {/* Row 1: Title */}
-      <div className="flex items-center justify-between h-10 px-3 border-b border-border/50">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3">
         <h1 className="text-sm font-semibold">
           {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
         </h1>
@@ -256,10 +256,10 @@ export default function Timesheets() {
           <button
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
-            className="h-7 px-3 text-xs font-medium bg-background dark:bg-gray-900 border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
+            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
             data-testid="button-export-timesheets"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3 h-3" />
             Export
           </button>
           <button
@@ -267,39 +267,39 @@ export default function Timesheets() {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
-            className="h-7 px-3 text-xs font-medium bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 active:bg-[#bba7db]/80 flex items-center gap-1.5 shadow-sm"
+            className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
             data-testid="button-add-timesheet"
           >
-            <Clock className="w-3.5 h-3.5" />
+            <Clock className="w-3 h-3" />
             Clock In
           </button>
         </div>
       </div>
 
       {/* Row 2: Filters */}
-      <div className="flex items-center gap-2 h-10 px-3 bg-gray-50/80 dark:bg-gray-900/50 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter Chips */}
         <div className="flex items-center gap-2 flex-1">
           {/* Search */}
-          <div className="relative w-52">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
-              placeholder="Search timesheets..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               data-testid="input-search-timesheets"
-              className="pl-8 pr-2 py-0 h-7 text-xs bg-background dark:bg-gray-950 border rounded-md"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
             />
           </div>
           
-          <div className="w-px h-5 bg-border/60" />
+          <div className="w-px h-4 bg-border" />
 
           {/* Project Filter (only if not in project context) */}
           {!projectId && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button 
-                  className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                  className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                     selectedProjects.length > 0 
                       ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
                       : "bg-background dark:bg-gray-900 border hover-elevate"
@@ -339,7 +339,7 @@ export default function Timesheets() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                   selectedUsers.length > 0 
                     ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
                     : "bg-background dark:bg-gray-900 border hover-elevate"
@@ -378,7 +378,7 @@ export default function Timesheets() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                   selectedStatuses.length > 0 
                     ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
                     : "bg-background dark:bg-gray-900 border hover-elevate"
@@ -422,14 +422,14 @@ export default function Timesheets() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+                className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                   dateRangeType !== "all" 
                     ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
                     : "bg-background dark:bg-gray-900 border hover-elevate"
                 }`}
                 data-testid="button-filter-date"
               >
-                <CalendarRange className="w-3.5 h-3.5" />
+                <CalendarRange className="w-3 h-3" />
                 <span>
                   {dateRangeType === "all" ? "All Time" : 
                    dateRangeType === "this-week" ? "This Week" :
