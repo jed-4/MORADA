@@ -247,13 +247,12 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
   }
 
   // Normal rendering when not dragging
-  // IMPORTANT: Explicitly disable ALL transforms to prevent any layout shift
-  // when dnd-kit tries to apply transforms to neighboring items during drag
+  // Allow dnd-kit transforms so items can shift to make room for the dragged item
   const style: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    transform: 'none',
-    transition: 'none',
+    transform: transform ? CSS.Transform.toString(transform) : undefined,
+    transition: transition || undefined,
   };
 
   return (
@@ -356,10 +355,10 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     );
   }
 
-  // Normal rendering - explicitly disable transforms
+  // Normal rendering - allow transforms for proper sorting
   const style: React.CSSProperties = {
-    transform: 'none',
-    transition: 'none',
+    transform: transform ? CSS.Transform.toString(transform) : undefined,
+    transition: transition || undefined,
   };
 
   return (
@@ -2830,6 +2829,38 @@ export default function EstimateDetail() {
     setPreselectedGroupId(groupId);
     setIsAddItemOpen(true);
   };
+
+  // Inline add item handler - creates item with just a name
+  const handleInlineAddItem = async (groupId: string, name: string) => {
+    if (!effectiveEstimateId) return;
+    
+    // Get the group's items to determine the next order value
+    const groupItems = items.filter(item => item.groupId === groupId);
+    const maxOrder = groupItems.reduce((max, item) => Math.max(max, item.order || 0), -1);
+    
+    const newItem: InsertEstimateItem = {
+      estimateId: effectiveEstimateId,
+      name: name,
+      groupId: groupId,
+      type: 'Material',
+      quantity: 1,
+      unitType: 'each',
+      status: 'incomplete',
+      unitCostExTax: 0,
+      taxAmount: 0,
+      priceIncTax: 0,
+      allowance: 'None',
+      allowanceStatus: 'pending',
+      wastagePercent: 0,
+      proposalVisible: true,
+      requestForQuote: false,
+      isSelection: false,
+      trackLabourHours: false,
+      order: maxOrder + 1,
+    };
+    
+    addItemMutation.mutate(newItem);
+  };
   
   const handleCopyItem = (itemId: string) => {
     toast({
@@ -4834,6 +4865,7 @@ export default function EstimateDetail() {
                                 onCopyGroup={handleCopyGroup}
                                 onAddSubgroup={handleAddSubgroup}
                                 onAddItemToGroup={handleAddItemToGroup}
+                                onInlineAddItem={handleInlineAddItem}
                                 isLocked={estimate?.isLocked || false}
                                 selectedItems={selectedItems}
                                 selectedGroups={selectedGroups}
