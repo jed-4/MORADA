@@ -76,6 +76,9 @@ export const users = pgTable("users", {
   googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),
   googleCalendarConnectedAt: timestamp("google_calendar_connected_at"),
   
+  // Gmail integration - send BuildPro emails from user's Gmail
+  useGmailForSending: boolean("use_gmail_for_sending").notNull().default(false),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

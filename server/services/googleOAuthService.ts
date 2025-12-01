@@ -8,6 +8,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/gmail.send', // Send emails on behalf of user
 ];
 
 export class GoogleOAuthService {
@@ -206,5 +207,45 @@ export class GoogleOAuthService {
       isExpired,
       connectedAt: user?.googleCalendarConnectedAt || null,
     };
+  }
+  
+  async getGmailClient(userId: string): Promise<any> {
+    const user = await this.storage.getUser(userId);
+    
+    if (!user || !user.googleCalendarAccessToken || !user.googleCalendarRefreshToken) {
+      throw new Error('Google account not connected for this user');
+    }
+    
+    const accessToken = decryptToken(user.googleCalendarAccessToken);
+    const refreshToken = decryptToken(user.googleCalendarRefreshToken);
+    
+    this.oauth2Client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expiry_date: user.googleCalendarTokenExpiry?.getTime(),
+    });
+    
+    const shouldRefresh = !user.googleCalendarTokenExpiry || 
+      user.googleCalendarTokenExpiry.getTime() < Date.now() + 5 * 60 * 1000;
+    
+    if (shouldRefresh) {
+      const { credentials } = await this.oauth2Client.refreshAccessToken();
+      
+      if (credentials.access_token) {
+        const encryptedAccessToken = encryptToken(credentials.access_token);
+        const expiryDate = credentials.expiry_date 
+          ? new Date(credentials.expiry_date)
+          : new Date(Date.now() + 3600 * 1000);
+        
+        await this.storage.updateUser(userId, {
+          googleCalendarAccessToken: encryptedAccessToken,
+          googleCalendarTokenExpiry: expiryDate,
+        });
+        
+        this.oauth2Client.setCredentials(credentials);
+      }
+    }
+    
+    return google.gmail({ version: 'v1', auth: this.oauth2Client });
   }
 }
