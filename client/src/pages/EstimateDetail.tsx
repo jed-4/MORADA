@@ -247,9 +247,13 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
   }
 
   // Normal rendering when not dragging
-  const style = {
+  // IMPORTANT: Explicitly disable ALL transforms to prevent any layout shift
+  // when dnd-kit tries to apply transforms to neighboring items during drag
+  const style: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
+    transform: 'none',
+    transition: 'none',
   };
 
   return (
@@ -352,8 +356,14 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     );
   }
 
+  // Normal rendering - explicitly disable transforms
+  const style: React.CSSProperties = {
+    transform: 'none',
+    transition: 'none',
+  };
+
   return (
-    <div ref={combinedRef} className={className}>
+    <div ref={combinedRef} style={style} className={className}>
       {children({ attributes, listeners })}
     </div>
   );
