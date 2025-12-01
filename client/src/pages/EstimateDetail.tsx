@@ -16,6 +16,7 @@ import {
   DragEndEvent,
   DragStartEvent,
   DragOverlay,
+  MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -4525,7 +4526,19 @@ export default function EstimateDetail() {
                     </div>
                   </div>
                 ) : (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+                  <DndContext 
+                    sensors={sensors} 
+                    collisionDetection={closestCenter} 
+                    onDragStart={handleDragStart} 
+                    onDragMove={handleDragMove} 
+                    onDragEnd={handleDragEnd} 
+                    onDragCancel={handleDragCancel}
+                    measuring={{
+                      droppable: {
+                        strategy: MeasuringStrategy.BeforeDragging,
+                      },
+                    }}
+                  >
                     <div className="space-y-4">
                       {/* Bulk Actions Toolbar */}
                       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
