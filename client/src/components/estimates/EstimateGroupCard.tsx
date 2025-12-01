@@ -313,6 +313,38 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
             </div>
           )}
 
+          {/* Add Line button - appears at bottom of group items */}
+          {!isLocked && (
+            <div 
+              role="row"
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: gridTemplate,
+                width: `${tableWidth}px`,
+                minWidth: `${tableWidth}px`
+              }}
+              className="h-9 hover:bg-muted/30 transition-colors border-b border-gray-100 dark:border-gray-800 group/addline"
+            >
+              {/* Empty drag handle cell */}
+              <div className="h-9 px-1 flex items-center justify-center" role="gridcell" />
+              {/* Empty checkbox cell */}
+              <div className="h-9 px-2 flex items-center" role="gridcell" />
+              {/* Add line button spanning across */}
+              <div className="h-9 px-2 flex items-center col-span-1" role="gridcell">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground opacity-60 group-hover/addline:opacity-100 transition-opacity"
+                  onClick={() => onAddItemToGroup(group.id)}
+                  data-testid={`button-add-line-${group.id}`}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add Line
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Child subgroups */}
           {childSubgroups.map((childGroup) => (
             <div key={`subgroup-${childGroup.id}`} className="border-t">
