@@ -579,7 +579,7 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Row 2 - Type Tabs + Totals */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 flex-shrink-0">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setSelectedType("all")}
@@ -632,20 +632,20 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Row 3 - Search + Status Filters + Supplier + Columns */}
-      <div className="h-10 bg-gray-50/80 dark:bg-gray-900/50 flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-3 border-b border-border flex-shrink-0 gap-1.5">
         {/* Search */}
-        <div className="relative w-52">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <div className="relative w-48">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           <Input
-            placeholder="Search by name, PO#, supplier..."
+            placeholder="Search..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-8 pr-2 py-0 h-7 text-xs bg-background dark:bg-gray-950 border rounded-md"
+            className="pl-7 pr-2 py-0 h-6 text-xs border"
             data-testid="po-search-input"
           />
         </div>
 
-        <div className="w-px h-5 bg-border/60" />
+        <div className="w-px h-4 bg-border" />
 
         {/* Status Filter Pills */}
         <div className="flex items-center gap-1">
@@ -653,16 +653,16 @@ export default function PurchaseOrders() {
             <button
               key={status.key}
               onClick={() => setSelectedStatus(status.key)}
-              className={`h-6 px-2 text-[11px] font-medium rounded-full transition-all ${
+              className={`h-6 px-2 text-xs rounded-md transition-all ${
                 selectedStatus === status.key
-                  ? "bg-[#bba7db] text-white shadow-sm"
+                  ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium"
                   : "bg-background dark:bg-gray-900 border hover-elevate"
               }`}
               data-testid={`filter-status-${status.key}`}
             >
               {status.label === "All Statuses" ? "All" : status.label}
               {statusCounts[status.key] > 0 && (
-                <span className={`ml-1 ${selectedStatus === status.key ? "opacity-80" : "text-muted-foreground"}`}>
+                <span className={`ml-1 ${selectedStatus === status.key ? "" : "text-muted-foreground"}`}>
                   {statusCounts[status.key]}
                 </span>
               )}
@@ -670,13 +670,13 @@ export default function PurchaseOrders() {
           ))}
         </div>
 
-        <div className="w-px h-5 bg-border/60" />
+        <div className="w-px h-4 bg-border" />
 
         {/* Supplier Filter */}
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className={`h-7 px-3 text-xs rounded-md flex items-center gap-1.5 transition-all ${
+              className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                 selectedSupplierId 
                   ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
                   : "bg-background dark:bg-gray-900 border hover-elevate"
@@ -723,11 +723,11 @@ export default function PurchaseOrders() {
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className="h-7 w-7 text-xs bg-background dark:bg-gray-900 border rounded-md hover-elevate flex items-center justify-center"
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               data-testid="button-columns"
               title="Configure columns"
             >
-              <Columns3 className="w-4 h-4" />
+              <Columns3 className="w-3 h-3" />
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-52 p-2" align="end">
