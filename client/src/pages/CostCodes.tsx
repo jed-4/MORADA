@@ -305,198 +305,201 @@ export default function CostCodes() {
   const isLoading = categoriesLoading || codesLoading;
 
   return (
-    <div className="h-full flex flex-col p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage cost categories and codes for estimates, bills, and timesheets
-          </p>
-        </div>
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
+        {/* Left: Title + Count */}
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="default"
+          <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
+            <span className="text-foreground font-medium">Cost Codes</span>
+          </nav>
+          <Badge variant="secondary" className="text-xs" data-testid="text-code-count">
+            {codes.length} codes
+          </Badge>
+        </div>
+
+        {/* Right: Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
             onClick={() => setIsAddCategoryOpen(true)}
             data-testid="button-add-category"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Category
-          </Button>
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setIsAddCostCodeOpen(true)}
-            data-testid="button-add-code"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Cost Code
-          </Button>
-          <Button
-            variant="outline"
-            size="default"
+            <Plus className="w-3 h-3" />
+            <span>Category</span>
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
             onClick={() => setIsImportOpen(true)}
             data-testid="button-import-csv"
           >
-            <Upload className="h-4 w-4 mr-2" />
-            Import CSV
-          </Button>
+            <Upload className="w-3 h-3" />
+            <span>Import</span>
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+            onClick={() => setIsAddCostCodeOpen(true)}
+            data-testid="button-add-code"
+          >
+            <Plus className="w-3 h-3" />
+            <span>New Code</span>
+          </button>
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={allExpanded ? collapseAll : expandAll}
-              data-testid="button-toggle-all"
-              title={allExpanded ? "Collapse all" : "Expand all"}
-            >
-              {allExpanded ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </Button>
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search categories and cost codes..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-                data-testid="input-search-cost-codes"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="show-archived"
-                checked={showArchived}
-                onCheckedChange={(checked) => setShowArchived(checked as boolean)}
-                data-testid="checkbox-show-archived"
-              />
-              <label
-                htmlFor="show-archived"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-              >
-                Show archived
-              </label>
-            </div>
+      {/* Row 2 - Search & Filters (36px) */}
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Left: Search + Filters */}
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* Expand/Collapse Toggle */}
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={allExpanded ? collapseAll : expandAll}
+            data-testid="button-toggle-all"
+            title={allExpanded ? "Collapse all" : "Expand all"}
+          >
+            {allExpanded ? (
+              <Minimize2 className="w-3 h-3" />
+            ) : (
+              <Maximize2 className="w-3 h-3" />
+            )}
+          </button>
+
+          {/* Separator */}
+          <div className="w-px h-4 bg-border" />
+
+          {/* Search */}
+          <div className="relative w-64">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-cost-codes"
+            />
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Separator */}
+          <div className="w-px h-4 bg-border" />
+
+          {/* Show Archived Filter */}
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 transition-all ${
+              showArchived 
+                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30 font-medium" 
+                : "bg-background dark:bg-gray-900 hover-elevate"
+            }`}
+            onClick={() => setShowArchived(!showArchived)}
+            data-testid="checkbox-show-archived"
+          >
+            <Archive className="w-3 h-3" />
+            <span>Archived</span>
+          </button>
+        </div>
+      </div>
 
       {/* Bulk Actions Toolbar */}
       {selectedCodeIds.size > 0 && (
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={someVisibleSelected ? "indeterminate" : allVisibleSelected}
-                  onCheckedChange={toggleAllVisibleCodes}
-                  data-testid="checkbox-select-all"
-                />
-                <span className="font-medium">
-                  {selectedCodeIds.size} {selectedCodeIds.size === 1 ? 'item' : 'items'} selected
-                </span>
-              </div>
-              
-              <div className="flex-1" />
-              
-              <div className="flex items-center gap-2">
-                {/* Toggle Timesheets */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="default" data-testid="button-bulk-timesheets">
-                      <Clock className="h-4 w-4 mr-2" />
-                      Timesheets
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem 
-                      onClick={() => bulkToggleTimesheetMutation.mutate({ 
-                        codeIds: Array.from(selectedCodeIds), 
-                        availableInTimesheets: true 
-                      })}
-                      data-testid="menu-bulk-add-timesheets"
-                    >
-                      <Clock className="h-4 w-4 mr-2" />
-                      Add to Timesheets
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => bulkToggleTimesheetMutation.mutate({ 
-                        codeIds: Array.from(selectedCodeIds), 
-                        availableInTimesheets: false 
-                      })}
-                      data-testid="menu-bulk-remove-timesheets"
-                    >
-                      <Ban className="h-4 w-4 mr-2" />
-                      Remove from Timesheets
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Move to Category */}
-                <Select
-                  onValueChange={(value) => {
-                    const categoryId = value === "__none__" ? null : value;
-                    bulkMoveCategoryMutation.mutate({ 
-                      codeIds: Array.from(selectedCodeIds), 
-                      categoryId 
-                    });
-                  }}
+        <div className="h-9 bg-[#bba7db]/5 dark:bg-[#bba7db]/10 flex items-center justify-between px-3 gap-1.5 border-b border-[#bba7db]/20 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={someVisibleSelected ? "indeterminate" : allVisibleSelected}
+              onCheckedChange={toggleAllVisibleCodes}
+              className="h-4 w-4"
+              data-testid="checkbox-select-all"
+            />
+            <span className="text-xs font-medium">
+              {selectedCodeIds.size} {selectedCodeIds.size === 1 ? 'item' : 'items'} selected
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-1.5">
+            {/* Toggle Timesheets */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1" data-testid="button-bulk-timesheets">
+                  <Clock className="w-3 h-3" />
+                  <span>Timesheets</span>
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem 
+                  onClick={() => bulkToggleTimesheetMutation.mutate({ 
+                    codeIds: Array.from(selectedCodeIds), 
+                    availableInTimesheets: true 
+                  })}
+                  data-testid="menu-bulk-add-timesheets"
                 >
-                  <SelectTrigger className="w-[200px]" data-testid="select-bulk-move-category">
-                    <FolderInput className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Move to category..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Uncategorized</SelectItem>
-                    {categories.filter(cat => cat.isActive).map(cat => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.code} - {cat.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Archive */}
-                <Button 
-                  variant="outline" 
-                  size="default"
-                  onClick={() => bulkArchiveMutation.mutate(Array.from(selectedCodeIds))}
-                  disabled={selectedCodes.some(code => code.isArchived)}
-                  data-testid="button-bulk-archive"
+                  <Clock className="h-4 w-4 mr-2" />
+                  Add to Timesheets
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => bulkToggleTimesheetMutation.mutate({ 
+                    codeIds: Array.from(selectedCodeIds), 
+                    availableInTimesheets: false 
+                  })}
+                  data-testid="menu-bulk-remove-timesheets"
                 >
-                  <Archive className="h-4 w-4 mr-2" />
-                  Archive
-                </Button>
+                  <Ban className="h-4 w-4 mr-2" />
+                  Remove from Timesheets
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-                {/* Clear Selection */}
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  onClick={clearSelection}
-                  data-testid="button-clear-selection"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            {/* Move to Category */}
+            <Select
+              onValueChange={(value) => {
+                const categoryId = value === "__none__" ? null : value;
+                bulkMoveCategoryMutation.mutate({ 
+                  codeIds: Array.from(selectedCodeIds), 
+                  categoryId 
+                });
+              }}
+            >
+              <SelectTrigger className="h-6 w-[140px] text-xs" data-testid="select-bulk-move-category">
+                <FolderInput className="w-3 h-3 mr-1" />
+                <SelectValue placeholder="Move to..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Uncategorized</SelectItem>
+                {categories.filter(cat => cat.isActive).map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.code} - {cat.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Archive */}
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 disabled:opacity-50"
+              onClick={() => bulkArchiveMutation.mutate(Array.from(selectedCodeIds))}
+              disabled={selectedCodes.some(code => code.isArchived)}
+              data-testid="button-bulk-archive"
+            >
+              <Archive className="w-3 h-3" />
+              <span>Archive</span>
+            </button>
+
+            {/* Clear Selection */}
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              onClick={clearSelection}
+              data-testid="button-clear-selection"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Cost Categories and Codes List */}
-      <div className="flex-1 overflow-auto space-y-2">
+      <div className="flex-1 overflow-auto p-3 space-y-2">
         {isLoading ? (
           <Card>
-            <CardContent className="p-8 text-center text-muted-foreground">
+            <CardContent className="p-4 text-center text-muted-foreground text-sm">
               Loading cost codes...
             </CardContent>
           </Card>
