@@ -176,9 +176,9 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     display: 'grid',
     gridTemplateColumns: gridTemplate,
     transform: CSS.Transform.toString(transform),
-    transition: isDragging ? 'none' : (transition || 'transform 100ms ease-out'),
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
+    transition: transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: isDragging ? 0 : 1,
+    visibility: isDragging ? 'hidden' as const : 'visible' as const,
   }), [gridTemplate, transform, transition, isDragging]);
 
   return (
@@ -186,7 +186,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       ref={setNodeRef}
       role="row"
       style={style}
-      className={`relative ${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card scale-[1.02]' : ''}`}
+      className={`relative ${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800`}
       data-testid={`row-item-${id}`}
     >
       {/* Drop indicator line - shows above or below based on position */}
@@ -4714,30 +4714,23 @@ export default function EstimateDetail() {
                       );
                     })()}
                   </div>
-                  <DragOverlay>
+                  <DragOverlay dropAnimation={null}>
                     {activeId ? (
-                      <div className="drag-ghost-card">
+                      <div className="bg-background dark:bg-card border border-blue-400 rounded-md shadow-xl px-3 py-2 cursor-grabbing">
                         {(() => {
                           // Check if dragging a group
                           if (String(activeId).startsWith('group-')) {
                             const groupId = String(activeId).replace('group-', '');
                             const group = groups.find(g => g.id === groupId);
                             if (group) {
-                              const subgroups = groups.filter(g => g.parentGroupId);
-                              const nestingLevel = group.parentGroupId 
-                                ? (subgroups.filter(sg => sg.parentGroupId === group.parentGroupId).indexOf(group) >= 0 ? 2 : 1)
-                                : 1;
+                              const nestingLevel = group.parentGroupId ? 2 : 1;
                               const borderColor = nestingLevel === 1 ? '#3b82f6' : '#10b981';
                               
                               return (
-                                <div style={{ borderLeft: `3px solid ${borderColor}`, paddingLeft: '12px' }}>
-                                  <div className="flex items-center gap-2">
-                                    <GripVertical className="h-4 w-4" style={{ color: borderColor }} />
-                                    <span className="font-semibold text-sm">{group.name}</span>
-                                    {group.description && (
-                                      <span className="text-xs text-muted-foreground">- {group.description}</span>
-                                    )}
-                                  </div>
+                                <div className="flex items-center gap-2">
+                                  <div style={{ width: 3, height: 20, backgroundColor: borderColor, borderRadius: 2 }} />
+                                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-semibold text-sm">{group.name}</span>
                                 </div>
                               );
                             }
@@ -4746,16 +4739,12 @@ export default function EstimateDetail() {
                           const item = items.find(i => i.id === activeId);
                           if (item) {
                             return (
-                              <div style={{ borderLeft: '3px solid #6b7280', paddingLeft: '12px' }}>
-                                <div className="flex items-center gap-2">
-                                  <GripVertical className="h-4 w-4 text-gray-500" />
-                                  <span className="font-medium text-sm">{item.name}</span>
-                                  {item.quantity && item.unitCostExTax && (
-                                    <span className="text-xs text-muted-foreground">
-                                      - {(item.quantity / 100).toFixed(2)} × ${(item.unitCostExTax / 100).toFixed(2)}
-                                    </span>
-                                  )}
-                                </div>
+                              <div className="flex items-center gap-2">
+                                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-medium text-sm truncate max-w-[200px]">{item.name}</span>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {formatCurrency(item.priceIncTax || 0)}
+                                </span>
                               </div>
                             );
                           }
