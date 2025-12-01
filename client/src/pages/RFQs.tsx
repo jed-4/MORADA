@@ -120,66 +120,70 @@ export default function RFQs() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold" data-testid="text-page-title">
+    <div className="flex flex-col h-full">
+      {/* Row 1 - Title & Actions (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
             Requests for Quote
-          </h1>
-          <p className="text-muted-foreground" data-testid="text-page-description">
-            Manage RFQs and track supplier quotes
-          </p>
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-rfq-count">
+            {filteredRFQs.length} RFQs
+          </Badge>
         </div>
-        <Button
-          data-testid="button-create-rfq"
+        <button
+          className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
           onClick={() => setLocation("/estimates")}
-          className="gap-2"
+          data-testid="button-create-rfq"
         >
-          <Plus className="h-4 w-4" />
-          Create RFQ
-        </Button>
+          <Plus className="w-3 h-3" />
+          <span>Create RFQ</span>
+        </button>
       </div>
 
-      <Card>
-        <div className="p-4 flex items-center gap-3 border-b">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search RFQs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-              data-testid="input-search-rfqs"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="select-status-filter">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="sent">Sent</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="quoted">Quoted</SelectItem>
-              <SelectItem value="accepted">Accepted</SelectItem>
-              <SelectItem value="declined">Declined</SelectItem>
-            </SelectContent>
-          </Select>
+      {/* Row 2 - Search & Filters (36px) */}
+      <div className="h-9 bg-background flex items-center px-2 border-b border-border flex-shrink-0 gap-1.5">
+        <div className="relative w-48">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <Input
+            placeholder="Search RFQs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-7 pr-2 py-0 h-6 text-xs border"
+            data-testid="input-search-rfqs"
+          />
         </div>
+        <div className="w-px h-4 bg-border" />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="h-6 w-[130px] text-xs" data-testid="select-status-filter">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="sent">Sent</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="quoted">Quoted</SelectItem>
+            <SelectItem value="accepted">Accepted</SelectItem>
+            <SelectItem value="declined">Declined</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-2">
         {isLoading ? (
-          <div className="p-8 text-center text-muted-foreground">
+          <Card className="p-8 text-center text-muted-foreground">
             Loading RFQs...
-          </div>
+          </Card>
         ) : filteredRFQs.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
+          <Card className="p-8 text-center text-muted-foreground">
             {searchQuery || statusFilter !== "all"
               ? "No RFQs match your search"
               : "No RFQs yet. Create one from an estimate to get started."}
-          </div>
+          </Card>
         ) : (
-          <div className="overflow-x-auto">
+          <Card className="overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -306,9 +310,9 @@ export default function RFQs() {
                 })}
               </TableBody>
             </Table>
-          </div>
+          </Card>
         )}
-      </Card>
+      </div>
     </div>
   );
 }

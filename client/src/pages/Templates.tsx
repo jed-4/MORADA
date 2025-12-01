@@ -143,9 +143,9 @@ export default function Templates() {
   const implementedCount = templateTypes.filter(t => t.implemented).length;
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-full">
       {/* Row 1 - Title & Count (36px) - Matching Tasks page style */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
         {/* Left: Breadcrumbs + Title */}
         <div className="flex items-center gap-2">
           <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
@@ -158,7 +158,7 @@ export default function Templates() {
       </div>
 
       {/* Row 2 - Subtitle (36px) */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-3 gap-4 flex-shrink-0 border-b border-border">
+      <div className="h-9 bg-background flex items-center px-3 gap-4 flex-shrink-0 border-b border-border">
         <p className="text-xs text-muted-foreground">
           Manage company-wide templates for all your project needs
         </p>

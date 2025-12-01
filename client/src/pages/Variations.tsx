@@ -373,9 +373,9 @@ export default function Variations() {
   );
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900" data-testid="page-variations">
+    <div className="flex flex-col h-full" data-testid="page-variations">
       {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {pageTitle}
@@ -398,7 +398,7 @@ export default function Variations() {
       </div>
 
       {/* Row 2 - View Tabs & Filters (36px) */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           {/* View Tabs */}
           <button

@@ -539,9 +539,9 @@ export default function PurchaseOrders() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-full">
       {/* Row 1 - Breadcrumbs + Title + Actions */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0">
         <div className="flex items-center gap-2">
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
@@ -579,7 +579,7 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Row 2 - Type Tabs + Totals */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setSelectedType("all")}
@@ -632,7 +632,7 @@ export default function PurchaseOrders() {
       </div>
 
       {/* Row 3 - Search + Status Filters + Supplier + Columns */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-3 border-b border-border flex-shrink-0 gap-1.5">
+      <div className="h-9 bg-background flex items-center px-3 border-b border-border flex-shrink-0 gap-1.5">
         {/* Search */}
         <div className="relative w-48">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -656,7 +656,7 @@ export default function PurchaseOrders() {
               className={`h-6 px-2 text-xs rounded-md transition-all ${
                 selectedStatus === status.key
                   ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium"
-                  : "bg-background dark:bg-gray-900 border hover-elevate"
+                  : "bg-background border hover-elevate"
               }`}
               data-testid={`filter-status-${status.key}`}
             >
@@ -679,7 +679,7 @@ export default function PurchaseOrders() {
               className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
                 selectedSupplierId 
                   ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
-                  : "bg-background dark:bg-gray-900 border hover-elevate"
+                  : "bg-background border hover-elevate"
               }`}
               data-testid="filter-supplier-popover"
             >
@@ -802,7 +802,7 @@ export default function PurchaseOrders() {
             <div className="overflow-x-auto">
               <Table style={{ tableLayout: "fixed" }}>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50 dark:bg-gray-900/50 border-b-2 border-[#bba7db]/20">
+                  <TableRow className="bg-muted/50 border-b-2 border-[#bba7db]/20">
                     {columnPrefs.order.map((key) => {
                       if (!columnPrefs.visibility[key]) return null;
                       const width = columnPrefs.widths[key] || DEFAULT_COLUMN_WIDTHS[key];
@@ -843,7 +843,7 @@ export default function PurchaseOrders() {
                       <TableRow 
                         key={po.id} 
                         className={`cursor-pointer hover-elevate transition-colors ${
-                          isEven ? "bg-background dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"
+                          isEven ? "bg-background" : "bg-muted/30"
                         }`}
                         onClick={() => handleRowClick(po.id)}
                         data-testid={`po-row-${po.id}`}

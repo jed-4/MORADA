@@ -305,9 +305,9 @@ export default function CostCodes() {
   const isLoading = categoriesLoading || codesLoading;
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-full">
       {/* Row 1 - Title & Actions (36px) */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
         {/* Left: Title + Count */}
         <div className="flex items-center gap-2">
           <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
@@ -348,7 +348,7 @@ export default function CostCodes() {
       </div>
 
       {/* Row 2 - Search & Filters (36px) */}
-      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filters */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Expand/Collapse Toggle */}
@@ -388,7 +388,7 @@ export default function CostCodes() {
             className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 transition-all ${
               showArchived 
                 ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30 font-medium" 
-                : "bg-background dark:bg-gray-900 hover-elevate"
+                : "bg-background border hover-elevate"
             }`}
             onClick={() => setShowArchived(!showArchived)}
             data-testid="checkbox-show-archived"
