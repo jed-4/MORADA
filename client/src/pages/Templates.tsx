@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import {
@@ -14,6 +14,7 @@ import {
   CheckCircle,
   Receipt,
   Layers,
+  ChevronRight,
 } from "lucide-react";
 
 const templateTypes = [
@@ -139,50 +140,66 @@ const templateTypes = [
 export default function Templates() {
   const [, navigate] = useLocation();
 
+  const implementedCount = templateTypes.filter(t => t.implemented).length;
+
   return (
-    <div className="h-full flex flex-col p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
-        <p className="text-muted-foreground mt-1">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+      {/* Row 1 - Title & Count (36px) - Matching Tasks page style */}
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b border-border">
+        {/* Left: Breadcrumbs + Title */}
+        <div className="flex items-center gap-2">
+          <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="breadcrumbs">
+            <span className="text-foreground font-medium">Templates</span>
+          </nav>
+          <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
+            {implementedCount} active
+          </Badge>
+        </div>
+      </div>
+
+      {/* Row 2 - Subtitle (36px) */}
+      <div className="h-9 bg-background dark:bg-gray-950 flex items-center px-3 gap-4 flex-shrink-0 border-b border-border">
+        <p className="text-xs text-muted-foreground">
           Manage company-wide templates for all your project needs
         </p>
       </div>
 
-      {/* Template Type Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {templateTypes.map((template) => {
-          const Icon = template.icon;
-          return (
-            <Card
-              key={template.id}
-              className={template.implemented ? "hover-elevate cursor-pointer transition-all" : "opacity-60 cursor-not-allowed"}
-              onClick={() => template.implemented && navigate(template.url)}
-              data-testid={`card-template-type-${template.id}`}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className={`p-2 rounded-md bg-muted ${template.color}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-lg">{template.title}</CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {template.description}
-                      </p>
-                    </div>
+      {/* Template Type Cards - Compact Budget-style */}
+      <div className="flex-1 overflow-auto p-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+          {templateTypes.map((template) => {
+            const Icon = template.icon;
+            return (
+              <Card
+                key={template.id}
+                className={`p-2 ${template.implemented ? "hover-elevate cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+                onClick={() => template.implemented && navigate(template.url)}
+                data-testid={`card-template-type-${template.id}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-md bg-muted shrink-0 ${template.color}`}>
+                    <Icon className="h-4 w-4" />
                   </div>
-                  {!template.implemented && (
-                    <Badge variant="secondary" className="shrink-0" data-testid={`badge-coming-soon-${template.id}`}>
-                      Coming Soon
-                    </Badge>
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-sm font-medium truncate">{template.title}</p>
+                      {template.implemented ? (
+                        <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0" data-testid={`badge-coming-soon-${template.id}`}>
+                          Soon
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {template.description}
+                    </p>
+                  </div>
                 </div>
-              </CardHeader>
-            </Card>
-          );
-        })}
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
