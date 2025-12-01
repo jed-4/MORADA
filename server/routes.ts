@@ -2326,6 +2326,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reorder estimate items - MUST come before /api/estimate-items/:id to avoid route conflict
+  app.patch("/api/estimate-items/reorder", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { items } = req.body;
+      console.log('[REORDER] Received reorder request with items:', JSON.stringify(items, null, 2));
+      
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "Items must be an array" });
+      }
+
+      // Validate input
+      for (const item of items) {
+        if (!item.id || typeof item.order !== 'number') {
+          return res.status(400).json({ error: "Each item must have id and order" });
+        }
+      }
+
+      // Security: Verify all items belong to estimates in the user's company (batched query)
+      // De-duplicate IDs first (frontend may send parent item twice when moving with sub-items)
+      const itemIds = [...new Set(items.map(({ id }) => id))];
+      console.log('[REORDER] Verifying ownership for', itemIds.length, 'unique item IDs:', itemIds);
+      const verificationResult = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
+      if (!verificationResult.authorized) {
+        console.error(`[REORDER] Security violation: item ${verificationResult.invalidItemId} does not belong to company ${companyId}`);
+        console.error(`[REORDER] All requested item IDs:`, itemIds);
+        return res.status(404).json({ error: `Estimate item not found: ${verificationResult.invalidItemId}` });
+      }
+
+      // Update each item's order and optionally groupId
+      const results = await Promise.all(
+        items.map(async ({ id, order, groupId }) => {
+          const updateData: any = { order };
+          if (groupId !== undefined) {
+            updateData.groupId = groupId;
+            console.log(`[REORDER] Updating item ${id} to order ${order} and groupId ${groupId}`);
+          } else {
+            console.log(`[REORDER] Updating item ${id} to order ${order}`);
+          }
+          const updated = await storage.updateEstimateItem(id, updateData);
+          if (!updated) {
+            console.error(`[REORDER] Failed to update item ${id} - item not found`);
+            throw new Error(`Estimate item not found: ${id}`);
+          }
+          console.log(`[REORDER] Successfully updated item ${id}`);
+          return updated;
+        })
+      );
+
+      console.log(`[REORDER] Successfully reordered ${results.length} items`);
+      res.json({ success: true, count: results.length });
+    } catch (error: any) {
+      console.error('[REORDER] Error:', error.message);
+      if (error.message?.includes("locked estimate")) {
+        return res.status(409).json({ error: error.message });
+      }
+      if (error.message?.includes("Estimate item not found")) {
+        return res.status(404).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to reorder items" });
+    }
+  });
+
   app.patch("/api/estimate-items/:id", async (req, res) => {
     try {
       // Get existing item to access estimate
@@ -2476,69 +2539,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error copying estimate item:", error);
       res.status(500).json({ error: "Failed to copy estimate item" });
-    }
-  });
-
-  // Reorder estimate items
-  app.patch("/api/estimate-items/reorder", requireAuth, requireTeamMember, async (req, res) => {
-    try {
-      const companyId = req.user!.companyId!;
-      const { items } = req.body;
-      console.log('[REORDER] Received reorder request with items:', JSON.stringify(items, null, 2));
-      
-      if (!Array.isArray(items)) {
-        return res.status(400).json({ error: "Items must be an array" });
-      }
-
-      // Validate input
-      for (const item of items) {
-        if (!item.id || typeof item.order !== 'number') {
-          return res.status(400).json({ error: "Each item must have id and order" });
-        }
-      }
-
-      // Security: Verify all items belong to estimates in the user's company (batched query)
-      // De-duplicate IDs first (frontend may send parent item twice when moving with sub-items)
-      const itemIds = [...new Set(items.map(({ id }) => id))];
-      console.log('[REORDER] Verifying ownership for', itemIds.length, 'unique item IDs:', itemIds);
-      const verificationResult = await storage.verifyEstimateItemsOwnership(itemIds, companyId);
-      if (!verificationResult.authorized) {
-        console.error(`[REORDER] Security violation: item ${verificationResult.invalidItemId} does not belong to company ${companyId}`);
-        console.error(`[REORDER] All requested item IDs:`, itemIds);
-        return res.status(404).json({ error: `Estimate item not found: ${verificationResult.invalidItemId}` });
-      }
-
-      // Update each item's order and optionally groupId
-      const results = await Promise.all(
-        items.map(async ({ id, order, groupId }) => {
-          const updateData: any = { order };
-          if (groupId !== undefined) {
-            updateData.groupId = groupId;
-            console.log(`[REORDER] Updating item ${id} to order ${order} and groupId ${groupId}`);
-          } else {
-            console.log(`[REORDER] Updating item ${id} to order ${order}`);
-          }
-          const updated = await storage.updateEstimateItem(id, updateData);
-          if (!updated) {
-            console.error(`[REORDER] Failed to update item ${id} - item not found`);
-            throw new Error(`Estimate item not found: ${id}`);
-          }
-          console.log(`[REORDER] Successfully updated item ${id}`);
-          return updated;
-        })
-      );
-
-      console.log(`[REORDER] Successfully reordered ${results.length} items`);
-      res.json({ success: true, count: results.length });
-    } catch (error: any) {
-      console.error('[REORDER] Error:', error.message);
-      if (error.message?.includes("locked estimate")) {
-        return res.status(409).json({ error: error.message });
-      }
-      if (error.message?.includes("Estimate item not found")) {
-        return res.status(404).json({ error: error.message });
-      }
-      res.status(500).json({ error: "Failed to reorder items" });
     }
   });
 
