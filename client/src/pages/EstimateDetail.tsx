@@ -159,9 +159,10 @@ interface SortableRowProps {
   className?: string;
   isDraggable?: boolean;
   gridTemplate: string;
+  dropIndicator?: 'above' | 'below' | null;
 }
 
-const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate }: SortableRowProps) => {
+const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator }: SortableRowProps) => {
   const {
     attributes,
     listeners,
@@ -169,7 +170,6 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     transform,
     transition,
     isDragging,
-    isOver,
   } = useSortable({ id, disabled: !isDraggable });
 
   const style = React.useMemo(() => ({
@@ -186,9 +186,16 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       ref={setNodeRef}
       role="row"
       style={style}
-      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card scale-[1.02]' : ''} ${isOver ? 'bg-blue-100/80 dark:bg-blue-900/40 ring-2 ring-blue-400/60 ring-inset' : ''}`}
+      className={`relative ${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card scale-[1.02]' : ''}`}
       data-testid={`row-item-${id}`}
     >
+      {/* Drop indicator line - shows above or below based on position */}
+      {dropIndicator === 'above' && (
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+      )}
+      {dropIndicator === 'below' && (
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+      )}
       <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
         {isDraggable && (
           <div
@@ -461,6 +468,9 @@ export default function EstimateDetail() {
 
   // Track active drag item for DragOverlay
   const [activeId, setActiveId] = useState<string | null>(null);
+  
+  // Track drop target and position for Google Sheets-style indicator
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
   
   // Catalog Sidebar state
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
@@ -868,14 +878,42 @@ export default function EstimateDetail() {
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
+    setDropTarget(null);
+  };
+  
+  // Handle drag move - track position for Google Sheets-style indicator
+  const handleDragMove = (event: any) => {
+    const { over, activatorEvent } = event;
+    
+    if (!over) {
+      setDropTarget(null);
+      return;
+    }
+    
+    const overId = String(over.id);
+    
+    // Get the target element's bounding rect
+    const targetElement = document.querySelector(`[data-testid="row-item-${overId}"]`);
+    if (targetElement && activatorEvent) {
+      const rect = targetElement.getBoundingClientRect();
+      const mouseY = (activatorEvent as MouseEvent).clientY || 0;
+      const midpoint = rect.top + rect.height / 2;
+      const position = mouseY < midpoint ? 'above' : 'below';
+      
+      setDropTarget({ id: overId, position });
+    } else {
+      // Fallback: default to 'below' if we can't determine position
+      setDropTarget({ id: overId, position: 'below' });
+    }
   };
 
   // Handle drag end for reordering items, groups, and cross-group moves
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
-    // Clear active drag state
+    // Clear active drag state and drop target
     setActiveId(null);
+    setDropTarget(null);
     
     if (!over || active.id === over.id) return;
     
@@ -2865,9 +2903,12 @@ export default function EstimateDetail() {
       }
     }
     
+    // Calculate drop indicator for this item
+    const itemDropIndicator = dropTarget?.id === item.id ? dropTarget.position : undefined;
+    
     const rows = [
       // Parent item row - CSS Grid
-      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate}>
+      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator}>
         {/* Checkbox cell */}
         <div className="h-10 px-2 flex items-center" role="gridcell">
           <Checkbox
@@ -2986,8 +3027,9 @@ export default function EstimateDetail() {
     // Add sub-items if not collapsed - CSS Grid based
     if (!isCollapsed) {
       subItems.forEach(subItem => {
+        const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate}>
+          <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator}>
             <div className="h-10 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
@@ -4419,7 +4461,7 @@ export default function EstimateDetail() {
                     </div>
                   </div>
                 ) : (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}>
                     <div className="space-y-4">
                       {/* Bulk Actions Toolbar */}
                       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
