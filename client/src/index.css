@@ -891,6 +891,11 @@ input[type="number"] {
   cursor: grabbing;
 }
 
+/* Immediate position update after drop */
+.drag-complete {
+  transition: none !important;
+}
+
 /* Smooth Snap Animation */
 @keyframes snapIntoPlace {
   0% { transform: scale(0.98); opacity: 0.8; }

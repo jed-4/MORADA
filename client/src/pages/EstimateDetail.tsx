@@ -169,14 +169,15 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     transform,
     transition,
     isDragging,
+    isOver,
   } = useSortable({ id, disabled: !isDraggable });
 
   const style = React.useMemo(() => ({
     display: 'grid',
     gridTemplateColumns: gridTemplate,
     transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
-    opacity: isDragging ? 0.5 : 1,
+    transition: isDragging ? 'none' : (transition || 'transform 100ms ease-out'),
+    opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 1000 : 'auto',
   }), [gridTemplate, transform, transition, isDragging]);
 
@@ -185,7 +186,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       ref={setNodeRef}
       role="row"
       style={style}
-      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card' : ''}`}
+      className={`${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800 ${isDragging ? 'shadow-lg bg-background dark:bg-card scale-[1.02]' : ''} ${isOver ? 'bg-blue-100/80 dark:bg-blue-900/40 ring-2 ring-blue-400/60 ring-inset' : ''}`}
       data-testid={`row-item-${id}`}
     >
       <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
@@ -875,7 +876,6 @@ export default function EstimateDetail() {
     
     // Clear active drag state
     setActiveId(null);
-    
     
     if (!over || active.id === over.id) return;
     
