@@ -176,21 +176,20 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     animateLayoutChanges: () => false,
   });
 
-  // Key fix: Do NOT apply transform to the dragged item - let it stay in place as a placeholder
-  // The DragOverlay handles showing the floating ghost that follows the cursor
-  // Only apply transform to OTHER items that need to shift to make room
+  // Google Sheets approach: NO transforms at all during drag
+  // All items stay exactly in place - only the DragOverlay moves
+  // The drop indicator line shows where the item will land
+  // This prevents ALL layout shifting
   const style = React.useMemo(() => ({
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    // Only apply transform when NOT dragging (so other items shift, but dragged item stays as placeholder)
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
-    transition: isDragging ? undefined : (transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)'),
-    // Dim the placeholder to show it's being dragged
-    opacity: isDragging ? 0.4 : 1,
+    // NO transforms - items stay in place (Google Sheets style)
+    transform: undefined,
+    transition: undefined,
+    // Dim the dragged item to show it's being moved
+    opacity: isDragging ? 0.3 : 1,
     backgroundColor: isDragging ? 'hsl(var(--muted))' : undefined,
-    // Keep the item in document flow when dragging (acts as placeholder)
-    position: 'relative' as const,
-  }), [gridTemplate, transform, transition, isDragging]);
+  }), [gridTemplate, isDragging]);
 
   return (
     <div
@@ -243,13 +242,13 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     animateLayoutChanges: () => false,
   });
 
-  // Same fix as SortableRow: don't apply transform to dragged group, let it stay as placeholder
+  // Google Sheets approach: NO transforms - groups stay in place during drag
   const style = React.useMemo(() => ({
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
-    transition: isDragging ? undefined : (transition || 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)'),
+    transform: undefined,
+    transition: undefined,
     opacity: isDragging ? 0.4 : 1,
     backgroundColor: isDragging ? 'hsl(var(--muted))' : undefined,
-  }), [transform, transition, isDragging]);
+  }), [isDragging]);
 
   return (
     <div ref={setNodeRef} style={style} className={className}>
