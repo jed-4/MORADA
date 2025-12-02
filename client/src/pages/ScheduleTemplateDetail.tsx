@@ -78,6 +78,8 @@ interface TemplateItem {
   labels?: string[];
   sortOrder: number;
   relativeStartDay?: number;
+  parentItemId?: string | null;
+  color?: string;
 }
 
 const ITEM_TYPES = [
@@ -103,8 +105,13 @@ function SortableItem({
   onDelete,
   onDuplicate,
   onBarChange,
+  onToggleCollapse,
   totalDuration,
   dayWidth,
+  isParent,
+  isCollapsed,
+  hasChildren,
+  isChild,
 }: { 
   item: TemplateItem;
   index: number;
@@ -112,8 +119,13 @@ function SortableItem({
   onDelete: (id: string) => void;
   onDuplicate: (item: TemplateItem) => void;
   onBarChange: (id: string, newStartDay: number, newDuration: number) => void;
+  onToggleCollapse?: (id: string) => void;
   totalDuration: number;
   dayWidth: number;
+  isParent?: boolean;
+  isCollapsed?: boolean;
+  hasChildren?: boolean;
+  isChild?: boolean;
 }) {
   const {
     attributes,
@@ -204,15 +216,31 @@ function SortableItem({
         <div className="w-1 h-4 bg-muted-foreground/30 rounded" />
       </div>
       
-      <div className="w-64 px-2 py-2 flex items-center gap-2 border-r border-border shrink-0">
+      <div className={`w-64 px-2 py-2 flex items-center gap-2 border-r border-border shrink-0 ${isChild ? 'pl-8' : ''}`}>
+        {isParent && hasChildren && onToggleCollapse && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse(item.id);
+            }}
+            className="p-0.5 hover:bg-accent rounded flex-shrink-0"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </button>
+        )}
+        {isParent && !hasChildren && <div className="w-5 flex-shrink-0" />}
         <Badge 
           variant="outline" 
           className="text-white border-0 h-4 px-1.5 text-[10px] shrink-0"
-          style={{ backgroundColor: TYPE_COLORS[item.type] }}
+          style={{ backgroundColor: item.color || TYPE_COLORS[item.type] }}
         >
           {item.type}
         </Badge>
-        <span className="text-sm truncate flex-1 font-medium" title={item.name}>
+        <span className={`text-sm truncate flex-1 ${isParent ? 'font-medium' : 'text-muted-foreground'}`} title={item.name}>
           {item.name}
         </span>
       </div>
@@ -330,6 +358,7 @@ export default function ScheduleTemplateDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   
   const [items, setItems] = useState<TemplateItem[]>([]);
+  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -337,6 +366,7 @@ export default function ScheduleTemplateDetail() {
     type: "task" as TemplateItem["type"],
     assigneeName: "",
     relativeStartDay: 0,
+    parentItemId: null as string | null,
   });
 
   const sensors = useSensors(
@@ -353,6 +383,59 @@ export default function ScheduleTemplateDetail() {
       default: return 30;
     }
   }, [zoomLevel]);
+
+  const { parentItems, childItemsByParent } = useMemo(() => {
+    const parents: TemplateItem[] = [];
+    const children: Record<string, TemplateItem[]> = {};
+
+    items.forEach(item => {
+      if (item.parentItemId) {
+        if (!children[item.parentItemId]) {
+          children[item.parentItemId] = [];
+        }
+        children[item.parentItemId].push(item);
+      } else {
+        parents.push(item);
+      }
+    });
+
+    parents.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    Object.keys(children).forEach(parentId => {
+      children[parentId].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    });
+
+    return { parentItems: parents, childItemsByParent: children };
+  }, [items]);
+
+  const toggleCollapse = (id: string) => {
+    setCollapsedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const getEffectiveDates = (parentItem: TemplateItem) => {
+    const children = childItemsByParent[parentItem.id] || [];
+    if (children.length === 0) {
+      return {
+        startDay: parentItem.relativeStartDay || 0,
+        endDay: (parentItem.relativeStartDay || 0) + parentItem.duration,
+      };
+    }
+    const allDays = children.flatMap(child => [
+      child.relativeStartDay || 0,
+      (child.relativeStartDay || 0) + child.duration
+    ]);
+    return {
+      startDay: Math.min(...allDays),
+      endDay: Math.max(...allDays),
+    };
+  };
 
   const { data: template, isLoading } = useQuery<ScheduleTemplate>({
     queryKey: ["/api/schedule-templates", templateId],
@@ -462,6 +545,7 @@ export default function ScheduleTemplateDetail() {
       type: "task",
       assigneeName: "",
       relativeStartDay: 0,
+      parentItemId: null,
     });
     setShowItemDialog(true);
   };
@@ -475,6 +559,7 @@ export default function ScheduleTemplateDetail() {
       type: item.type,
       assigneeName: item.assigneeName || "",
       relativeStartDay: item.relativeStartDay || 0,
+      parentItemId: item.parentItemId || null,
     });
     setShowItemDialog(true);
   };
@@ -762,19 +847,48 @@ export default function ScheduleTemplateDetail() {
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                {items.map((item, index) => (
-                  <SortableItem
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    onEdit={handleEditItem}
-                    onDelete={(id) => setShowDeleteConfirm(id)}
-                    onDuplicate={handleDuplicateItem}
-                    onBarChange={handleBarChange}
-                    totalDuration={totalDuration}
-                    dayWidth={dayWidth}
-                  />
-                ))}
+                {parentItems.map((parentItem, parentIdx) => {
+                  const isCollapsed = collapsedItems.has(parentItem.id);
+                  const childItems = childItemsByParent[parentItem.id] || [];
+                  const hasChildren = childItems.length > 0;
+
+                  return (
+                    <div key={parentItem.id}>
+                      <SortableItem
+                        item={parentItem}
+                        index={parentIdx}
+                        onEdit={handleEditItem}
+                        onDelete={(id) => setShowDeleteConfirm(id)}
+                        onDuplicate={handleDuplicateItem}
+                        onBarChange={handleBarChange}
+                        onToggleCollapse={toggleCollapse}
+                        totalDuration={totalDuration}
+                        dayWidth={dayWidth}
+                        isParent={true}
+                        isCollapsed={isCollapsed}
+                        hasChildren={hasChildren}
+                        isChild={false}
+                      />
+                      {!isCollapsed && childItems.map((childItem, childIdx) => (
+                        <SortableItem
+                          key={childItem.id}
+                          item={childItem}
+                          index={parentIdx * 1000 + childIdx + 1}
+                          onEdit={handleEditItem}
+                          onDelete={(id) => setShowDeleteConfirm(id)}
+                          onDuplicate={handleDuplicateItem}
+                          onBarChange={handleBarChange}
+                          totalDuration={totalDuration}
+                          dayWidth={dayWidth}
+                          isParent={false}
+                          isCollapsed={false}
+                          hasChildren={false}
+                          isChild={true}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
               </SortableContext>
             </DndContext>
           </div>
@@ -823,6 +937,30 @@ export default function ScheduleTemplateDetail() {
               </div>
               
               <div className="space-y-2">
+                <Label htmlFor="parentItem">Parent Item</Label>
+                <Select
+                  value={formData.parentItemId || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? null : value })}
+                >
+                  <SelectTrigger data-testid="select-parent-item">
+                    <SelectValue placeholder="No parent (top level)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No parent (top level)</SelectItem>
+                    {parentItems
+                      .filter(p => p.id !== editingItem?.id)
+                      .map((parent) => (
+                        <SelectItem key={parent.id} value={parent.id}>
+                          {parent.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label htmlFor="duration">Duration (days)</Label>
                 <Input
                   id="duration"
@@ -833,22 +971,19 @@ export default function ScheduleTemplateDetail() {
                   data-testid="input-item-duration"
                 />
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="relativeStartDay">Relative Start Day</Label>
-              <Input
-                id="relativeStartDay"
-                type="number"
-                min={0}
-                value={formData.relativeStartDay}
-                onChange={(e) => setFormData({ ...formData, relativeStartDay: parseInt(e.target.value) || 0 })}
-                placeholder="0 = project start"
-                data-testid="input-item-start-day"
-              />
-              <p className="text-xs text-muted-foreground">
-                Days from project start date when this item begins
-              </p>
+              
+              <div className="space-y-2">
+                <Label htmlFor="relativeStartDay">Start Day</Label>
+                <Input
+                  id="relativeStartDay"
+                  type="number"
+                  min={0}
+                  value={formData.relativeStartDay}
+                  onChange={(e) => setFormData({ ...formData, relativeStartDay: parseInt(e.target.value) || 0 })}
+                  placeholder="0"
+                  data-testid="input-item-start-day"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
