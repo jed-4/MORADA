@@ -178,19 +178,20 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     animateLayoutChanges: () => false,
   });
 
-  // Ref to measure the row height
+  // Use a ref to store the last measured height - persists across renders
+  const lastHeightRef = React.useRef<number>(40);
   const rowRef = React.useRef<HTMLDivElement>(null);
-  const [measuredHeight, setMeasuredHeight] = React.useState<number>(40); // Default row height
-
-  // Measure height on mount and when content changes
-  React.useEffect(() => {
+  
+  // Measure height synchronously with useLayoutEffect - runs before paint
+  // This ensures we capture the height BEFORE any drag state changes
+  React.useLayoutEffect(() => {
     if (rowRef.current && !isDragging) {
       const height = rowRef.current.offsetHeight;
       if (height > 0) {
-        setMeasuredHeight(height);
+        lastHeightRef.current = height;
       }
     }
-  }, [isDragging, children]);
+  });
 
   // Combine refs for both measurement and sortable
   const combinedRef = React.useCallback((node: HTMLDivElement | null) => {
@@ -198,48 +199,37 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     setNodeRef(node);
   }, [setNodeRef]);
 
-  // When dragging, dnd-kit sets the element to position:absolute with 0 dimensions
-  // We wrap it in a container that maintains the height to prevent layout collapse
+  // When dragging, render a placeholder that maintains the exact height AND width
+  // The placeholder must have the same grid layout as the normal row
   if (isDragging) {
     return (
       <div 
+        ref={combinedRef}
+        role="row"
         style={{ 
-          height: measuredHeight, 
-          minHeight: measuredHeight,
-          backgroundColor: 'hsl(var(--muted))',
-          borderBottom: '1px solid hsl(var(--border))',
+          display: 'grid',
+          gridTemplateColumns: gridTemplate,
+          height: lastHeightRef.current, 
+          minHeight: lastHeightRef.current,
         }}
-        className="relative"
+        className="relative bg-muted/50 border-b border-border"
         data-testid={`row-placeholder-${id}`}
       >
-        {/* Drop indicator line */}
-        {dropIndicator === 'above' && (
-          <div className="absolute -top-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
-        )}
-        {dropIndicator === 'below' && (
-          <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
-        )}
-        {/* Hidden actual sortable element - dnd-kit needs this but we hide it */}
-        <div
-          ref={combinedRef}
-          role="row"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: gridTemplate,
-            visibility: 'hidden',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-          }}
-        >
-          <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
-            {isDraggable && (
-              <div {...attributes} {...listeners}>
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-              </div>
-            )}
-          </div>
+        {/* Dashed placeholder visual overlay */}
+        <div 
+          className="absolute inset-1 rounded border-2 border-dashed border-muted-foreground/30 pointer-events-none"
+          style={{ gridColumn: '1 / -1' }}
+        />
+        {/* Keep grid cells but make them invisible to maintain layout */}
+        <div className="h-10 px-1 flex items-center justify-center invisible" role="gridcell">
+          {isDraggable && (
+            <div {...attributes} {...listeners}>
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+        {/* Render children with visibility hidden to maintain column widths */}
+        <div style={{ display: 'contents', visibility: 'hidden' }}>
           {children}
         </div>
       </div>
@@ -247,12 +237,12 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
   }
 
   // Normal rendering when not dragging
-  // Allow dnd-kit transforms so items can shift to make room for the dragged item
+  // Only apply Y-axis transform to prevent horizontal shifting
   const style: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    transform: transform ? CSS.Transform.toString(transform) : undefined,
-    transition: transition || undefined,
+    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transition: transition || 'transform 150ms ease',
   };
 
   return (
@@ -307,19 +297,24 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     animateLayoutChanges: () => false,
   });
 
-  // Ref to measure the group height
+  // Use refs to store the last measured dimensions - persist across renders
+  const lastHeightRef = React.useRef<number>(100);
+  const lastWidthRef = React.useRef<number | undefined>(undefined);
   const groupRef = React.useRef<HTMLDivElement>(null);
-  const [measuredHeight, setMeasuredHeight] = React.useState<number>(100); // Default group height
 
-  // Measure height on mount
-  React.useEffect(() => {
+  // Measure dimensions synchronously with useLayoutEffect - runs before paint
+  React.useLayoutEffect(() => {
     if (groupRef.current && !isDragging) {
       const height = groupRef.current.offsetHeight;
+      const width = groupRef.current.offsetWidth;
       if (height > 0) {
-        setMeasuredHeight(height);
+        lastHeightRef.current = height;
+      }
+      if (width > 0) {
+        lastWidthRef.current = width;
       }
     }
-  }, [isDragging]);
+  });
 
   // Combine refs
   const combinedRef = React.useCallback((node: HTMLDivElement | null) => {
@@ -327,38 +322,32 @@ const SortableGroup = React.memo(({ id, children, className }: SortableGroupProp
     setNodeRef(node);
   }, [setNodeRef]);
 
-  // When dragging, render placeholder to maintain height
+  // When dragging, render placeholder to maintain dimensions
   if (isDragging) {
     return (
       <div 
+        ref={combinedRef}
         style={{ 
-          height: measuredHeight, 
-          minHeight: measuredHeight,
-          backgroundColor: 'hsl(var(--muted))',
-          borderRadius: '0.5rem',
-          border: '2px dashed hsl(var(--border))',
+          height: lastHeightRef.current, 
+          minHeight: lastHeightRef.current,
+          width: lastWidthRef.current,
+          minWidth: lastWidthRef.current,
         }}
-        className={className}
+        className={`${className} bg-muted/50 rounded-lg border-2 border-dashed border-muted-foreground/30`}
         data-testid={`group-placeholder-${id}`}
       >
-        {/* Hidden actual sortable element */}
-        <div
-          ref={combinedRef}
-          style={{
-            visibility: 'hidden',
-            position: 'absolute',
-          }}
-        >
+        {/* Render children invisibly to maintain any internal layout */}
+        <div style={{ visibility: 'hidden', pointerEvents: 'none' }}>
           {children({ attributes, listeners })}
         </div>
       </div>
     );
   }
 
-  // Normal rendering - allow transforms for proper sorting
+  // Normal rendering - only apply Y-axis transform to prevent horizontal shifting
   const style: React.CSSProperties = {
-    transform: transform ? CSS.Transform.toString(transform) : undefined,
-    transition: transition || undefined,
+    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transition: transition || 'transform 150ms ease',
   };
 
   return (

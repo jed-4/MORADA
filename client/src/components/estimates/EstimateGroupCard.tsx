@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import type { EstimateGroup, EstimateItem } from "@shared/schema";
 
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
@@ -150,11 +149,15 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: `group-${group.id}` });
+  } = useSortable({ 
+    id: `group-${group.id}`,
+    animateLayoutChanges: () => false,
+  });
 
+  // Only apply Y-axis transform to prevent horizontal shifting during drag
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 200ms ease-in-out',
+    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transition: transition || 'transform 150ms ease',
     opacity: isDragging ? 0.4 : 1,
     minWidth: `${tableWidth}px`,
   };
