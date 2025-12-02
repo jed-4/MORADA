@@ -410,7 +410,7 @@ export function ImportEstimateItemsDialog({
                         const { row, parsed } = item;
                         const hasError = parsed?.errors && parsed.errors.length > 0;
                         const isGroupSelected = selectedGroups.has(groupName);
-                        const costCodeMatch = parsed.costCodeMatch;
+                        const costCodeMatch = parsed?.costCodeMatch;
                         
                         return (
                           <TableRow 
