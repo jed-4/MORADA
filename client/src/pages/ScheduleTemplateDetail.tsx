@@ -1247,7 +1247,7 @@ export default function ScheduleTemplateDetail() {
           <DialogHeader>
             <DialogTitle>Template Settings</DialogTitle>
             <DialogDescription>
-              Update the template name, description, and category.
+              Update the template name and description.
             </DialogDescription>
           </DialogHeader>
           
@@ -1261,25 +1261,6 @@ export default function ScheduleTemplateDetail() {
                 placeholder="Template name"
                 data-testid="input-template-name"
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="templateCategory">Category</Label>
-              <Select 
-                value={templateFormData.category} 
-                onValueChange={(value) => setTemplateFormData({ ...templateFormData, category: value })}
-              >
-                <SelectTrigger id="templateCategory" data-testid="select-template-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Residential">Residential</SelectItem>
-                  <SelectItem value="Commercial">Commercial</SelectItem>
-                  <SelectItem value="Renovation">Renovation</SelectItem>
-                  <SelectItem value="Extension">Extension</SelectItem>
-                  <SelectItem value="Custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2">
