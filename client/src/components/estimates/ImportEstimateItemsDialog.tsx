@@ -92,6 +92,14 @@ export function ImportEstimateItemsDialog({
   const [isImporting, setIsImporting] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  
+  // User corrections for unmatched values (raw value -> corrected value)
+  const [typeCorrections, setTypeCorrections] = useState<Record<string, string>>({});
+  const [allowanceCorrections, setAllowanceCorrections] = useState<Record<string, string>>({});
+  
+  // Valid options for dropdowns
+  const VALID_TYPES = ["Material", "Labour", "Subcontractor", "Fee"];
+  const VALID_ALLOWANCES = ["None", "Prime Cost", "Provisional Sum"];
 
   // Fetch cost codes for matching
   const { data: costCodes = [] } = useQuery<CostCode[]>({
@@ -132,14 +140,50 @@ export function ImportEstimateItemsDialog({
     statusOptions: statusOptions.map(s => ({ id: s.id, name: s.name, key: s.key })),
   }), [costCodes, existingGroups, statusOptions]);
 
-  // Compute parsed results whenever data or mapping changes
+  // Compute parsed results from original data (no corrections applied during parsing)
   const parsedResults = useMemo(() => {
     if (!fileData.length || !columnMapping.name) return [];
     return fileData.map((row, index) => parseImportRow(row, columnMapping, index, costCodes, matchOptions));
   }, [fileData, columnMapping, costCodes, matchOptions]);
+  
+  // Check if a row has a corrected type value
+  const getTypeCorrection = (rawValue: string | undefined): string | undefined => {
+    if (!rawValue) return undefined;
+    return typeCorrections[rawValue.trim()];
+  };
+  
+  // Check if a row's type error is fixed by user correction
+  const isTypeCorrected = (parsed: any): boolean => {
+    if (parsed?.typeMatch?.rawValue) {
+      return !!typeCorrections[parsed.typeMatch.rawValue];
+    }
+    return false;
+  };
 
-  const validCount = parsedResults.filter(r => r.data).length;
-  const errorCount = parsedResults.filter(r => r.errors).length;
+  // Calculate counts including corrected rows
+  const { validCount, errorCount, correctedCount } = useMemo(() => {
+    let valid = 0;
+    let errors = 0;
+    let corrected = 0;
+    
+    parsedResults.forEach(parsed => {
+      const hasTypeError = parsed.errors?.some(e => e.includes("type:"));
+      const hasOtherErrors = parsed.errors?.some(e => !e.includes("type:") && !e.includes("allowance:"));
+      const rawTypeValue = parsed.typeMatch?.rawValue;
+      const typeIsCorrected = rawTypeValue ? !!typeCorrections[rawTypeValue] : false;
+      
+      if (parsed.data && !parsed.errors?.length) {
+        valid++;
+      } else if (hasTypeError && !hasOtherErrors && typeIsCorrected) {
+        // Row has only type error which is corrected
+        corrected++;
+      } else if (parsed.errors?.length) {
+        errors++;
+      }
+    });
+    
+    return { validCount: valid + corrected, errorCount: errors, correctedCount: corrected };
+  }, [parsedResults, typeCorrections]);
   
   // Count fuzzy match statistics
   const matchedCostCodes = parsedResults.filter(r => r.costCodeMatch?.matchedCode).length;
@@ -239,13 +283,42 @@ export function ImportEstimateItemsDialog({
     setIsImporting(true);
     
     try {
-      // Get only valid rows
-      const validRows = parsedResults
-        .filter(row => row.data)
-        .map(row => {
-          const item = { ...row.data!, estimateId };
-          return item;
-        });
+      // Get valid rows and apply corrections
+      const validRows: any[] = [];
+      
+      parsedResults.forEach((parsed, index) => {
+        // Check if row is valid or has only fixable errors with corrections applied
+        const hasTypeError = parsed.errors?.some(e => e.includes("type:"));
+        const hasOtherErrors = parsed.errors?.some(e => !e.includes("type:") && !e.includes("allowance:"));
+        
+        // Get correction for type if needed
+        const rawTypeValue = parsed.typeMatch?.rawValue;
+        const typeCorrection = rawTypeValue ? typeCorrections[rawTypeValue] : undefined;
+        
+        // Skip if has non-fixable errors, or has type error without correction
+        if (hasOtherErrors) return;
+        if (hasTypeError && !typeCorrection) return;
+        
+        // Build the item data
+        if (parsed.data) {
+          const item: any = { ...parsed.data, estimateId };
+          
+          // Apply type correction if needed
+          if (typeCorrection) {
+            item.type = typeCorrection;
+          }
+          
+          validRows.push(item);
+        } else if (hasTypeError && typeCorrection) {
+          // Row had only type error which is now corrected - need to rebuild
+          const rawRow = fileData[index];
+          const rebuiltParsed = parseImportRow(rawRow, columnMapping, index, costCodes, matchOptions);
+          if (rebuiltParsed.data) {
+            const item: any = { ...rebuiltParsed.data, estimateId, type: typeCorrection };
+            validRows.push(item);
+          }
+        }
+      });
 
       const response = await fetch(`/api/estimates/${estimateId}/items/import`, {
         method: "POST",
@@ -285,8 +358,34 @@ export function ImportEstimateItemsDialog({
     setHeaders([]);
     setColumnMapping({});
     setCollapsedGroups(new Set());
+    setTypeCorrections({});
+    setAllowanceCorrections({});
     onClose();
   };
+  
+  // Count rows that need type/allowance corrections
+  const unmatchedTypeValues = useMemo(() => {
+    const values = new Set<string>();
+    parsedResults.forEach(parsed => {
+      // Has a type error
+      if (parsed?.errors?.some(e => e.includes("type:"))) {
+        const typeCol = columnMapping.type;
+        if (typeCol) {
+          const rawVal = fileData[parsed.rowIndex]?.[typeCol];
+          if (rawVal && !typeCorrections[String(rawVal).trim()]) {
+            values.add(String(rawVal).trim());
+          }
+        }
+      }
+      // Low confidence type match
+      if (parsed?.typeMatch && !parsed.typeMatch.matchedValue && parsed.typeMatch.rawValue) {
+        if (!typeCorrections[parsed.typeMatch.rawValue]) {
+          values.add(parsed.typeMatch.rawValue);
+        }
+      }
+    });
+    return values;
+  }, [parsedResults, typeCorrections, columnMapping.type, fileData]);
 
   const getCellValue = (row: any, field: keyof ImportEstimateItem) => {
     const columnName = columnMapping[field];
@@ -452,21 +551,46 @@ export function ImportEstimateItemsDialog({
                         const isGroupSelected = selectedGroups.has(groupName);
                         const costCodeMatch = parsed?.costCodeMatch;
                         
+                        // Check if the error is specifically about type (fixable inline)
+                        const typeError = parsed?.errors?.find(e => e.includes("type:"));
+                        const allowanceError = parsed?.errors?.find(e => e.includes("allowance:"));
+                        const hasOnlyFixableErrors = hasError && parsed?.errors?.every(e => 
+                          e.includes("type:") || e.includes("allowance:")
+                        );
+                        
+                        // Get raw values for correction dropdowns
+                        const rawTypeValue = getCellValue(row, "type")?.toString().trim();
+                        const rawAllowanceValue = getCellValue(row, "allowance")?.toString().trim();
+                        
+                        // Check if correction was applied
+                        const typeCorrectionApplied = rawTypeValue && typeCorrections[rawTypeValue];
+                        const typeNowFixed = hasOnlyFixableErrors && typeCorrectionApplied;
+                        
+                        // Determine if type needs correction (has error or low confidence) and not yet corrected
+                        const typeNeedsCorrection = (typeError || 
+                          (parsed?.typeMatch && !parsed.typeMatch.matchedValue && parsed.typeMatch.rawValue)) && 
+                          !typeCorrectionApplied;
+                        const typeIsMatched = parsed?.typeMatch?.matchedValue && parsed.typeMatch.confidence === "high";
+                        
                         return (
                           <TableRow 
                             key={`${groupName}-${index}`}
                             className={cn(
-                              hasError && "bg-destructive/10",
+                              hasError && !hasOnlyFixableErrors && !typeNowFixed && "bg-destructive/10",
+                              hasOnlyFixableErrors && !typeNowFixed && "bg-amber-50 dark:bg-amber-900/20",
+                              typeNowFixed && "bg-green-50 dark:bg-green-900/20",
                               isGroupSelected && !hasError && "bg-primary/10"
                             )}
                           >
                             <TableCell>
-                              {hasError && <AlertCircle className="h-4 w-4 text-destructive" />}
-                              {!hasError && costCodeMatch?.matchedCode && (
+                              {hasError && !hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-destructive" />}
+                              {hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-amber-500" />}
+                              {typeNowFixed && <CheckCircle className="h-4 w-4 text-green-600" />}
+                              {!hasError && !typeNowFixed && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
                             </TableCell>
-                            {hasError ? (
+                            {hasError && !hasOnlyFixableErrors && !typeNowFixed ? (
                               <TableCell colSpan={8} className="text-sm text-destructive">
                                 {parsed.errors.join(", ")}
                               </TableCell>
@@ -474,27 +598,50 @@ export function ImportEstimateItemsDialog({
                               <>
                                 <TableCell>{getCellValue(row, "name")}</TableCell>
                                 <TableCell>
-                                  {parsed?.typeMatch ? (
+                                  {typeCorrectionApplied ? (
+                                    <Badge 
+                                      variant="default"
+                                      className="text-xs bg-green-600 hover:bg-green-700"
+                                    >
+                                      {typeCorrections[rawTypeValue]}
+                                      <span className="opacity-70 ml-1">({rawTypeValue})</span>
+                                    </Badge>
+                                  ) : typeNeedsCorrection && rawTypeValue ? (
                                     <div className="flex items-center gap-1.5">
-                                      {parsed.typeMatch.matchedValue ? (
-                                        <Badge 
-                                          variant={parsed.typeMatch.confidence === "high" ? "default" : "secondary"}
-                                          className={cn(
-                                            "text-xs",
-                                            parsed.typeMatch.confidence === "high" && "bg-green-600 hover:bg-green-700"
-                                          )}
-                                        >
-                                          {parsed.typeMatch.matchedValue}
-                                          {parsed.typeMatch.rawValue !== parsed.typeMatch.matchedValue && (
-                                            <span className="opacity-70 ml-1">({parsed.typeMatch.rawValue})</span>
-                                          )}
-                                        </Badge>
-                                      ) : (
-                                        <Badge variant="secondary" className="text-xs">
-                                          {parsed.typeMatch.rawValue} (?)
-                                        </Badge>
-                                      )}
+                                      <Select
+                                        value=""
+                                        onValueChange={(value) => {
+                                          setTypeCorrections(prev => ({
+                                            ...prev,
+                                            [rawTypeValue]: value
+                                          }));
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 w-[140px] text-xs border-amber-400 bg-amber-50 dark:bg-amber-900/20">
+                                          <SelectValue placeholder="Select type..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {VALID_TYPES.map(type => (
+                                            <SelectItem key={type} value={type}>
+                                              {type}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <span className="text-xs text-muted-foreground">
+                                        ({rawTypeValue})
+                                      </span>
                                     </div>
+                                  ) : typeIsMatched ? (
+                                    <Badge 
+                                      variant="default"
+                                      className="text-xs bg-green-600 hover:bg-green-700"
+                                    >
+                                      {parsed.typeMatch!.matchedValue}
+                                      {parsed.typeMatch!.rawValue !== parsed.typeMatch!.matchedValue && (
+                                        <span className="opacity-70 ml-1">({parsed.typeMatch!.rawValue})</span>
+                                      )}
+                                    </Badge>
                                   ) : (
                                     getCellValue(row, "type")
                                   )}
@@ -565,6 +712,16 @@ export function ImportEstimateItemsDialog({
                 {matchedTypes > 0 && (
                   <span className="text-sm font-medium text-green-600">
                     {matchedTypes} type{matchedTypes !== 1 ? 's' : ''} matched
+                  </span>
+                )}
+                {unmatchedTypeValues.size > 0 && (
+                  <span className="text-sm font-medium text-amber-600">
+                    {unmatchedTypeValues.size} type{unmatchedTypeValues.size !== 1 ? 's' : ''} need fixing
+                  </span>
+                )}
+                {Object.keys(typeCorrections).length > 0 && (
+                  <span className="text-sm font-medium text-blue-600">
+                    {Object.keys(typeCorrections).length} correction{Object.keys(typeCorrections).length !== 1 ? 's' : ''} applied
                   </span>
                 )}
                 {matchedGroups > 0 && (
