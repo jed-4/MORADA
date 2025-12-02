@@ -35,8 +35,11 @@ import {
   autoDetectColumnMapping,
   parseImportRow,
   CostCode,
+  ImportMatchOptions,
+  FuzzyMatch,
 } from "@shared/import";
 import { useToast } from "@/hooks/use-toast";
+import { EstimateGroup, FieldOption } from "@shared/schema";
 
 interface ImportEstimateItemsDialogProps {
   open: boolean;
@@ -96,18 +99,55 @@ export function ImportEstimateItemsDialog({
     enabled: open,
   });
 
+  // Fetch existing estimate groups for matching
+  const { data: existingGroups = [] } = useQuery<EstimateGroup[]>({
+    queryKey: ["/api/estimates", estimateId, "groups"],
+    enabled: open && !!estimateId,
+  });
+
+  // Fetch status options from field settings
+  const { data: statusOptions = [] } = useQuery<FieldOption[]>({
+    queryKey: ["/api/field-categories/estimate_item.status/options"],
+    enabled: open,
+    queryFn: async () => {
+      try {
+        const response = await fetch("/api/field-categories");
+        const categories = await response.json();
+        const statusCategory = categories.find((c: any) => c.key === "estimate_item.status");
+        if (statusCategory) {
+          const optionsResponse = await fetch(`/api/field-categories/${statusCategory.id}/options`);
+          return optionsResponse.json();
+        }
+        return [];
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // Build match options for fuzzy matching
+  const matchOptions: ImportMatchOptions = useMemo(() => ({
+    costCodes,
+    groups: existingGroups.map(g => ({ id: g.id, name: g.name })),
+    statusOptions: statusOptions.map(s => ({ id: s.id, name: s.name, key: s.key })),
+  }), [costCodes, existingGroups, statusOptions]);
+
   // Compute parsed results whenever data or mapping changes
   const parsedResults = useMemo(() => {
     if (!fileData.length || !columnMapping.name) return [];
-    return fileData.map((row, index) => parseImportRow(row, columnMapping, index, costCodes));
-  }, [fileData, columnMapping, costCodes]);
+    return fileData.map((row, index) => parseImportRow(row, columnMapping, index, costCodes, matchOptions));
+  }, [fileData, columnMapping, costCodes, matchOptions]);
 
   const validCount = parsedResults.filter(r => r.data).length;
   const errorCount = parsedResults.filter(r => r.errors).length;
   
-  // Count cost code matches
+  // Count fuzzy match statistics
   const matchedCostCodes = parsedResults.filter(r => r.costCodeMatch?.matchedCode).length;
   const unmatchedCostCodes = parsedResults.filter(r => r.costCodeMatch && !r.costCodeMatch.matchedCode).length;
+  const matchedTypes = parsedResults.filter(r => r.typeMatch?.confidence === "high").length;
+  const matchedUnits = parsedResults.filter(r => r.unitTypeMatch?.confidence === "high" || r.unitTypeMatch?.confidence === "medium").length;
+  const matchedGroups = parsedResults.filter(r => r.groupMatch?.matched).length;
+  const newGroups = parsedResults.filter(r => r.groupMatch && !r.groupMatch.matched).length;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -433,7 +473,32 @@ export function ImportEstimateItemsDialog({
                             ) : (
                               <>
                                 <TableCell>{getCellValue(row, "name")}</TableCell>
-                                <TableCell>{getCellValue(row, "type")}</TableCell>
+                                <TableCell>
+                                  {parsed?.typeMatch ? (
+                                    <div className="flex items-center gap-1.5">
+                                      {parsed.typeMatch.matchedValue ? (
+                                        <Badge 
+                                          variant={parsed.typeMatch.confidence === "high" ? "default" : "secondary"}
+                                          className={cn(
+                                            "text-xs",
+                                            parsed.typeMatch.confidence === "high" && "bg-green-600 hover:bg-green-700"
+                                          )}
+                                        >
+                                          {parsed.typeMatch.matchedValue}
+                                          {parsed.typeMatch.rawValue !== parsed.typeMatch.matchedValue && (
+                                            <span className="opacity-70 ml-1">({parsed.typeMatch.rawValue})</span>
+                                          )}
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="text-xs">
+                                          {parsed.typeMatch.rawValue} (?)
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    getCellValue(row, "type")
+                                  )}
+                                </TableCell>
                                 <TableCell>
                                   {costCodeMatch ? (
                                     <div className="flex items-center gap-1.5">
@@ -494,7 +559,22 @@ export function ImportEstimateItemsDialog({
                 )}
                 {unmatchedCostCodes > 0 && (
                   <span className="text-sm font-medium text-amber-600">
-                    {unmatchedCostCodes} unmatched
+                    {unmatchedCostCodes} cost code{unmatchedCostCodes !== 1 ? 's' : ''} unmatched
+                  </span>
+                )}
+                {matchedTypes > 0 && (
+                  <span className="text-sm font-medium text-green-600">
+                    {matchedTypes} type{matchedTypes !== 1 ? 's' : ''} matched
+                  </span>
+                )}
+                {matchedGroups > 0 && (
+                  <span className="text-sm font-medium text-green-600">
+                    {matchedGroups} group{matchedGroups !== 1 ? 's' : ''} matched
+                  </span>
+                )}
+                {newGroups > 0 && (
+                  <span className="text-sm font-medium text-blue-600">
+                    {newGroups} new group{newGroups !== 1 ? 's' : ''} to create
                   </span>
                 )}
               </div>

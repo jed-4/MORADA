@@ -7,13 +7,242 @@ export type CostCode = {
   title: string;
 };
 
-// Cost code match result
+// Generic fuzzy match result for any field
+export type FuzzyMatch<T = any> = {
+  rawValue: string;
+  matched?: T;
+  matchedValue?: string; // The normalized/matched value to use
+  matchType?: "exact" | "normalized" | "partial" | "contains";
+  confidence: "high" | "medium" | "low";
+};
+
+// Cost code match result (specialized)
 export type CostCodeMatch = {
   rawValue: string;
   matchedCode?: CostCode;
   matchType?: "code" | "title" | "exact";
   confidence?: "high" | "low";
 };
+
+// Common unit type variations for fuzzy matching
+const UNIT_TYPE_ALIASES: Record<string, string[]> = {
+  "each": ["ea", "ea.", "e", "unit", "units", "pc", "pcs", "piece", "pieces", "item", "items"],
+  "m": ["m", "metre", "metres", "meter", "meters", "lm", "lin m", "linear metre", "linear meter"],
+  "m2": ["m2", "sqm", "sq m", "sq.m", "square metre", "square meter", "square metres", "square meters"],
+  "m3": ["m3", "cbm", "cu m", "cu.m", "cubic metre", "cubic meter", "cubic metres", "cubic meters"],
+  "kg": ["kg", "kgs", "kilogram", "kilograms", "kilo", "kilos"],
+  "tonne": ["tonne", "tonnes", "ton", "tons", "t"],
+  "l": ["l", "litre", "litres", "liter", "liters"],
+  "hour": ["hr", "hrs", "hour", "hours", "h"],
+  "day": ["day", "days", "d"],
+  "week": ["week", "weeks", "wk", "wks"],
+  "lot": ["lot", "lots", "lump", "lump sum", "ls", "lumpsum"],
+  "pack": ["pack", "packs", "pk", "pkt", "packet", "packets"],
+  "roll": ["roll", "rolls", "rl"],
+  "sheet": ["sheet", "sheets", "sht"],
+  "bag": ["bag", "bags"],
+  "box": ["box", "boxes", "bx"],
+  "length": ["length", "lengths", "len"],
+  "set": ["set", "sets"],
+  "pair": ["pair", "pairs", "pr"],
+};
+
+// Common allowance type variations
+const ALLOWANCE_ALIASES: Record<string, string[]> = {
+  "None": ["none", "n/a", "na", "-", ""],
+  "Prime Cost": ["prime cost", "pc", "prime", "p.c.", "prime-cost", "primecost"],
+  "Provisional Sum": ["provisional sum", "ps", "provisional", "p.s.", "prov sum", "prov. sum", "provsum", "provisional-sum"],
+};
+
+// Common type (cost type) variations
+const TYPE_ALIASES: Record<string, string[]> = {
+  "Material": ["material", "materials", "mat", "mats", "m", "supply", "supplies"],
+  "Labour": ["labour", "labor", "lab", "l", "work", "install", "installation"],
+  "Subcontractor": ["subcontractor", "subcontractors", "sub", "subs", "subbie", "subbies", "sc", "subcon"],
+  "Fee": ["fee", "fees", "margin", "overhead", "overheads", "o/h", "oh"],
+};
+
+// Generic fuzzy match function for string options
+export function fuzzyMatchString(
+  rawValue: string | undefined | null,
+  validOptions: string[],
+  aliases?: Record<string, string[]>
+): FuzzyMatch<string> | undefined {
+  if (rawValue === undefined || rawValue === null || String(rawValue).trim() === "") {
+    return undefined;
+  }
+  
+  const normalized = String(rawValue).trim().toLowerCase();
+  
+  // Try exact match (case-insensitive)
+  const exactMatch = validOptions.find(opt => opt.toLowerCase() === normalized);
+  if (exactMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: exactMatch,
+      matchedValue: exactMatch,
+      matchType: "exact",
+      confidence: "high",
+    };
+  }
+  
+  // Try alias matching if provided
+  if (aliases) {
+    for (const [canonical, aliasValues] of Object.entries(aliases)) {
+      if (aliasValues.some(alias => alias.toLowerCase() === normalized)) {
+        // Verify the canonical value is in our valid options
+        const validCanonical = validOptions.find(opt => opt.toLowerCase() === canonical.toLowerCase());
+        if (validCanonical) {
+          return {
+            rawValue: String(rawValue).trim(),
+            matched: validCanonical,
+            matchedValue: validCanonical,
+            matchType: "normalized",
+            confidence: "high",
+          };
+        }
+      }
+    }
+  }
+  
+  // Try partial/contains match
+  const containsMatch = validOptions.find(opt => 
+    opt.toLowerCase().includes(normalized) || normalized.includes(opt.toLowerCase())
+  );
+  if (containsMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: containsMatch,
+      matchedValue: containsMatch,
+      matchType: "contains",
+      confidence: "medium",
+    };
+  }
+  
+  // No match - return raw value with low confidence
+  return {
+    rawValue: String(rawValue).trim(),
+    confidence: "low",
+  };
+}
+
+// Match unit types with common aliases
+export function matchUnitType(rawValue: string | undefined): FuzzyMatch<string> | undefined {
+  const validUnits = Object.keys(UNIT_TYPE_ALIASES);
+  return fuzzyMatchString(rawValue, validUnits, UNIT_TYPE_ALIASES);
+}
+
+// Match allowance types with common aliases
+export function matchAllowance(rawValue: string | undefined): FuzzyMatch<string> | undefined {
+  const validAllowances = ["None", "Prime Cost", "Provisional Sum"];
+  return fuzzyMatchString(rawValue, validAllowances, ALLOWANCE_ALIASES);
+}
+
+// Match cost types with common aliases
+export function matchType(rawValue: string | undefined): FuzzyMatch<string> | undefined {
+  const validTypes = ["Material", "Labour", "Subcontractor", "Fee"];
+  return fuzzyMatchString(rawValue, validTypes, TYPE_ALIASES);
+}
+
+// Match status against field options
+export function matchStatus(
+  rawValue: string | undefined, 
+  statusOptions: { id: string; name: string; key?: string }[]
+): FuzzyMatch<{ id: string; name: string }> | undefined {
+  if (!rawValue || String(rawValue).trim() === "") {
+    return undefined;
+  }
+  
+  const normalized = String(rawValue).trim().toLowerCase();
+  
+  // Try exact name match
+  const exactMatch = statusOptions.find(opt => opt.name.toLowerCase() === normalized);
+  if (exactMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: { id: exactMatch.id, name: exactMatch.name },
+      matchedValue: exactMatch.name,
+      matchType: "exact",
+      confidence: "high",
+    };
+  }
+  
+  // Try key match (e.g., "incomplete" matches key "incomplete")
+  const keyMatch = statusOptions.find(opt => opt.key?.toLowerCase() === normalized);
+  if (keyMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: { id: keyMatch.id, name: keyMatch.name },
+      matchedValue: keyMatch.name,
+      matchType: "normalized",
+      confidence: "high",
+    };
+  }
+  
+  // Try partial/contains match
+  const containsMatch = statusOptions.find(opt => 
+    opt.name.toLowerCase().includes(normalized) || normalized.includes(opt.name.toLowerCase())
+  );
+  if (containsMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: { id: containsMatch.id, name: containsMatch.name },
+      matchedValue: containsMatch.name,
+      matchType: "contains",
+      confidence: "medium",
+    };
+  }
+  
+  // No match
+  return {
+    rawValue: String(rawValue).trim(),
+    confidence: "low",
+  };
+}
+
+// Match group names against existing groups
+export function matchGroup(
+  rawValue: string | undefined,
+  existingGroups: { id: string; name: string }[]
+): FuzzyMatch<{ id: string; name: string }> | undefined {
+  if (!rawValue || String(rawValue).trim() === "") {
+    return undefined;
+  }
+  
+  const normalized = String(rawValue).trim().toLowerCase();
+  
+  // Try exact name match
+  const exactMatch = existingGroups.find(g => g.name.toLowerCase() === normalized);
+  if (exactMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: { id: exactMatch.id, name: exactMatch.name },
+      matchedValue: exactMatch.name,
+      matchType: "exact",
+      confidence: "high",
+    };
+  }
+  
+  // Try partial/contains match
+  const containsMatch = existingGroups.find(g => 
+    g.name.toLowerCase().includes(normalized) || normalized.includes(g.name.toLowerCase())
+  );
+  if (containsMatch) {
+    return {
+      rawValue: String(rawValue).trim(),
+      matched: { id: containsMatch.id, name: containsMatch.name },
+      matchedValue: containsMatch.name,
+      matchType: "contains",
+      confidence: "medium",
+    };
+  }
+  
+  // No match - will create new group
+  return {
+    rawValue: String(rawValue).trim(),
+    confidence: "low",
+  };
+}
 
 // Estimate Item Import Schema
 // This schema is used for validating imported data from CSV/Excel files
@@ -42,6 +271,11 @@ export type ImportRowResult = {
   data?: ImportEstimateItem;
   errors?: string[];
   costCodeMatch?: CostCodeMatch;
+  typeMatch?: FuzzyMatch<string>;
+  unitTypeMatch?: FuzzyMatch<string>;
+  allowanceMatch?: FuzzyMatch<string>;
+  groupMatch?: FuzzyMatch<{ id: string; name: string }>;
+  statusMatch?: FuzzyMatch<{ id: string; name: string }>;
 };
 
 // Result of parsing an entire file
@@ -239,16 +473,29 @@ export function autoDetectColumnMapping(headers: string[]): ColumnMapping {
   return mapping;
 }
 
+// Options for fuzzy matching during import
+export interface ImportMatchOptions {
+  costCodes?: CostCode[];
+  groups?: { id: string; name: string }[];
+  statusOptions?: { id: string; name: string; key?: string }[];
+}
+
 // Utility: Parse a single row based on column mapping
 export function parseImportRow(
   row: any,
   mapping: ColumnMapping,
   rowIndex: number,
-  costCodes: CostCode[] = []
+  costCodes: CostCode[] = [],
+  matchOptions?: ImportMatchOptions
 ): ImportRowResult {
   try {
     const data: any = {};
     let costCodeMatch: CostCodeMatch | undefined;
+    let typeMatch: FuzzyMatch<string> | undefined;
+    let unitTypeMatch: FuzzyMatch<string> | undefined;
+    let allowanceMatch: FuzzyMatch<string> | undefined;
+    let groupMatch: FuzzyMatch<{ id: string; name: string }> | undefined;
+    let statusMatch: FuzzyMatch<{ id: string; name: string }> | undefined;
     
     // Map columns to fields
     Object.entries(mapping).forEach(([fieldKey, columnKey]) => {
@@ -268,12 +515,79 @@ export function parseImportRow(
           data[fieldKey] = rawValue;
           
           // Try to match the cost code
-          if (rawValue && costCodes.length > 0) {
-            costCodeMatch = matchCostCode(rawValue, costCodes);
+          const effectiveCostCodes = matchOptions?.costCodes || costCodes;
+          if (rawValue && effectiveCostCodes.length > 0) {
+            costCodeMatch = matchCostCode(rawValue, effectiveCostCodes);
             // If we found a match, use the matched code's ID as the cost code value
             if (costCodeMatch?.matchedCode) {
               data[fieldKey] = costCodeMatch.matchedCode.id;
             }
+          }
+        } else if (fieldKey === "type") {
+          // Fuzzy match type (Material, Labour, Subcontractor, Fee)
+          const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          if (rawValue) {
+            typeMatch = matchType(rawValue);
+            // Only apply high-confidence matches - let validation catch others
+            if (typeMatch?.matchedValue && typeMatch.confidence === "high") {
+              data[fieldKey] = typeMatch.matchedValue;
+            } else {
+              data[fieldKey] = rawValue; // Keep original for validation to catch
+            }
+          }
+        } else if (fieldKey === "unitType") {
+          // Fuzzy match unit type
+          const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          if (rawValue) {
+            unitTypeMatch = matchUnitType(rawValue);
+            // Apply high or medium confidence matches (unit type is more flexible)
+            if (unitTypeMatch?.matchedValue && (unitTypeMatch.confidence === "high" || unitTypeMatch.confidence === "medium")) {
+              data[fieldKey] = unitTypeMatch.matchedValue;
+            } else {
+              data[fieldKey] = rawValue; // Keep original - it's a string field
+            }
+          }
+        } else if (fieldKey === "allowance") {
+          // Fuzzy match allowance type
+          const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          if (rawValue) {
+            allowanceMatch = matchAllowance(rawValue);
+            // Only apply high-confidence matches for enums
+            if (allowanceMatch?.matchedValue && allowanceMatch.confidence === "high") {
+              data[fieldKey] = allowanceMatch.matchedValue;
+            } else {
+              data[fieldKey] = rawValue; // Keep original for validation to catch
+            }
+          }
+        } else if (fieldKey === "group") {
+          // Fuzzy match group name - keep as name (backend expects name, not ID)
+          const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          if (rawValue && matchOptions?.groups && matchOptions.groups.length > 0) {
+            groupMatch = matchGroup(rawValue, matchOptions.groups);
+            // Use matched name if found with high confidence, otherwise keep raw value
+            // The backend will match by name or create new group
+            if (groupMatch?.matchedValue && groupMatch.confidence === "high") {
+              data[fieldKey] = groupMatch.matchedValue;
+            } else {
+              data[fieldKey] = rawValue; // Will create new group
+            }
+          } else {
+            data[fieldKey] = rawValue;
+          }
+        } else if (fieldKey === "status") {
+          // Fuzzy match status - store the matched name for display, not ID
+          // Backend expects status as string (name/key), not ID
+          const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+          if (rawValue && matchOptions?.statusOptions && matchOptions.statusOptions.length > 0) {
+            statusMatch = matchStatus(rawValue, matchOptions.statusOptions);
+            // Use matched name with high confidence, otherwise keep raw
+            if (statusMatch?.matchedValue && statusMatch.confidence === "high") {
+              data[fieldKey] = statusMatch.matchedValue;
+            } else {
+              data[fieldKey] = rawValue;
+            }
+          } else {
+            data[fieldKey] = rawValue;
           }
         } else if (fieldKey === "proposalVisible") {
           // Parse boolean values from various formats
@@ -303,6 +617,11 @@ export function parseImportRow(
       rowIndex,
       data: validated,
       costCodeMatch,
+      typeMatch,
+      unitTypeMatch,
+      allowanceMatch,
+      groupMatch,
+      statusMatch,
     };
   } catch (error) {
     const errors: string[] = [];
