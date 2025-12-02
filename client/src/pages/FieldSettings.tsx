@@ -13,9 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FieldOption, FieldCategory } from "@shared/schema";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 const STATUS_COLORS = [
   { value: "#ef4444", label: "Red" },
@@ -54,12 +53,18 @@ function SortableRow({ option, onEdit, onDelete, parentOptions, supportsHierarch
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: option.id });
+  } = useSortable({ 
+    id: option.id,
+    animateLayoutChanges: () => false, // Disable animations for smoother drag
+  });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+  // Only use Y-axis transform to prevent horizontal shifting
+  const style: React.CSSProperties = {
+    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transition: transition || 'transform 150ms ease',
     opacity: isDragging ? 0.5 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 50 : undefined,
   };
 
   const parentOption = parentOptions.find(p => p.id === option.parentId);
@@ -124,6 +129,7 @@ export default function FieldSettings() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<FieldOption | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     color: "#3b82f6",
@@ -281,7 +287,7 @@ export default function FieldSettings() {
     },
   });
 
-  // Reorder mutation
+  // Reorder mutation with optimistic updates to prevent snapback
   const reorderMutation = useMutation({
     mutationFn: async (options: FieldOption[]) => {
       const updates = options.map((option, index) => 
@@ -289,8 +295,39 @@ export default function FieldSettings() {
       );
       return await Promise.all(updates);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+    onMutate: async (newOptions) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      
+      // Snapshot previous value
+      const previousOptions = queryClient.getQueryData(['/api/field-options', selectedCategoryId]);
+      
+      // Optimistically update with new order (with updated sortOrder)
+      const optionsWithNewOrder = newOptions.map((opt, index) => ({
+        ...opt,
+        sortOrder: index,
+      }));
+      queryClient.setQueryData(['/api/field-options', selectedCategoryId], optionsWithNewOrder);
+      
+      return { previousOptions };
+    },
+    onError: (err, newOptions, context) => {
+      // Rollback on error
+      if (context?.previousOptions) {
+        queryClient.setQueryData(['/api/field-options', selectedCategoryId], context.previousOptions);
+      }
+      toast({
+        title: "Error",
+        description: "Failed to reorder options.",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      // Background sync to ensure consistency (but don't invalidate immediately)
+      // Only refetch after a delay to avoid fighting with optimistic state
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      }, 500);
     },
   });
 
@@ -342,8 +379,15 @@ export default function FieldSettings() {
     }
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    
+    // Clear active drag state
+    setActiveId(null);
     
     if (!over || active.id === over.id) return;
 
@@ -353,6 +397,9 @@ export default function FieldSettings() {
     const reordered = arrayMove(displayOptions, oldIndex, newIndex);
     reorderMutation.mutate(reordered);
   };
+
+  // Get the active option for the DragOverlay
+  const activeOption = activeId ? displayOptions.find(o => o.id === activeId) : null;
 
   useEffect(() => {
     if (!isCreateDialogOpen) {
@@ -520,6 +567,7 @@ export default function FieldSettings() {
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                   >
                     <Table>
@@ -558,6 +606,21 @@ export default function FieldSettings() {
                         )}
                       </TableBody>
                     </Table>
+                    
+                    {/* Drag overlay for better visual feedback */}
+                    <DragOverlay>
+                      {activeOption ? (
+                        <div className="bg-card border rounded-md shadow-lg p-3 flex items-center gap-3">
+                          <GripVertical className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{activeOption.name}</span>
+                          {activeOption.color && (
+                            <Badge style={{ backgroundColor: activeOption.color }}>
+                              {activeOption.name}
+                            </Badge>
+                          )}
+                        </div>
+                      ) : null}
+                    </DragOverlay>
                   </DndContext>
                 </CardContent>
               </Card>
