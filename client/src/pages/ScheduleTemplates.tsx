@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,7 @@ interface ColumnMapping {
 }
 
 export default function ScheduleTemplates() {
+  const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ScheduleTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -562,7 +564,7 @@ export default function ScheduleTemplates() {
               <div 
                 key={template.id} 
                 className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => handleOpenEdit(template)}
+                onClick={() => navigate(`/schedule-templates/${template.id}`)}
                 data-testid={`card-template-${template.id}`}
               >
                 <div className="flex items-start gap-2">
@@ -619,12 +621,12 @@ export default function ScheduleTemplates() {
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleOpenEdit(template);
+                            navigate(`/schedule-templates/${template.id}`);
                           }}
                           data-testid={`button-edit-${template.id}`}
                         >
                           <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
+                          View / Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {

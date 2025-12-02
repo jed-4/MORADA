@@ -37,6 +37,7 @@ import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
 import ScopeTemplates from "@/pages/ScopeTemplates";
 import ScheduleTemplates from "@/pages/ScheduleTemplates";
+import ScheduleTemplateDetail from "@/pages/ScheduleTemplateDetail";
 import EstimateTemplates from "@/pages/EstimateTemplates";
 import SelectionTemplates from "@/pages/SelectionTemplates";
 import POTemplates from "@/pages/POTemplates";
@@ -229,6 +230,7 @@ function Router() {
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
       <Route path="/scope-templates" component={ScopeTemplates} />
       <Route path="/schedule-templates" component={ScheduleTemplates} />
+      <Route path="/schedule-templates/:templateId" component={ScheduleTemplateDetail} />
       <Route path="/estimate-templates" component={EstimateTemplates} />
       <Route path="/selection-templates" component={SelectionTemplates} />
       <Route path="/po-templates" component={POTemplates} />
