@@ -35,6 +35,7 @@ import {
   ListTree,
   GanttChart,
   User,
+  ListChecks,
 } from "lucide-react";
 
 import {
@@ -82,6 +83,7 @@ const projectItemsBase = [
   { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
   { title: "Schedule", baseUrl: "/schedule", icon: Clock },
   { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
+  { title: "Checklists", baseUrl: "/checklists", icon: ListChecks },
   { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
   { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
   { title: "Request For Quotes", baseUrl: "/rfqs", icon: FileSearch },

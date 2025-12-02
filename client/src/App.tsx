@@ -88,6 +88,8 @@ import ProjectScope from "@/pages/ProjectScope";
 import ProjectTeam from "@/pages/ProjectTeam";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import PurchaseOrderDetail from "@/pages/PurchaseOrderDetail";
+import ProjectChecklists from "@/pages/ProjectChecklists";
+import ChecklistInstanceDetail from "@/pages/ChecklistInstanceDetail";
 
 function Router() {
   const { user } = useAuth();
@@ -186,6 +188,8 @@ function Router() {
       <Route path="/projects/:projectId/budget" component={Budget} />
       <Route path="/projects/:projectId/files" component={() => <ComingSoonPage section="files" />} />
       <Route path="/projects/:projectId/team" component={ProjectTeam} />
+      <Route path="/projects/:projectId/checklists" component={ProjectChecklists} />
+      <Route path="/projects/:projectId/checklists/:checklistId" component={ChecklistInstanceDetail} />
       
       {/* Global Project sections - Coming Soon */}
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />

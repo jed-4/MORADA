@@ -54,6 +54,8 @@ import {
   type ChecklistTemplate, type InsertChecklistTemplate,
   type ChecklistTemplateGroup, type InsertChecklistTemplateGroup,
   type ChecklistTemplateItem, type InsertChecklistTemplateItem,
+  type ChecklistInstance, type InsertChecklistInstance,
+  type ChecklistInstanceItem, type InsertChecklistInstanceItem,
   type Budget, type InsertBudget,
   type BudgetLineItem, type InsertBudgetLineItem,
   type LabourHoursBudget, type InsertLabourHoursBudget,
@@ -622,6 +624,20 @@ export interface IStorage {
   createChecklistTemplateItem(item: InsertChecklistTemplateItem): Promise<ChecklistTemplateItem>;
   updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined>;
   deleteChecklistTemplateItem(id: string): Promise<boolean>;
+
+  // Checklist Instances CRUD
+  getChecklistInstances(projectId?: string): Promise<ChecklistInstance[]>;
+  getChecklistInstance(id: string): Promise<ChecklistInstance | undefined>;
+  createChecklistInstance(instance: InsertChecklistInstance): Promise<ChecklistInstance>;
+  updateChecklistInstance(id: string, instance: Partial<InsertChecklistInstance>): Promise<ChecklistInstance | undefined>;
+  deleteChecklistInstance(id: string): Promise<boolean>;
+
+  // Checklist Instance Items CRUD
+  getChecklistInstanceItems(instanceId: string): Promise<ChecklistInstanceItem[]>;
+  getChecklistInstanceItem(id: string): Promise<ChecklistInstanceItem | undefined>;
+  createChecklistInstanceItem(item: InsertChecklistInstanceItem): Promise<ChecklistInstanceItem>;
+  updateChecklistInstanceItem(id: string, item: Partial<InsertChecklistInstanceItem>): Promise<ChecklistInstanceItem | undefined>;
+  deleteChecklistInstanceItem(id: string): Promise<boolean>;
 
   // Budget CRUD
   getBudget(projectId: string): Promise<Budget | undefined>;
@@ -10884,6 +10900,141 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteChecklistTemplateItem:", error);
+      throw error;
+    }
+  }
+
+  // Checklist Instances CRUD
+  async getChecklistInstances(projectId?: string): Promise<ChecklistInstance[]> {
+    try {
+      if (projectId) {
+        return await db.select()
+          .from(schema.checklistInstances)
+          .where(eq(schema.checklistInstances.projectId, projectId))
+          .orderBy(desc(schema.checklistInstances.createdAt));
+      }
+      return await db.select()
+        .from(schema.checklistInstances)
+        .orderBy(desc(schema.checklistInstances.createdAt));
+    } catch (error) {
+      console.error("Database error in getChecklistInstances:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistInstance(id: string): Promise<ChecklistInstance | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.checklistInstances)
+        .where(eq(schema.checklistInstances.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getChecklistInstance:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistInstance(instance: InsertChecklistInstance): Promise<ChecklistInstance> {
+    try {
+      const result = await db.insert(schema.checklistInstances)
+        .values(instance)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createChecklistInstance:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistInstance(id: string, instance: Partial<InsertChecklistInstance>): Promise<ChecklistInstance | undefined> {
+    try {
+      const result = await db.update(schema.checklistInstances)
+        .set({ ...instance, updatedAt: new Date() })
+        .where(eq(schema.checklistInstances.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateChecklistInstance:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistInstance(id: string): Promise<boolean> {
+    try {
+      // First delete all items
+      await db.delete(schema.checklistInstanceItems)
+        .where(eq(schema.checklistInstanceItems.instanceId, id));
+      // Then delete the instance
+      const result = await db.delete(schema.checklistInstances)
+        .where(eq(schema.checklistInstances.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistInstance:", error);
+      throw error;
+    }
+  }
+
+  // Checklist Instance Items CRUD
+  async getChecklistInstanceItems(instanceId: string): Promise<ChecklistInstanceItem[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistInstanceItems)
+        .where(eq(schema.checklistInstanceItems.instanceId, instanceId))
+        .orderBy(schema.checklistInstanceItems.groupOrder, schema.checklistInstanceItems.order);
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceItems:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistInstanceItem(id: string): Promise<ChecklistInstanceItem | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.checklistInstanceItems)
+        .where(eq(schema.checklistInstanceItems.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceItem:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistInstanceItem(item: InsertChecklistInstanceItem): Promise<ChecklistInstanceItem> {
+    try {
+      const result = await db.insert(schema.checklistInstanceItems)
+        .values(item)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createChecklistInstanceItem:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistInstanceItem(id: string, item: Partial<InsertChecklistInstanceItem>): Promise<ChecklistInstanceItem | undefined> {
+    try {
+      const result = await db.update(schema.checklistInstanceItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.checklistInstanceItems.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateChecklistInstanceItem:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistInstanceItem(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.checklistInstanceItems)
+        .where(eq(schema.checklistInstanceItems.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistInstanceItem:", error);
       throw error;
     }
   }

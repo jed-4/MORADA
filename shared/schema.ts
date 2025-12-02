@@ -1954,6 +1954,97 @@ export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTem
 export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
 export type ChecklistTemplateItem = typeof checklistTemplateItems.$inferSelect;
 
+// Checklist Instances (active checklists created from templates for projects)
+export const checklistInstances = pgTable("checklist_instances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").references(() => checklistTemplates.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("active"), // "active" | "in_progress" | "completed" | "cancelled"
+  priority: text("priority").default("medium"), // "low" | "medium" | "high" | "urgent"
+  dueDate: timestamp("due_date"),
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
+  linkedTaskId: varchar("linked_task_id").references(() => notes.id, { onDelete: "set null" }),
+  linkedScheduleItemId: varchar("linked_schedule_item_id"),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  triggeredByStatus: text("triggered_by_status"), // Which project status triggered this
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistInstanceSchema = createInsertSchema(checklistInstances).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  dueDate: z.coerce.date().optional().nullable(),
+});
+
+export type InsertChecklistInstance = z.infer<typeof insertChecklistInstanceSchema>;
+export type ChecklistInstance = typeof checklistInstances.$inferSelect;
+
+// Checklist Instance Items (individual items within an instance with completion tracking)
+export const checklistInstanceItems = pgTable("checklist_instance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").notNull().references(() => checklistInstances.id, { onDelete: "cascade" }),
+  groupName: text("group_name"), // Group name (copied from template group)
+  groupOrder: integer("group_order").notNull().default(0),
+  description: text("description").notNull(),
+  tooltip: text("tooltip"),
+  order: integer("order").notNull().default(0),
+  isRequired: boolean("is_required").notNull().default(false),
+  status: text("status").notNull().default("pending"), // "pending" | "completed" | "na"
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  attachmentIds: json("attachment_ids").default([]), // Array of file IDs
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistInstanceItemSchema = createInsertSchema(checklistInstanceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["pending", "completed", "na"]).default("pending"),
+  attachmentIds: z.array(z.string()).optional(),
+});
+
+export type InsertChecklistInstanceItem = z.infer<typeof insertChecklistInstanceItemSchema>;
+export type ChecklistInstanceItem = typeof checklistInstanceItems.$inferSelect;
+
+// Checklist Status Triggers (which checklists to create when project moves to a status)
+export const checklistStatusTriggers = pgTable("checklist_status_triggers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectStatus: text("project_status").notNull(), // The status that triggers checklist creation
+  templateId: varchar("template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistStatusTriggerSchema = createInsertSchema(checklistStatusTriggers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChecklistStatusTrigger = z.infer<typeof insertChecklistStatusTriggerSchema>;
+export type ChecklistStatusTrigger = typeof checklistStatusTriggers.$inferSelect;
+
 // Budgets (project budget tracking)
 export const budgets = pgTable("budgets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

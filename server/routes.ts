@@ -61,6 +61,8 @@ import {
   insertChecklistTemplateSchema,
   insertChecklistTemplateGroupSchema,
   insertChecklistTemplateItemSchema,
+  insertChecklistInstanceSchema,
+  insertChecklistInstanceItemSchema,
   updateBudgetSchema,
   updateBudgetLineItemSchema,
   insertScheduleSchema,
@@ -9415,6 +9417,210 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to export checklist templates",
+        details: error.message 
+      });
+    }
+  });
+
+  // Checklist Instance routes
+  app.get("/api/checklist-instances", async (req, res) => {
+    try {
+      const projectId = req.query.projectId as string | undefined;
+      const instances = await storage.getChecklistInstances(projectId);
+      
+      // Get item counts for each instance
+      const instancesWithCounts = await Promise.all(
+        instances.map(async (instance) => {
+          const items = await storage.getChecklistInstanceItems(instance.id);
+          const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
+          return {
+            ...instance,
+            completedCount,
+            totalCount: items.length,
+          };
+        })
+      );
+      
+      res.json(instancesWithCounts);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist instances",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/checklist-instances/:id", async (req, res) => {
+    try {
+      const instance = await storage.getChecklistInstance(req.params.id);
+      if (!instance) {
+        return res.status(404).json({ error: "Checklist instance not found" });
+      }
+      res.json(instance);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist instance",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/checklist-instances", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const validationResult = insertChecklistInstanceSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const data = {
+        ...validationResult.data,
+        companyId: user?.companyId,
+        createdBy: user?.id,
+        createdByName: user?.name,
+      };
+
+      const instance = await storage.createChecklistInstance(data);
+
+      // If created from a template, copy the template items
+      if (data.templateId) {
+        const groups = await storage.getChecklistTemplateGroups(data.templateId);
+        for (const group of groups) {
+          const templateItems = await storage.getChecklistTemplateItems(group.id);
+          for (const templateItem of templateItems) {
+            await storage.createChecklistInstanceItem({
+              instanceId: instance.id,
+              groupName: group.name,
+              groupOrder: group.order,
+              description: templateItem.description,
+              tooltip: templateItem.tooltip,
+              order: templateItem.order,
+              isRequired: templateItem.isRequired ?? false,
+              status: "pending",
+            });
+          }
+        }
+      }
+
+      res.status(201).json(instance);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create checklist instance",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/checklist-instances/:id", async (req, res) => {
+    try {
+      const validationResult = insertChecklistInstanceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const instance = await storage.updateChecklistInstance(req.params.id, validationResult.data);
+      if (!instance) {
+        return res.status(404).json({ error: "Checklist instance not found" });
+      }
+      res.json(instance);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update checklist instance",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/checklist-instances/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteChecklistInstance(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Checklist instance not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete checklist instance",
+        details: error.message 
+      });
+    }
+  });
+
+  // Checklist Instance Item routes
+  app.get("/api/checklist-instances/:instanceId/items", async (req, res) => {
+    try {
+      const items = await storage.getChecklistInstanceItems(req.params.instanceId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist instance items",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/checklist-instances/:instanceId/items", async (req, res) => {
+    try {
+      const validationResult = insertChecklistInstanceItemSchema.safeParse({
+        ...req.body,
+        instanceId: req.params.instanceId,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.createChecklistInstanceItem(validationResult.data);
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create checklist instance item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/checklist-instance-items/:id", async (req, res) => {
+    try {
+      const validationResult = insertChecklistInstanceItemSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateChecklistInstanceItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "Checklist instance item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update checklist instance item",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/checklist-instance-items/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteChecklistInstanceItem(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Checklist instance item not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete checklist instance item",
         details: error.message 
       });
     }
