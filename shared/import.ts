@@ -58,7 +58,7 @@ const ALLOWANCE_ALIASES: Record<string, string[]> = {
 const TYPE_ALIASES: Record<string, string[]> = {
   "Material": ["material", "materials", "mat", "mats", "m", "supply", "supplies"],
   "Labour": ["labour", "labor", "lab", "l", "work", "install", "installation"],
-  "Subcontractor": ["subcontractor", "subcontractors", "sub", "subs", "subbie", "subbies", "sc", "subcon"],
+  "Subcontractor": ["subcontractor", "subcontractors", "sub", "subs", "subbie", "subbies", "sc", "subcon", "sub-contractor", "sub-contractors", "sub contractor", "sub contractors"],
   "Fee": ["fee", "fees", "margin", "overhead", "overheads", "o/h", "oh"],
 };
 
