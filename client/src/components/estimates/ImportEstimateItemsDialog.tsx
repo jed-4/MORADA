@@ -310,11 +310,16 @@ export function ImportEstimateItemsDialog({
           
           validRows.push(item);
         } else if (hasTypeError && typeCorrection) {
-          // Row had only type error which is now corrected - need to rebuild
-          const rawRow = fileData[index];
+          // Row had only type error which is now corrected - rebuild with corrected value injected
+          const rawRow = { ...fileData[index] };
+          // Inject the corrected type value before parsing
+          const typeColumn = columnMapping.type;
+          if (typeColumn) {
+            rawRow[typeColumn] = typeCorrection;
+          }
           const rebuiltParsed = parseImportRow(rawRow, columnMapping, index, costCodes, matchOptions);
           if (rebuiltParsed.data) {
-            const item: any = { ...rebuiltParsed.data, estimateId, type: typeCorrection };
+            const item: any = { ...rebuiltParsed.data, estimateId };
             validRows.push(item);
           }
         }
