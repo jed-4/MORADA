@@ -89,7 +89,10 @@ import {
   type PurchaseOrderSignature, type InsertPurchaseOrderSignature,
   type PurchaseOrderTemplate, type InsertPurchaseOrderTemplate,
   type FavoriteSupplier, type InsertFavoriteSupplier,
-  type FavoriteCostCode, type InsertFavoriteCostCode
+  type FavoriteCostCode, type InsertFavoriteCostCode,
+  type RfqTemplate, type InsertRfqTemplate,
+  type RfiTemplate, type InsertRfiTemplate,
+  type TemplateCategory, type InsertTemplateCategory
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
@@ -692,6 +695,27 @@ export interface IStorage {
   createSelectionTemplate(template: InsertSelectionTemplate): Promise<SelectionTemplate>;
   updateSelectionTemplate(id: string, template: Partial<InsertSelectionTemplate>, companyId: string): Promise<SelectionTemplate | undefined>;
   deleteSelectionTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // RFQ Templates CRUD
+  getRfqTemplates(companyId: string, category?: string): Promise<RfqTemplate[]>;
+  getRfqTemplate(id: string, companyId: string): Promise<RfqTemplate | undefined>;
+  createRfqTemplate(template: InsertRfqTemplate & { companyId: string }): Promise<RfqTemplate>;
+  updateRfqTemplate(id: string, template: Partial<InsertRfqTemplate>, companyId: string): Promise<RfqTemplate | undefined>;
+  deleteRfqTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // RFI Templates CRUD
+  getRfiTemplates(companyId: string, category?: string): Promise<RfiTemplate[]>;
+  getRfiTemplate(id: string, companyId: string): Promise<RfiTemplate | undefined>;
+  createRfiTemplate(template: InsertRfiTemplate & { companyId: string }): Promise<RfiTemplate>;
+  updateRfiTemplate(id: string, template: Partial<InsertRfiTemplate>, companyId: string): Promise<RfiTemplate | undefined>;
+  deleteRfiTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Template Categories CRUD (hierarchical categories for organizing templates)
+  getTemplateCategories(companyId: string, templateType?: string): Promise<TemplateCategory[]>;
+  getTemplateCategory(id: string, companyId: string): Promise<TemplateCategory | undefined>;
+  createTemplateCategory(category: InsertTemplateCategory & { companyId: string }): Promise<TemplateCategory>;
+  updateTemplateCategory(id: string, category: Partial<InsertTemplateCategory>, companyId: string): Promise<TemplateCategory | undefined>;
+  deleteTemplateCategory(id: string, companyId: string): Promise<boolean>;
 
   // Calendar Views CRUD
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
@@ -12014,6 +12038,257 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteSelectionTemplate:", error);
+      throw error;
+    }
+  }
+
+  // RFQ Templates CRUD
+  async getRfqTemplates(companyId: string, category?: string): Promise<RfqTemplate[]> {
+    try {
+      const conditions = [
+        eq(schema.rfqTemplates.isArchived, false),
+        or(
+          eq(schema.rfqTemplates.companyId, companyId),
+          eq(schema.rfqTemplates.isPublic, true)
+        )
+      ];
+      
+      if (category) {
+        conditions.push(eq(schema.rfqTemplates.category, category));
+      }
+      
+      return await db.select()
+        .from(schema.rfqTemplates)
+        .where(and(...conditions));
+    } catch (error) {
+      console.error("Database error in getRfqTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getRfqTemplate(id: string, companyId: string): Promise<RfqTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.rfqTemplates)
+        .where(eq(schema.rfqTemplates.id, id))
+        .limit(1);
+      
+      const template = result[0];
+      if (template && (template.companyId === companyId || template.isPublic)) {
+        return template;
+      }
+      return undefined;
+    } catch (error) {
+      console.error("Database error in getRfqTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createRfqTemplate(template: InsertRfqTemplate & { companyId: string }): Promise<RfqTemplate> {
+    try {
+      const result = await db.insert(schema.rfqTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createRfqTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateRfqTemplate(id: string, template: Partial<InsertRfqTemplate>, companyId: string): Promise<RfqTemplate | undefined> {
+    try {
+      const result = await db.update(schema.rfqTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.rfqTemplates.id, id),
+          eq(schema.rfqTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateRfqTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteRfqTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.rfqTemplates)
+        .where(and(
+          eq(schema.rfqTemplates.id, id),
+          eq(schema.rfqTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRfqTemplate:", error);
+      throw error;
+    }
+  }
+
+  // RFI Templates CRUD
+  async getRfiTemplates(companyId: string, category?: string): Promise<RfiTemplate[]> {
+    try {
+      const conditions = [
+        eq(schema.rfiTemplates.isArchived, false),
+        or(
+          eq(schema.rfiTemplates.companyId, companyId),
+          eq(schema.rfiTemplates.isPublic, true)
+        )
+      ];
+      
+      if (category) {
+        conditions.push(eq(schema.rfiTemplates.category, category));
+      }
+      
+      return await db.select()
+        .from(schema.rfiTemplates)
+        .where(and(...conditions));
+    } catch (error) {
+      console.error("Database error in getRfiTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getRfiTemplate(id: string, companyId: string): Promise<RfiTemplate | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.rfiTemplates)
+        .where(eq(schema.rfiTemplates.id, id))
+        .limit(1);
+      
+      const template = result[0];
+      if (template && (template.companyId === companyId || template.isPublic)) {
+        return template;
+      }
+      return undefined;
+    } catch (error) {
+      console.error("Database error in getRfiTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createRfiTemplate(template: InsertRfiTemplate & { companyId: string }): Promise<RfiTemplate> {
+    try {
+      const result = await db.insert(schema.rfiTemplates)
+        .values(template)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createRfiTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateRfiTemplate(id: string, template: Partial<InsertRfiTemplate>, companyId: string): Promise<RfiTemplate | undefined> {
+    try {
+      const result = await db.update(schema.rfiTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.rfiTemplates.id, id),
+          eq(schema.rfiTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateRfiTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteRfiTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.rfiTemplates)
+        .where(and(
+          eq(schema.rfiTemplates.id, id),
+          eq(schema.rfiTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteRfiTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Template Categories CRUD (hierarchical categories for organizing templates)
+  async getTemplateCategories(companyId: string, templateType?: string): Promise<TemplateCategory[]> {
+    try {
+      const conditions = [
+        eq(schema.templateCategories.companyId, companyId),
+        eq(schema.templateCategories.isActive, true)
+      ];
+      
+      if (templateType) {
+        conditions.push(eq(schema.templateCategories.templateType, templateType));
+      }
+      
+      return await db.select()
+        .from(schema.templateCategories)
+        .where(and(...conditions))
+        .orderBy(asc(schema.templateCategories.sortOrder));
+    } catch (error) {
+      console.error("Database error in getTemplateCategories:", error);
+      throw error;
+    }
+  }
+
+  async getTemplateCategory(id: string, companyId: string): Promise<TemplateCategory | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.templateCategories)
+        .where(and(
+          eq(schema.templateCategories.id, id),
+          eq(schema.templateCategories.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getTemplateCategory:", error);
+      throw error;
+    }
+  }
+
+  async createTemplateCategory(category: InsertTemplateCategory & { companyId: string }): Promise<TemplateCategory> {
+    try {
+      const result = await db.insert(schema.templateCategories)
+        .values(category)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createTemplateCategory:", error);
+      throw error;
+    }
+  }
+
+  async updateTemplateCategory(id: string, category: Partial<InsertTemplateCategory>, companyId: string): Promise<TemplateCategory | undefined> {
+    try {
+      const result = await db.update(schema.templateCategories)
+        .set({ ...category, updatedAt: new Date() })
+        .where(and(
+          eq(schema.templateCategories.id, id),
+          eq(schema.templateCategories.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateTemplateCategory:", error);
+      throw error;
+    }
+  }
+
+  async deleteTemplateCategory(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.templateCategories)
+        .where(and(
+          eq(schema.templateCategories.id, id),
+          eq(schema.templateCategories.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteTemplateCategory:", error);
       throw error;
     }
   }

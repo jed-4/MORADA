@@ -107,7 +107,10 @@ import {
   insertFavoriteCostCodeSchema,
   insertBusinessReminderSchema,
   insertReminderSchema,
-  insertReminderNotificationSchema
+  insertReminderNotificationSchema,
+  insertRfqTemplateSchema,
+  insertRfiTemplateSchema,
+  insertTemplateCategorySchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -10873,6 +10876,379 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to delete selection template",
+        details: error.message 
+      });
+    }
+  });
+
+  // RFQ Templates routes
+  app.get("/api/rfq-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getRfqTemplates(user.companyId, category);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch RFQ templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/rfq-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const template = await storage.getRfqTemplate(req.params.id, user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "RFQ template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch RFQ template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/rfq-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertRfqTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const templateData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+        createdBy: user.id,
+        createdByName: user.name || user.username,
+      };
+      const template = await storage.createRfqTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create RFQ template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/rfq-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getRfqTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "RFQ template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
+      }
+      const validationResult = insertRfqTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const updatedTemplate = await storage.updateRfqTemplate(
+        req.params.id,
+        validationResult.data,
+        user.companyId
+      );
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update RFQ template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/rfq-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getRfqTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "RFQ template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
+      }
+      const success = await storage.deleteRfqTemplate(req.params.id, user.companyId);
+      if (success) {
+        res.status(204).send();
+      } else {
+        res.status(500).json({ error: "Failed to delete template" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete RFQ template",
+        details: error.message 
+      });
+    }
+  });
+
+  // RFI Templates routes
+  app.get("/api/rfi-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getRfiTemplates(user.companyId, category);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch RFI templates",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/rfi-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const template = await storage.getRfiTemplate(req.params.id, user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "RFI template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch RFI template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/rfi-templates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertRfiTemplateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const templateData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+        createdBy: user.id,
+        createdByName: user.name || user.username,
+      };
+      const template = await storage.createRfiTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create RFI template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/rfi-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getRfiTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "RFI template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot modify public templates - create a copy instead" });
+      }
+      const validationResult = insertRfiTemplateSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const updatedTemplate = await storage.updateRfiTemplate(
+        req.params.id,
+        validationResult.data,
+        user.companyId
+      );
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update RFI template",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/rfi-templates/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingTemplate = await storage.getRfiTemplate(req.params.id, user.companyId);
+      if (!existingTemplate) {
+        return res.status(404).json({ error: "RFI template not found" });
+      }
+      if (existingTemplate.isPublic) {
+        return res.status(403).json({ error: "Cannot delete public templates - archive instead" });
+      }
+      const success = await storage.deleteRfiTemplate(req.params.id, user.companyId);
+      if (success) {
+        res.status(204).send();
+      } else {
+        res.status(500).json({ error: "Failed to delete template" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete RFI template",
+        details: error.message 
+      });
+    }
+  });
+
+  // Template Categories API Routes (hierarchical categories for organizing templates)
+  app.get("/api/template-categories", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const templateType = req.query.templateType as string | undefined;
+      const categories = await storage.getTemplateCategories(user.companyId, templateType);
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch template categories",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/template-categories/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const category = await storage.getTemplateCategory(req.params.id, user.companyId);
+      if (!category) {
+        return res.status(404).json({ error: "Template category not found" });
+      }
+      res.json(category);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch template category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/template-categories", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const validationResult = insertTemplateCategorySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const categoryData = {
+        ...validationResult.data,
+        companyId: user.companyId,
+      };
+      const category = await storage.createTemplateCategory(categoryData);
+      res.status(201).json(category);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create template category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/template-categories/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingCategory = await storage.getTemplateCategory(req.params.id, user.companyId);
+      if (!existingCategory) {
+        return res.status(404).json({ error: "Template category not found" });
+      }
+      const validationResult = insertTemplateCategorySchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+      const updatedCategory = await storage.updateTemplateCategory(
+        req.params.id,
+        validationResult.data,
+        user.companyId
+      );
+      res.json(updatedCategory);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update template category",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/template-categories/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const existingCategory = await storage.getTemplateCategory(req.params.id, user.companyId);
+      if (!existingCategory) {
+        return res.status(404).json({ error: "Template category not found" });
+      }
+      const success = await storage.deleteTemplateCategory(req.params.id, user.companyId);
+      if (success) {
+        res.status(204).send();
+      } else {
+        res.status(500).json({ error: "Failed to delete category" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete template category",
         details: error.message 
       });
     }

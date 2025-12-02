@@ -43,7 +43,7 @@ const templateTypes = [
     icon: Clock,
     url: "/schedule-templates",
     color: "text-green-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "scope",
@@ -61,7 +61,7 @@ const templateTypes = [
     icon: CheckSquare,
     url: "/task-templates",
     color: "text-orange-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "takeoffs",
@@ -79,7 +79,7 @@ const templateTypes = [
     icon: FileBarChart,
     url: "/estimate-templates",
     color: "text-indigo-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "rfq",
@@ -88,7 +88,7 @@ const templateTypes = [
     icon: FileSearch,
     url: "/rfq-templates",
     color: "text-pink-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "rfi",
@@ -97,7 +97,7 @@ const templateTypes = [
     icon: HelpCircle,
     url: "/rfi-templates",
     color: "text-yellow-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "proposal",
@@ -115,7 +115,7 @@ const templateTypes = [
     icon: CheckCircle,
     url: "/selection-templates",
     color: "text-emerald-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "purchase-orders",
@@ -124,7 +124,7 @@ const templateTypes = [
     icon: Receipt,
     url: "/po-templates",
     color: "text-rose-500",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "checklists",

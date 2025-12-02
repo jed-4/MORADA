@@ -40,8 +40,11 @@ import ScheduleTemplates from "@/pages/ScheduleTemplates";
 import EstimateTemplates from "@/pages/EstimateTemplates";
 import SelectionTemplates from "@/pages/SelectionTemplates";
 import POTemplates from "@/pages/POTemplates";
+import RfqTemplates from "@/pages/RfqTemplates";
+import RfiTemplates from "@/pages/RfiTemplates";
 import ChecklistTemplates from "@/pages/ChecklistTemplates";
 import NoteTemplates from "@/pages/NoteTemplates";
+import TaskTemplates from "@/pages/TaskTemplates";
 import ChecklistTemplateDetail from "@/pages/ChecklistTemplateDetail";
 import CostCodes from "@/pages/CostCodes";
 import Contacts from "@/pages/Contacts";
@@ -229,8 +232,11 @@ function Router() {
       <Route path="/estimate-templates" component={EstimateTemplates} />
       <Route path="/selection-templates" component={SelectionTemplates} />
       <Route path="/po-templates" component={POTemplates} />
+      <Route path="/rfq-templates" component={RfqTemplates} />
+      <Route path="/rfi-templates" component={RfiTemplates} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
+      <Route path="/task-templates" component={TaskTemplates} />
       <Route path="/settings" component={Settings} />
       <Route path="/system-configuration" component={SystemConfiguration} />
       <Route path="/field-settings" component={FieldSettings} />

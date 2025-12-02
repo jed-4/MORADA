@@ -2321,7 +2321,8 @@ export const scheduleTemplates = pgTable("schedule_templates", {
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }), // Multi-tenant isolation
   name: text("name").notNull(),
   description: text("description"),
-  category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
+  category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
   templateData: json("template_data").notNull(), // Array of template schedule items (structure similar to scheduleItems)
   isPublic: boolean("is_public").notNull().default(false), // Can other users use this template
   createdBy: varchar("created_by").references(() => users.id),
@@ -2349,7 +2350,8 @@ export const estimateTemplates = pgTable("estimate_templates", {
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
-  category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
+  category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
   templateData: json("template_data").notNull(), // Hierarchical structure with groups and line items
   isPublic: boolean("is_public").notNull().default(false),
   createdBy: varchar("created_by").references(() => users.id),
@@ -2377,7 +2379,8 @@ export const selectionTemplates = pgTable("selection_templates", {
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
-  category: text("category"), // "Residential" | "Commercial" | "Renovation" | etc
+  category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
   templateData: json("template_data").notNull(), // Array of selection category objects with items
   isPublic: boolean("is_public").notNull().default(false),
   createdBy: varchar("created_by").references(() => users.id),
@@ -2883,7 +2886,8 @@ export const taskTemplates = pgTable("task_templates", {
   isActive: boolean("is_active").default(true),
   
   // Metadata
-  category: text("category"), // Custom categorization
+  category: text("category"), // Legacy text category for custom categorization
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
   tagIds: json("tag_ids").default([]), // Array of task tag IDs from task_tags table
   estimatedDuration: integer("estimated_duration"), // Estimated minutes to complete
   
@@ -3743,6 +3747,8 @@ export const purchaseOrderTemplates = pgTable("purchase_order_templates", {
   
   name: text("name").notNull(), // e.g., "Standard Framing Pack"
   description: text("description"),
+  category: text("category"), // Legacy text category
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
   
   // Default values
   scope: text("scope"),
@@ -3777,6 +3783,116 @@ export const insertPurchaseOrderTemplateSchema = createInsertSchema(purchaseOrde
 
 export type InsertPurchaseOrderTemplate = z.infer<typeof insertPurchaseOrderTemplateSchema>;
 export type PurchaseOrderTemplate = typeof purchaseOrderTemplates.$inferSelect;
+
+// Template Categories (hierarchical categories for organizing templates)
+export const templateCategories = pgTable("template_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  parentId: varchar("parent_id"),
+  templateType: text("template_type").notNull(), // 'rfq', 'rfi', 'estimate', 'selection', 'po', etc.
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTemplateCategorySchema = createInsertSchema(templateCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  templateType: z.enum(["rfq", "rfi", "estimate", "selection", "po", "schedule", "scope"]),
+});
+
+export type InsertTemplateCategory = z.infer<typeof insertTemplateCategorySchema>;
+export type TemplateCategory = typeof templateCategories.$inferSelect;
+
+// RFQ Templates (reusable RFQ templates with line items)
+export const rfqTemplates = pgTable("rfq_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  
+  // Template content
+  introText: text("intro_text"),
+  scope: text("scope"),
+  termsAndConditions: text("terms_and_conditions"),
+  
+  // Template items stored as JSON (line items with full details)
+  items: json("items").default([]),
+  
+  // Trade link for filtering
+  tradeId: varchar("trade_id"),
+  tradeName: text("trade_name"),
+  
+  isPublic: boolean("is_public").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfqTemplateSchema = createInsertSchema(rfqTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.string().optional(),
+    unit: z.string().optional(),
+    notes: z.string().optional(),
+    sortOrder: z.number().optional(),
+  })).optional(),
+});
+
+export type InsertRfqTemplate = z.infer<typeof insertRfqTemplateSchema>;
+export type RfqTemplate = typeof rfqTemplates.$inferSelect;
+
+// RFI Templates (reusable RFI templates)
+export const rfiTemplates = pgTable("rfi_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // Legacy text category
+  categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
+  
+  // Template content
+  subjectTemplate: text("subject_template"),
+  questionTemplate: text("question_template"),
+  
+  // Directed to defaults
+  defaultDirectedToType: text("default_directed_to_type"),
+  defaultPriority: text("default_priority").default("normal"),
+  
+  isPublic: boolean("is_public").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRfiTemplateSchema = createInsertSchema(rfiTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  defaultDirectedToType: z.enum(["client", "architect", "engineer", "consultant", "subcontractor", "other"]).optional(),
+  defaultPriority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+});
+
+export type InsertRfiTemplate = z.infer<typeof insertRfiTemplateSchema>;
+export type RfiTemplate = typeof rfiTemplates.$inferSelect;
 
 // Favorite Suppliers (for quick site PO creation)
 export const favoriteSuppliers = pgTable("favorite_suppliers", {
