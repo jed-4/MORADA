@@ -61,6 +61,7 @@ interface EstimateGroupCardProps {
   subgroups?: EstimateGroup[];
   allGroups?: EstimateGroup[];
   onCreateFrom: () => void;
+  activeDragId?: string | null;
 }
 
 export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
@@ -89,6 +90,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   subgroups = [],
   allGroups = [],
   onCreateFrom,
+  activeDragId,
 }) => {
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [newItemName, setNewItemName] = useState('');
@@ -154,9 +156,17 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     animateLayoutChanges: () => false,
   });
 
-  // Only apply Y-axis transform to prevent horizontal shifting during drag
+  // Check if an item (not a group) is being dragged
+  // When an item is being dragged, we should NOT apply transforms to groups
+  // This prevents groups from flying around when their child items are dragged
+  const isItemBeingDragged = activeDragId && !String(activeDragId).startsWith('group-');
+  
+  // Only apply transforms when this group itself is being dragged OR when a group is being reordered
+  // Never apply transforms when an item (line item) is being dragged
+  const shouldApplyTransform = transform && !isItemBeingDragged;
+  
   const style = {
-    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transform: shouldApplyTransform ? `translateY(${Math.round(transform.y)}px)` : undefined,
     transition: transition || 'transform 150ms ease',
     opacity: isDragging ? 0.4 : 1,
     minWidth: `${tableWidth}px`,
@@ -484,6 +494,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 subgroups={subgroups}
                 allGroups={allGroups}
                 onCreateFrom={onCreateFrom}
+                activeDragId={activeDragId}
               />
             </div>
           ))}

@@ -3588,32 +3588,69 @@ export default function EstimateDetail() {
         );
       
       case 'status':
-        const statusOptions = ['incomplete', 'not relevant', 'done'];
-        const currentStatus = item.status || 'incomplete';
-        const statusIndex = statusOptions.indexOf(currentStatus);
+        // Use field settings options, fallback to hardcoded if not available
+        const activeStatusOptions = estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive) || [];
+        const statusOptionsKeys = activeStatusOptions.length > 0 
+          ? activeStatusOptions.map((opt: any) => opt.key)
+          : ['incomplete', 'not relevant', 'done'];
+        const currentStatus = item.status || statusOptionsKeys[0] || 'incomplete';
+        const statusIndex = statusOptionsKeys.indexOf(currentStatus);
         const validStatusIndex = statusIndex >= 0 ? statusIndex : 0;
         
-        // Chip color based on status value
-        const statusChipClass = 
-          currentStatus === 'done' ? 'bg-green-100 text-green-700 border-green-200' :
-          currentStatus === 'not relevant' ? 'bg-muted text-muted-foreground border-border' :
-          'bg-amber-100 text-amber-700 border-amber-200'; // incomplete
+        // Find the status option from field settings to get color and name
+        const statusOption = activeStatusOptions.find((opt: any) => opt.key === currentStatus);
         
-        const statusLabel = 
-          currentStatus === 'done' ? 'Done' :
-          currentStatus === 'not relevant' ? 'N/A' :
-          'Todo';
+        // Get color from field settings or use fallback colors
+        const getStatusChipStyle = () => {
+          if (statusOption?.color) {
+            const color = statusOption.color;
+            // Check if it's a valid hex color
+            if (color.startsWith('#') && (color.length === 4 || color.length === 7)) {
+              // Use hex color from field settings with alpha
+              return {
+                backgroundColor: `${color}20`,
+                color: color,
+                borderColor: `${color}40`
+              };
+            }
+            // For non-hex colors (tailwind tokens, css variables), use a mapping
+            const colorMap: Record<string, string> = {
+              'green': 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800',
+              'amber': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
+              'red': 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
+              'blue': 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
+              'gray': 'bg-muted text-muted-foreground border-border',
+              'muted': 'bg-muted text-muted-foreground border-border',
+            };
+            // Try to find a matching color class
+            const lowerColor = color.toLowerCase();
+            for (const [key, className] of Object.entries(colorMap)) {
+              if (lowerColor.includes(key)) {
+                return { className };
+              }
+            }
+          }
+          // Fallback to hardcoded colors for legacy statuses
+          if (currentStatus === 'done') return { className: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' };
+          if (currentStatus === 'not relevant') return { className: 'bg-muted text-muted-foreground border-border' };
+          return { className: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' }; // incomplete/default
+        };
+        
+        const statusChipStyle = getStatusChipStyle();
+        const statusLabel = statusOption?.name || 
+          (currentStatus === 'done' ? 'Done' : currentStatus === 'not relevant' ? 'N/A' : 'Todo');
         
         return (
           <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
             <Badge
               variant="outline"
-              className={`h-5 w-12 px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipClass} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`h-5 px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipStyle.className || ''} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              style={statusChipStyle.className ? undefined : statusChipStyle as React.CSSProperties}
               onClick={() => {
                 if (isLocked) return;
                 // Cycle through options
-                const nextStatusIndex = (validStatusIndex + 1) % statusOptions.length;
-                const nextStatus = statusOptions[nextStatusIndex];
+                const nextStatusIndex = (validStatusIndex + 1) % statusOptionsKeys.length;
+                const nextStatus = statusOptionsKeys[nextStatusIndex];
                 updateItemMutation.mutate({
                   itemId: item.id,
                   data: { status: nextStatus }
@@ -4757,7 +4794,23 @@ export default function EstimateDetail() {
                         allItemIds.push(subItem.id);
                       });
                       
-                      const allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
+                      // Dynamically filter sortable IDs based on what's being dragged
+                      // When dragging an item, only include items to prevent groups from being reordered
+                      // When dragging a group, only include groups to prevent items from interfering
+                      const isDraggingGroup = activeId && String(activeId).startsWith('group-');
+                      const isDraggingItem = activeId && !String(activeId).startsWith('group-');
+                      
+                      let allSortableIds: string[];
+                      if (isDraggingItem) {
+                        // When dragging an item, only items are sortable (prevents group movement)
+                        allSortableIds = allItemIds;
+                      } else if (isDraggingGroup) {
+                        // When dragging a group, only groups are sortable (prevents item interference)
+                        allSortableIds = [...groupIds, ...subgroupIds];
+                      } else {
+                        // No active drag - include everything for initial setup
+                        allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
+                      }
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24 + 32;
                       
@@ -4865,6 +4918,7 @@ export default function EstimateDetail() {
                                 subgroups={allSubgroups}
                                 allGroups={groups}
                                 onCreateFrom={() => toast({ title: "Create from Group", description: "Coming soon" })}
+                                activeDragId={activeId}
                               />
                             ))}
                           </div>
@@ -4875,41 +4929,77 @@ export default function EstimateDetail() {
                   </div>
                   <DragOverlay dropAnimation={null}>
                     {activeId ? (
-                      <div className="bg-background dark:bg-card border border-blue-400 rounded-md shadow-xl px-3 py-2 cursor-grabbing">
-                        {(() => {
-                          // Check if dragging a group
-                          if (String(activeId).startsWith('group-')) {
-                            const groupId = String(activeId).replace('group-', '');
-                            const group = groups.find(g => g.id === groupId);
-                            if (group) {
-                              const nestingLevel = group.parentGroupId ? 2 : 1;
-                              const borderColor = nestingLevel === 1 ? '#3b82f6' : '#10b981';
-                              
-                              return (
-                                <div className="flex items-center gap-2">
-                                  <div style={{ width: 3, height: 20, backgroundColor: borderColor, borderRadius: 2 }} />
+                      (() => {
+                        // Check if dragging a group
+                        if (String(activeId).startsWith('group-')) {
+                          const groupId = String(activeId).replace('group-', '');
+                          const group = groups.find(g => g.id === groupId);
+                          if (group) {
+                            const nestingLevel = group.parentGroupId ? 2 : 1;
+                            const borderColor = nestingLevel === 1 ? '#3b82f6' : '#10b981';
+                            
+                            return (
+                              <div className="bg-background dark:bg-card border-2 border-blue-400 rounded-lg shadow-2xl px-4 py-3 cursor-grabbing">
+                                <div className="flex items-center gap-3">
+                                  <div style={{ width: 4, height: 24, backgroundColor: borderColor, borderRadius: 2 }} />
                                   <GripVertical className="h-4 w-4 text-muted-foreground" />
                                   <span className="font-semibold text-sm">{group.name}</span>
+                                  <span className="text-xs text-muted-foreground ml-auto">
+                                    {groupedItems[group.id]?.length || 0} items
+                                  </span>
                                 </div>
-                              );
-                            }
-                          }
-                          // Dragging an item
-                          const item = items.find(i => i.id === activeId);
-                          if (item) {
-                            return (
-                              <div className="flex items-center gap-2">
-                                <GripVertical className="h-4 w-4 text-muted-foreground" />
-                                <span className="font-medium text-sm truncate max-w-[200px]">{item.name}</span>
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                  {formatCurrency(item.priceIncTax || 0)}
-                                </span>
                               </div>
                             );
                           }
-                          return null;
-                        })()}
-                      </div>
+                        }
+                        // Dragging an item - render a more complete preview
+                        const item = items.find(i => i.id === activeId);
+                        if (item) {
+                          // Find the status option for display
+                          const activeStatusOptions = estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive) || [];
+                          const statusOption = activeStatusOptions.find((opt: any) => opt.key === item.status);
+                          const statusLabel = statusOption?.name || item.status || '-';
+                          
+                          return (
+                            <div 
+                              className="bg-background dark:bg-card border-2 border-blue-400 rounded-lg shadow-2xl cursor-grabbing"
+                              style={{ minWidth: '400px', maxWidth: '600px' }}
+                            >
+                              <div className="flex items-center gap-3 px-3 py-2.5 border-b border-border/50">
+                                <GripVertical className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                <span className="font-medium text-sm truncate flex-1">{item.name}</span>
+                                {item.costCode && (
+                                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded flex-shrink-0">
+                                    {item.costCode}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between gap-4 px-3 py-2 text-xs">
+                                <div className="flex items-center gap-3">
+                                  {statusLabel !== '-' && (
+                                    <span 
+                                      className="px-2 py-0.5 rounded text-xs font-medium"
+                                      style={statusOption?.color ? {
+                                        backgroundColor: `${statusOption.color}20`,
+                                        color: statusOption.color
+                                      } : undefined}
+                                    >
+                                      {statusLabel}
+                                    </span>
+                                  )}
+                                  <span className="text-muted-foreground">
+                                    Qty: {item.quantity || 1} {item.unitType || 'ea'}
+                                  </span>
+                                </div>
+                                <span className="font-semibold text-[#bba7db]">
+                                  {formatCurrency(item.priceIncTax || 0)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()
                     ) : null}
                   </DragOverlay>
                 </DndContext>
