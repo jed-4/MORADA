@@ -102,6 +102,7 @@ function SortableItem({
   onEdit,
   onDelete,
   onDuplicate,
+  onBarChange,
   totalDuration,
   dayWidth,
 }: { 
@@ -110,6 +111,7 @@ function SortableItem({
   onEdit: (item: TemplateItem) => void;
   onDelete: (id: string) => void;
   onDuplicate: (item: TemplateItem) => void;
+  onBarChange: (id: string, newStartDay: number, newDuration: number) => void;
   totalDuration: number;
   dayWidth: number;
 }) {
@@ -121,14 +123,72 @@ function SortableItem({
     transition,
   } = useSortable({ id: item.id });
   
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragType, setDragType] = useState<'move' | 'resize-left' | 'resize-right' | null>(null);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [originalStartDay, setOriginalStartDay] = useState(0);
+  const [originalDuration, setOriginalDuration] = useState(0);
+  const [currentStartDay, setCurrentStartDay] = useState(item.relativeStartDay || 0);
+  const [currentDuration, setCurrentDuration] = useState(item.duration);
+
+  useEffect(() => {
+    setCurrentStartDay(item.relativeStartDay || 0);
+    setCurrentDuration(item.duration);
+  }, [item.relativeStartDay, item.duration]);
+
+  const handlePointerDown = (e: React.PointerEvent, type: 'move' | 'resize-left' | 'resize-right') => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragType(type);
+    setDragStartX(e.clientX);
+    setOriginalStartDay(item.relativeStartDay || 0);
+    setOriginalDuration(item.duration);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || !dragType) return;
+    
+    const deltaX = e.clientX - dragStartX;
+    const daysDelta = Math.round(deltaX / dayWidth);
+
+    if (dragType === 'move') {
+      const newStartDay = Math.max(0, Math.min(totalDuration - originalDuration, originalStartDay + daysDelta));
+      setCurrentStartDay(newStartDay);
+    } else if (dragType === 'resize-left') {
+      const newStartDay = Math.max(0, Math.min(originalStartDay + originalDuration - 1, originalStartDay + daysDelta));
+      const newDuration = Math.max(1, originalDuration - daysDelta);
+      if (newStartDay + newDuration <= totalDuration) {
+        setCurrentStartDay(newStartDay);
+        setCurrentDuration(newDuration);
+      }
+    } else if (dragType === 'resize-right') {
+      const newDuration = Math.max(1, Math.min(totalDuration - originalStartDay, originalDuration + daysDelta));
+      setCurrentDuration(newDuration);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    
+    if (currentStartDay !== (item.relativeStartDay || 0) || currentDuration !== item.duration) {
+      onBarChange(item.id, currentStartDay, currentDuration);
+    }
+    
+    setIsDragging(false);
+    setDragType(null);
+  };
+  
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
 
-  const startDay = item.relativeStartDay || 0;
+  const startDay = currentStartDay;
   const barLeft = startDay * dayWidth;
-  const barWidth = Math.max(item.duration * dayWidth, 20);
+  const barWidth = Math.max(currentDuration * dayWidth, 20);
 
   return (
     <div
@@ -158,7 +218,7 @@ function SortableItem({
       </div>
       
       <div className="w-16 px-2 text-center text-xs text-muted-foreground border-r border-border shrink-0">
-        {item.duration} {item.duration === 1 ? 'day' : 'days'}
+        {currentDuration} {currentDuration === 1 ? 'day' : 'days'}
       </div>
       
       <div className="w-20 px-2 text-center text-xs text-muted-foreground border-r border-border shrink-0">
@@ -188,19 +248,38 @@ function SortableItem({
           className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
           style={{ left: '0px' }}
         />
-        {/* Bar - matching Gantt.tsx styling */}
+        {/* Bar - matching Gantt.tsx styling with drag handles */}
         <div 
-          className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-pointer hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
+          className={`absolute top-1 h-6 mx-1 rounded-sm flex items-center z-10 group/bar ${isDragging ? 'cursor-grabbing shadow-lg scale-105' : 'cursor-move hover:scale-105 hover:shadow-md'} transition-all`}
           style={{ 
             left: `${barLeft}px`,
             width: `${barWidth}px`,
             backgroundColor: TYPE_COLORS[item.type],
           }}
-          onClick={() => onEdit(item)}
+          onPointerDown={(e) => handlePointerDown(e, 'move')}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onDoubleClick={() => onEdit(item)}
         >
+          {/* Left resize handle */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity rounded-l-sm"
+            onPointerDown={(e) => handlePointerDown(e, 'resize-left')}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          />
+          
           {barWidth > 60 && (
-            <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">{item.name}</span>
+            <span className="text-xs font-medium text-white truncate pointer-events-none px-2 flex-1">{item.name}</span>
           )}
+          
+          {/* Right resize handle */}
+          <div
+            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity rounded-r-sm"
+            onPointerDown={(e) => handlePointerDown(e, 'resize-right')}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          />
         </div>
       </div>
       
@@ -434,6 +513,16 @@ export default function ScheduleTemplateDetail() {
     setItems(items.filter(item => item.id !== id));
     setHasUnsavedChanges(true);
     setShowDeleteConfirm(null);
+  };
+
+  const handleBarChange = (id: string, newStartDay: number, newDuration: number) => {
+    const updatedItems = items.map(item =>
+      item.id === id
+        ? { ...item, relativeStartDay: newStartDay, duration: newDuration }
+        : item
+    );
+    setItems(updatedItems);
+    setHasUnsavedChanges(true);
   };
 
   const handleDuplicateItem = (item: TemplateItem) => {
@@ -681,6 +770,7 @@ export default function ScheduleTemplateDetail() {
                     onEdit={handleEditItem}
                     onDelete={(id) => setShowDeleteConfirm(id)}
                     onDuplicate={handleDuplicateItem}
+                    onBarChange={handleBarChange}
                     totalDuration={totalDuration}
                     dayWidth={dayWidth}
                   />
