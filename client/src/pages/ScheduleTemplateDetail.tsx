@@ -359,6 +359,12 @@ export default function ScheduleTemplateDetail() {
   
   const [items, setItems] = useState<TemplateItem[]>([]);
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [templateFormData, setTemplateFormData] = useState({
+    name: "",
+    description: "",
+    category: "",
+  });
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -456,6 +462,13 @@ export default function ScheduleTemplateDetail() {
       }));
       setItems(templateItems);
     }
+    if (template) {
+      setTemplateFormData({
+        name: template.name,
+        description: template.description || "",
+        category: template.category || "",
+      });
+    }
   }, [template]);
 
   const updateTemplateMutation = useMutation({
@@ -478,6 +491,44 @@ export default function ScheduleTemplateDetail() {
       });
     },
   });
+
+  const updateTemplateMetaMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string; category?: string }) => {
+      return await apiRequest(`/api/schedule-templates/${templateId}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-templates", templateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule-templates"] });
+      setShowSettingsDialog(false);
+      toast({
+        title: "Template updated",
+        description: "Template settings have been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update template settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveTemplateSettings = () => {
+    if (!templateFormData.name.trim()) {
+      toast({
+        title: "Validation error",
+        description: "Template name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateTemplateMetaMutation.mutate({
+      name: templateFormData.name.trim(),
+      description: templateFormData.description.trim() || undefined,
+      category: templateFormData.category || undefined,
+    });
+  };
 
   const applyTemplateMutation = useMutation({
     mutationFn: async ({ projectId, startDate }: { projectId: string; startDate: string }) => {
@@ -699,6 +750,16 @@ export default function ScheduleTemplateDetail() {
             )}
             Save
           </Button>
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => setShowSettingsDialog(true)}
+            data-testid="button-template-settings"
+          >
+            <Settings className="h-3 w-3" />
+          </Button>
         </div>
       </div>
 
@@ -778,6 +839,83 @@ export default function ScheduleTemplateDetail() {
               <Plus className="h-4 w-4 mr-2" />
               Add First Item
             </Button>
+          </div>
+        ) : activeView === "list" ? (
+          <div className="p-4">
+            <div className="border rounded-md overflow-hidden">
+              <div className="bg-muted/50 border-b px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 text-xs font-medium">
+                <div>Name</div>
+                <div className="text-center">Type</div>
+                <div className="text-center">Duration</div>
+                <div className="text-center">Start Day</div>
+                <div className="text-right">Actions</div>
+              </div>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                  {parentItems.map((parentItem) => {
+                    const isCollapsed = collapsedItems.has(parentItem.id);
+                    const childItems = childItemsByParent[parentItem.id] || [];
+                    const hasChildren = childItems.length > 0;
+
+                    return (
+                      <div key={parentItem.id}>
+                        <div className="border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30">
+                          <div className="flex items-center gap-2">
+                            {hasChildren && (
+                              <button
+                                onClick={() => toggleCollapse(parentItem.id)}
+                                className="h-5 w-5 flex items-center justify-center hover:bg-muted rounded"
+                              >
+                                {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                              </button>
+                            )}
+                            {!hasChildren && <div className="w-5" />}
+                            <span className="font-medium truncate">{parentItem.name}</span>
+                          </div>
+                          <div className="text-center">
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {parentItem.type}
+                            </Badge>
+                          </div>
+                          <div className="text-center text-muted-foreground">{parentItem.duration}d</div>
+                          <div className="text-center text-muted-foreground">Day {parentItem.relativeStartDay || 0}</div>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleEditItem(parentItem)}>
+                              <Edit3 className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setShowDeleteConfirm(parentItem.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        {!isCollapsed && childItems.map((childItem) => (
+                          <div key={childItem.id} className="border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30 bg-muted/10">
+                            <div className="flex items-center gap-2 pl-7">
+                              <span className="truncate">{childItem.name}</span>
+                            </div>
+                            <div className="text-center">
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {childItem.type}
+                              </Badge>
+                            </div>
+                            <div className="text-center text-muted-foreground">{childItem.duration}d</div>
+                            <div className="text-center text-muted-foreground">Day {childItem.relativeStartDay || 0}</div>
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleEditItem(childItem)}>
+                                <Edit3 className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setShowDeleteConfirm(childItem.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
+            </div>
           </div>
         ) : (
           <div className="min-w-max">
@@ -1103,6 +1241,81 @@ export default function ScheduleTemplateDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent data-testid="dialog-template-settings">
+          <DialogHeader>
+            <DialogTitle>Template Settings</DialogTitle>
+            <DialogDescription>
+              Update the template name, description, and category.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="templateName">Name *</Label>
+              <Input
+                id="templateName"
+                value={templateFormData.name}
+                onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
+                placeholder="Template name"
+                data-testid="input-template-name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="templateCategory">Category</Label>
+              <Select 
+                value={templateFormData.category} 
+                onValueChange={(value) => setTemplateFormData({ ...templateFormData, category: value })}
+              >
+                <SelectTrigger id="templateCategory" data-testid="select-template-category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Residential">Residential</SelectItem>
+                  <SelectItem value="Commercial">Commercial</SelectItem>
+                  <SelectItem value="Renovation">Renovation</SelectItem>
+                  <SelectItem value="Extension">Extension</SelectItem>
+                  <SelectItem value="Custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="templateDescription">Description</Label>
+              <Textarea
+                id="templateDescription"
+                value={templateFormData.description}
+                onChange={(e) => setTemplateFormData({ ...templateFormData, description: e.target.value })}
+                placeholder="Brief description of the template..."
+                rows={3}
+                data-testid="textarea-template-description"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSettingsDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveTemplateSettings}
+              disabled={updateTemplateMetaMutation.isPending}
+              data-testid="button-save-template-settings"
+            >
+              {updateTemplateMetaMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Settings"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

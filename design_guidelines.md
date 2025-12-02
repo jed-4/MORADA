@@ -104,6 +104,40 @@
 - "Coming Soon" placeholders with descriptive text and estimated timelines
 - Module-specific toolbars and actions
 
+**BuildPro Control Header (Standard Page Header Pattern):**
+The BuildPro Control Header is a 3-row header structure used across task management, schedule, and template pages for consistency:
+
+*Row 1 - Title & Actions (36px / h-9):*
+- Left: Page title (text-sm font-semibold), count badge (Badge variant="secondary")
+- Right: Primary action buttons using lilac accent (#bba7db), gear icon for settings
+- Layout: `h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0`
+
+*Row 2 - Views & Options (36px / h-9):*
+- Left: View toggle tabs (Board/List/Calendar/Gantt) with lilac active state
+- Active tab style: `bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90`
+- Inactive tab style: `hover-elevate active-elevate-2`
+- Right: More options dropdown, saved views management
+- Layout: `h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0`
+
+*Row 3 - Search & Filters (36px / h-9):*
+- Left: Search input (w-48, h-6, text-xs), filter dropdowns with badge counts
+- Right: View-specific controls (zoom, columns, card width, group by)
+- Layout: `h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0`
+
+*Common Design Tokens:*
+- Button heights: h-6 for compact toolbar buttons
+- Text size: text-xs for all header controls
+- Icon size: h-3 w-3 / h-4 w-4
+- Spacing: gap-0.5 for tabs, gap-1.5 for button groups, gap-4 for major sections
+- Border: border rounded-md for all interactive elements
+- Interactions: hover-elevate, active-elevate-2 for buttons
+
+*When to use:*
+- All template detail pages (Schedule, Estimate, Task, etc.)
+- Task management views (project tasks, business tasks)
+- Schedule/Gantt views
+- Any page with view toggles and filtering capabilities
+
 **Calendar Integration:**
 - Month/week/day view toggle
 - Project milestone markers
