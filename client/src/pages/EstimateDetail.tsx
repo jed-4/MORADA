@@ -48,6 +48,7 @@ import {
   ChevronRight,
   ChevronUp,
   Eye,
+  EyeOff,
   GripVertical,
   Filter,
   Download,
@@ -131,26 +132,27 @@ interface EstimateDetailParams {
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
 // Default columns - defined outside component to maintain stable reference
+// Compact widths to fit more data on screen
 const DEFAULT_COLUMNS: ColumnConfig[] = [
-  { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 120 },
-  { id: 'item', label: 'Item', visible: true, widthPx: 180 },
-  { id: 'description', label: 'Description', visible: true, widthPx: 220 },
-  { id: 'status', label: 'Status', visible: true, widthPx: 100 },
-  { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 100 },
-  { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 100 },
-  { id: 'allowance', label: 'Allowance', visible: true, widthPx: 80 },
-  { id: 'quantity', label: 'Quantity', visible: true, widthPx: 100 },
-  { id: 'wastage', label: 'Waste', visible: true, widthPx: 70 },
-  { id: 'unitType', label: 'Unit', visible: true, widthPx: 80 },
-  { id: 'unitCostExTax', label: 'Unit Cost ex Tax', visible: true, widthPx: 130 },
-  { id: 'unitCostIncTax', label: 'Unit Cost inc Tax', visible: true, widthPx: 130 },
-  { id: 'builderCost', label: "Builder's Cost ex Tax", visible: true, widthPx: 150 },
-  { id: 'builderCostIncTax', label: "Builder's Cost inc Tax", visible: true, widthPx: 150 },
-  { id: 'markup', label: 'Markup %', visible: true, widthPx: 100 },
-  { id: 'clientPriceExTax', label: 'Amount ex Tax', visible: true, widthPx: 130 },
-  { id: 'clientTax', label: 'Tax', visible: true, widthPx: 100 },
-  { id: 'clientPriceIncTax', label: 'Amount inc Tax', visible: true, widthPx: 130 },
-  { id: 'notes', label: 'Notes', visible: true, widthPx: 80 },
+  { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
+  { id: 'item', label: 'Item', visible: true, widthPx: 140 },
+  { id: 'description', label: 'Description', visible: true, widthPx: 160 },
+  { id: 'status', label: 'Status', visible: true, widthPx: 85 },
+  { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 70 },
+  { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 85 },
+  { id: 'allowance', label: 'Allowance', visible: true, widthPx: 70 },
+  { id: 'quantity', label: 'Qty', visible: true, widthPx: 60 },
+  { id: 'wastage', label: 'Waste', visible: true, widthPx: 55 },
+  { id: 'unitType', label: 'Unit', visible: true, widthPx: 55 },
+  { id: 'unitCostExTax', label: 'Unit Cost', visible: true, widthPx: 90 },
+  { id: 'unitCostIncTax', label: 'Unit Inc', visible: true, widthPx: 85 },
+  { id: 'builderCost', label: 'Builder Cost', visible: true, widthPx: 100 },
+  { id: 'builderCostIncTax', label: 'Builder Inc', visible: true, widthPx: 95 },
+  { id: 'markup', label: 'Markup', visible: true, widthPx: 65 },
+  { id: 'clientPriceExTax', label: 'Amount', visible: true, widthPx: 90 },
+  { id: 'clientTax', label: 'Tax', visible: true, widthPx: 70 },
+  { id: 'clientPriceIncTax', label: 'Amount Inc', visible: true, widthPx: 95 },
+  { id: 'notes', label: 'Notes', visible: true, widthPx: 60 },
 ];
 
 // Sortable Row Component for drag & drop - CSS Grid based
@@ -404,6 +406,9 @@ export default function EstimateDetail() {
 
   // State to track collapsed parent items
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
+  
+  // State to hide add-line rows in groups
+  const [hideAddLines, setHideAddLines] = useState(false);
 
   // State for bulk selection
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -3674,7 +3679,7 @@ export default function EstimateDetail() {
           <div className={cellBase} role="gridcell" key={`${item.id}-status`} data-testid={`cell-status-${item.id}`}>
             <Badge
               variant="outline"
-              className={`h-5 px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipStyle.className || ''} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`h-5 min-w-[56px] px-2 text-xs cursor-pointer hover-elevate justify-center ${statusChipStyle.className || ''} ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
               style={statusChipStyle.className ? undefined : statusChipStyle as React.CSSProperties}
               onClick={() => {
                 if (isLocked) return;
@@ -4338,6 +4343,22 @@ export default function EstimateDetail() {
             </button>
           )}
           
+          {/* Hide/Show Add Lines toggle */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
+                  onClick={() => setHideAddLines(!hideAddLines)}
+                  data-testid="button-toggle-add-lines"
+                >
+                  {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          
           {/* Filter by Type - Chip Style */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -4917,7 +4938,7 @@ export default function EstimateDetail() {
                             )}
                             
                             {/* Grouped items using EstimateGroupCard */}
-                            {sortedGroups.map((group) => (
+                            {sortedGroups.map((group, groupIndex) => (
                               <EstimateGroupCard
                                 key={`group-${group.id}`}
                                 group={group}
@@ -4949,6 +4970,8 @@ export default function EstimateDetail() {
                                 allGroups={groups}
                                 onCreateFrom={() => toast({ title: "Create from Group", description: "Coming soon" })}
                                 activeDragId={activeId}
+                                hideAddLines={hideAddLines}
+                                groupIndex={groupIndex}
                               />
                             ))}
                           </div>

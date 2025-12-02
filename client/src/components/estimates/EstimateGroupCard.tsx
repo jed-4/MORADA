@@ -62,6 +62,8 @@ interface EstimateGroupCardProps {
   allGroups?: EstimateGroup[];
   onCreateFrom: () => void;
   activeDragId?: string | null;
+  hideAddLines?: boolean;
+  groupIndex?: number;
 }
 
 export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
@@ -91,6 +93,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   allGroups = [],
   onCreateFrom,
   activeDragId,
+  hideAddLines = false,
+  groupIndex = 0,
 }) => {
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [newItemName, setNewItemName] = useState('');
@@ -185,11 +189,14 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const gridTemplate = parentGridTemplate || `32px 24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-10 px-2 flex items-center text-sm overflow-hidden";
 
+  // Alternating background for visual differentiation between groups
+  const isEvenGroup = groupIndex % 2 === 0;
+  
   return (
     <Card 
       ref={setNodeRef}
       style={style}
-      className={`rounded-xl overflow-visible ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
+      className={`rounded-xl overflow-visible ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''} ${isEvenGroup ? '' : 'bg-muted/20'}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -384,7 +391,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           )}
 
           {/* Add Line row - shows inline input when adding, otherwise shows button */}
-          {!isLocked && (
+          {!isLocked && !hideAddLines && (
             <div 
               role="row"
               style={{ 
@@ -466,7 +473,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           )}
 
           {/* Child subgroups */}
-          {childSubgroups.map((childGroup) => (
+          {childSubgroups.map((childGroup, childIndex) => (
             <div key={`subgroup-${childGroup.id}`} className="border-t">
               <EstimateGroupCard
                 group={childGroup}
@@ -495,6 +502,8 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 allGroups={allGroups}
                 onCreateFrom={onCreateFrom}
                 activeDragId={activeDragId}
+                hideAddLines={hideAddLines}
+                groupIndex={childIndex}
               />
             </div>
           ))}

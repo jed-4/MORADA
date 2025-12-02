@@ -161,21 +161,37 @@ export function ImportEstimateItemsDialog({
   };
 
   // Calculate counts including corrected rows
+  // Uses same value-extraction logic as row display for consistency
   const { validCount, errorCount, correctedCount } = useMemo(() => {
     let valid = 0;
     let errors = 0;
     let corrected = 0;
     
-    parsedResults.forEach(parsed => {
+    parsedResults.forEach((parsed, index) => {
       const hasTypeError = parsed.errors?.some(e => e.includes("type:"));
+      const hasAllowanceError = parsed.errors?.some(e => e.includes("allowance:"));
       const hasOtherErrors = parsed.errors?.some(e => !e.includes("type:") && !e.includes("allowance:"));
-      const rawTypeValue = parsed.typeMatch?.rawValue;
+      
+      // Get raw type value from file data (consistent with row display)
+      const typeColumn = columnMapping.type;
+      const row = fileData[index];
+      const rawTypeValue = typeColumn && row ? String(row[typeColumn] ?? '').trim() : '';
       const typeIsCorrected = rawTypeValue ? !!typeCorrections[rawTypeValue] : false;
+      
+      // Get raw allowance value similarly
+      const allowanceColumn = columnMapping.allowance;
+      const rawAllowanceValue = allowanceColumn && row ? String(row[allowanceColumn] ?? '').trim() : '';
+      const allowanceIsCorrected = rawAllowanceValue ? !!allowanceCorrections[rawAllowanceValue] : false;
+      
+      // Check if all fixable errors are fixed
+      const typeErrorFixed = !hasTypeError || typeIsCorrected;
+      const allowanceErrorFixed = !hasAllowanceError || allowanceIsCorrected;
+      const allFixableErrorsFixed = typeErrorFixed && allowanceErrorFixed;
       
       if (parsed.data && !parsed.errors?.length) {
         valid++;
-      } else if (hasTypeError && !hasOtherErrors && typeIsCorrected) {
-        // Row has only type error which is corrected
+      } else if (parsed.errors?.length && !hasOtherErrors && allFixableErrorsFixed) {
+        // Row had only type/allowance errors which are now corrected
         corrected++;
       } else if (parsed.errors?.length) {
         errors++;
@@ -183,7 +199,7 @@ export function ImportEstimateItemsDialog({
     });
     
     return { validCount: valid + corrected, errorCount: errors, correctedCount: corrected };
-  }, [parsedResults, typeCorrections]);
+  }, [parsedResults, typeCorrections, allowanceCorrections, fileData, columnMapping]);
   
   // Count fuzzy match statistics
   const matchedCostCodes = parsedResults.filter(r => r.costCodeMatch?.matchedCode).length;

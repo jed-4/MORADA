@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -41,11 +42,12 @@ interface SortableRowProps {
   option: FieldOption;
   onEdit: (option: FieldOption) => void;
   onDelete: (id: string) => void;
+  onToggleDefault: (id: string, isDefault: boolean) => void;
   parentOptions: FieldOption[];
   supportsHierarchy: boolean;
 }
 
-function SortableRow({ option, onEdit, onDelete, parentOptions, supportsHierarchy }: SortableRowProps) {
+function SortableRow({ option, onEdit, onDelete, onToggleDefault, parentOptions, supportsHierarchy }: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -87,6 +89,14 @@ function SortableRow({ option, onEdit, onDelete, parentOptions, supportsHierarch
             {option.name}
           </Badge>
         )}
+      </TableCell>
+      <TableCell className="text-center">
+        <Checkbox
+          checked={option.isDefault}
+          onCheckedChange={(checked) => onToggleDefault(option.id, !!checked)}
+          aria-label={`Set ${option.name} as default`}
+          data-testid={`checkbox-default-${option.id}`}
+        />
       </TableCell>
       {supportsHierarchy && (
         <TableCell>
@@ -286,6 +296,38 @@ export default function FieldSettings() {
       });
     },
   });
+
+  // Toggle default mutation - when setting one as default, unset others first
+  const toggleDefaultMutation = useMutation({
+    mutationFn: async ({ id, isDefault }: { id: string; isDefault: boolean }) => {
+      if (isDefault) {
+        // Unset all others in category first, then set this one
+        const unsetPromises = allOptions
+          .filter(opt => opt.id !== id && opt.isDefault)
+          .map(opt => apiRequest(`/api/field-options/${opt.id}`, 'PATCH', { isDefault: false }));
+        await Promise.all(unsetPromises);
+      }
+      return await apiRequest(`/api/field-options/${id}`, 'PATCH', { isDefault });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      toast({
+        title: "Default updated",
+        description: "The default option has been updated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update default option.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggleDefault = (id: string, isDefault: boolean) => {
+    toggleDefaultMutation.mutate({ id, isDefault });
+  };
 
   // Reorder mutation with optimistic updates to prevent snapback
   const reorderMutation = useMutation({
@@ -576,6 +618,7 @@ export default function FieldSettings() {
                           <TableHead className="w-8"></TableHead>
                           <TableHead>Name</TableHead>
                           <TableHead>Preview</TableHead>
+                          <TableHead className="text-center w-16">Default</TableHead>
                           {supportsHierarchy && <TableHead>Type</TableHead>}
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -583,7 +626,7 @@ export default function FieldSettings() {
                       <TableBody>
                         {displayOptions.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={supportsHierarchy ? 5 : 4} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={supportsHierarchy ? 6 : 5} className="text-center text-muted-foreground py-8">
                               No options configured. Click "Add Option" to create one.
                             </TableCell>
                           </TableRow>
@@ -598,6 +641,7 @@ export default function FieldSettings() {
                                 option={option}
                                 onEdit={handleEdit}
                                 onDelete={handleDelete}
+                                onToggleDefault={handleToggleDefault}
                                 parentOptions={parentOptions}
                                 supportsHierarchy={supportsHierarchy}
                               />
