@@ -47,14 +47,11 @@ export default function ScopeTemplates() {
   // Create template mutation
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; description: string; category: string }) => {
-      return await apiRequest("/api/scope-templates", {
-        method: "POST",
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description,
-          category: data.category,
-          templateData: [],
-        }),
+      return await apiRequest("/api/scope-templates", "POST", {
+        name: data.name,
+        description: data.description,
+        category: data.category,
+        templateData: [],
       });
     },
     onSuccess: () => {
@@ -78,13 +75,10 @@ export default function ScopeTemplates() {
   // Update template mutation
   const updateMutation = useMutation({
     mutationFn: async (data: { id: string; name: string; description: string; category: string }) => {
-      return await apiRequest(`/api/scope-templates/${data.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description,
-          category: data.category,
-        }),
+      return await apiRequest(`/api/scope-templates/${data.id}`, "PATCH", {
+        name: data.name,
+        description: data.description,
+        category: data.category,
       });
     },
     onSuccess: () => {
@@ -108,9 +102,7 @@ export default function ScopeTemplates() {
   // Delete template mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest(`/api/scope-templates/${id}`, {
-        method: "DELETE",
-      });
+      return await apiRequest(`/api/scope-templates/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scope-templates"] });

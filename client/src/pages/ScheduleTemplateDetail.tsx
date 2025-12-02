@@ -89,11 +89,11 @@ const ITEM_TYPES = [
 ];
 
 const TYPE_COLORS: Record<string, string> = {
-  task: "bg-blue-500",
-  milestone: "bg-purple-500",
-  inspection: "bg-yellow-500",
-  delivery: "bg-green-500",
-  meeting: "bg-orange-500",
+  task: "#bba7db",
+  milestone: "#9b87c7",
+  inspection: "#c9b8e8",
+  delivery: "#a494cc",
+  meeting: "#d4c7f0",
 };
 
 function SortableItem({ 
@@ -134,10 +134,10 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center border-b border-border hover:bg-accent/50 group"
+      className="flex items-center border-b border-border hover:bg-accent/30 group h-10"
     >
       <div 
-        className="w-8 flex items-center justify-center cursor-grab active:cursor-grabbing"
+        className="w-8 flex items-center justify-center cursor-grab active:cursor-grabbing shrink-0"
         {...attributes} 
         {...listeners}
       >
@@ -147,11 +147,12 @@ function SortableItem({
       <div className="w-64 px-2 py-2 flex items-center gap-2 border-r border-border shrink-0">
         <Badge 
           variant="outline" 
-          className={`${TYPE_COLORS[item.type]} text-white border-0 h-4 px-1.5 text-[10px] shrink-0`}
+          className="text-white border-0 h-4 px-1.5 text-[10px] shrink-0"
+          style={{ backgroundColor: TYPE_COLORS[item.type] }}
         >
           {item.type}
         </Badge>
-        <span className="text-sm truncate flex-1" title={item.name}>
+        <span className="text-sm truncate flex-1 font-medium" title={item.name}>
           {item.name}
         </span>
       </div>
@@ -165,16 +166,42 @@ function SortableItem({
       </div>
       
       <div 
-        className="flex-1 relative h-8 overflow-hidden"
+        className="flex-1 relative h-10 overflow-hidden"
         style={{ minWidth: `${totalDuration * dayWidth}px` }}
       >
+        {/* Weekend backgrounds */}
+        {Array.from({ length: totalDuration }).map((_, i) => {
+          const dayOfWeek = i % 7;
+          if (dayOfWeek === 5 || dayOfWeek === 6) {
+            return (
+              <div
+                key={`weekend-${i}`}
+                className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/50"
+                style={{ left: `${i * dayWidth}px`, width: `${dayWidth}px` }}
+              />
+            );
+          }
+          return null;
+        })}
+        {/* Day 0 indicator */}
         <div 
-          className={`absolute top-1 h-6 rounded ${TYPE_COLORS[item.type]} opacity-80`}
+          className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+          style={{ left: '0px' }}
+        />
+        {/* Bar - matching Gantt.tsx styling */}
+        <div 
+          className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-pointer hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
           style={{ 
             left: `${barLeft}px`,
             width: `${barWidth}px`,
+            backgroundColor: TYPE_COLORS[item.type],
           }}
-        />
+          onClick={() => onEdit(item)}
+        >
+          {barWidth > 60 && (
+            <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">{item.name}</span>
+          )}
+        </div>
       </div>
       
       <div className="w-10 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -580,36 +607,68 @@ export default function ScheduleTemplateDetail() {
           </div>
         ) : (
           <div className="min-w-max">
-            <div className="flex items-center border-b border-border bg-muted/50 sticky top-0 z-10">
-              <div className="w-8" />
-              <div className="w-64 px-2 py-1.5 text-xs font-medium border-r border-border shrink-0">
-                Name
-              </div>
-              <div className="w-16 px-2 py-1.5 text-xs font-medium text-center border-r border-border shrink-0">
-                Duration
-              </div>
-              <div className="w-20 px-2 py-1.5 text-xs font-medium text-center border-r border-border shrink-0">
-                Start
-              </div>
-              <div 
-                className="flex-1 px-2 py-1.5 text-xs font-medium relative"
-                style={{ minWidth: `${totalDuration * dayWidth}px` }}
-              >
-                <div className="flex">
-                  {Array.from({ length: totalDuration }).map((_, i) => (
-                    <div 
-                      key={i} 
-                      className="text-center text-muted-foreground border-r border-border/50"
-                      style={{ width: `${dayWidth}px` }}
-                    >
-                      {i % (zoomLevel === "day" ? 5 : zoomLevel === "week" ? 7 : 30) === 0 && (
-                        <span className="text-[10px]">D{i}</span>
-                      )}
-                    </div>
-                  ))}
+            {/* Double-row header like project Gantt */}
+            <div className="sticky top-0 z-10 bg-card">
+              {/* Top row - Week labels */}
+              <div className="flex items-center border-b border-border h-[30px]">
+                <div className="w-8 shrink-0" />
+                <div className="w-64 border-r border-border shrink-0" />
+                <div className="w-16 border-r border-border shrink-0" />
+                <div className="w-20 border-r border-border shrink-0" />
+                <div 
+                  className="flex-1 flex"
+                  style={{ minWidth: `${totalDuration * dayWidth}px` }}
+                >
+                  {Array.from({ length: Math.ceil(totalDuration / 7) }).map((_, weekIdx) => {
+                    const weekWidth = Math.min(7, totalDuration - weekIdx * 7) * dayWidth;
+                    return (
+                      <div 
+                        key={weekIdx}
+                        className="text-xs font-semibold text-muted-foreground flex items-center justify-center border-r border-border"
+                        style={{ width: `${weekWidth}px` }}
+                      >
+                        Week {weekIdx + 1}
+                      </div>
+                    );
+                  })}
                 </div>
+                <div className="w-10 shrink-0" />
               </div>
-              <div className="w-10 shrink-0" />
+              
+              {/* Bottom row - Day labels + column headers */}
+              <div className="flex items-center border-b border-border h-[30px]">
+                <div className="w-8 shrink-0" />
+                <div className="w-64 px-2 text-xs font-medium border-r border-border shrink-0 flex items-center">
+                  Task Name
+                </div>
+                <div className="w-16 px-2 text-xs font-medium text-center border-r border-border shrink-0 flex items-center justify-center">
+                  Duration
+                </div>
+                <div className="w-20 px-2 text-xs font-medium text-center border-r border-border shrink-0 flex items-center justify-center">
+                  Start Day
+                </div>
+                <div 
+                  className="flex-1 flex"
+                  style={{ minWidth: `${totalDuration * dayWidth}px` }}
+                >
+                  {Array.from({ length: totalDuration }).map((_, dayIdx) => {
+                    const dayOfWeek = dayIdx % 7;
+                    const dayNames = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+                    const isWeekend = dayOfWeek === 5 || dayOfWeek === 6;
+                    const isDay0 = dayIdx === 0;
+                    return (
+                      <div 
+                        key={dayIdx}
+                        className={`text-xs flex items-center justify-center border-r border-border whitespace-nowrap overflow-hidden px-0.5 ${isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''} ${isDay0 ? 'text-[#bba7db] font-semibold' : 'text-foreground'}`}
+                        style={{ width: `${dayWidth}px` }}
+                      >
+                        {dayNames[dayOfWeek]} {dayIdx}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="w-10 shrink-0" />
+              </div>
             </div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
