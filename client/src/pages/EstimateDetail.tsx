@@ -252,6 +252,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       style={style}
       className={`relative ${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800`}
       data-testid={`row-item-${id}`}
+      data-sortable-id={id}
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
@@ -1009,6 +1010,7 @@ export default function EstimateDetail() {
   };
   
   // Handle drag move - track position for Google Sheets-style indicator
+  // Uses cursor position to find the exact gap where the item will be inserted
   const handleDragMove = (event: any) => {
     const { over, active, delta } = event;
     
@@ -1017,58 +1019,86 @@ export default function EstimateDetail() {
       return;
     }
     
-    const overId = String(over.id);
-    const activeId = String(active.id);
+    const activeIdStr = String(active.id);
     
-    // Don't show indicator on self
-    if (overId === activeId) {
+    // Skip if dragging a group (groups have their own visual feedback)
+    if (activeIdStr.startsWith('group-')) {
       setDropTarget(null);
       return;
     }
     
-    // Skip if hovering over a group header (we handle items only)
-    if (overId.startsWith('group-')) {
-      // For group headers, we could show indicator on the first item in the group
-      // For now, just clear the indicator
+    // Get the current cursor Y position from the dragged element
+    const activeInitialRect = active.rect?.current?.initial;
+    if (!activeInitialRect || !delta) {
       setDropTarget(null);
       return;
     }
     
-    // Get the over element's rect - this updates as we hover different elements
-    let overRect: { top: number; height: number } | null = null;
-    if (over.rect) {
-      overRect = over.rect;
-    } else {
-      // DOM fallback
-      const targetElement = document.querySelector(`[data-testid="row-item-${overId}"]`);
-      if (targetElement) {
-        const domRect = targetElement.getBoundingClientRect();
-        overRect = { top: domRect.top, height: domRect.height };
+    // Calculate cursor position (center of dragged element)
+    const cursorY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
+    
+    // Find all sortable item rows in the DOM (excluding the active one)
+    const allRows = document.querySelectorAll('[data-sortable-id]');
+    if (allRows.length === 0) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Build an array of row positions, excluding the active dragged item and group headers
+    const rowPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
+    allRows.forEach((row) => {
+      const id = row.getAttribute('data-sortable-id');
+      if (!id || id === activeIdStr || id.startsWith('group-')) return;
+      
+      const rect = row.getBoundingClientRect();
+      rowPositions.push({
+        id,
+        top: rect.top,
+        bottom: rect.bottom,
+        midpoint: rect.top + rect.height / 2,
+      });
+    });
+    
+    if (rowPositions.length === 0) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Sort by visual position (top to bottom)
+    rowPositions.sort((a, b) => a.top - b.top);
+    
+    // Find where the cursor is relative to all rows
+    // If cursor is above all rows, show indicator above first row
+    if (cursorY < rowPositions[0].midpoint) {
+      setDropTarget({ id: rowPositions[0].id, position: 'above' });
+      return;
+    }
+    
+    // If cursor is below all rows, show indicator below last row
+    const lastRow = rowPositions[rowPositions.length - 1];
+    if (cursorY > lastRow.midpoint) {
+      setDropTarget({ id: lastRow.id, position: 'below' });
+      return;
+    }
+    
+    // Find the gap between rows where the cursor is
+    for (let i = 0; i < rowPositions.length; i++) {
+      const current = rowPositions[i];
+      const next = rowPositions[i + 1];
+      
+      if (cursorY <= current.midpoint) {
+        // Cursor is in the top half of this row - show indicator above it
+        setDropTarget({ id: current.id, position: 'above' });
+        return;
+      } else if (!next || cursorY <= next.midpoint) {
+        // Cursor is in the bottom half of current row - show indicator below it
+        setDropTarget({ id: current.id, position: 'below' });
+        return;
       }
     }
     
-    if (!overRect) {
-      setDropTarget(null);
-      return;
-    }
-    
-    // Calculate the current drag position using the active element's initial rect + delta
-    // This gives us the live position of the dragged element
-    const activeInitialRect = active.rect?.current?.initial;
-    if (activeInitialRect && delta) {
-      const dragCenterY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
-      const overMidpoint = overRect.top + overRect.height / 2;
-      const position = dragCenterY < overMidpoint ? 'above' : 'below';
-      setDropTarget({ id: overId, position });
-    } else if (delta) {
-      // Fallback: use just delta direction if initial rect unavailable
-      // Positive delta.y means moving down, negative means moving up
-      const position = delta.y < 0 ? 'above' : 'below';
-      setDropTarget({ id: overId, position });
-    } else {
-      // No reliable geometry - clear indicator
-      setDropTarget(null);
-    }
+    // Fallback
+    setDropTarget(null);
   };
 
   // Handle drag end for reordering items, groups, and cross-group moves
