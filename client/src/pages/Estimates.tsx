@@ -110,9 +110,13 @@ export default function Estimates() {
     return counts;
   }, [estimates]);
 
-  // Drag and drop sensors
+  // Drag and drop sensors - require 8px movement before drag starts to prevent accidental drags on click
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -664,8 +668,13 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
     enabled: !!estimate.id,
   });
 
-  const handleEstimateClick = () => {
-    setLocation(`/estimates/project/${estimate.projectId}`);
+  const handleEstimateClick = (e: React.MouseEvent) => {
+    // Prevent navigation if this was a drag action
+    if (isDragging) {
+      e.preventDefault();
+      return;
+    }
+    setLocation(`/estimates/${estimate.id}`);
   };
 
   const getProjectName = (projectId: string) => {
@@ -715,7 +724,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       {...attributes}
       {...listeners}
       onClick={handleEstimateClick}
-      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-move hover-elevate shadow-sm"
+      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-pointer hover-elevate shadow-sm"
       data-testid={`kanban-estimate-card-${estimate.id}`}
     >
       <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
