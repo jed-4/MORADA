@@ -426,6 +426,9 @@ export const noteTemplates = pgTable("note_templates", {
 
 export const insertNoteTemplateSchema = createInsertSchema(noteTemplates).omit({
   id: true,
+  companyId: true,
+  ownerId: true,
+  ownerName: true,
   createdAt: true,
   updatedAt: true,
 });

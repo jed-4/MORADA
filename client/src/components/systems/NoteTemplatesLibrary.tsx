@@ -1,4 +1,4 @@
-import { useState, useImperativeHandle, forwardRef, useRef } from "react";
+import { useState, useImperativeHandle, forwardRef, useRef, useId } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, FileText, MoreHorizontal, Pencil, Trash2, Power, PowerOff, FormInput, FileSpreadsheet, GripVertical, ChevronDown, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -108,6 +108,10 @@ const FIELD_TYPES = [
   { value: "number", label: "Number" },
 ] as const;
 
+interface FieldWithId extends Partial<NoteTemplateField> {
+  _tempId: string;
+}
+
 export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteTemplatesLibraryProps>(
   ({ searchQuery = "" }, ref) => {
     const { toast } = useToast();
@@ -116,11 +120,17 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
     const [templateName, setTemplateName] = useState("");
     const [templateDescription, setTemplateDescription] = useState("");
     const [isFormBased, setIsFormBased] = useState(true);
-    const [templateFields, setTemplateFields] = useState<Partial<NoteTemplateField>[]>([]);
+    const [templateFields, setTemplateFields] = useState<FieldWithId[]>([]);
     const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
     const [isFieldDialogOpen, setIsFieldDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<Partial<NoteTemplateField> | null>(null);
     const [editingFieldIndex, setEditingFieldIndex] = useState<number | null>(null);
+    const fieldIdCounter = useRef(0);
+    
+    const generateFieldId = () => {
+      fieldIdCounter.current += 1;
+      return `field-${Date.now()}-${fieldIdCounter.current}`;
+    };
 
     const sensors = useSensors(
       useSensor(PointerSensor, {
@@ -136,8 +146,8 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
     const handleFieldDragEnd = (event: DragEndEvent) => {
       const { active, over } = event;
       if (over && active.id !== over.id) {
-        const oldIndex = templateFields.findIndex((_, idx) => `field-${idx}` === active.id);
-        const newIndex = templateFields.findIndex((_, idx) => `field-${idx}` === over.id);
+        const oldIndex = templateFields.findIndex((f) => f._tempId === active.id);
+        const newIndex = templateFields.findIndex((f) => f._tempId === over.id);
         if (oldIndex !== -1 && newIndex !== -1) {
           setTemplateFields(arrayMove(templateFields, oldIndex, newIndex));
         }
@@ -272,13 +282,21 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       }
 
       const key = editingField.key || editingField.label.toLowerCase().replace(/\s+/g, "_");
-      const fieldData = { ...editingField, key };
 
       if (editingFieldIndex !== null) {
         const newFields = [...templateFields];
-        newFields[editingFieldIndex] = fieldData;
+        newFields[editingFieldIndex] = { 
+          ...editingField, 
+          key,
+          _tempId: templateFields[editingFieldIndex]._tempId 
+        };
         setTemplateFields(newFields);
       } else {
+        const fieldData: FieldWithId = { 
+          ...editingField, 
+          key, 
+          _tempId: generateFieldId() 
+        };
         setTemplateFields([...templateFields, fieldData]);
       }
 
@@ -497,15 +515,15 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                         onDragEnd={handleFieldDragEnd}
                       >
                         <SortableContext 
-                          items={templateFields.map((_, idx) => `field-${idx}`)} 
+                          items={templateFields.map((f) => f._tempId)} 
                           strategy={verticalListSortingStrategy}
                         >
                           <div className="space-y-2">
                             {templateFields.map((field, index) => (
                               <SortableFieldRow
-                                key={`field-${index}`}
+                                key={field._tempId}
                                 field={field}
-                                fieldId={`field-${index}`}
+                                fieldId={field._tempId}
                                 onEdit={() => editField(field, index)}
                                 onRemove={() => removeField(index)}
                               />
