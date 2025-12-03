@@ -204,7 +204,6 @@ function DraggableProjectCard({
     listeners,
     setNodeRef,
     transform,
-    transition,
     isDragging,
   } = useSortable({
     id: project.id,
@@ -212,13 +211,15 @@ function DraggableProjectCard({
       type: "project",
       project,
     },
+    // Disable layout change animations to prevent snap-back
+    animateLayoutChanges: () => false,
   });
 
-  // When dragging, hide the source card (DragOverlay shows the visual)
-  // No transform needed - the overlay handles the dragged appearance
+  // When dragging, hide the source card completely (DragOverlay shows the visual)
+  // No transform or transition needed - prevents snap-back animation
   const style: React.CSSProperties = {
     transform: isDragging ? undefined : CSS.Transform.toString(transform),
-    transition: isDragging ? undefined : transition,
+    transition: 'none', // No transition to prevent snap-back
     opacity: isDragging ? 0 : 1,
   };
 
@@ -555,11 +556,29 @@ export function ProjectBoard({
     [statusOptions]
   );
 
+  // Create a map of parent phase sortOrder for sub-status sorting
+  const parentSortOrderMap = useMemo(() => {
+    const map = new Map<string, number>();
+    parentStatuses.forEach(parent => {
+      map.set(parent.id, parent.sortOrder ?? 0);
+    });
+    return map;
+  }, [parentStatuses]);
+
   const subStatuses = useMemo(
     () => statusOptions
       .filter(opt => opt.parentId)
-      .sort((a, b) => (b.sortOrder ?? 0) - (a.sortOrder ?? 0)),
-    [statusOptions]
+      .sort((a, b) => {
+        // First sort by parent phase's sortOrder (descending)
+        const parentOrderA = parentSortOrderMap.get(a.parentId!) ?? 0;
+        const parentOrderB = parentSortOrderMap.get(b.parentId!) ?? 0;
+        if (parentOrderA !== parentOrderB) {
+          return parentOrderB - parentOrderA;
+        }
+        // Then sort by individual sortOrder within the same phase (descending)
+        return (b.sortOrder ?? 0) - (a.sortOrder ?? 0);
+      }),
+    [statusOptions, parentSortOrderMap]
   );
 
   // Build columns based on grouping preference
@@ -643,6 +662,7 @@ export function ProjectBoard({
   }, [getSystemPhaseFromStatus]);
 
   // Move project to different column (simple move without phase transition)
+  // Uses optimistic updates like Estimate drag-and-drop to prevent snap-back
   const moveProjectMutation = useMutation({
     mutationFn: async ({ projectId, newStatus, newSubStatus }: { 
       projectId: string; 
@@ -655,16 +675,49 @@ export function ProjectBoard({
       
       await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Project moved successfully" });
+    onMutate: async ({ projectId, newStatus, newSubStatus }) => {
+      // Cancel outgoing refetches to prevent snap-back
+      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
+      
+      // Snapshot previous value for rollback
+      const previousProjects = queryClient.getQueryData(["/api/projects"]) as Project[];
+      
+      // Optimistically update the project in cache IMMEDIATELY - this prevents snap-back
+      queryClient.setQueryData(
+        ["/api/projects"],
+        (old: Project[] | undefined) => {
+          if (!old) return old;
+          return old.map(project => {
+            if (project.id === projectId) {
+              return {
+                ...project,
+                ...(newStatus ? { projectStatus: newStatus } : {}),
+                ...(newSubStatus ? { projectSubStatus: newSubStatus } : {}),
+              };
+            }
+            return project;
+          });
+        }
+      );
+      
+      return { previousProjects };
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
+      // Rollback to previous state on error
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects"], context.previousProjects);
+      }
       toast({ 
         title: "Failed to move project", 
         description: error.message,
         variant: "destructive" 
       });
+      // Refetch on error to ensure server state
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+    onSuccess: () => {
+      // NO REFETCH on success - optimistic update is already correct
+      // NO TOAST - keeps drag operations fast and silent like Estimates
     },
   });
 
