@@ -26,6 +26,17 @@ import {
   DropdownMenuTrigger,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@/components/ui/context-menu";
+import { ArrowRight } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -170,17 +181,23 @@ function DraggableFieldRow({
   );
 }
 
-// Draggable Project Card wrapper
+// Draggable Project Card wrapper with context menu for phase transitions
 function DraggableProjectCard({ 
   project, 
   onClick,
   visibleFields,
   editMode = false,
+  phases = [],
+  currentPhase,
+  onPhaseTransition,
 }: { 
   project: Project; 
   onClick?: () => void;
   visibleFields: VisibleFields;
   editMode?: boolean;
+  phases?: Array<{ key: string; name: string; color: string; systemPhase?: string }>;
+  currentPhase?: string | null;
+  onPhaseTransition?: (project: Project, toPhase: string) => void;
 }) {
   const {
     attributes,
@@ -197,28 +214,70 @@ function DraggableProjectCard({
     },
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+  // When dragging, hide the source card (DragOverlay shows the visual)
+  // No transform needed - the overlay handles the dragged appearance
+  const style: React.CSSProperties = {
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: isDragging ? undefined : transition,
+    opacity: isDragging ? 0 : 1,
   };
 
   // Only apply drag listeners in edit mode
   const dragProps = editMode ? { ...attributes, ...listeners } : {};
 
+  // Filter phases to show only those different from current
+  const availablePhases = phases.filter(p => 
+    (p.systemPhase || p.key) !== currentPhase
+  );
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...dragProps}
-      className={editMode ? "touch-none cursor-grab active:cursor-grabbing" : ""}
-    >
-      <ProjectCardCompact 
-        project={project} 
-        onClick={isDragging ? undefined : onClick}
-        isDragging={isDragging}
-        visibleFields={visibleFields}
-      />
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={setNodeRef}
+          style={style}
+          {...dragProps}
+          className={editMode ? "touch-none cursor-grab active:cursor-grabbing" : ""}
+        >
+          <ProjectCardCompact 
+            project={project} 
+            onClick={isDragging ? undefined : onClick}
+            isDragging={false}
+            visibleFields={visibleFields}
+          />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuSub>
+          <ContextMenuSubTrigger className="gap-2">
+            <ArrowRight className="h-4 w-4" />
+            Move to Phase
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {availablePhases.length > 0 ? (
+              availablePhases.map((phase) => (
+                <ContextMenuItem
+                  key={phase.key}
+                  onClick={() => onPhaseTransition?.(project, phase.systemPhase || phase.key)}
+                  className="gap-2"
+                  data-testid={`context-menu-phase-${phase.key}`}
+                >
+                  <div 
+                    className="w-3 h-3 rounded-full flex-shrink-0" 
+                    style={{ backgroundColor: phase.color }}
+                  />
+                  {phase.name}
+                </ContextMenuItem>
+              ))
+            ) : (
+              <ContextMenuItem disabled className="text-muted-foreground">
+                No other phases available
+              </ContextMenuItem>
+            )}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -248,12 +307,16 @@ function DroppableColumn({
   onProjectClick,
   visibleFields,
   editMode = false,
+  phases = [],
+  onPhaseTransition,
 }: { 
-  column: { id: string; title: string; color: string }; 
+  column: { id: string; title: string; color: string; systemPhase?: string }; 
   projects: Project[];
   onProjectClick?: (project: Project) => void;
   visibleFields: VisibleFields;
   editMode?: boolean;
+  phases?: Array<{ key: string; name: string; color: string; systemPhase?: string }>;
+  onPhaseTransition?: (project: Project, toPhase: string) => void;
 }) {
   const {
     setNodeRef,
@@ -262,7 +325,7 @@ function DroppableColumn({
     id: column.id,
     data: {
       type: "column",
-      column,
+      column, // Now includes systemPhase
     },
   });
 
@@ -325,6 +388,9 @@ function DroppableColumn({
                 onClick={() => onProjectClick?.(project)}
                 visibleFields={visibleFields}
                 editMode={editMode}
+                phases={phases}
+                currentPhase={column.systemPhase}
+                onPhaseTransition={onPhaseTransition}
               />
             ))
           )}
@@ -497,12 +563,14 @@ export function ProjectBoard({
   );
 
   // Build columns based on grouping preference
+  // Include phase metadata (systemPhase) for cross-phase drop detection
   const columns = useMemo(() => {
     const mainColumns = preferences.groupBy === "phase"
       ? parentStatuses.map(status => ({
           id: status.key,
           title: status.name,
           color: status.color || "#6b7280",
+          systemPhase: status.systemPhase || status.key, // Phase itself
           filterFn: (p: Project) => p.projectStatus === status.key,
         }))
       : subStatuses.map(status => ({
@@ -510,6 +578,7 @@ export function ProjectBoard({
           title: status.name,
           color: status.color || "#6b7280",
           parentId: status.parentId,
+          systemPhase: status.systemPhase, // The phase this sub-status belongs to
           filterFn: (p: Project) => p.projectSubStatus === status.key,
         }));
 
@@ -599,7 +668,7 @@ export function ProjectBoard({
     },
   });
 
-  // Handle project move with phase transition detection
+  // Handle project move with phase transition detection (legacy - kept for compatibility)
   const handleMoveProject = useCallback((project: Project, newSubStatus: string) => {
     const { isTransition, fromPhase, toPhase } = checkPhaseTransition(project, newSubStatus);
     
@@ -620,6 +689,34 @@ export function ProjectBoard({
       });
     }
   }, [checkPhaseTransition, moveProjectMutation]);
+
+  // Handle explicit phase transition from context menu
+  const handlePhaseTransition = useCallback((project: Project, toPhaseKey: string) => {
+    const fromPhase = (project.currentSystemPhase as SystemPhase) || 
+      getSystemPhaseFromStatus(project.projectSubStatus || "") ||
+      (project.projectStatus as SystemPhase);
+    
+    if (!fromPhase) {
+      toast({
+        title: "Cannot determine current phase",
+        description: "Unable to identify the project's current phase.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Find the first sub-status in the target phase to use as default
+    const targetSubStatus = subStatuses.find(s => s.systemPhase === toPhaseKey);
+    const newStatusKey = targetSubStatus?.key || toPhaseKey;
+
+    setPhaseTransitionData({
+      open: true,
+      project,
+      fromPhase: fromPhase as SystemPhase,
+      toPhase: toPhaseKey as SystemPhase,
+      newStatusKey,
+    });
+  }, [getSystemPhaseFromStatus, subStatuses, toast]);
 
   const updatePreference = <K extends keyof ViewPreferences>(
     key: K,
@@ -697,6 +794,22 @@ export function ProjectBoard({
     }
   };
 
+  // Get phase for a column by its ID
+  const getColumnPhase = useCallback((columnId: string): string | null => {
+    const column = columns.find(c => c.id === columnId);
+    return column?.systemPhase || null;
+  }, [columns]);
+
+  // Get phase for a project's current status
+  const getProjectPhase = useCallback((project: Project): string | null => {
+    if (preferences.groupBy === "phase") {
+      return project.projectStatus || null;
+    }
+    // For sub-status view, find the phase from the sub-status
+    const option = statusOptions.find(o => o.key === project.projectSubStatus);
+    return option?.systemPhase || null;
+  }, [preferences.groupBy, statusOptions]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveProject(null);
@@ -708,21 +821,43 @@ export function ProjectBoard({
     
     if (!draggedProject) return;
 
+    // Helper to check cross-phase and block if needed
+    const checkAndBlockCrossPhase = (targetColumnId: string): boolean => {
+      const sourcePhase = getProjectPhase(draggedProject);
+      const targetPhase = getColumnPhase(targetColumnId);
+      
+      if (sourcePhase && targetPhase && sourcePhase !== targetPhase) {
+        toast({
+          title: "Cannot move across phases",
+          description: "Projects can only be moved between statuses within the same phase. Use 'Move to Phase' to transition between phases.",
+          variant: "destructive",
+        });
+        return true; // Blocked
+      }
+      return false; // Allowed
+    };
+
     // If dropped over a column
     if (over.data.current?.type === "column") {
       const columnId = over.data.current.column.id;
       
       if (preferences.groupBy === "phase") {
+        // Phase grouping - block cross-phase moves
         if (draggedProject.projectStatus !== columnId) {
+          if (checkAndBlockCrossPhase(columnId)) return;
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
             newStatus: columnId 
           });
         }
       } else {
-        // Sub-status grouping - check for phase transitions
+        // Sub-status grouping - block cross-phase moves
         if (draggedProject.projectSubStatus !== columnId) {
-          handleMoveProject(draggedProject, columnId);
+          if (checkAndBlockCrossPhase(columnId)) return;
+          moveProjectMutation.mutate({
+            projectId: activeProjectId,
+            newSubStatus: columnId,
+          });
         }
       }
     }
@@ -731,15 +866,22 @@ export function ProjectBoard({
       const overProject = over.data.current.project;
       if (preferences.groupBy === "phase") {
         if (draggedProject.projectStatus !== overProject.projectStatus) {
+          if (checkAndBlockCrossPhase(overProject.projectStatus)) return;
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
             newStatus: overProject.projectStatus 
           });
         }
       } else {
-        // Sub-status grouping - check for phase transitions
+        // Sub-status grouping - block cross-phase moves
         if (draggedProject.projectSubStatus !== overProject.projectSubStatus) {
-          handleMoveProject(draggedProject, overProject.projectSubStatus);
+          // Find the target column to check phase
+          const targetStatusKey = overProject.projectSubStatus;
+          if (checkAndBlockCrossPhase(targetStatusKey)) return;
+          moveProjectMutation.mutate({
+            projectId: activeProjectId,
+            newSubStatus: targetStatusKey,
+          });
         }
       }
     }
@@ -818,6 +960,13 @@ export function ProjectBoard({
                     onProjectClick={(project) => navigate(`/projects/${project.id}`)}
                     visibleFields={preferences.visibleFields}
                     editMode={editMode}
+                    phases={parentStatuses.map(s => ({
+                      key: s.key,
+                      name: s.name,
+                      color: s.color || "#6b7280",
+                      systemPhase: s.systemPhase || s.key,
+                    }))}
+                    onPhaseTransition={handlePhaseTransition}
                   />
                 </div>
               );
