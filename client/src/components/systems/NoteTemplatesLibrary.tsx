@@ -482,11 +482,13 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                           </Badge>
                         )}
 
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <span>
-                            {format(new Date(template.updatedAt), "MMM d, yyyy")}
-                          </span>
-                        </div>
+                        {template.updatedAt && (
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <span>
+                              {format(new Date(template.updatedAt), "MMM d, yyyy")}
+                            </span>
+                          </div>
+                        )}
                         
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
