@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type Project, type FieldOption } from "@shared/schema";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight, Columns3, Settings2, Settings, GripVertical } from "lucide-react";
 import ProjectCardCompact from "./ProjectCardCompact";
+import PhaseTransitionDialog, { type SystemPhase } from "./PhaseTransitionDialog";
 import {
   Dialog,
   DialogContent,
@@ -339,6 +340,21 @@ export function ProjectBoard({
   const { toast } = useToast();
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   
+  // Phase transition dialog state
+  const [phaseTransitionData, setPhaseTransitionData] = useState<{
+    open: boolean;
+    project: Project | null;
+    fromPhase: SystemPhase;
+    toPhase: SystemPhase;
+    newStatusKey: string;
+  }>({
+    open: false,
+    project: null,
+    fromPhase: "lead",
+    toPhase: "lead",
+    newStatusKey: "",
+  });
+  
   // Load preferences from localStorage (or use external preferences)
   const [internalPreferences, setInternalPreferences] = useState<ViewPreferences>(() => {
     try {
@@ -518,7 +534,34 @@ export function ProjectBoard({
     };
   }, [columns]);
 
-  // Move project to different column
+  // Helper to get system phase from a sub-status
+  const getSystemPhaseFromStatus = useCallback((statusKey: string): SystemPhase | null => {
+    const option = statusOptions.find(o => o.key === statusKey);
+    if (option?.systemPhase) {
+      return option.systemPhase as SystemPhase;
+    }
+    return null;
+  }, [statusOptions]);
+
+  // Check if moving to a new sub-status triggers a phase transition
+  const checkPhaseTransition = useCallback((project: Project, newSubStatus: string): { 
+    isTransition: boolean; 
+    fromPhase: SystemPhase | null; 
+    toPhase: SystemPhase | null;
+  } => {
+    const currentPhase = project.currentSystemPhase as SystemPhase | null 
+      || getSystemPhaseFromStatus(project.projectSubStatus || "");
+    const newPhase = getSystemPhaseFromStatus(newSubStatus);
+    
+    if (!currentPhase || !newPhase) {
+      return { isTransition: false, fromPhase: null, toPhase: null };
+    }
+    
+    const isTransition = currentPhase !== newPhase;
+    return { isTransition, fromPhase: currentPhase, toPhase: newPhase };
+  }, [getSystemPhaseFromStatus]);
+
+  // Move project to different column (simple move without phase transition)
   const moveProjectMutation = useMutation({
     mutationFn: async ({ projectId, newStatus, newSubStatus }: { 
       projectId: string; 
@@ -543,6 +586,28 @@ export function ProjectBoard({
       });
     },
   });
+
+  // Handle project move with phase transition detection
+  const handleMoveProject = useCallback((project: Project, newSubStatus: string) => {
+    const { isTransition, fromPhase, toPhase } = checkPhaseTransition(project, newSubStatus);
+    
+    if (isTransition && fromPhase && toPhase) {
+      // Show phase transition dialog
+      setPhaseTransitionData({
+        open: true,
+        project,
+        fromPhase,
+        toPhase,
+        newStatusKey: newSubStatus,
+      });
+    } else {
+      // Simple move without phase transition
+      moveProjectMutation.mutate({
+        projectId: project.id,
+        newSubStatus,
+      });
+    }
+  }, [checkPhaseTransition, moveProjectMutation]);
 
   const updatePreference = <K extends keyof ViewPreferences>(
     key: K,
@@ -627,27 +692,25 @@ export function ProjectBoard({
     if (!over) return;
 
     const activeProjectId = active.id as string;
-    const activeProject = projects.find(project => project.id === activeProjectId);
+    const draggedProject = projects.find(project => project.id === activeProjectId);
     
-    if (!activeProject) return;
+    if (!draggedProject) return;
 
     // If dropped over a column
     if (over.data.current?.type === "column") {
       const columnId = over.data.current.column.id;
       
       if (preferences.groupBy === "phase") {
-        if (activeProject.projectStatus !== columnId) {
+        if (draggedProject.projectStatus !== columnId) {
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
             newStatus: columnId 
           });
         }
       } else {
-        if (activeProject.projectSubStatus !== columnId) {
-          moveProjectMutation.mutate({ 
-            projectId: activeProjectId, 
-            newSubStatus: columnId 
-          });
+        // Sub-status grouping - check for phase transitions
+        if (draggedProject.projectSubStatus !== columnId) {
+          handleMoveProject(draggedProject, columnId);
         }
       }
     }
@@ -655,18 +718,16 @@ export function ProjectBoard({
     else if (over.data.current?.type === "project") {
       const overProject = over.data.current.project;
       if (preferences.groupBy === "phase") {
-        if (activeProject.projectStatus !== overProject.projectStatus) {
+        if (draggedProject.projectStatus !== overProject.projectStatus) {
           moveProjectMutation.mutate({ 
             projectId: activeProjectId, 
             newStatus: overProject.projectStatus 
           });
         }
       } else {
-        if (activeProject.projectSubStatus !== overProject.projectSubStatus) {
-          moveProjectMutation.mutate({ 
-            projectId: activeProjectId, 
-            newSubStatus: overProject.projectSubStatus 
-          });
+        // Sub-status grouping - check for phase transitions
+        if (draggedProject.projectSubStatus !== overProject.projectSubStatus) {
+          handleMoveProject(draggedProject, overProject.projectSubStatus);
         }
       }
     }
@@ -841,6 +902,21 @@ export function ProjectBoard({
               </div>
             </div>
           </div>
+        )}
+        
+        {/* Phase Transition Dialog */}
+        {phaseTransitionData.project && (
+          <PhaseTransitionDialog
+            open={phaseTransitionData.open}
+            onOpenChange={(open) => setPhaseTransitionData(prev => ({ ...prev, open }))}
+            project={phaseTransitionData.project}
+            fromPhase={phaseTransitionData.fromPhase}
+            toPhase={phaseTransitionData.toPhase}
+            newStatusKey={phaseTransitionData.newStatusKey}
+            onConfirm={() => {
+              setPhaseTransitionData(prev => ({ ...prev, open: false, project: null }));
+            }}
+          />
         )}
       </div>
     </DndContext>
