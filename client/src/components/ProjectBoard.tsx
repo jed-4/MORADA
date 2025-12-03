@@ -200,20 +200,41 @@ function DraggableProjectCard({
     transition,
   };
 
+  // Handle click - navigate to project
+  const handleClick = (e: React.MouseEvent) => {
+    // Prevent click if dragging
+    if (isDragging) {
+      e.preventDefault();
+      return;
+    }
+    onClick?.();
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className="touch-none"
+      className="relative group"
     >
-      <ProjectCardCompact 
-        project={project} 
-        onClick={onClick} 
-        isDragging={isDragging}
-        visibleFields={visibleFields}
-      />
+      {/* Drag handle - only visible on hover */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute -left-1 top-1/2 -translate-y-1/2 z-10 cursor-grab active:cursor-grabbing touch-none opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded p-0.5"
+        data-testid={`drag-handle-${project.id}`}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </div>
+      
+      {/* Card - clickable for navigation */}
+      <div onClick={handleClick}>
+        <ProjectCardCompact 
+          project={project} 
+          onClick={undefined}
+          isDragging={isDragging}
+          visibleFields={visibleFields}
+        />
+      </div>
     </div>
   );
 }
@@ -449,11 +470,11 @@ export function ProjectBoard({
     }
   };
 
-  // Set up drag sensors - only active in edit mode
+  // Set up drag sensors - always active for project cards
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: editMode ? 8 : 999999, // Effectively disable when editMode is false
+        distance: 8, // Small movement required to start drag
       },
     })
   );
@@ -474,13 +495,26 @@ export function ProjectBoard({
   });
 
   // Get parent statuses and substatus options
+  // Use displayOrder (from API) with sortOrder fallback, then name as tiebreaker
   const parentStatuses = useMemo(
-    () => statusOptions.filter(opt => !opt.parentId).sort((a, b) => a.sortOrder - b.sortOrder),
+    () => statusOptions
+      .filter(opt => !opt.parentId)
+      .sort((a, b) => {
+        const orderA = a.displayOrder ?? a.sortOrder ?? 0;
+        const orderB = b.displayOrder ?? b.sortOrder ?? 0;
+        return orderA - orderB || a.name.localeCompare(b.name);
+      }),
     [statusOptions]
   );
 
   const subStatuses = useMemo(
-    () => statusOptions.filter(opt => opt.parentId).sort((a, b) => a.sortOrder - b.sortOrder),
+    () => statusOptions
+      .filter(opt => opt.parentId)
+      .sort((a, b) => {
+        const orderA = a.displayOrder ?? a.sortOrder ?? 0;
+        const orderB = b.displayOrder ?? b.sortOrder ?? 0;
+        return orderA - orderB || a.name.localeCompare(b.name);
+      }),
     [statusOptions]
   );
 
