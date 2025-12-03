@@ -25,7 +25,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertSystemConfigurationSchema, type SystemConfiguration } from "@shared/schema";
-import { Settings, Globe, FileText, Building2, ArrowLeft } from "lucide-react";
+import { Settings, Globe, FileText, Building2, ArrowLeft, Hash, CheckCircle2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { z } from "zod";
 import { useLocation } from "wouter";
 
@@ -40,6 +41,10 @@ const formSchema = insertSystemConfigurationSchema.extend({
   rfiStartNumber: z.coerce.number().int().positive(),
   proposalStartNumber: z.coerce.number().int().positive(),
   gstRate: z.string(), // Keep as string since it's numeric(precision, scale) in DB
+  // Job numbering fields
+  leadStartNumber: z.coerce.number().int().min(1).default(1),
+  preConstructionStartNumber: z.coerce.number().int().min(1).default(1),
+  constructionStartNumber: z.coerce.number().int().min(1).default(1),
 });
 
 export default function SystemConfigurationPage() {
@@ -80,6 +85,20 @@ export default function SystemConfigurationPage() {
     gstRate: "10.00",
     fiscalYearStart: "07-01",
     defaultPaymentTerms: "Net 30",
+    // Job Numbering defaults
+    jobNumberingMode: "financial_year",
+    jobNumberFormat: "{YY}{SEQ}",
+    phaseLeadActive: true,
+    phasePreConstructionActive: false,
+    phaseConstructionActive: true,
+    phasePostConstructionActive: true,
+    phaseArchiveActive: true,
+    leadPrefix: "L-",
+    preConstructionPrefix: "PC-",
+    constructionPrefix: "",
+    leadStartNumber: 1,
+    preConstructionStartNumber: 1,
+    constructionStartNumber: 1,
   };
 
   const form = useForm({
@@ -187,7 +206,7 @@ export default function SystemConfigurationPage() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsList className="grid w-full grid-cols-5 mb-6">
               <TabsTrigger value="regional" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 Regional
@@ -199,6 +218,14 @@ export default function SystemConfigurationPage() {
               <TabsTrigger value="business" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Business
+              </TabsTrigger>
+              <TabsTrigger value="jobnumbering" className="flex items-center gap-2" data-testid="tab-job-numbering">
+                <Hash className="h-4 w-4" />
+                Job Numbering
+              </TabsTrigger>
+              <TabsTrigger value="phases" className="flex items-center gap-2" data-testid="tab-phases">
+                <CheckCircle2 className="h-4 w-4" />
+                Project Phases
               </TabsTrigger>
             </TabsList>
 
@@ -835,6 +862,338 @@ export default function SystemConfigurationPage() {
                         </FormItem>
                       )}
                     />
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Job Numbering Tab */}
+            <TabsContent value="jobnumbering" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Job Numbering</CardTitle>
+                  <CardDescription>
+                    Configure how job numbers are generated for projects
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="jobNumberingMode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Numbering Mode</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || "financial_year"}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-job-numbering-mode">
+                                <SelectValue placeholder="Select mode" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="financial_year">Financial Year (e.g., 4501 for FY 24/25)</SelectItem>
+                              <SelectItem value="calendar_year">Calendar Year (e.g., 25-001)</SelectItem>
+                              <SelectItem value="custom">Custom (manual entry)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Financial year runs July-June in Australia
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="text-sm font-medium mb-4">Phase Prefixes</h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="leadPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Lead Prefix</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                value={field.value || ""}
+                                placeholder="L-"
+                                data-testid="input-lead-prefix"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              e.g., L-001
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="preConstructionPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Pre-Construction Prefix</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                value={field.value || ""}
+                                placeholder="PC-"
+                                data-testid="input-precon-prefix"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              e.g., PC-4501
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="constructionPrefix"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Construction Prefix</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                value={field.value || ""}
+                                placeholder=""
+                                data-testid="input-construction-prefix"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              e.g., 4501 (leave blank for no prefix)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="text-sm font-medium mb-4">Starting Numbers</h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="leadStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Lead Start Number</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                type="number"
+                                min="1"
+                                data-testid="input-lead-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="preConstructionStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Pre-Construction Start</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                type="number"
+                                min="1"
+                                data-testid="input-precon-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="constructionStartNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Construction Start</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                type="number"
+                                min="1"
+                                data-testid="input-construction-start"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Project Phases Tab */}
+            <TabsContent value="phases" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Active Project Phases</CardTitle>
+                  <CardDescription>
+                    Choose which lifecycle phases are active for your business. Inactive phases will be skipped in the workflow.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between py-3 border-b">
+                      <div className="space-y-0.5">
+                        <div className="font-medium">Lead</div>
+                        <div className="text-sm text-muted-foreground">
+                          Initial enquiries and quoting phase. Projects start here before becoming confirmed jobs.
+                        </div>
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="phaseLeadActive"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="switch-phase-lead"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-3 border-b">
+                      <div className="space-y-0.5">
+                        <div className="font-medium">Pre-Construction</div>
+                        <div className="text-sm text-muted-foreground">
+                          Early Contractor Involvement (ECI) phase. Planning, design coordination, and pre-build activities.
+                        </div>
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="phasePreConstructionActive"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="switch-phase-precon"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-3 border-b">
+                      <div className="space-y-0.5">
+                        <div className="font-medium">Construction</div>
+                        <div className="text-sm text-muted-foreground">
+                          Active building phase. This is the main job phase where construction work occurs.
+                        </div>
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="phaseConstructionActive"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled
+                                data-testid="switch-phase-construction"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-3 border-b">
+                      <div className="space-y-0.5">
+                        <div className="font-medium">Post-Construction</div>
+                        <div className="text-sm text-muted-foreground">
+                          Defects liability period, final inspections, and handover activities.
+                        </div>
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="phasePostConstructionActive"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="switch-phase-postcon"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-3">
+                      <div className="space-y-0.5">
+                        <div className="font-medium">Archive</div>
+                        <div className="text-sm text-muted-foreground">
+                          Completed and closed projects. Projects here are hidden from active views.
+                        </div>
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="phaseArchiveActive"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled
+                                data-testid="switch-phase-archive"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Phase Transition Workflow</CardTitle>
+                  <CardDescription>
+                    When a project moves between phases, a confirmation dialog will appear to capture required information.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground space-y-2">
+                    <p>Transitions that will trigger the phase change workflow:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      <li><strong>Lead → Pre-Construction:</strong> Generates pre-construction job number</li>
+                      <li><strong>Lead → Construction:</strong> Generates main job number (skips pre-construction)</li>
+                      <li><strong>Pre-Construction → Construction:</strong> Locks pre-con data, generates new job number</li>
+                      <li><strong>Construction → Post-Construction:</strong> Practical completion checkpoint</li>
+                      <li><strong>Post-Construction → Archive:</strong> Final handover and project closure</li>
+                    </ul>
                   </div>
                 </CardContent>
               </Card>

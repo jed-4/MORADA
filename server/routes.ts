@@ -1599,6 +1599,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Job Number Preview API
+  app.get("/api/job-numbers/preview", requireAuth, async (req, res) => {
+    try {
+      const phase = req.query.phase as string;
+      if (!phase || !["lead", "pre_construction", "construction"].includes(phase)) {
+        return res.status(400).json({ error: "Invalid phase" });
+      }
+      
+      const { JobNumberService } = await import("./services/jobNumberService");
+      const companyId = (req.user as any)?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Company not found" });
+      }
+      
+      const jobNumber = await JobNumberService.previewNextJobNumber(
+        companyId,
+        phase as "lead" | "pre_construction" | "construction"
+      );
+      
+      res.json({ jobNumber });
+    } catch (error: any) {
+      console.error("Failed to preview job number:", error);
+      res.status(500).json({ error: "Failed to preview job number", details: error.message });
+    }
+  });
+
+  // Project Phase Transition API
+  app.post("/api/projects/:id/transition-phase", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { fromPhase, toPhase, newStatusKey, jobNumber } = req.body;
+      const user = req.user as any;
+      
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const { JobNumberService } = await import("./services/jobNumberService");
+      
+      // Determine if we need to generate a job number
+      let generatedJobNumber = jobNumber;
+      const needsJobNumber = toPhase === "pre_construction" || toPhase === "construction";
+      
+      if (needsJobNumber && !jobNumber) {
+        generatedJobNumber = await JobNumberService.generateJobNumber(
+          user.companyId,
+          toPhase
+        );
+      }
+      
+      // Build update data
+      const updateData: any = {
+        currentSystemPhase: toPhase,
+        projectSubStatus: newStatusKey,
+      };
+      
+      // Set appropriate job number field based on phase
+      if (toPhase === "lead") {
+        updateData.leadNumber = generatedJobNumber;
+      } else if (toPhase === "pre_construction") {
+        updateData.preConstructionNumber = generatedJobNumber;
+      } else if (toPhase === "construction") {
+        updateData.constructionNumber = generatedJobNumber;
+        updateData.jobNumber = generatedJobNumber; // Also update main job number
+      }
+      
+      // Record phase transition
+      const transitions = Array.isArray(project.phaseTransitions) ? project.phaseTransitions : [];
+      updateData.phaseTransitions = [
+        ...transitions,
+        {
+          fromPhase,
+          toPhase,
+          timestamp: new Date().toISOString(),
+          userId: user.id,
+          userName: user.name,
+          jobNumber: generatedJobNumber,
+        },
+      ];
+      
+      const updatedProject = await storage.updateProject(req.params.id, updateData);
+      
+      res.json(updatedProject);
+    } catch (error: any) {
+      console.error("Failed to transition project phase:", error);
+      res.status(500).json({ error: "Failed to transition project phase", details: error.message });
+    }
+  });
+
   // Project Team API Routes
   app.get("/api/projects/:projectId/team", requireAuth, requireTeamMember, async (req, res) => {
     try {

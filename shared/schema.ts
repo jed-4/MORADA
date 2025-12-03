@@ -508,6 +508,17 @@ export const projects = pgTable("projects", {
   projectStatus: text("project_status").default("lead"), // High-level status: Lead, Pre-Construction, Construction, Post Construction
   projectSubStatus: text("project_sub_status").notNull().default("lead_new"), // Low-level status tied to projectStatus - REQUIRED
   
+  // System Phase Tracking (auto-derived from projectSubStatus systemPhase mapping)
+  currentSystemPhase: text("current_system_phase").default("lead"), // lead | pre_construction | construction | post_construction | archive
+  
+  // Phase-specific job numbers (each phase can have its own job number)
+  leadNumber: text("lead_number"), // Lead phase number (e.g., "L-001")
+  preConstructionNumber: text("pre_construction_number"), // Pre-construction number (e.g., "PC-4501")
+  constructionNumber: text("construction_number"), // Main job number (e.g., "4501")
+  
+  // Phase transition tracking
+  phaseTransitions: json("phase_transitions").default([]), // Array of { fromPhase, toPhase, timestamp, userId, userName }
+  
   // Client and financial fields
   clientId: varchar("client_id").references(() => contacts.id),
   clientBudget: integer("client_budget"), // Client's budget in cents
@@ -770,6 +781,27 @@ export const systemConfiguration = pgTable("system_configuration", {
   fiscalYearStart: text("fiscal_year_start").notNull().default("07-01"), // MM-DD format (July 1 for Australia)
   defaultPaymentTerms: text("default_payment_terms").notNull().default("Net 30"), // Net 30, Net 14, COD, etc.
   
+  // Job Numbering Settings
+  jobNumberingMode: text("job_numbering_mode").notNull().default("financial_year"), // financial_year | calendar_year | custom
+  jobNumberFormat: text("job_number_format").default("{YY}{SEQ}"), // Template for job numbers, e.g., "{YY}{SEQ}" = 4501, "{PREFIX}-{YYYY}-{SEQ}" = LH-2025-001
+  
+  // System Phase Settings (which phases are active for this company)
+  phaseLeadActive: boolean("phase_lead_active").notNull().default(true),
+  phasePreConstructionActive: boolean("phase_pre_construction_active").notNull().default(false), // ECI - optional
+  phaseConstructionActive: boolean("phase_construction_active").notNull().default(true),
+  phasePostConstructionActive: boolean("phase_post_construction_active").notNull().default(true),
+  phaseArchiveActive: boolean("phase_archive_active").notNull().default(true),
+  
+  // Job Number Prefixes per Phase
+  leadPrefix: text("lead_prefix").default("L-"), // Lead phase prefix
+  preConstructionPrefix: text("pre_construction_prefix").default("PC-"), // Pre-construction prefix
+  constructionPrefix: text("construction_prefix").default(""), // Construction - typically no prefix (main job number)
+  
+  // Starting Numbers per Phase
+  leadStartNumber: integer("lead_start_number").notNull().default(1),
+  preConstructionStartNumber: integer("pre_construction_start_number").notNull().default(1),
+  constructionStartNumber: integer("construction_start_number").notNull().default(1),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -782,6 +814,26 @@ export const insertSystemConfigurationSchema = createInsertSchema(systemConfigur
 
 export type InsertSystemConfiguration = z.infer<typeof insertSystemConfigurationSchema>;
 export type SystemConfiguration = typeof systemConfiguration.$inferSelect;
+
+// Job Number Counters (tracks sequential job numbers per company/phase/year)
+export const jobNumberCounters = pgTable("job_number_counters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  systemPhase: text("system_phase").notNull(), // lead | pre_construction | construction
+  yearKey: text("year_key").notNull(), // "2024-2025" for FY, "2025" for CY, "custom" for custom mode
+  lastNumber: integer("last_number").notNull().default(0), // Last used sequence number
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertJobNumberCounterSchema = createInsertSchema(jobNumberCounters).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertJobNumberCounter = z.infer<typeof insertJobNumberCounterSchema>;
+export type JobNumberCounter = typeof jobNumberCounters.$inferSelect;
 
 // Cost Categories (company-specific categories for cost codes)
 export const costCategories = pgTable("cost_categories", {
@@ -861,6 +913,7 @@ export const fieldOptions = pgTable("field_options", {
   key: text("key").notNull(), // Slug/identifier (e.g., "todo", "in_progress", "done")
   name: text("name").notNull(), // Display name (editable by user)
   color: text("color"), // Hex color code (e.g., "#3b82f6")
+  systemPhase: text("system_phase"), // Maps to system lifecycle phase: lead | pre_construction | construction | post_construction | archive
   isActive: boolean("is_active").notNull().default(true),
   isDefault: boolean("is_default").notNull().default(false), // Default selection for this category
   isCompleted: boolean("is_completed").notNull().default(false), // Marks this option as the "completed" status
