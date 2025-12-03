@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
+import type { CostCode } from "@shared/schema";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +54,7 @@ interface TemplateItem {
   groupName?: string;
   name: string;
   description?: string;
+  costCodeId?: string;
   costCodeTitle?: string;
   unit?: string;
   quantity?: number;
@@ -105,11 +108,6 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className={`text-sm ${item.isGroup ? 'font-semibold' : ''}`}>{item.name}</span>
-          {item.costCodeTitle && (
-            <Badge variant="outline" className="h-4 text-[10px]">
-              {item.costCodeTitle}
-            </Badge>
-          )}
         </div>
         {item.description && !item.isGroup && (
           <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
@@ -118,13 +116,30 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
 
       {!item.isGroup && (
         <>
-          <div className="text-xs text-muted-foreground w-16 text-right">
+          {/* Cost Code Chip - Fixed width with truncation */}
+          <div className="w-24 flex-shrink-0">
+            {item.costCodeTitle ? (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px] max-w-full truncate block text-center">
+                {item.costCodeTitle}
+              </Badge>
+            ) : (
+              <span className="text-[10px] text-muted-foreground">-</span>
+            )}
+          </div>
+          {/* Quantity */}
+          <div className="text-xs text-muted-foreground w-16 text-right flex-shrink-0">
             {item.quantity || 0} {item.unit || ''}
           </div>
-          <div className="text-xs text-muted-foreground w-20 text-right">
+          {/* Unit Price */}
+          <div className="text-xs text-muted-foreground w-20 text-right flex-shrink-0">
             ${((item.unitPrice || 0) / 100).toFixed(2)}
           </div>
-          <div className="text-xs font-medium w-24 text-right flex items-center justify-end gap-1">
+          {/* Markup */}
+          <div className="text-xs text-muted-foreground w-14 text-right flex-shrink-0">
+            {item.markup ? `${item.markup}%` : '-'}
+          </div>
+          {/* Total */}
+          <div className="text-xs font-medium w-24 text-right flex items-center justify-end gap-1 flex-shrink-0">
             <DollarSign className="h-3 w-3" />
             {(total / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
           </div>
@@ -175,6 +190,7 @@ export default function EstimateTemplateDetail() {
   const [newItem, setNewItem] = useState<Partial<TemplateItem>>({
     name: "",
     description: "",
+    costCodeId: "",
     costCodeTitle: "",
     unit: "m2",
     quantity: 1,
@@ -189,6 +205,24 @@ export default function EstimateTemplateDetail() {
       activationConstraint: { distance: 8 },
     })
   );
+
+  // Fetch cost codes for dropdown and lookups
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
+  // Create a map for cost code lookups
+  const costCodeMap = useMemo(() => {
+    const map = new Map<string, CostCode>();
+    costCodes.forEach((cc) => map.set(cc.id, cc));
+    return map;
+  }, [costCodes]);
+
+  const getCostCodeDisplay = (costCodeId: string | undefined) => {
+    if (!costCodeId) return "";
+    const cc = costCodeMap.get(costCodeId);
+    return cc ? `${cc.code} - ${cc.title}` : "";
+  };
 
   const { data: template, isLoading } = useQuery<EstimateTemplate>({
     queryKey: ["/api/estimate-templates", params.templateId],
@@ -266,7 +300,8 @@ export default function EstimateTemplateDetail() {
       id: crypto.randomUUID(),
       name: newItem.name.trim(),
       description: newItem.description?.trim(),
-      costCodeTitle: newItem.costCodeTitle?.trim(),
+      costCodeId: newItem.costCodeId || undefined,
+      costCodeTitle: newItem.costCodeId ? getCostCodeDisplay(newItem.costCodeId) : undefined,
       unit: newItem.unit,
       quantity: newItem.quantity,
       unitPrice: newItem.unitPrice ? Math.round(newItem.unitPrice * 100) : 0,
@@ -281,6 +316,7 @@ export default function EstimateTemplateDetail() {
     setNewItem({
       name: "",
       description: "",
+      costCodeId: "",
       costCodeTitle: "",
       unit: "m2",
       quantity: 1,
@@ -306,6 +342,7 @@ export default function EstimateTemplateDetail() {
       item.id === editingItem.id 
         ? { 
             ...editingItem, 
+            costCodeTitle: editingItem.costCodeId ? getCostCodeDisplay(editingItem.costCodeId) : undefined,
             unitPrice: editingItem.unitPrice ? Math.round(editingItem.unitPrice * 100) : 0 
           } 
         : item
@@ -527,11 +564,11 @@ export default function EstimateTemplateDetail() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Cost Code</Label>
-                <Input
-                  placeholder="e.g., 01-001"
-                  value={newItem.costCodeTitle || ""}
-                  onChange={(e) => setNewItem({ ...newItem, costCodeTitle: e.target.value })}
-                  data-testid="input-cost-code"
+                <CostCodeSelect
+                  value={newItem.costCodeId || ""}
+                  onValueChange={(value) => setNewItem({ ...newItem, costCodeId: value })}
+                  placeholder="Select cost code..."
+                  data-testid="select-cost-code"
                 />
               </div>
               <div className="space-y-2">
@@ -647,10 +684,11 @@ export default function EstimateTemplateDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Cost Code</Label>
-                  <Input
-                    value={editingItem.costCodeTitle || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, costCodeTitle: e.target.value })}
-                    data-testid="input-edit-cost-code"
+                  <CostCodeSelect
+                    value={editingItem.costCodeId || ""}
+                    onValueChange={(value) => setEditingItem({ ...editingItem, costCodeId: value })}
+                    placeholder="Select cost code..."
+                    data-testid="select-edit-cost-code"
                   />
                 </div>
                 <div className="space-y-2">
