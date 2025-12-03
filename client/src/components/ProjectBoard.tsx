@@ -547,18 +547,18 @@ export function ProjectBoard({
   });
 
   // Get parent statuses and substatus options
-  // Sort by sortOrder from database
+  // Sort by sortOrder from database - DESCENDING to match Field Settings display order
   const parentStatuses = useMemo(
     () => statusOptions
       .filter(opt => !opt.parentId)
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+      .sort((a, b) => (b.sortOrder ?? 0) - (a.sortOrder ?? 0)),
     [statusOptions]
   );
 
   const subStatuses = useMemo(
     () => statusOptions
       .filter(opt => opt.parentId)
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+      .sort((a, b) => (b.sortOrder ?? 0) - (a.sortOrder ?? 0)),
     [statusOptions]
   );
 
@@ -974,10 +974,10 @@ export function ProjectBoard({
           </SortableContext>
         </div>
 
-        {/* Drag Overlay */}
-        <DragOverlay>
+        {/* Drag Overlay - dropAnimation={null} prevents snap-back */}
+        <DragOverlay dropAnimation={null}>
           {activeProject ? (
-            <div className="rotate-2">
+            <div className="rotate-2 shadow-lg">
               <ProjectCardCompact 
                 project={activeProject} 
                 onClick={() => {}} 
