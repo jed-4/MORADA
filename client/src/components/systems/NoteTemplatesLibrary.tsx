@@ -1,9 +1,9 @@
-import { useState, useImperativeHandle, forwardRef, useRef, useId } from "react";
+import { useState, useImperativeHandle, forwardRef, useRef, useEffect } from "react";
+import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, FileText, MoreHorizontal, Pencil, Trash2, Power, PowerOff, FormInput, FileSpreadsheet, GripVertical, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Plus, FileText, MoreVertical, Pencil, Trash2, FormInput, FileSpreadsheet, GripVertical, X, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { NoteTemplate, NoteTemplateField } from "@shared/schema";
@@ -121,10 +120,10 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
     const [templateDescription, setTemplateDescription] = useState("");
     const [isFormBased, setIsFormBased] = useState(true);
     const [templateFields, setTemplateFields] = useState<FieldWithId[]>([]);
-    const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
     const [isFieldDialogOpen, setIsFieldDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<Partial<NoteTemplateField> | null>(null);
     const [editingFieldIndex, setEditingFieldIndex] = useState<number | null>(null);
+    const [isLoadingFields, setIsLoadingFields] = useState(false);
     const fieldIdCounter = useRef(0);
     
     const generateFieldId = () => {
@@ -213,6 +212,49 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       },
     });
 
+    const duplicateTemplateMutation = useMutation({
+      mutationFn: async (template: NoteTemplate) => {
+        const newTemplate = await apiRequest("/api/note-templates", "POST", {
+          name: `${template.name} (Copy)`,
+          description: template.description,
+          isFormBased: template.isFormBased,
+          defaultTitle: template.defaultTitle,
+          contentHtml: template.contentHtml,
+          contentText: template.contentText,
+          defaultCustomFields: template.defaultCustomFields,
+        });
+        if (template.isFormBased) {
+          const fieldsResponse = await fetch(`/api/note-templates/${template.id}/fields`, {
+            credentials: "include",
+          });
+          if (fieldsResponse.ok) {
+            const fields = await fieldsResponse.json();
+            for (const field of fields) {
+              await apiRequest(`/api/note-templates/${newTemplate.id}/fields`, "POST", {
+                key: field.key,
+                label: field.label,
+                type: field.type,
+                description: field.description,
+                placeholder: field.placeholder,
+                required: field.required,
+                order: field.order,
+                options: field.options,
+                defaultValue: field.defaultValue,
+              });
+            }
+          }
+        }
+        return newTemplate;
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
+        toast({ title: "Template duplicated successfully" });
+      },
+      onError: () => {
+        toast({ title: "Failed to duplicate template", variant: "destructive" });
+      },
+    });
+
     const resetForm = () => {
       setIsDialogOpen(false);
       setEditingTemplate(null);
@@ -220,6 +262,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       setTemplateDescription("");
       setIsFormBased(true);
       setTemplateFields([]);
+      setIsLoadingFields(false);
     };
 
     const openNewTemplateDialog = () => {
@@ -227,16 +270,39 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       setIsDialogOpen(true);
     };
 
-    const openEditDialog = (template: NoteTemplate) => {
+    const openEditDialog = async (template: NoteTemplate) => {
       setEditingTemplate(template);
       setTemplateName(template.name);
       setTemplateDescription(template.description || "");
       setIsFormBased(template.isFormBased);
       setTemplateFields([]);
       setIsDialogOpen(true);
+      
+      if (template.isFormBased) {
+        setIsLoadingFields(true);
+        try {
+          const response = await fetch(`/api/note-templates/${template.id}/fields`, {
+            credentials: "include",
+          });
+          if (response.ok) {
+            const fields = await response.json();
+            const sortedFields = [...fields].sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+            const fieldsWithIds: FieldWithId[] = sortedFields.map((field: any, idx: number) => ({
+              ...field,
+              _tempId: `existing-${field.id || idx}`,
+            }));
+            setTemplateFields(fieldsWithIds);
+          }
+        } catch (error) {
+          console.error("Failed to load template fields:", error);
+          toast({ title: "Failed to load template fields", variant: "destructive" });
+        } finally {
+          setIsLoadingFields(false);
+        }
+      }
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
       if (!templateName.trim()) {
         toast({ title: "Template name is required", variant: "destructive" });
         return;
@@ -249,7 +315,37 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       };
 
       if (editingTemplate) {
-        updateTemplateMutation.mutate({ id: editingTemplate.id, data });
+        await apiRequest(`/api/note-templates/${editingTemplate.id}`, "PATCH", data);
+        
+        if (isFormBased) {
+          const existingResponse = await fetch(`/api/note-templates/${editingTemplate.id}/fields`, {
+            credentials: "include",
+          });
+          const existingFields = existingResponse.ok ? await existingResponse.json() : [];
+          
+          for (const existingField of existingFields) {
+            await apiRequest(`/api/note-templates/${editingTemplate.id}/fields/${existingField.id}`, "DELETE");
+          }
+          
+          for (let i = 0; i < templateFields.length; i++) {
+            const field = templateFields[i];
+            await apiRequest(`/api/note-templates/${editingTemplate.id}/fields`, "POST", {
+              key: field.key,
+              label: field.label,
+              type: field.type,
+              description: field.description,
+              placeholder: field.placeholder,
+              required: field.required,
+              order: i,
+              options: field.options,
+              defaultValue: field.defaultValue,
+            });
+          }
+        }
+        
+        queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
+        toast({ title: "Template updated successfully" });
+        resetForm();
       } else {
         createTemplateMutation.mutate(data);
       }
@@ -309,16 +405,6 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       setTemplateFields(templateFields.filter((_, i) => i !== index));
     };
 
-    const toggleExpanded = (id: string) => {
-      const newExpanded = new Set(expandedTemplates);
-      if (newExpanded.has(id)) {
-        newExpanded.delete(id);
-      } else {
-        newExpanded.add(id);
-      }
-      setExpandedTemplates(newExpanded);
-    };
-
     useImperativeHandle(ref, () => ({
       openNewTemplateDialog,
     }));
@@ -353,90 +439,106 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                 </Button>
               </div>
             ) : (
-              filteredTemplates.map((template) => (
-                <Card
-                  key={template.id}
-                  className="border-2 hover-elevate"
-                  data-testid={`card-template-${template.id}`}
-                >
-                  <Collapsible
-                    open={expandedTemplates.has(template.id)}
-                    onOpenChange={() => toggleExpanded(template.id)}
+              <div className="space-y-2">
+                {filteredTemplates.map((template) => (
+                  <div 
+                    key={template.id} 
+                    className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+                    onClick={() => openEditDialog(template)}
+                    data-testid={`card-template-${template.id}`}
                   >
-                    <div className="p-3 flex items-center justify-between gap-3">
-                      <CollapsibleTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
-                          {expandedTemplates.has(template.id) ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </CollapsibleTrigger>
-                      
+                    <div className="flex items-start gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm truncate">{template.name}</span>
-                          {template.isFormBased ? (
-                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 no-default-hover-elevate no-default-active-elevate">
-                              <FormInput className="h-3 w-3" />
-                              Form
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 no-default-hover-elevate no-default-active-elevate">
-                              <FileSpreadsheet className="h-3 w-3" />
-                              Content
-                            </Badge>
-                          )}
-                          {template.isActive ? (
-                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 text-green-600 no-default-hover-elevate no-default-active-elevate">
-                              <Power className="h-3 w-3" />
-                              Active
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="h-5 text-[10px] px-1.5 gap-0.5 text-muted-foreground no-default-hover-elevate no-default-active-elevate">
-                              <PowerOff className="h-3 w-3" />
-                              Inactive
-                            </Badge>
-                          )}
-                        </div>
+                        <h3 className="font-semibold text-sm mb-1 line-clamp-1">
+                          {template.name}
+                        </h3>
                         {template.description && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          <p className="text-xs text-muted-foreground line-clamp-1">
                             {template.description}
                           </p>
                         )}
                       </div>
+                      
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {template.isFormBased ? (
+                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                            <FormInput className="h-3 w-3 mr-0.5" />
+                            Form
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                            <FileSpreadsheet className="h-3 w-3 mr-0.5" />
+                            Content
+                          </Badge>
+                        )}
 
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-template-menu-${template.id}`}>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEditDialog(template)}>
-                            <Pencil className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => deleteTemplateMutation.mutate(template.id)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                        {template.isActive ? (
+                          <Badge variant="outline" className="h-4 px-1.5 text-[10px] text-green-600">
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="h-4 px-1.5 text-[10px] text-muted-foreground">
+                            Inactive
+                          </Badge>
+                        )}
 
-                    <CollapsibleContent>
-                      <div className="px-3 pb-3 pt-0 border-t">
-                        <TemplateFieldsList templateId={template.id} />
+                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span>
+                            {format(new Date(template.updatedAt), "MMM d, yyyy")}
+                          </span>
+                        </div>
+                        
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`button-menu-${template.id}`}
+                            >
+                              <MoreVertical className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditDialog(template);
+                              }}
+                              data-testid={`button-edit-${template.id}`}
+                            >
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                duplicateTemplateMutation.mutate(template);
+                              }}
+                              data-testid={`button-duplicate-${template.id}`}
+                            >
+                              <Copy className="h-4 w-4 mr-2" />
+                              Duplicate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteTemplateMutation.mutate(template.id);
+                              }}
+                              className="text-destructive"
+                              data-testid={`button-delete-${template.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </Card>
-              ))
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </ScrollArea>
@@ -488,7 +590,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                   />
                 </div>
 
-                {isFormBased && !editingTemplate && (
+                {isFormBased && (
                   <div className="space-y-2 border rounded-md p-3">
                     <div className="flex items-center justify-between">
                       <Label>Template Fields</Label>
@@ -497,6 +599,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                         variant="outline"
                         className="h-7 text-xs"
                         onClick={addField}
+                        disabled={isLoadingFields}
                         data-testid="button-add-field"
                       >
                         <Plus className="h-3 w-3 mr-1" />
@@ -504,7 +607,11 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                       </Button>
                     </div>
 
-                    {templateFields.length === 0 ? (
+                    {isLoadingFields ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Loading fields...
+                      </p>
+                    ) : templateFields.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">
                         No fields added yet. Click "Add Field" to define form fields.
                       </p>
@@ -544,7 +651,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
               <Button
                 className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
                 onClick={handleSubmit}
-                disabled={createTemplateMutation.isPending || updateTemplateMutation.isPending}
+                disabled={createTemplateMutation.isPending || updateTemplateMutation.isPending || isLoadingFields}
                 data-testid="button-save-template"
               >
                 {editingTemplate ? "Update" : "Create"} Template
