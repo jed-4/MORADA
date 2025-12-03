@@ -191,24 +191,39 @@ export function AppSidebar() {
   // Filter out archived projects
   const activeProjects = projects.filter(p => !p.isArchived);
 
-  // Set first project as current if none selected and projects are available
+  // Sync current project with URL when navigating to /projects/{id}
   useEffect(() => {
-    if (!currentProject && activeProjects.length > 0) {
+    if (activeProjects.length === 0) return;
+    
+    // Check if we're on a project-specific route
+    const projectMatch = location.match(/^\/projects\/([^\/]+)/);
+    if (projectMatch) {
+      const urlProjectId = projectMatch[1];
+      // If URL project differs from current, update context
+      if (currentProject?.id !== urlProjectId) {
+        const urlProject = activeProjects.find(p => p.id === urlProjectId);
+        if (urlProject) {
+          setCurrentProject(urlProject);
+          return;
+        }
+      }
+    }
+    
+    // Fallback: if no project selected, use localStorage or first project
+    if (!currentProject) {
       const savedProjectId = localStorage.getItem("currentProjectId");
       if (savedProjectId) {
         const savedProject = activeProjects.find(p => p.id === savedProjectId);
         if (savedProject) {
           setCurrentProject(savedProject);
         } else {
-          // Fallback to first active project if saved project not found
           setCurrentProject(activeProjects[0]);
         }
       } else {
-        // Set first active project as default
         setCurrentProject(activeProjects[0]);
       }
     }
-  }, [activeProjects, currentProject, setCurrentProject]);
+  }, [activeProjects, currentProject, setCurrentProject, location]);
 
   const handleProjectSelect = (project: Project) => {
     setCurrentProject(project);

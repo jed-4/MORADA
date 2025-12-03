@@ -174,11 +174,13 @@ function DraggableFieldRow({
 function DraggableProjectCard({ 
   project, 
   onClick,
-  visibleFields 
+  visibleFields,
+  editMode = false,
 }: { 
   project: Project; 
   onClick?: () => void;
   visibleFields: VisibleFields;
+  editMode?: boolean;
 }) {
   const {
     attributes,
@@ -200,40 +202,22 @@ function DraggableProjectCard({
     transition,
   };
 
-  // Handle click - navigate to project
-  const handleClick = () => {
-    // Prevent click if dragging
-    if (isDragging) {
-      return;
-    }
-    onClick?.();
-  };
+  // Only apply drag listeners in edit mode
+  const dragProps = editMode ? { ...attributes, ...listeners } : {};
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="relative group"
+      {...dragProps}
+      className={editMode ? "touch-none cursor-grab active:cursor-grabbing" : ""}
     >
-      {/* Drag handle - only visible on hover */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute -left-1 top-1/2 -translate-y-1/2 z-10 cursor-grab active:cursor-grabbing touch-none opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded p-0.5"
-        data-testid={`drag-handle-${project.id}`}
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
-      
-      {/* Card - clickable for navigation */}
-      <div onClick={handleClick}>
-        <ProjectCardCompact 
-          project={project} 
-          onClick={undefined}
-          isDragging={isDragging}
-          visibleFields={visibleFields}
-        />
-      </div>
+      <ProjectCardCompact 
+        project={project} 
+        onClick={isDragging ? undefined : onClick}
+        isDragging={isDragging}
+        visibleFields={visibleFields}
+      />
     </div>
   );
 }
@@ -263,11 +247,13 @@ function DroppableColumn({
   projects,
   onProjectClick,
   visibleFields,
+  editMode = false,
 }: { 
   column: { id: string; title: string; color: string }; 
   projects: Project[];
   onProjectClick?: (project: Project) => void;
   visibleFields: VisibleFields;
+  editMode?: boolean;
 }) {
   const {
     setNodeRef,
@@ -338,6 +324,7 @@ function DroppableColumn({
                 project={project} 
                 onClick={() => onProjectClick?.(project)}
                 visibleFields={visibleFields}
+                editMode={editMode}
               />
             ))
           )}
@@ -469,11 +456,11 @@ export function ProjectBoard({
     }
   };
 
-  // Set up drag sensors - always active for project cards
+  // Set up drag sensors - only active in edit mode
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Small movement required to start drag
+        distance: editMode ? 8 : 999999, // Only allow drag in edit mode
       },
     })
   );
@@ -494,26 +481,18 @@ export function ProjectBoard({
   });
 
   // Get parent statuses and substatus options
-  // Use displayOrder (from API) with sortOrder fallback, then name as tiebreaker
+  // Sort by sortOrder from database
   const parentStatuses = useMemo(
     () => statusOptions
       .filter(opt => !opt.parentId)
-      .sort((a, b) => {
-        const orderA = a.displayOrder ?? a.sortOrder ?? 0;
-        const orderB = b.displayOrder ?? b.sortOrder ?? 0;
-        return orderA - orderB || a.name.localeCompare(b.name);
-      }),
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [statusOptions]
   );
 
   const subStatuses = useMemo(
     () => statusOptions
       .filter(opt => opt.parentId)
-      .sort((a, b) => {
-        const orderA = a.displayOrder ?? a.sortOrder ?? 0;
-        const orderB = b.displayOrder ?? b.sortOrder ?? 0;
-        return orderA - orderB || a.name.localeCompare(b.name);
-      }),
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [statusOptions]
   );
 
@@ -838,6 +817,7 @@ export function ProjectBoard({
                     projects={columnProjects}
                     onProjectClick={(project) => navigate(`/projects/${project.id}`)}
                     visibleFields={preferences.visibleFields}
+                    editMode={editMode}
                   />
                 </div>
               );
