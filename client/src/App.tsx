@@ -43,6 +43,7 @@ import EstimateTemplates from "@/pages/EstimateTemplates";
 import EstimateTemplateDetail from "@/pages/EstimateTemplateDetail";
 import SelectionTemplates from "@/pages/SelectionTemplates";
 import SelectionTemplateDetail from "@/pages/SelectionTemplateDetail";
+import SelectionTemplateItemDetail from "@/pages/SelectionTemplateItemDetail";
 import POTemplates from "@/pages/POTemplates";
 import POTemplateDetail from "@/pages/POTemplateDetail";
 import RfqTemplates from "@/pages/RfqTemplates";
@@ -246,6 +247,7 @@ function Router() {
       <Route path="/estimate-templates/:templateId" component={EstimateTemplateDetail} />
       <Route path="/selection-templates" component={SelectionTemplates} />
       <Route path="/selection-templates/:templateId" component={SelectionTemplateDetail} />
+      <Route path="/selection-templates/:templateId/items/:itemId" component={SelectionTemplateItemDetail} />
       <Route path="/po-templates" component={POTemplates} />
       <Route path="/po-templates/:templateId" component={POTemplateDetail} />
       <Route path="/rfq-templates" component={RfqTemplates} />

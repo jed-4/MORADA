@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -50,23 +50,38 @@ import { CSS } from '@dnd-kit/utilities';
 
 const CASVA_LILAC = '#bba7db';
 
+interface SelectionOption {
+  id: string;
+  name: string;
+  description?: string;
+  sku?: string;
+  brand?: string;
+  unitCost?: number;
+  quantity?: number;
+  sortOrder: number;
+}
+
 interface SelectionItem {
   id: string;
   categoryName: string;
   itemName: string;
   description?: string;
+  room?: string;
   allowanceType?: "PC" | "PS";
   budgetAmount?: number;
   sortOrder: number;
+  options?: SelectionOption[];
 }
 
 interface SortableItemProps {
   item: SelectionItem;
+  templateId: string;
   onEdit: (item: SelectionItem) => void;
   onDelete: (id: string) => void;
+  onNavigate: (itemId: string) => void;
 }
 
-function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
+function SortableItem({ item, templateId, onEdit, onDelete, onNavigate }: SortableItemProps) {
   const {
     attributes,
     listeners,
@@ -82,16 +97,21 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const optionCount = item.options?.length || 0;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 p-2 border rounded-md bg-card hover-elevate group"
+      className="flex items-center gap-2 p-2 border rounded-md bg-card hover-elevate group cursor-pointer"
+      onClick={() => onNavigate(item.id)}
+      data-testid={`card-item-${item.id}`}
     >
       <div
         {...attributes}
         {...listeners}
         className="cursor-grab hover:bg-muted rounded p-1"
+        onClick={(e) => e.stopPropagation()}
       >
         <GripVertical className="h-4 w-4 text-muted-foreground" />
       </div>
@@ -99,6 +119,11 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm">{item.itemName}</span>
+          {item.categoryName && (
+            <Badge variant="secondary" className="h-4 text-[10px]">
+              {item.categoryName}
+            </Badge>
+          )}
           {item.allowanceType && (
             <Badge variant="outline" className="h-4 text-[10px]">
               {item.allowanceType}
@@ -109,6 +134,12 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
           <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
         )}
       </div>
+
+      {optionCount > 0 && (
+        <Badge variant="outline" className="h-4 text-[10px]">
+          {optionCount} {optionCount === 1 ? 'option' : 'options'}
+        </Badge>
+      )}
 
       {item.budgetAmount && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -123,18 +154,19 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
             variant="ghost"
             size="icon"
             className="h-6 w-6 opacity-0 group-hover:opacity-100"
+            onClick={(e) => e.stopPropagation()}
             data-testid={`button-menu-item-${item.id}`}
           >
             <MoreVertical className="h-3 w-3" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => onEdit(item)} data-testid={`menu-edit-${item.id}`}>
+          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(item); }} data-testid={`menu-edit-${item.id}`}>
             <Edit3 className="h-4 w-4 mr-2" />
-            Edit
+            Quick Edit
           </DropdownMenuItem>
           <DropdownMenuItem 
-            onClick={() => onDelete(item.id)} 
+            onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} 
             className="text-destructive"
             data-testid={`menu-delete-${item.id}`}
           >
@@ -232,11 +264,72 @@ export default function SelectionTemplateDetail() {
     },
   });
 
-  const items: SelectionItem[] = ((template?.templateData as SelectionItem[]) || []).map((item, idx) => ({
-    ...item,
-    id: item.id || crypto.randomUUID(),
-    sortOrder: item.sortOrder ?? idx,
-  }));
+  const [isNormalizing, setIsNormalizing] = useState(false);
+  const normalizedCache = useRef<Map<string, string>>(new Map());
+  const hasTriggeredMigration = useRef(false);
+
+  const getStableId = (originalId: string | undefined, fallbackKey: string): string => {
+    if (originalId) return originalId;
+    const cached = normalizedCache.current.get(fallbackKey);
+    if (cached) return cached;
+    const newId = crypto.randomUUID();
+    normalizedCache.current.set(fallbackKey, newId);
+    return newId;
+  };
+
+  const normalizeWithStableIds = (itemsToNormalize: SelectionItem[]): SelectionItem[] => {
+    return itemsToNormalize.map((item, idx) => {
+      const itemKey = `item-${idx}`;
+      return {
+        ...item,
+        id: getStableId(item.id, itemKey),
+        sortOrder: item.sortOrder ?? idx,
+        options: (item.options || []).map((opt, optIdx) => {
+          const optKey = `${itemKey}-opt-${optIdx}`;
+          return {
+            ...opt,
+            id: getStableId(opt.id, optKey),
+            sortOrder: opt.sortOrder ?? optIdx,
+          };
+        }),
+      };
+    });
+  };
+
+  const hasLegacyData = (itemsToCheck: SelectionItem[]): boolean => {
+    return itemsToCheck.some(item => 
+      !item.id || item.options?.some(opt => !opt.id)
+    );
+  };
+
+  // Items with stable IDs (either from server or cached generated)
+  const items: SelectionItem[] = useMemo(() => {
+    const rawItems = (template?.templateData as SelectionItem[]) || [];
+    return normalizeWithStableIds(rawItems);
+  }, [template?.templateData]);
+
+  // Auto-save normalized data if legacy items lack IDs (one-time migration)
+  useEffect(() => {
+    if (!template || hasTriggeredMigration.current) return;
+    
+    const rawItems = (template.templateData as SelectionItem[]) || [];
+    if (rawItems.length > 0 && hasLegacyData(rawItems)) {
+      hasTriggeredMigration.current = true;
+      setIsNormalizing(true);
+      
+      const normalized = normalizeWithStableIds(rawItems);
+      apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", { templateData: normalized })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
+        })
+        .catch(() => {
+          hasTriggeredMigration.current = false;
+        })
+        .finally(() => {
+          setIsNormalizing(false);
+        });
+    }
+  }, [template, params.templateId]);
 
   const categories = [...new Set(items.map(item => item.categoryName || 'General'))];
   if (categories.length === 0) categories.push('General');
@@ -460,8 +553,10 @@ export default function SelectionTemplateDetail() {
                             <SortableItem
                               key={item.id}
                               item={item}
+                              templateId={params.templateId || ""}
                               onEdit={handleEditItem}
                               onDelete={handleDeleteItem}
+                              onNavigate={(itemId) => navigate(`/selection-templates/${params.templateId}/items/${itemId}`)}
                             />
                           ))}
                         </SortableContext>

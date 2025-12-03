@@ -257,11 +257,13 @@ export default function EstimateTemplateDetail() {
     },
   });
 
-  const items: TemplateItem[] = ((template?.templateData as TemplateItem[]) || []).map((item, idx) => ({
-    ...item,
-    id: item.id || crypto.randomUUID(),
-    sortOrder: item.sortOrder ?? idx,
-  }));
+  // Preserve existing IDs from template data - use useMemo for stability
+  const items: TemplateItem[] = useMemo(() => {
+    return ((template?.templateData as TemplateItem[]) || []).map((item, idx) => ({
+      ...item,
+      sortOrder: item.sortOrder ?? idx,
+    }));
+  }, [template?.templateData]);
 
   const groups = [...new Set(items.map(item => item.groupName || 'ungrouped'))];
   if (groups.length === 0) groups.push('ungrouped');

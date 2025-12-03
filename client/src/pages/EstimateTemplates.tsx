@@ -120,25 +120,50 @@ export default function EstimateTemplates() {
     queryKey: ["/api/cost-codes"],
   });
 
+  // Normalize string for matching: lowercase, collapse whitespace, normalize dashes
+  const normalizeForMatch = (str: string): string => {
+    return str
+      .toLowerCase()
+      .trim()
+      .replace(/[\u2013\u2014]/g, '-') // Replace en-dash and em-dash with hyphen
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .replace(/\s*-\s*/g, '-'); // Remove spaces around hyphens
+  };
+
   // Create a map for cost code matching (case-insensitive by code)
   const costCodeMatchMap = useMemo(() => {
     const map = new Map<string, CostCode>();
     costCodes.forEach((cc) => {
-      // Index by lowercase code
-      map.set(cc.code.toLowerCase().trim(), cc);
+      const normalizedCode = normalizeForMatch(cc.code);
+      const normalizedTitle = normalizeForMatch(cc.title);
+      
+      // Index by normalized code
+      map.set(normalizedCode, cc);
       // Also index by "code - title" format
-      const codeTitle = `${cc.code} - ${cc.title}`.toLowerCase().trim();
-      map.set(codeTitle, cc);
+      map.set(`${normalizedCode}-${normalizedTitle}`, cc);
       // Also just by title for flexible matching
-      map.set(cc.title.toLowerCase().trim(), cc);
+      map.set(normalizedTitle, cc);
+      // Index with space separator too
+      map.set(`${normalizedCode} - ${normalizedTitle}`, cc);
     });
     return map;
   }, [costCodes]);
 
   const matchCostCode = (costCodeStr: string | undefined): { id?: string; display?: string } => {
     if (!costCodeStr) return {};
-    const normalized = costCodeStr.toLowerCase().trim();
-    const matched = costCodeMatchMap.get(normalized);
+    const normalized = normalizeForMatch(costCodeStr);
+    
+    // Direct match
+    let matched = costCodeMatchMap.get(normalized);
+    
+    // If no match, try extracting just the code portion (before first space or dash-title)
+    if (!matched) {
+      const codeOnlyMatch = normalized.match(/^[\d\w.-]+/);
+      if (codeOnlyMatch) {
+        matched = costCodeMatchMap.get(normalizeForMatch(codeOnlyMatch[0]));
+      }
+    }
+    
     if (matched) {
       return { 
         id: matched.id, 
