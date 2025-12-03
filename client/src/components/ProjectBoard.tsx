@@ -244,6 +244,7 @@ function DraggableProjectCard({
             project={project} 
             onClick={isDragging ? undefined : onClick}
             isDragging={false}
+            editMode={editMode}
             visibleFields={visibleFields}
           />
         </div>
@@ -548,11 +549,11 @@ export function ProjectBoard({
   });
 
   // Get parent statuses and substatus options
-  // Sort by sortOrder from database - DESCENDING to match Field Settings display order
+  // Sort by sortOrder from database - ASCENDING for left-to-right chronological flow
   const parentStatuses = useMemo(
     () => statusOptions
       .filter(opt => !opt.parentId)
-      .sort((a, b) => (b.sortOrder ?? 0) - (a.sortOrder ?? 0)),
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [statusOptions]
   );
 
@@ -569,14 +570,14 @@ export function ProjectBoard({
     () => statusOptions
       .filter(opt => opt.parentId)
       .sort((a, b) => {
-        // First sort by parent phase's sortOrder (descending)
+        // First sort by parent phase's sortOrder (ascending for left-to-right)
         const parentOrderA = parentSortOrderMap.get(a.parentId!) ?? 0;
         const parentOrderB = parentSortOrderMap.get(b.parentId!) ?? 0;
         if (parentOrderA !== parentOrderB) {
-          return parentOrderB - parentOrderA;
+          return parentOrderA - parentOrderB;
         }
-        // Then sort by individual sortOrder within the same phase (descending)
-        return (b.sortOrder ?? 0) - (a.sortOrder ?? 0);
+        // Then sort by individual sortOrder within the same phase (ascending)
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
       }),
     [statusOptions, parentSortOrderMap]
   );
@@ -1035,6 +1036,7 @@ export function ProjectBoard({
                 project={activeProject} 
                 onClick={() => {}} 
                 isDragging={true}
+                editMode={true}
                 visibleFields={preferences.visibleFields}
               />
             </div>

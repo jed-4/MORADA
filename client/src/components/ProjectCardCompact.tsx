@@ -12,6 +12,7 @@ interface ProjectCardCompactProps {
   project: Project;
   onClick?: () => void;
   isDragging?: boolean;
+  editMode?: boolean;
   visibleFields?: {
     client?: boolean;
     budget?: boolean;
@@ -57,6 +58,7 @@ export default function ProjectCardCompact({
   project, 
   onClick, 
   isDragging = false,
+  editMode = false,
   visibleFields = {}
 }: ProjectCardCompactProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -84,11 +86,17 @@ export default function ProjectCardCompact({
   const phaseOption = allStatusOptions.find(opt => opt.key === project.projectStatus);
   const statusColor = getStatusColor(project.projectSubStatus, allStatusOptions);
 
+  // Only show "lift" hover effect (scale) in edit mode when card is draggable
+  // In view mode, just show subtle shadow change for click affordance
+  const hoverClass = isHovered 
+    ? editMode 
+      ? 'shadow-xl scale-[1.01]'  // Edit mode: lift effect suggests draggable
+      : 'shadow-md'               // View mode: subtle shadow for clickable
+    : 'shadow-sm';
+
   return (
     <Card
-      className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${
-        isHovered ? 'shadow-xl scale-[1.01]' : 'shadow-sm'
-      } ${isDragging ? 'opacity-80 shadow-lg' : ''}`}
+      className={`h-20 transition-all duration-200 cursor-pointer rounded-xl border-border/50 ${hoverClass} ${isDragging ? 'opacity-80 shadow-lg' : ''}`}
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
