@@ -101,7 +101,7 @@ export default function TaskTemplates() {
   const [checklistInput, setChecklistInput] = useState("");
 
   const { data: templates = [], isLoading } = useQuery<TaskTemplate[]>({
-    queryKey: ["/api/task-templates"],
+    queryKey: ["/api/systems/task-templates"],
   });
 
   const { data: tags = [] } = useQuery<TaskTag[]>({ queryKey: ["/api/task-tags"] });
@@ -161,9 +161,9 @@ export default function TaskTemplates() {
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<TaskTemplateFormData>) =>
-      await apiRequest("/api/task-templates", "POST", data),
+      await apiRequest("/api/systems/task-templates", "POST", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
       toast({
         title: "Template created",
         description: "The task template has been created successfully.",
@@ -180,9 +180,9 @@ export default function TaskTemplates() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<TaskTemplateFormData> }) =>
-      await apiRequest(`/api/task-templates/${id}`, "PATCH", data),
+      await apiRequest(`/api/systems/task-templates/${id}`, "PATCH", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
       toast({
         title: "Template updated",
         description: "The task template has been updated successfully.",
@@ -198,9 +198,9 @@ export default function TaskTemplates() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => await apiRequest(`/api/task-templates/${id}`, "DELETE"),
+    mutationFn: async (id: string) => await apiRequest(`/api/systems/task-templates/${id}`, "DELETE"),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
       toast({
         title: "Template deleted",
         description: "The task template has been deleted successfully.",
@@ -216,7 +216,7 @@ export default function TaskTemplates() {
 
   const duplicateMutation = useMutation({
     mutationFn: async (template: TaskTemplate) => {
-      return await apiRequest("/api/task-templates", "POST", {
+      return await apiRequest("/api/systems/task-templates", "POST", {
         title: `${template.title} (Copy)`,
         goal: template.goal,
         description: template.description,
@@ -232,7 +232,7 @@ export default function TaskTemplates() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
       toast({
         title: "Template duplicated",
         description: "The template has been duplicated successfully.",

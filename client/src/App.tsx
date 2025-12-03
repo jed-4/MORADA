@@ -36,10 +36,12 @@ import ClientInvoiceDetail from "@/pages/ClientInvoiceDetail";
 import SiteDiaryTemplates from "@/pages/SiteDiaryTemplates";
 import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
 import ScopeTemplates from "@/pages/ScopeTemplates";
+import ScopeTemplateDetail from "@/pages/ScopeTemplateDetail";
 import ScheduleTemplates from "@/pages/ScheduleTemplates";
 import ScheduleTemplateDetail from "@/pages/ScheduleTemplateDetail";
 import EstimateTemplates from "@/pages/EstimateTemplates";
 import SelectionTemplates from "@/pages/SelectionTemplates";
+import SelectionTemplateDetail from "@/pages/SelectionTemplateDetail";
 import POTemplates from "@/pages/POTemplates";
 import RfqTemplates from "@/pages/RfqTemplates";
 import RfiTemplates from "@/pages/RfiTemplates";
@@ -233,10 +235,12 @@ function Router() {
       <Route path="/note-templates" component={NoteTemplates} />
       <Route path="/site-diary-templates" component={SiteDiaryTemplates} />
       <Route path="/scope-templates" component={ScopeTemplates} />
+      <Route path="/scope-templates/:templateId" component={ScopeTemplateDetail} />
       <Route path="/schedule-templates" component={ScheduleTemplates} />
       <Route path="/schedule-templates/:templateId" component={ScheduleTemplateDetail} />
       <Route path="/estimate-templates" component={EstimateTemplates} />
       <Route path="/selection-templates" component={SelectionTemplates} />
+      <Route path="/selection-templates/:templateId" component={SelectionTemplateDetail} />
       <Route path="/po-templates" component={POTemplates} />
       <Route path="/rfq-templates" component={RfqTemplates} />
       <Route path="/rfi-templates" component={RfiTemplates} />

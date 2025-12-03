@@ -61,12 +61,12 @@ export function ChecklistTemplateFormDialog({
 
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const templateRes = await apiRequest('POST', "/api/checklist-templates", {
+      const template = await apiRequest("/api/checklist-templates", "POST", {
         name: data.name,
         description: data.description,
         type: data.type,
       });
-      return await templateRes.json();
+      return template;
     },
     onSuccess: (template) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });

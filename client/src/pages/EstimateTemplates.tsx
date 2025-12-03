@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -95,6 +96,7 @@ export default function EstimateTemplates() {
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState("");
+  const [unitPriceIncludesGst, setUnitPriceIncludesGst] = useState<boolean>(false);
   const [templateCategory, setTemplateCategory] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -383,7 +385,13 @@ export default function EstimateTemplates() {
         costCodeTitle: row.costCode ? String(row.costCode).trim() : undefined,
         unit: row.unit ? String(row.unit).trim() : undefined,
         quantity: row.quantity ? parseFloat(String(row.quantity)) || 1 : undefined,
-        unitPrice: row.unitPrice ? Math.round(parseFloat(String(row.unitPrice)) * 100) : undefined,
+        unitPrice: row.unitPrice ? (() => {
+          let price = parseFloat(String(row.unitPrice)) || 0;
+          if (unitPriceIncludesGst) {
+            price = price / 1.1;
+          }
+          return Math.round(price * 100);
+        })() : undefined,
         markup: row.markup ? parseFloat(String(row.markup)) || 0 : undefined,
         sortOrder: idx,
         isGroup: false,
@@ -991,6 +999,20 @@ export default function EstimateTemplates() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <RadioGroup
+                      value={unitPriceIncludesGst ? "inc" : "ex"}
+                      onValueChange={(value) => setUnitPriceIncludesGst(value === "inc")}
+                      className="flex items-center gap-3 mt-1.5"
+                    >
+                      <div className="flex items-center space-x-1">
+                        <RadioGroupItem value="ex" id="gst-ex" className="h-3 w-3" />
+                        <Label htmlFor="gst-ex" className="text-[10px] text-muted-foreground cursor-pointer">Ex GST</Label>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <RadioGroupItem value="inc" id="gst-inc" className="h-3 w-3" />
+                        <Label htmlFor="gst-inc" className="text-[10px] text-muted-foreground cursor-pointer">Inc GST</Label>
+                      </div>
+                    </RadioGroup>
                   </div>
 
                   <div className="space-y-1">

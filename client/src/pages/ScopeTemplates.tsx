@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,11 +22,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, MoreVertical, Trash2, Edit, Layers } from "lucide-react";
+import { Plus, Search, MoreVertical, Trash2, Edit3, Copy, Layers } from "lucide-react";
 import type { ScopeTemplate } from "@shared/schema";
+import { format } from "date-fns";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function ScopeTemplates() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -39,12 +43,10 @@ export default function ScopeTemplates() {
     category: "",
   });
 
-  // Fetch templates
   const { data: templates = [], isLoading } = useQuery<ScopeTemplate[]>({
     queryKey: ["/api/scope-templates"],
   });
 
-  // Create template mutation
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; description: string; category: string }) => {
       return await apiRequest("/api/scope-templates", "POST", {
@@ -54,7 +56,7 @@ export default function ScopeTemplates() {
         templateData: [],
       });
     },
-    onSuccess: () => {
+    onSuccess: (template: ScopeTemplate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/scope-templates"] });
       setCreateDialogOpen(false);
       setNewTemplate({ name: "", description: "", category: "" });
@@ -62,6 +64,7 @@ export default function ScopeTemplates() {
         title: "Template created",
         description: "Your scope template has been created successfully.",
       });
+      navigate(`/scope-templates/${template.id}`);
     },
     onError: () => {
       toast({
@@ -72,7 +75,6 @@ export default function ScopeTemplates() {
     },
   });
 
-  // Update template mutation
   const updateMutation = useMutation({
     mutationFn: async (data: { id: string; name: string; description: string; category: string }) => {
       return await apiRequest(`/api/scope-templates/${data.id}`, "PATCH", {
@@ -99,7 +101,6 @@ export default function ScopeTemplates() {
     },
   });
 
-  // Delete template mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       return await apiRequest(`/api/scope-templates/${id}`, "DELETE");
@@ -117,6 +118,35 @@ export default function ScopeTemplates() {
       toast({
         title: "Error",
         description: "Failed to delete template. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: async (template: ScopeTemplate) => {
+      return await apiRequest("/api/scope-templates", "POST", {
+        name: `${template.name} (Copy)`,
+        description: template.description,
+        category: template.category,
+        templateData: template.templateData,
+        createdBy: user?.id,
+        createdByName: user?.firstName && user?.lastName 
+          ? `${user.firstName} ${user.lastName}` 
+          : user?.email,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scope-templates"] });
+      toast({
+        title: "Template duplicated",
+        description: "The template has been duplicated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to duplicate template.",
         variant: "destructive",
       });
     },
@@ -155,133 +185,180 @@ export default function ScopeTemplates() {
     deleteMutation.mutate(selectedTemplate.id);
   };
 
+  const getItemCount = (template: ScopeTemplate) => {
+    return (template.templateData as any[])?.length || 0;
+  };
+
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      residential: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      commercial: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+      renovation: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    };
+    return colors[category.toLowerCase()] || "";
+  };
+
   return (
     <div className="h-full flex flex-col">
-      {/* 2-row header matching ClickUp 2025 pattern */}
-      <div className="shrink-0 border-b bg-background">
-        {/* Row 1: Page title */}
-        <div className="h-9 px-4 flex items-center">
-          <h1 className="text-sm font-semibold">Scope Templates</h1>
+      {/* Row 1 - Title and Count (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            Scope Templates
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
+            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
+          </Badge>
         </div>
 
-        {/* Row 2: Actions */}
-        <div className="h-9 px-4 flex items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search templates..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-7"
-              data-testid="input-search-templates"
-            />
-          </div>
-          <Button
-            size="sm"
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setCreateDialogOpen(true)}
-            data-testid="button-create-template"
+            data-testid="button-add-template"
           >
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Template
-          </Button>
+            <Plus className="w-3 h-3" />
+            <span>New Template</span>
+          </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Row 2 - Search (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-1">
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search-templates"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Templates List */}
+      <div className="flex-1 overflow-auto p-4">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-sm text-muted-foreground">Loading templates...</div>
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            Loading templates...
           </div>
         ) : filteredTemplates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <div className="p-4 rounded-full bg-muted/50">
-              <Layers className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-sm font-medium">No scope templates yet</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {searchQuery
-                  ? "No templates match your search."
-                  : "Create your first scope template to get started."}
-              </p>
-            </div>
+          <div className="text-center py-8">
+            <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-sm font-medium mb-2">
+              {searchQuery ? "No templates found" : "No templates yet"}
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              {searchQuery
+                ? "Try adjusting your search terms"
+                : "Start by adding your first scope template"}
+            </p>
             {!searchQuery && (
-              <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-template">
-                <Plus className="h-4 w-4 mr-1.5" />
+              <button 
+                onClick={() => setCreateDialogOpen(true)} 
+                className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
+                data-testid="button-create-first-template"
+              >
+                <Plus className="h-3 w-3" />
                 Create Template
-              </Button>
+              </button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredTemplates.map((template) => {
-              const itemCount = (template.templateData as any[])?.length || 0;
-              return (
-                <Card key={template.id} className="hover-elevate" data-testid={`card-template-${template.id}`}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-sm truncate">{template.name}</h3>
-                        </div>
-                        {template.category && (
-                          <Badge variant="secondary" className="mt-1.5 text-[10px] h-4">
-                            {template.category}
-                          </Badge>
-                        )}
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 shrink-0"
-                            data-testid={`button-menu-${template.id}`}
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedTemplate(template);
-                              setEditDialogOpen(true);
-                            }}
-                            data-testid={`menu-edit-${template.id}`}
-                          >
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedTemplate(template);
-                              setDeleteDialogOpen(true);
-                            }}
-                            className="text-destructive"
-                            data-testid={`menu-delete-${template.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {template.description || "No description"}
-                    </p>
-                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+          <div className="space-y-2">
+            {filteredTemplates.map((template) => (
+              <div 
+                key={template.id} 
+                className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+                onClick={() => navigate(`/scope-templates/${template.id}`)}
+                data-testid={`card-template-${template.id}`}
+              >
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm mb-1 line-clamp-1">
+                      {template.name}
+                    </h3>
+                    {template.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {template.description}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {template.category && (
+                      <Badge 
+                        variant="secondary" 
+                        className={`h-4 px-1.5 text-[10px] ${getCategoryColor(template.category)}`}
+                      >
+                        {template.category}
+                      </Badge>
+                    )}
+
+                    <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                      {getItemCount(template)} {getItemCount(template) === 1 ? 'item' : 'items'}
+                    </Badge>
+                    
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <span>
-                        Updated {new Date(template.updatedAt).toLocaleDateString()}
+                        {format(new Date(template.updatedAt), "MMM d, yyyy")}
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`button-menu-${template.id}`}
+                        >
+                          <MoreVertical className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/scope-templates/${template.id}`);
+                          }}
+                          data-testid={`button-edit-${template.id}`}
+                        >
+                          <Edit3 className="h-4 w-4 mr-2" />
+                          View / Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            duplicateMutation.mutate(template);
+                          }}
+                          data-testid={`button-duplicate-${template.id}`}
+                        >
+                          <Copy className="h-4 w-4 mr-2" />
+                          Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTemplate(template);
+                            setDeleteDialogOpen(true);
+                          }}
+                          className="text-destructive"
+                          data-testid={`button-delete-${template.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -335,6 +412,7 @@ export default function ScopeTemplates() {
             <Button
               onClick={handleCreateTemplate}
               disabled={createMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
               data-testid="button-confirm-create"
             >
               {createMutation.isPending ? "Creating..." : "Create Template"}
@@ -397,6 +475,7 @@ export default function ScopeTemplates() {
             <Button
               onClick={handleUpdateTemplate}
               disabled={updateMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
               data-testid="button-confirm-edit"
             >
               {updateMutation.isPending ? "Updating..." : "Update Template"}
