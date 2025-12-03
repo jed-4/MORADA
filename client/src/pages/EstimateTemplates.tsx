@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { type EstimateTemplate } from "@shared/schema";
+import { type EstimateTemplate, type CostCode } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +53,7 @@ interface TemplateItem {
   groupName?: string;
   name: string;
   description?: string;
+  costCodeId?: string;
   costCodeTitle?: string;
   unit?: string;
   quantity?: number;
@@ -113,6 +114,40 @@ export default function EstimateTemplates() {
   const { data: templates = [], isLoading } = useQuery<EstimateTemplate[]>({
     queryKey: ["/api/estimate-templates"],
   });
+
+  // Fetch cost codes for import matching
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
+  // Create a map for cost code matching (case-insensitive by code)
+  const costCodeMatchMap = useMemo(() => {
+    const map = new Map<string, CostCode>();
+    costCodes.forEach((cc) => {
+      // Index by lowercase code
+      map.set(cc.code.toLowerCase().trim(), cc);
+      // Also index by "code - title" format
+      const codeTitle = `${cc.code} - ${cc.title}`.toLowerCase().trim();
+      map.set(codeTitle, cc);
+      // Also just by title for flexible matching
+      map.set(cc.title.toLowerCase().trim(), cc);
+    });
+    return map;
+  }, [costCodes]);
+
+  const matchCostCode = (costCodeStr: string | undefined): { id?: string; display?: string } => {
+    if (!costCodeStr) return {};
+    const normalized = costCodeStr.toLowerCase().trim();
+    const matched = costCodeMatchMap.get(normalized);
+    if (matched) {
+      return { 
+        id: matched.id, 
+        display: `${matched.code} - ${matched.title}` 
+      };
+    }
+    // Return just the display with no ID if no match found
+    return { display: costCodeStr.trim() };
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string; category?: string; templateData?: TemplateItem[] }) => {
@@ -381,24 +416,30 @@ export default function EstimateTemplates() {
 
     const templateItems: TemplateItem[] = previewData
       .filter(row => row.name)
-      .map((row, idx) => ({
-        groupName: row.groupName ? String(row.groupName).trim() : undefined,
-        name: String(row.name).trim(),
-        description: row.description ? String(row.description).trim() : undefined,
-        costCodeTitle: row.costCode ? String(row.costCode).trim() : undefined,
-        unit: row.unit ? String(row.unit).trim() : undefined,
-        quantity: row.quantity ? parseFloat(String(row.quantity)) || 1 : undefined,
-        unitPrice: row.unitPrice ? (() => {
-          let price = parseFloat(String(row.unitPrice)) || 0;
-          if (unitPriceIncludesGst) {
-            price = price / 1.1;
-          }
-          return Math.round(price * 100);
-        })() : undefined,
-        markup: row.markup ? parseFloat(String(row.markup)) || 0 : undefined,
-        sortOrder: idx,
-        isGroup: false,
-      }));
+      .map((row, idx) => {
+        // Match cost code to company cost codes
+        const costCodeMatch = matchCostCode(row.costCode ? String(row.costCode) : undefined);
+        
+        return {
+          groupName: row.groupName ? String(row.groupName).trim() : undefined,
+          name: String(row.name).trim(),
+          description: row.description ? String(row.description).trim() : undefined,
+          costCodeId: costCodeMatch.id,
+          costCodeTitle: costCodeMatch.display,
+          unit: row.unit ? String(row.unit).trim() : undefined,
+          quantity: row.quantity ? parseFloat(String(row.quantity)) || 1 : undefined,
+          unitPrice: row.unitPrice ? (() => {
+            let price = parseFloat(String(row.unitPrice)) || 0;
+            if (unitPriceIncludesGst) {
+              price = price / 1.1;
+            }
+            return Math.round(price * 100);
+          })() : undefined,
+          markup: row.markup ? parseFloat(String(row.markup)) || 0 : undefined,
+          sortOrder: idx,
+          isGroup: false,
+        };
+      });
 
     createMutation.mutate({
       name: templateName.trim(),
