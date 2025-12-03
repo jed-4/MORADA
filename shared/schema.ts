@@ -2526,6 +2526,7 @@ export const selectionTemplates = pgTable("selection_templates", {
   category: text("category"), // Legacy text category: "Residential" | "Commercial" | "Renovation" | etc
   categoryId: varchar("category_id").references(() => templateCategories.id, { onDelete: "set null" }),
   templateData: json("template_data").notNull(), // Array of selection category objects with items
+  selectionType: text("selection_type").notNull().default("selection"), // "selection" = project-specific choices, "design" = standard design options
   isPublic: boolean("is_public").notNull().default(false),
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),

@@ -16,6 +16,80 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { NoteTemplate, NoteTemplateField } from "@shared/schema";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+interface SortableFieldRowProps {
+  field: Partial<NoteTemplateField>;
+  fieldId: string;
+  onEdit: () => void;
+  onRemove: () => void;
+}
+
+function SortableFieldRow({ field, fieldId, onEdit, onRemove }: SortableFieldRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: fieldId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 bg-muted/50 rounded-md ${isDragging ? 'shadow-lg bg-background' : ''}`}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing touch-none"
+        data-testid={`drag-handle-field-${fieldId}`}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium truncate">{field.label || 'Untitled'}</span>
+        <Badge variant="outline" className="ml-2 h-5 text-[10px] no-default-hover-elevate no-default-active-elevate">
+          {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
+        </Badge>
+        {field.required && (
+          <Badge variant="secondary" className="ml-1 h-5 text-[10px]">
+            Required
+          </Badge>
+        )}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6"
+        onClick={onEdit}
+        data-testid={`button-edit-field-${fieldId}`}
+      >
+        <Pencil className="h-3 w-3" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-destructive"
+        onClick={onRemove}
+        data-testid={`button-remove-field-${fieldId}`}
+      >
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
 
 export interface NoteTemplatesLibraryHandle {
   openNewTemplateDialog: () => void;
@@ -48,6 +122,28 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
     const [editingField, setEditingField] = useState<Partial<NoteTemplateField> | null>(null);
     const [editingFieldIndex, setEditingFieldIndex] = useState<number | null>(null);
 
+    const sensors = useSensors(
+      useSensor(PointerSensor, {
+        activationConstraint: {
+          distance: 5,
+        },
+      }),
+      useSensor(KeyboardSensor, {
+        coordinateGetter: sortableKeyboardCoordinates,
+      })
+    );
+
+    const handleFieldDragEnd = (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+        const oldIndex = templateFields.findIndex((_, idx) => `field-${idx}` === active.id);
+        const newIndex = templateFields.findIndex((_, idx) => `field-${idx}` === over.id);
+        if (oldIndex !== -1 && newIndex !== -1) {
+          setTemplateFields(arrayMove(templateFields, oldIndex, newIndex));
+        }
+      }
+    };
+
     const { data: templates = [], isLoading } = useQuery<NoteTemplate[]>({
       queryKey: ["/api/note-templates"],
     });
@@ -59,21 +155,15 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
 
     const createTemplateMutation = useMutation({
       mutationFn: async (data: any) => {
-        return apiRequest("/api/note-templates", {
-          method: "POST",
-          body: JSON.stringify(data),
-        });
+        return apiRequest("/api/note-templates", "POST", data);
       },
       onSuccess: async (template: NoteTemplate) => {
         if (isFormBased && templateFields.length > 0) {
           for (let i = 0; i < templateFields.length; i++) {
             const field = templateFields[i];
-            await apiRequest(`/api/note-templates/${template.id}/fields`, {
-              method: "POST",
-              body: JSON.stringify({
-                ...field,
-                order: i,
-              }),
+            await apiRequest(`/api/note-templates/${template.id}/fields`, "POST", {
+              ...field,
+              order: i,
             });
           }
         }
@@ -88,10 +178,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
 
     const updateTemplateMutation = useMutation({
       mutationFn: async ({ id, data }: { id: string; data: any }) => {
-        return apiRequest(`/api/note-templates/${id}`, {
-          method: "PATCH",
-          body: JSON.stringify(data),
-        });
+        return apiRequest(`/api/note-templates/${id}`, "PATCH", data);
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
@@ -105,9 +192,7 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
 
     const deleteTemplateMutation = useMutation({
       mutationFn: async (id: string) => {
-        return apiRequest(`/api/note-templates/${id}`, {
-          method: "DELETE",
-        });
+        return apiRequest(`/api/note-templates/${id}`, "DELETE");
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/note-templates"] });
@@ -406,43 +491,28 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                         No fields added yet. Click "Add Field" to define form fields.
                       </p>
                     ) : (
-                      <div className="space-y-2">
-                        {templateFields.map((field, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center gap-2 p-2 bg-muted/50 rounded-md"
-                          >
-                            <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
-                            <div className="flex-1">
-                              <span className="text-sm font-medium">{field.label}</span>
-                              <Badge variant="outline" className="ml-2 h-5 text-[10px] no-default-hover-elevate no-default-active-elevate">
-                                {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
-                              </Badge>
-                              {field.required && (
-                                <Badge variant="secondary" className="ml-1 h-5 text-[10px]">
-                                  Required
-                                </Badge>
-                              )}
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => editField(field, index)}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive"
-                              onClick={() => removeField(index)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleFieldDragEnd}
+                      >
+                        <SortableContext 
+                          items={templateFields.map((_, idx) => `field-${idx}`)} 
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-2">
+                            {templateFields.map((field, index) => (
+                              <SortableFieldRow
+                                key={`field-${index}`}
+                                field={field}
+                                fieldId={`field-${index}`}
+                                onEdit={() => editField(field, index)}
+                                onRemove={() => removeField(index)}
+                              />
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </SortableContext>
+                      </DndContext>
                     )}
                   </div>
                 )}

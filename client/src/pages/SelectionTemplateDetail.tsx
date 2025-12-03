@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowLeft, 
@@ -463,6 +464,9 @@ export default function SelectionTemplateDetail() {
         <h2 className="text-sm font-semibold" data-testid="text-template-name">
           {template.name}
         </h2>
+        <Badge variant="outline" className="text-xs">
+          {template.selectionType === "design" ? "Design" : "Selection"}
+        </Badge>
         {template.category && (
           <Badge variant="secondary" className="text-xs">
             {template.category}
@@ -805,6 +809,19 @@ export default function SelectionTemplateDetail() {
                 placeholder="Describe this template..."
                 rows={3}
                 data-testid="input-settings-description"
+              />
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <div className="space-y-0.5">
+                <Label>Design Template</Label>
+                <p className="text-xs text-muted-foreground">
+                  Design templates are for standard design options. Selection templates are for project-specific choices.
+                </p>
+              </div>
+              <Switch
+                checked={template.selectionType === "design"}
+                onCheckedChange={(checked) => updateMutation.mutate({ selectionType: checked ? "design" : "selection" })}
+                data-testid="switch-selection-type"
               />
             </div>
           </div>
