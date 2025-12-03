@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +76,7 @@ const UNITS = [
 ];
 
 export default function RfqTemplates() {
+  const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<RfqTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -161,7 +163,7 @@ export default function RfqTemplates() {
     }) => {
       return await apiRequest("/api/rfq-templates", "POST", data);
     },
-    onSuccess: () => {
+    onSuccess: (newTemplate: RfqTemplate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/rfq-templates"] });
       toast({
         title: "Template created",
@@ -169,6 +171,7 @@ export default function RfqTemplates() {
       });
       setIsAddingTemplate(false);
       resetForm();
+      navigate(`/rfq-templates/${newTemplate.id}`);
     },
     onError: () => {
       toast({
@@ -452,7 +455,7 @@ export default function RfqTemplates() {
               <div 
                 key={template.id} 
                 className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => handleOpenEdit(template)}
+                onClick={() => navigate(`/rfq-templates/${template.id}`)}
                 data-testid={`card-template-${template.id}`}
               >
                 <div className="flex items-start gap-2">

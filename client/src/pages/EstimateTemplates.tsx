@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,7 @@ interface ColumnMapping {
 }
 
 export default function EstimateTemplates() {
+  const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EstimateTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -123,7 +125,7 @@ export default function EstimateTemplates() {
           : user?.email,
       });
     },
-    onSuccess: () => {
+    onSuccess: (template: EstimateTemplate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
       toast({
         title: "Template created",
@@ -131,6 +133,7 @@ export default function EstimateTemplates() {
       });
       setIsAddingTemplate(false);
       setFormData({ name: "", description: "", category: "" });
+      navigate(`/estimate-templates/${template.id}`);
     },
     onError: () => {
       toast({
@@ -581,7 +584,7 @@ export default function EstimateTemplates() {
               <div 
                 key={template.id} 
                 className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => handleOpenEdit(template)}
+                onClick={() => navigate(`/estimate-templates/${template.id}`)}
                 data-testid={`card-template-${template.id}`}
               >
                 <div className="flex items-start gap-2">
@@ -703,25 +706,6 @@ export default function EstimateTemplates() {
                 placeholder="e.g., Standard 4-Bed Build"
                 data-testid="input-template-name"
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
-              <Select 
-                value={formData.category} 
-                onValueChange={(value) => setFormData({ ...formData, category: value })}
-              >
-                <SelectTrigger id="category" data-testid="select-template-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Residential">Residential</SelectItem>
-                  <SelectItem value="Commercial">Commercial</SelectItem>
-                  <SelectItem value="Renovation">Renovation</SelectItem>
-                  <SelectItem value="Extension">Extension</SelectItem>
-                  <SelectItem value="Custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2">

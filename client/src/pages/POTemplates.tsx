@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,7 @@ interface TemplateItem {
 }
 
 export default function POTemplates() {
+  const [, navigate] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PurchaseOrderTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -69,7 +71,7 @@ export default function POTemplates() {
         createdById: user?.id,
       });
     },
-    onSuccess: () => {
+    onSuccess: (newTemplate: PurchaseOrderTemplate) => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-order-templates"] });
       toast({
         title: "Template created",
@@ -77,6 +79,7 @@ export default function POTemplates() {
       });
       setIsAddingTemplate(false);
       setFormData({ name: "", description: "", scope: "" });
+      navigate(`/po-templates/${newTemplate.id}`);
     },
     onError: () => {
       toast({
@@ -283,7 +286,7 @@ export default function POTemplates() {
               <div 
                 key={template.id} 
                 className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-                onClick={() => handleOpenEdit(template)}
+                onClick={() => navigate(`/po-templates/${template.id}`)}
                 data-testid={`card-template-${template.id}`}
               >
                 <div className="flex items-start gap-2">

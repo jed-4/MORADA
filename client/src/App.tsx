@@ -40,11 +40,15 @@ import ScopeTemplateDetail from "@/pages/ScopeTemplateDetail";
 import ScheduleTemplates from "@/pages/ScheduleTemplates";
 import ScheduleTemplateDetail from "@/pages/ScheduleTemplateDetail";
 import EstimateTemplates from "@/pages/EstimateTemplates";
+import EstimateTemplateDetail from "@/pages/EstimateTemplateDetail";
 import SelectionTemplates from "@/pages/SelectionTemplates";
 import SelectionTemplateDetail from "@/pages/SelectionTemplateDetail";
 import POTemplates from "@/pages/POTemplates";
+import POTemplateDetail from "@/pages/POTemplateDetail";
 import RfqTemplates from "@/pages/RfqTemplates";
+import RfqTemplateDetail from "@/pages/RfqTemplateDetail";
 import RfiTemplates from "@/pages/RfiTemplates";
+import RfiTemplateDetail from "@/pages/RfiTemplateDetail";
 import ChecklistTemplates from "@/pages/ChecklistTemplates";
 import NoteTemplates from "@/pages/NoteTemplates";
 import TaskTemplates from "@/pages/TaskTemplates";
@@ -239,11 +243,15 @@ function Router() {
       <Route path="/schedule-templates" component={ScheduleTemplates} />
       <Route path="/schedule-templates/:templateId" component={ScheduleTemplateDetail} />
       <Route path="/estimate-templates" component={EstimateTemplates} />
+      <Route path="/estimate-templates/:templateId" component={EstimateTemplateDetail} />
       <Route path="/selection-templates" component={SelectionTemplates} />
       <Route path="/selection-templates/:templateId" component={SelectionTemplateDetail} />
       <Route path="/po-templates" component={POTemplates} />
+      <Route path="/po-templates/:templateId" component={POTemplateDetail} />
       <Route path="/rfq-templates" component={RfqTemplates} />
+      <Route path="/rfq-templates/:templateId" component={RfqTemplateDetail} />
       <Route path="/rfi-templates" component={RfiTemplates} />
+      <Route path="/rfi-templates/:templateId" component={RfiTemplateDetail} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/task-templates" component={TaskTemplates} />

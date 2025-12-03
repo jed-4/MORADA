@@ -1,8 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { FieldCategory } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -39,30 +38,33 @@ import {
   GripVertical,
   ChevronDown,
   ChevronRight,
-  CheckSquare,
+  Calculator,
   Settings,
   DollarSign,
 } from "lucide-react";
-import type { SelectionTemplate } from "@shared/schema";
+import type { EstimateTemplate } from "@shared/schema";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const CASVA_LILAC = '#bba7db';
-
-interface SelectionItem {
+interface TemplateItem {
   id: string;
-  categoryName: string;
-  itemName: string;
+  groupName?: string;
+  name: string;
   description?: string;
-  allowanceType?: "PC" | "PS";
-  budgetAmount?: number;
+  costCodeTitle?: string;
+  unit?: string;
+  quantity?: number;
+  unitPrice?: number;
+  markup?: number;
   sortOrder: number;
+  isGroup: boolean;
+  parentGroupName?: string;
 }
 
 interface SortableItemProps {
-  item: SelectionItem;
-  onEdit: (item: SelectionItem) => void;
+  item: TemplateItem;
+  onEdit: (item: TemplateItem) => void;
   onDelete: (id: string) => void;
 }
 
@@ -82,11 +84,15 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const total = item.quantity && item.unitPrice 
+    ? (item.quantity * item.unitPrice * (1 + (item.markup || 0) / 100)) 
+    : 0;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 p-2 border rounded-md bg-card hover-elevate group"
+      className={`flex items-center gap-2 p-2 border rounded-md bg-card hover-elevate group ${item.isGroup ? 'bg-muted/30 font-medium' : ''}`}
     >
       <div
         {...attributes}
@@ -98,23 +104,31 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
       
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">{item.itemName}</span>
-          {item.allowanceType && (
+          <span className={`text-sm ${item.isGroup ? 'font-semibold' : ''}`}>{item.name}</span>
+          {item.costCodeTitle && (
             <Badge variant="outline" className="h-4 text-[10px]">
-              {item.allowanceType}
+              {item.costCodeTitle}
             </Badge>
           )}
         </div>
-        {item.description && (
+        {item.description && !item.isGroup && (
           <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
         )}
       </div>
 
-      {item.budgetAmount && (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <DollarSign className="h-3 w-3" />
-          {(item.budgetAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
-        </div>
+      {!item.isGroup && (
+        <>
+          <div className="text-xs text-muted-foreground w-16 text-right">
+            {item.quantity || 0} {item.unit || ''}
+          </div>
+          <div className="text-xs text-muted-foreground w-20 text-right">
+            ${((item.unitPrice || 0) / 100).toFixed(2)}
+          </div>
+          <div className="text-xs font-medium w-24 text-right flex items-center justify-end gap-1">
+            <DollarSign className="h-3 w-3" />
+            {(total / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+          </div>
+        </>
       )}
 
       <DropdownMenu>
@@ -147,23 +161,27 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
   );
 }
 
-export default function SelectionTemplateDetail() {
+export default function EstimateTemplateDetail() {
   const params = useParams<{ templateId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<SelectionItem | null>(null);
+  const [editingItem, setEditingItem] = useState<TemplateItem | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['General']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['ungrouped']));
   
-  const [newItem, setNewItem] = useState<Partial<SelectionItem>>({
-    categoryName: "General",
-    itemName: "",
+  const [newItem, setNewItem] = useState<Partial<TemplateItem>>({
+    name: "",
     description: "",
-    allowanceType: undefined,
-    budgetAmount: undefined,
+    costCodeTitle: "",
+    unit: "m2",
+    quantity: 1,
+    unitPrice: 0,
+    markup: 0,
+    isGroup: false,
+    groupName: "ungrouped",
   });
 
   const sensors = useSensors(
@@ -172,10 +190,10 @@ export default function SelectionTemplateDetail() {
     })
   );
 
-  const { data: template, isLoading } = useQuery<SelectionTemplate>({
-    queryKey: ["/api/selection-templates", params.templateId],
+  const { data: template, isLoading } = useQuery<EstimateTemplate>({
+    queryKey: ["/api/estimate-templates", params.templateId],
     queryFn: async () => {
-      const res = await fetch(`/api/selection-templates/${params.templateId}`, {
+      const res = await fetch(`/api/estimate-templates/${params.templateId}`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch template");
@@ -184,40 +202,13 @@ export default function SelectionTemplateDetail() {
     enabled: !!params.templateId,
   });
 
-  const { data: categoryFieldCategory } = useQuery<FieldCategory>({
-    queryKey: ["/api/field-categories/by-key/selection.category"],
-    queryFn: async () => {
-      const res = await fetch("/api/field-categories/by-key/selection.category", {
-        credentials: "include",
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
-  });
-
-  const { data: categoryOptions = [] } = useQuery<{ id: string; value: string; label: string; sortOrder: number }[]>({
-    queryKey: ["/api/field-categories", categoryFieldCategory?.id, "options"],
-    queryFn: async () => {
-      const res = await fetch(`/api/field-categories/${categoryFieldCategory?.id}/options`, {
-        credentials: "include",
-      });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!categoryFieldCategory?.id,
-  });
-
-  const sortedCategoryOptions = useMemo(() => {
-    return [...categoryOptions].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  }, [categoryOptions]);
-
   const updateMutation = useMutation({
-    mutationFn: async (data: Partial<SelectionTemplate>) => {
-      return await apiRequest(`/api/selection-templates/${params.templateId}`, "PATCH", data);
+    mutationFn: async (data: Partial<EstimateTemplate>) => {
+      return await apiRequest(`/api/estimate-templates/${params.templateId}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates", params.templateId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/selection-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates", params.templateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
       toast({
         title: "Template updated",
         description: "Your changes have been saved.",
@@ -232,17 +223,17 @@ export default function SelectionTemplateDetail() {
     },
   });
 
-  const items: SelectionItem[] = ((template?.templateData as SelectionItem[]) || []).map((item, idx) => ({
+  const items: TemplateItem[] = ((template?.templateData as TemplateItem[]) || []).map((item, idx) => ({
     ...item,
     id: item.id || crypto.randomUUID(),
     sortOrder: item.sortOrder ?? idx,
   }));
 
-  const categories = [...new Set(items.map(item => item.categoryName || 'General'))];
-  if (categories.length === 0) categories.push('General');
+  const groups = [...new Set(items.map(item => item.groupName || 'ungrouped'))];
+  if (groups.length === 0) groups.push('ungrouped');
 
-  const getItemsByCategory = (category: string) => {
-    return items.filter(item => (item.categoryName || 'General') === category)
+  const getItemsByGroup = (group: string) => {
+    return items.filter(item => (item.groupName || 'ungrouped') === group && !item.isGroup)
       .sort((a, b) => a.sortOrder - b.sortOrder);
   };
 
@@ -262,7 +253,7 @@ export default function SelectionTemplateDetail() {
   };
 
   const handleAddItem = () => {
-    if (!newItem.itemName?.trim()) {
+    if (!newItem.name?.trim()) {
       toast({
         title: "Missing name",
         description: "Please enter an item name.",
@@ -271,31 +262,39 @@ export default function SelectionTemplateDetail() {
       return;
     }
 
-    const newItemData: SelectionItem = {
+    const newItemData: TemplateItem = {
       id: crypto.randomUUID(),
-      categoryName: newItem.categoryName || "General",
-      itemName: newItem.itemName.trim(),
+      name: newItem.name.trim(),
       description: newItem.description?.trim(),
-      allowanceType: newItem.allowanceType,
-      budgetAmount: newItem.budgetAmount ? Math.round(newItem.budgetAmount * 100) : undefined,
+      costCodeTitle: newItem.costCodeTitle?.trim(),
+      unit: newItem.unit,
+      quantity: newItem.quantity,
+      unitPrice: newItem.unitPrice ? Math.round(newItem.unitPrice * 100) : 0,
+      markup: newItem.markup || 0,
+      isGroup: newItem.isGroup || false,
+      groupName: newItem.groupName || 'ungrouped',
       sortOrder: items.length,
     };
 
     updateMutation.mutate({ templateData: [...items, newItemData] });
     setAddItemDialogOpen(false);
     setNewItem({
-      categoryName: "General",
-      itemName: "",
+      name: "",
       description: "",
-      allowanceType: undefined,
-      budgetAmount: undefined,
+      costCodeTitle: "",
+      unit: "m2",
+      quantity: 1,
+      unitPrice: 0,
+      markup: 0,
+      isGroup: false,
+      groupName: "ungrouped",
     });
   };
 
-  const handleEditItem = (item: SelectionItem) => {
+  const handleEditItem = (item: TemplateItem) => {
     setEditingItem({
       ...item,
-      budgetAmount: item.budgetAmount ? item.budgetAmount / 100 : undefined,
+      unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
     });
     setEditDialogOpen(true);
   };
@@ -307,7 +306,7 @@ export default function SelectionTemplateDetail() {
       item.id === editingItem.id 
         ? { 
             ...editingItem, 
-            budgetAmount: editingItem.budgetAmount ? Math.round(editingItem.budgetAmount * 100) : undefined 
+            unitPrice: editingItem.unitPrice ? Math.round(editingItem.unitPrice * 100) : 0 
           } 
         : item
     );
@@ -322,16 +321,25 @@ export default function SelectionTemplateDetail() {
     updateMutation.mutate({ templateData: updatedItems });
   };
 
-  const toggleCategory = (category: string) => {
-    setExpandedCategories(prev => {
+  const toggleGroup = (group: string) => {
+    setExpandedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
+      if (next.has(group)) {
+        next.delete(group);
       } else {
-        next.add(category);
+        next.add(group);
       }
       return next;
     });
+  };
+
+  const calculateTotal = () => {
+    return items
+      .filter(item => !item.isGroup)
+      .reduce((acc, item) => {
+        const lineTotal = (item.quantity || 0) * (item.unitPrice || 0) * (1 + (item.markup || 0) / 100);
+        return acc + lineTotal;
+      }, 0);
   };
 
   if (isLoading) {
@@ -346,7 +354,7 @@ export default function SelectionTemplateDetail() {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-4">
         <div className="text-sm text-muted-foreground">Template not found</div>
-        <Button variant="outline" onClick={() => navigate("/selection-templates")}>
+        <Button variant="outline" onClick={() => navigate("/estimate-templates")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Templates
         </Button>
@@ -362,7 +370,7 @@ export default function SelectionTemplateDetail() {
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          onClick={() => navigate("/selection-templates")}
+          onClick={() => navigate("/estimate-templates")}
           data-testid="button-back"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -370,14 +378,12 @@ export default function SelectionTemplateDetail() {
         <h2 className="text-sm font-semibold" data-testid="text-template-name">
           {template.name}
         </h2>
-        {template.category && (
-          <Badge variant="secondary" className="text-xs">
-            {template.category}
-          </Badge>
-        )}
         <Badge variant="outline" className="text-xs">
-          {items.length} {items.length === 1 ? 'item' : 'items'}
+          {items.filter(i => !i.isGroup).length} {items.filter(i => !i.isGroup).length === 1 ? 'item' : 'items'}
         </Badge>
+        <div className="ml-auto text-sm font-medium">
+          Total: ${(calculateTotal() / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+        </div>
       </div>
 
       {/* Header Row 2 - Actions */}
@@ -408,10 +414,10 @@ export default function SelectionTemplateDetail() {
       <div className="flex-1 overflow-auto p-4">
         {items.length === 0 ? (
           <div className="text-center py-12">
-            <CheckSquare className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <Calculator className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-sm font-medium mb-2">No items yet</h3>
             <p className="text-xs text-muted-foreground mb-4">
-              Add selection items to this template
+              Add estimate items to this template
             </p>
             <button
               className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
@@ -429,34 +435,42 @@ export default function SelectionTemplateDetail() {
             onDragEnd={handleDragEnd}
           >
             <div className="space-y-4">
-              {categories.map(category => {
-                const categoryItems = getItemsByCategory(category);
-                const isExpanded = expandedCategories.has(category);
+              {groups.map(group => {
+                const groupItems = getItemsByGroup(group);
+                const isExpanded = expandedGroups.has(group);
+                const groupTotal = groupItems.reduce((acc, item) => {
+                  return acc + (item.quantity || 0) * (item.unitPrice || 0) * (1 + (item.markup || 0) / 100);
+                }, 0);
                 
                 return (
-                  <div key={category} className="border rounded-md">
+                  <div key={group} className="border rounded-md">
                     <div 
                       className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer"
-                      onClick={() => toggleCategory(category)}
+                      onClick={() => toggleGroup(group)}
                     >
                       {isExpanded ? (
                         <ChevronDown className="h-4 w-4 text-muted-foreground" />
                       ) : (
                         <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       )}
-                      <span className="font-medium text-sm">{category}</span>
+                      <span className="font-medium text-sm capitalize">
+                        {group === 'ungrouped' ? 'General' : group}
+                      </span>
                       <Badge variant="outline" className="h-4 text-[10px]">
-                        {categoryItems.length}
+                        {groupItems.length}
                       </Badge>
+                      <div className="ml-auto text-xs font-medium">
+                        ${(groupTotal / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                      </div>
                     </div>
                     
                     {isExpanded && (
                       <div className="p-2 space-y-2">
                         <SortableContext
-                          items={categoryItems.map(item => item.id)}
+                          items={groupItems.map(item => item.id)}
                           strategy={verticalListSortingStrategy}
                         >
-                          {categoryItems.map(item => (
+                          {groupItems.map(item => (
                             <SortableItem
                               key={item.id}
                               item={item}
@@ -466,9 +480,9 @@ export default function SelectionTemplateDetail() {
                           ))}
                         </SortableContext>
                         
-                        {categoryItems.length === 0 && (
+                        {groupItems.length === 0 && (
                           <div className="text-center py-4 text-xs text-muted-foreground">
-                            No items in this category
+                            No items in this group
                           </div>
                         )}
                       </div>
@@ -485,47 +499,25 @@ export default function SelectionTemplateDetail() {
       <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
         <DialogContent data-testid="dialog-add-item">
           <DialogHeader>
-            <DialogTitle>Add Selection Item</DialogTitle>
+            <DialogTitle>Add Estimate Item</DialogTitle>
             <DialogDescription>
-              Add a new item to this selection template.
+              Add a new line item to this estimate template.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Item Name *</Label>
               <Input
-                placeholder="e.g., Kitchen Benchtop"
-                value={newItem.itemName || ""}
-                onChange={(e) => setNewItem({ ...newItem, itemName: e.target.value })}
+                placeholder="e.g., Concrete Slab"
+                value={newItem.name || ""}
+                onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
                 data-testid="input-item-name"
               />
             </div>
             <div className="space-y-2">
-              <Label>Category</Label>
-              <Select
-                value={newItem.categoryName || "General"}
-                onValueChange={(value) => setNewItem({ ...newItem, categoryName: value })}
-              >
-                <SelectTrigger data-testid="select-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sortedCategoryOptions.length > 0 ? (
-                    sortedCategoryOptions.map((opt) => (
-                      <SelectItem key={opt.id} value={opt.label}>
-                        {opt.label}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="General">General</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
               <Label>Description</Label>
               <Textarea
-                placeholder="Describe this selection item..."
+                placeholder="Describe this item..."
                 value={newItem.description || ""}
                 onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
                 rows={2}
@@ -534,32 +526,78 @@ export default function SelectionTemplateDetail() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Allowance Type</Label>
-                <Select
-                  value={newItem.allowanceType || "none"}
-                  onValueChange={(value) => setNewItem({ ...newItem, allowanceType: value === "none" ? undefined : value as "PC" | "PS" })}
-                >
-                  <SelectTrigger data-testid="select-allowance-type">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="PC">Prime Cost (PC)</SelectItem>
-                    <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Cost Code</Label>
+                <Input
+                  placeholder="e.g., 01-001"
+                  value={newItem.costCodeTitle || ""}
+                  onChange={(e) => setNewItem({ ...newItem, costCodeTitle: e.target.value })}
+                  data-testid="input-cost-code"
+                />
               </div>
               <div className="space-y-2">
-                <Label>Budget Amount ($)</Label>
+                <Label>Group</Label>
+                <Input
+                  placeholder="e.g., Foundations"
+                  value={newItem.groupName || ""}
+                  onChange={(e) => setNewItem({ ...newItem, groupName: e.target.value })}
+                  data-testid="input-group"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Quantity</Label>
                 <Input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={newItem.budgetAmount || ""}
-                  onChange={(e) => setNewItem({ ...newItem, budgetAmount: parseFloat(e.target.value) || undefined })}
-                  data-testid="input-budget"
+                  value={newItem.quantity || ""}
+                  onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) || undefined })}
+                  data-testid="input-quantity"
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Unit</Label>
+                <Select
+                  value={newItem.unit || "m2"}
+                  onValueChange={(value) => setNewItem({ ...newItem, unit: value })}
+                >
+                  <SelectTrigger data-testid="select-unit">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="m2">m²</SelectItem>
+                    <SelectItem value="m3">m³</SelectItem>
+                    <SelectItem value="lm">LM</SelectItem>
+                    <SelectItem value="ea">Each</SelectItem>
+                    <SelectItem value="hr">Hour</SelectItem>
+                    <SelectItem value="day">Day</SelectItem>
+                    <SelectItem value="item">Item</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Unit Price ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newItem.unitPrice || ""}
+                  onChange={(e) => setNewItem({ ...newItem, unitPrice: parseFloat(e.target.value) || undefined })}
+                  data-testid="input-unit-price"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Markup (%)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={newItem.markup || ""}
+                onChange={(e) => setNewItem({ ...newItem, markup: parseFloat(e.target.value) || undefined })}
+                data-testid="input-markup"
+              />
             </div>
           </div>
           <DialogFooter>
@@ -582,9 +620,9 @@ export default function SelectionTemplateDetail() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent data-testid="dialog-edit-item">
           <DialogHeader>
-            <DialogTitle>Edit Selection Item</DialogTitle>
+            <DialogTitle>Edit Estimate Item</DialogTitle>
             <DialogDescription>
-              Update this selection item.
+              Update this estimate line item.
             </DialogDescription>
           </DialogHeader>
           {editingItem && (
@@ -592,32 +630,10 @@ export default function SelectionTemplateDetail() {
               <div className="space-y-2">
                 <Label>Item Name *</Label>
                 <Input
-                  value={editingItem.itemName}
-                  onChange={(e) => setEditingItem({ ...editingItem, itemName: e.target.value })}
+                  value={editingItem.name}
+                  onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
                   data-testid="input-edit-name"
                 />
-              </div>
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Select
-                  value={editingItem.categoryName || "General"}
-                  onValueChange={(value) => setEditingItem({ ...editingItem, categoryName: value })}
-                >
-                  <SelectTrigger data-testid="select-edit-category">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sortedCategoryOptions.length > 0 ? (
-                      sortedCategoryOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={opt.label}>
-                          {opt.label}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="General">General</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
@@ -630,32 +646,76 @@ export default function SelectionTemplateDetail() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Allowance Type</Label>
-                  <Select
-                    value={editingItem.allowanceType || "none"}
-                    onValueChange={(value) => setEditingItem({ ...editingItem, allowanceType: value === "none" ? undefined : value as "PC" | "PS" })}
-                  >
-                    <SelectTrigger data-testid="select-edit-allowance">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="PC">Prime Cost (PC)</SelectItem>
-                      <SelectItem value="PS">Provisional Sum (PS)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>Cost Code</Label>
+                  <Input
+                    value={editingItem.costCodeTitle || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, costCodeTitle: e.target.value })}
+                    data-testid="input-edit-cost-code"
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Budget Amount ($)</Label>
+                  <Label>Group</Label>
+                  <Input
+                    value={editingItem.groupName || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, groupName: e.target.value })}
+                    data-testid="input-edit-group"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Quantity</Label>
                   <Input
                     type="number"
                     min="0"
                     step="0.01"
-                    value={editingItem.budgetAmount || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, budgetAmount: parseFloat(e.target.value) || undefined })}
-                    data-testid="input-edit-budget"
+                    value={editingItem.quantity || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, quantity: parseFloat(e.target.value) || undefined })}
+                    data-testid="input-edit-quantity"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Unit</Label>
+                  <Select
+                    value={editingItem.unit || "m2"}
+                    onValueChange={(value) => setEditingItem({ ...editingItem, unit: value })}
+                  >
+                    <SelectTrigger data-testid="select-edit-unit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="m2">m²</SelectItem>
+                      <SelectItem value="m3">m³</SelectItem>
+                      <SelectItem value="lm">LM</SelectItem>
+                      <SelectItem value="ea">Each</SelectItem>
+                      <SelectItem value="hr">Hour</SelectItem>
+                      <SelectItem value="day">Day</SelectItem>
+                      <SelectItem value="item">Item</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Unit Price ($)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editingItem.unitPrice || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, unitPrice: parseFloat(e.target.value) || undefined })}
+                    data-testid="input-edit-unit-price"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Markup (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editingItem.markup || ""}
+                  onChange={(e) => setEditingItem({ ...editingItem, markup: parseFloat(e.target.value) || undefined })}
+                  data-testid="input-edit-markup"
+                />
               </div>
             </div>
           )}
@@ -681,7 +741,7 @@ export default function SelectionTemplateDetail() {
           <DialogHeader>
             <DialogTitle>Template Settings</DialogTitle>
             <DialogDescription>
-              Update template name, category, and description.
+              Update template name and description.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -691,15 +751,6 @@ export default function SelectionTemplateDetail() {
                 value={template.name}
                 onChange={(e) => updateMutation.mutate({ name: e.target.value })}
                 data-testid="input-settings-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Input
-                value={template.category || ""}
-                onChange={(e) => updateMutation.mutate({ category: e.target.value })}
-                placeholder="e.g., Residential, Commercial"
-                data-testid="input-settings-category"
               />
             </div>
             <div className="space-y-2">

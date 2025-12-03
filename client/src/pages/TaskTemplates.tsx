@@ -426,27 +426,55 @@ export default function TaskTemplates() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="space-y-0">
+            {/* Column Headers */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="flex-1 min-w-0">Name</div>
+              <div className="w-48 hidden lg:block">Description</div>
+              <div className="w-24">Role</div>
+              <div className="w-24">Status</div>
+              <div className="w-8"></div>
+            </div>
             {filteredTemplates.map((template) => {
-              const tagNames = getTagNames(template);
-              const checklistCount = getChecklistCount(template);
+              const roleName = template.defaultRoleId 
+                ? userRoles.find(r => r.id === template.defaultRoleId)?.name || "—"
+                : "—";
+              const statusName = template.statusId
+                ? statuses.find(s => s.id === template.statusId)?.name || "—"
+                : "—";
               
               return (
                 <div
                   key={template.id}
-                  className="group border rounded-lg p-3 bg-card hover-elevate cursor-pointer"
+                  className="group flex items-center gap-2 px-3 py-2 border-b hover-elevate cursor-pointer"
                   onClick={() => handleOpenDialog(template)}
                   data-testid={`card-template-${template.id}`}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium truncate" data-testid={`text-template-title-${template.id}`}>
-                        {template.title}
-                      </h3>
-                      {template.categoryId && (
-                        <span className="text-xs text-muted-foreground">{getCategoryBreadcrumb(template.categoryId)}</span>
-                      )}
-                    </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate block" data-testid={`text-template-title-${template.id}`}>
+                      {template.title}
+                    </span>
+                  </div>
+                  <div className="w-48 hidden lg:block">
+                    <span className="text-xs text-muted-foreground line-clamp-1">
+                      {template.goal || template.description || "—"}
+                    </span>
+                  </div>
+                  <div className="w-24">
+                    <span className="text-xs text-muted-foreground truncate block">
+                      {roleName}
+                    </span>
+                  </div>
+                  <div className="w-24">
+                    {statusName !== "—" ? (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 truncate max-w-full">
+                        {statusName}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="w-8 flex justify-end">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100">
@@ -471,43 +499,6 @@ export default function TaskTemplates() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-
-                  {template.goal && (
-                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                      {template.goal}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {template.isRecurringTemplate && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        <CalendarIcon className="h-2.5 w-2.5 mr-1" />
-                        Recurring
-                      </Badge>
-                    )}
-                    {template.estimatedDuration && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        <Clock className="h-2.5 w-2.5 mr-1" />
-                        {template.estimatedDuration}m
-                      </Badge>
-                    )}
-                    {checklistCount > 0 && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        <CheckSquare className="h-2.5 w-2.5 mr-1" />
-                        {checklistCount} items
-                      </Badge>
-                    )}
-                    {tagNames.slice(0, 2).map((tagName, idx) => (
-                      <Badge key={idx} variant="secondary" className="text-[10px] px-1.5 py-0">
-                        {tagName}
-                      </Badge>
-                    ))}
-                    {tagNames.length > 2 && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        +{tagNames.length - 2}
-                      </Badge>
-                    )}
                   </div>
                 </div>
               );

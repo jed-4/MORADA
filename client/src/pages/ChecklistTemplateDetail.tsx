@@ -111,7 +111,7 @@ export default function ChecklistTemplateDetail() {
   // Delete group mutation
   const deleteGroupMutation = useMutation({
     mutationFn: async (groupId: string) => {
-      await apiRequest('DELETE', `/api/checklist-template-groups/${groupId}`);
+      await apiRequest(`/api/checklist-template-groups/${groupId}`, 'DELETE');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
@@ -126,7 +126,7 @@ export default function ChecklistTemplateDetail() {
   // Delete item mutation
   const deleteItemMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      await apiRequest('DELETE', `/api/checklist-template-items/${itemId}`);
+      await apiRequest(`/api/checklist-template-items/${itemId}`, 'DELETE');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", templateId] });
@@ -397,12 +397,11 @@ function GroupFormDialog({
 
   const createMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
-      const res = await apiRequest('POST', "/api/checklist-template-groups", {
+      return await apiRequest("/api/checklist-template-groups", 'POST', {
         templateId,
         name: data.name,
         order: 0,
       });
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
@@ -514,16 +513,15 @@ function ItemFormDialog({
 
   const createMutation = useMutation({
     mutationFn: async (data: { description: string; tooltip?: string }) => {
-      const res = await apiRequest(item ? 'PATCH' : 'POST', 
-        item ? `/api/checklist-template-items/${item.id}` : "/api/checklist-template-items", 
-        item ? data : {
-          groupId,
-          description: data.description,
-          tooltip: data.tooltip || null,
-          order: 0,
-        }
-      );
-      return res.json();
+      const url = item ? `/api/checklist-template-items/${item.id}` : "/api/checklist-template-items";
+      const method = item ? 'PATCH' : 'POST';
+      const body = item ? data : {
+        groupId,
+        description: data.description,
+        tooltip: data.tooltip || null,
+        order: 0,
+      };
+      return await apiRequest(url, method, body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", templateId] });
