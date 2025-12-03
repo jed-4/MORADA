@@ -697,18 +697,18 @@ export default function ScheduleTemplateDetail() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-background">
+      {/* Row 1 - Template Controls (matches project Schedule Row 1) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        {/* Left: Back + Template Name */}
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
+          <button
             onClick={() => navigate("/templates")}
+            className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
             data-testid="button-back"
           >
             <ArrowLeft className="h-4 w-4" />
-          </Button>
+          </button>
           <h2 className="text-sm font-semibold truncate" data-testid="text-template-name">
             {template.name}
           </h2>
@@ -718,109 +718,104 @@ export default function ScheduleTemplateDetail() {
             </Badge>
           )}
           {hasUnsavedChanges && (
-            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
-              Unsaved changes
+            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+              Unsaved
             </Badge>
           )}
         </div>
 
+        {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 text-xs"
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
             onClick={() => setShowApplyDialog(true)}
             data-testid="button-apply-template"
           >
-            <Upload className="h-3 w-3 mr-1" />
+            <Upload className="w-3 h-3 inline mr-0.5" />
             Apply to Project
-          </Button>
+          </button>
           
-          <Button
-            size="sm"
-            className="h-6 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90"
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 disabled:opacity-50"
             onClick={handleSaveTemplate}
             disabled={!hasUnsavedChanges || updateTemplateMutation.isPending}
             data-testid="button-save-template"
           >
             {updateTemplateMutation.isPending ? (
-              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              <Loader2 className="w-3 h-3 inline mr-0.5 animate-spin" />
             ) : (
-              <Save className="h-3 w-3 mr-1" />
+              <Save className="w-3 h-3 inline mr-0.5" />
             )}
             Save
-          </Button>
+          </button>
           
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             onClick={() => setShowSettingsDialog(true)}
             data-testid="button-template-settings"
           >
-            <Settings className="h-3 w-3" />
-          </Button>
+            <Settings className="w-3 h-3" />
+          </button>
         </div>
       </div>
 
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 text-xs gap-1"
+      {/* Row 2 - Views & Controls (matches project Schedule Row 2) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Buttons */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setActiveView("gantt")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+            data-testid="button-view-gantt"
+          >
+            <GanttChart className="w-3 h-3 inline mr-0.5" />
+            Gantt
+          </button>
+          <button
+            onClick={() => setActiveView("list")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
+            data-testid="button-view-list"
+          >
+            <List className="w-3 h-3 inline mr-0.5" />
+            List
+          </button>
+          
+          <div className="ml-2 h-4 w-px bg-border" />
+          
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
             onClick={handleAddItem}
             data-testid="button-add-item"
           >
-            <Plus className="h-3 w-3" />
+            <Plus className="w-3 h-3 inline mr-0.5" />
             Add Item
-          </Button>
-          
-          <div className="flex items-center border rounded-md h-6">
-            <Button
-              variant={activeView === "gantt" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-6 px-2 rounded-r-none"
-              onClick={() => setActiveView("gantt")}
-            >
-              <GanttChart className="h-3 w-3" />
-            </Button>
-            <Button
-              variant={activeView === "list" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-6 px-2 rounded-l-none"
-              onClick={() => setActiveView("list")}
-            >
-              <List className="h-3 w-3" />
-            </Button>
-          </div>
+          </button>
         </div>
         
+        {/* Right: Item count & Zoom controls */}
         <div className="flex items-center gap-1.5">
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="text-xs no-default-hover-elevate">
             {items.length} {items.length === 1 ? 'item' : 'items'}
           </Badge>
           
-          <div className="flex items-center border rounded-md h-6">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5"
+          <div className="flex items-center gap-0.5">
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50"
               onClick={() => setZoomLevel(prev => prev === "day" ? "week" : prev === "week" ? "month" : "month")}
               disabled={zoomLevel === "month"}
+              data-testid="button-zoom-out"
             >
-              <ZoomOut className="h-3 w-3" />
-            </Button>
+              <ZoomOut className="w-3 h-3" />
+            </button>
             <span className="text-xs px-1 min-w-12 text-center capitalize">{zoomLevel}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5"
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50"
               onClick={() => setZoomLevel(prev => prev === "month" ? "week" : prev === "week" ? "day" : "day")}
               disabled={zoomLevel === "day"}
+              data-testid="button-zoom-in"
             >
-              <ZoomIn className="h-3 w-3" />
-            </Button>
+              <ZoomIn className="w-3 h-3" />
+            </button>
           </div>
         </div>
       </div>
