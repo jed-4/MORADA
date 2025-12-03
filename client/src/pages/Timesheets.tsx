@@ -37,6 +37,7 @@ export default function Timesheets() {
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
@@ -148,6 +149,12 @@ export default function Timesheets() {
   };
 
   // Filter timesheets
+  // Get project's system phase for filtering
+  const getProjectPhase = (projId: string): string => {
+    const project = projects.find((p) => p.id === projId);
+    return project?.currentSystemPhase || "lead";
+  };
+
   const filteredTimesheets = timesheets.filter((timesheet) => {
     const matchesSearch = searchTerm === "" || 
       timesheet.description?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -160,6 +167,9 @@ export default function Timesheets() {
     const matchesStatus = selectedStatuses.length > 0 
       ? selectedStatuses.includes(timesheet.status) 
       : true;
+    const matchesPhase = selectedPhases.length > 0 
+      ? selectedPhases.includes(getProjectPhase(timesheet.projectId)) 
+      : true;
     const matchesInvoiced = !showInvoicedOnly || timesheet.invoiced;
 
     // Date range filter
@@ -169,7 +179,7 @@ export default function Timesheets() {
       end: dateRange.end,
     });
 
-    return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesInvoiced && matchesDateRange;
+    return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesPhase && matchesInvoiced && matchesDateRange;
   });
 
   // Get project name
@@ -413,6 +423,51 @@ export default function Timesheets() {
                     className="mr-2"
                   />
                   {status.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Phase Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className={`h-6 px-2 text-xs rounded-md flex items-center gap-1 transition-all ${
+                  selectedPhases.length > 0 
+                    ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" 
+                    : "bg-background border hover-elevate"
+                }`}
+                data-testid="button-filter-phase"
+              >
+                <span>Phase</span>
+                {selectedPhases.length > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                    {selectedPhases.length}
+                  </Badge>
+                )}
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {[
+                { key: "lead", name: "Lead" },
+                { key: "pre_construction", name: "Pre-Construction" },
+                { key: "construction", name: "Construction" },
+                { key: "post_construction", name: "Post-Construction" },
+                { key: "archive", name: "Archive" },
+              ].map((phase) => (
+                <DropdownMenuItem key={phase.key} className="flex items-center">
+                  <Checkbox
+                    checked={selectedPhases.includes(phase.key)}
+                    onCheckedChange={() => {
+                      const newPhases = selectedPhases.includes(phase.key)
+                        ? selectedPhases.filter(p => p !== phase.key)
+                        : [...selectedPhases, phase.key];
+                      setSelectedPhases(newPhases);
+                    }}
+                    className="mr-2"
+                  />
+                  {phase.name}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

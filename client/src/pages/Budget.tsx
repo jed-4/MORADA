@@ -16,14 +16,28 @@ import {
 } from "@/components/ui/table";
 import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Budget, BudgetLineItem, LabourHoursBudget } from "@shared/schema";
+import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+
+const PHASE_LABELS: Record<string, string> = {
+  lead: "Lead",
+  pre_construction: "Pre-Construction",
+  construction: "Construction",
+  post_construction: "Post-Construction",
+  archive: "Archive",
+};
 
 export default function BudgetPage() {
   const { projectId } = useParams();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Budget" });
   const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
+
+  // Fetch project to get current phase
+  const { data: project } = useQuery<Project>({
+    queryKey: ["/api/projects", projectId],
+    enabled: !!projectId,
+  });
 
   const { data: budget, isLoading: budgetLoading } = useQuery<Budget>({
     queryKey: [`/api/projects/${projectId}/budget`],
@@ -194,6 +208,15 @@ export default function BudgetPage() {
           <h2 className="text-sm font-semibold" data-testid="text-budget-title">
             {pageTitle}
           </h2>
+          {project?.currentSystemPhase && (
+            <Badge 
+              variant="outline" 
+              className="text-xs bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30"
+              data-testid="badge-project-phase"
+            >
+              {PHASE_LABELS[project.currentSystemPhase] || project.currentSystemPhase}
+            </Badge>
+          )}
           {activeTab === "costs" && (
             <Badge variant="secondary" className="text-xs">
               {lineItems.length} cost codes
