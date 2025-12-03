@@ -2050,7 +2050,7 @@ export default function ProjectScope() {
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-5xl mx-auto">
-          {scopeItems.length === 0 ? (
+          {scopeItems.length === 0 && scopeStages.length === 0 ? (
             <Card className="p-12">
               <div className="text-center text-muted-foreground">
                 <ListTree className="h-12 w-12 mx-auto mb-4 opacity-20" />

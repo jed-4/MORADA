@@ -30,6 +30,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   ArrowLeft, 
   Plus, 
@@ -42,8 +43,14 @@ import {
   Layers,
   Settings,
   Pen,
+  Filter,
+  FolderPlus,
+  Check,
 } from "lucide-react";
-import type { ScopeTemplate } from "@shared/schema";
+import type { ScopeTemplate, Project } from "@shared/schema";
+
+const ITEM_TYPES = ['Labour', 'Material', 'Equipment', 'Subcontractor', 'Other'] as const;
+type ItemType = typeof ITEM_TYPES[number];
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -76,9 +83,11 @@ interface SortableItemProps {
   item: TemplateItem;
   onEdit: (item: TemplateItem) => void;
   onDelete: (id: string) => void;
+  isSelected: boolean;
+  onToggleSelect: (id: string) => void;
 }
 
-function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
+function SortableItem({ item, onEdit, onDelete, isSelected, onToggleSelect }: SortableItemProps) {
   const {
     attributes,
     listeners,
@@ -94,12 +103,24 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const combinedStyle = {
+    ...style,
+    '--tw-ring-color': isSelected ? CASVA_LILAC : undefined,
+  } as React.CSSProperties;
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 p-2 border rounded-lg bg-card hover-elevate group"
+      style={combinedStyle}
+      className={`flex items-center gap-2 p-2 border rounded-lg bg-card hover-elevate group ${isSelected ? 'ring-2' : ''}`}
     >
+      <Checkbox
+        checked={isSelected}
+        onCheckedChange={() => onToggleSelect(item.id)}
+        className="data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+        data-testid={`checkbox-item-${item.id}`}
+      />
+      
       <div
         {...attributes}
         {...listeners}
@@ -184,6 +205,12 @@ export default function ScopeTemplateDetail() {
     stageId: undefined,
   });
 
+  // Filtering and selection state
+  const [activeTypeFilters, setActiveTypeFilters] = useState<Set<string>>(new Set(ITEM_TYPES));
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [addToProjectDialogOpen, setAddToProjectDialogOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -200,6 +227,11 @@ export default function ScopeTemplateDetail() {
       return res.json();
     },
     enabled: !!params.templateId,
+  });
+
+  // Fetch projects for bulk add
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
   });
 
   const updateMutation = useMutation({
@@ -451,6 +483,95 @@ export default function ScopeTemplateDetail() {
     saveTemplateData({ stages, items: updatedItems });
   };
 
+  // Filter and selection functions
+  const toggleTypeFilter = (type: string) => {
+    setActiveTypeFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const filteredItemIds = items
+      .filter(item => !item.itemType || activeTypeFilters.has(item.itemType))
+      .map(item => item.id);
+    
+    const allSelected = filteredItemIds.every(id => selectedItems.has(id));
+    if (allSelected) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(filteredItemIds));
+    }
+  };
+
+  const toggleItemSelect = (itemId: string) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
+  // Add selected items to project mutation
+  const addToProjectMutation = useMutation({
+    mutationFn: async ({ projectId, itemIds }: { projectId: string; itemIds: string[] }) => {
+      const selectedItemsData = items.filter(item => itemIds.includes(item.id));
+      
+      // Create scope items for each selected template item
+      const promises = selectedItemsData.map(item => 
+        apiRequest(`/api/projects/${projectId}/scope`, 'POST', {
+          title: item.title,
+          description: item.description,
+          stage: stages.find(s => s.id === item.stageId)?.name || 'General',
+          itemType: item.itemType || 'scope',
+          displayOrder: 0,
+        })
+      );
+      
+      return Promise.all(promises);
+    },
+    onSuccess: (_, { projectId }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      setAddToProjectDialogOpen(false);
+      setSelectedItems(new Set());
+      setSelectedProjectId("");
+      toast({ 
+        title: "Items added to project",
+        description: `${selectedItems.size} items have been added to the project scope.`
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to add items to project.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAddToProject = () => {
+    if (!selectedProjectId || selectedItems.size === 0) return;
+    addToProjectMutation.mutate({ 
+      projectId: selectedProjectId, 
+      itemIds: Array.from(selectedItems) 
+    });
+  };
+
+  // Check if item passes current filters
+  const passesFilter = (item: TemplateItem) => {
+    if (!item.itemType) return true; // Items without type always show
+    return activeTypeFilters.has(item.itemType);
+  };
+
   const toggleStage = (stageId: string) => {
     setExpandedStages(prev => {
       const next = new Set(prev);
@@ -564,6 +685,54 @@ export default function ScopeTemplateDetail() {
             <span>Add Item</span>
           </button>
         </div>
+      </div>
+
+      {/* Filter Bar + Bulk Actions */}
+      <div className="h-10 bg-background flex items-center justify-between px-2 gap-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Checkbox
+              checked={items.length > 0 && items.every(item => selectedItems.has(item.id))}
+              onCheckedChange={toggleSelectAll}
+              className="data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+              data-testid="checkbox-select-all"
+            />
+            <span className="text-xs text-muted-foreground ml-1">
+              {selectedItems.size > 0 ? `${selectedItems.size} selected` : 'Select all'}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-border mx-1" />
+          <div className="flex items-center gap-1">
+            <Filter className="h-3 w-3 text-muted-foreground" />
+            {ITEM_TYPES.map(type => (
+              <Badge
+                key={type}
+                variant={activeTypeFilters.has(type) ? "default" : "outline"}
+                className={`h-5 text-[10px] cursor-pointer ${
+                  activeTypeFilters.has(type) 
+                    ? 'bg-[#bba7db] hover:bg-[#bba7db]/90 text-white' 
+                    : 'hover:bg-muted'
+                }`}
+                onClick={() => toggleTypeFilter(type)}
+                data-testid={`filter-${type.toLowerCase()}`}
+              >
+                {type}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        
+        {selectedItems.size > 0 && (
+          <Button
+            size="sm"
+            className="h-6 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90"
+            onClick={() => setAddToProjectDialogOpen(true)}
+            data-testid="button-add-to-project"
+          >
+            <FolderPlus className="h-3 w-3 mr-1" />
+            Add to Project
+          </Button>
+        )}
       </div>
 
       {/* Content */}
@@ -742,12 +911,14 @@ export default function ScopeTemplateDetail() {
                             strategy={verticalListSortingStrategy}
                           >
                             <div className="space-y-2">
-                              {stageItems.map(item => (
+                              {stageItems.filter(passesFilter).map(item => (
                                 <SortableItem
                                   key={item.id}
                                   item={item}
                                   onEdit={handleEditItem}
                                   onDelete={handleDeleteItem}
+                                  isSelected={selectedItems.has(item.id)}
+                                  onToggleSelect={toggleItemSelect}
                                 />
                               ))}
                             </div>
@@ -1066,6 +1237,65 @@ export default function ScopeTemplateDetail() {
           <DialogFooter>
             <Button onClick={() => setSettingsDialogOpen(false)}>
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add to Project Dialog */}
+      <Dialog open={addToProjectDialogOpen} onOpenChange={setAddToProjectDialogOpen}>
+        <DialogContent data-testid="dialog-add-to-project">
+          <DialogHeader>
+            <DialogTitle>Add Items to Project</DialogTitle>
+            <DialogDescription>
+              Add {selectedItems.size} selected item{selectedItems.size !== 1 ? 's' : ''} to a project scope.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Select Project</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger data-testid="select-project">
+                  <SelectValue placeholder="Choose a project..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map(project => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Selected items:
+              <ul className="mt-2 space-y-1 max-h-40 overflow-auto">
+                {Array.from(selectedItems).map(itemId => {
+                  const item = items.find(i => i.id === itemId);
+                  return item ? (
+                    <li key={item.id} className="flex items-center gap-2">
+                      <Check className="h-3 w-3 text-[#bba7db]" />
+                      <span>{item.title}</span>
+                      {item.itemType && (
+                        <Badge variant="outline" className="h-4 text-[10px]">{item.itemType}</Badge>
+                      )}
+                    </li>
+                  ) : null;
+                })}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddToProjectDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddToProject}
+              disabled={!selectedProjectId || addToProjectMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              data-testid="button-confirm-add-to-project"
+            >
+              {addToProjectMutation.isPending ? "Adding..." : "Add to Project"}
             </Button>
           </DialogFooter>
         </DialogContent>
