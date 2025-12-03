@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -40,13 +41,20 @@ import {
   ChevronRight,
   Layers,
   Settings,
+  Pen,
 } from "lucide-react";
 import type { ScopeTemplate } from "@shared/schema";
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const CASVA_LILAC = '#bba7db';
+
+interface TemplateStage {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
 
 interface TemplateItem {
   id: string;
@@ -55,8 +63,13 @@ interface TemplateItem {
   itemType?: string;
   quantity?: number;
   rate?: number;
-  stage?: string;
+  stageId?: string;
   sortOrder: number;
+}
+
+interface TemplateData {
+  stages: TemplateStage[];
+  items: TemplateItem[];
 }
 
 interface SortableItemProps {
@@ -85,7 +98,7 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 p-2 border rounded-md bg-card hover-elevate group"
+      className="flex items-center gap-2 p-2 border rounded-lg bg-card hover-elevate group"
     >
       <div
         {...attributes}
@@ -154,7 +167,13 @@ export default function ScopeTemplateDetail() {
   const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<TemplateItem | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set(['default']));
+  const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
+  const [addStageDialogOpen, setAddStageDialogOpen] = useState(false);
+  const [newStageName, setNewStageName] = useState("");
+  const [editingStageId, setEditingStageId] = useState<string | null>(null);
+  const [editingStageName, setEditingStageName] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const [addingToStageId, setAddingToStageId] = useState<string | null>(null);
   
   const [newItem, setNewItem] = useState<Partial<TemplateItem>>({
     title: "",
@@ -162,7 +181,7 @@ export default function ScopeTemplateDetail() {
     itemType: "Labour",
     quantity: 1,
     rate: 0,
-    stage: "default",
+    stageId: undefined,
   });
 
   const sensors = useSensors(
@@ -190,10 +209,6 @@ export default function ScopeTemplateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scope-templates", params.templateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/scope-templates"] });
-      toast({
-        title: "Template updated",
-        description: "Your changes have been saved.",
-      });
     },
     onError: () => {
       toast({
@@ -204,29 +219,159 @@ export default function ScopeTemplateDetail() {
     },
   });
 
-  const items: TemplateItem[] = (template?.templateData as TemplateItem[]) || [];
+  const DEFAULT_STAGE: TemplateStage = {
+    id: 'stage-general',
+    name: 'General',
+    sortOrder: 0,
+  };
 
-  const stages = [...new Set(items.map(item => item.stage || 'default'))];
-  if (stages.length === 0) stages.push('default');
+  const parseTemplateData = (): TemplateData => {
+    let rawData = template?.templateData as any;
+    
+    if (!rawData) {
+      return { stages: [DEFAULT_STAGE], items: [] };
+    }
+    
+    if (rawData.templateData && typeof rawData.templateData === 'object') {
+      rawData = rawData.templateData;
+    }
+    
+    if (Array.isArray(rawData)) {
+      const oldItems = rawData as any[];
+      const stageNames = [...new Set(oldItems.map(item => item.stage || 'General'))];
+      if (stageNames.length === 0) stageNames.push('General');
+      const stages: TemplateStage[] = stageNames.map((name, idx) => ({
+        id: `stage-${name.toLowerCase().replace(/\s+/g, '-')}`,
+        name,
+        sortOrder: idx,
+      }));
+      const items: TemplateItem[] = oldItems.map(item => ({
+        ...item,
+        stageId: stages.find(s => s.name === (item.stage || 'General'))?.id,
+      }));
+      return { stages, items };
+    }
+    
+    const data = rawData as TemplateData;
+    const stages = [...(data?.stages || [])];
+    const items = data?.items || [];
+    
+    if (stages.length === 0) {
+      stages.push({ ...DEFAULT_STAGE });
+    }
+    
+    return { stages, items };
+  };
 
-  const getItemsByStage = (stage: string) => {
-    return items.filter(item => (item.stage || 'default') === stage)
+  const templateData = parseTemplateData();
+  const stages = [...templateData.stages].sort((a, b) => a.sortOrder - b.sortOrder);
+  const items = templateData.items;
+
+  useEffect(() => {
+    if (stages.length > 0 && expandedStages.size === 0) {
+      setExpandedStages(new Set(stages.map(s => s.id)));
+    }
+  }, [template?.id]);
+
+  const saveTemplateData = (newData: TemplateData) => {
+    updateMutation.mutate({ templateData: newData as unknown as Record<string, unknown> });
+  };
+
+  const getItemsByStage = (stageId: string) => {
+    return items.filter(item => item.stageId === stageId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
+  };
+
+  const getStageTotal = (stageId: string) => {
+    return getItemsByStage(stageId).reduce((sum, item) => {
+      const qty = item.quantity || 0;
+      const rate = item.rate || 0;
+      return sum + (qty * rate);
+    }, 0);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = items.findIndex(item => item.id === active.id);
-    const newIndex = items.findIndex(item => item.id === over.id);
+    const activeItem = items.find(item => item.id === active.id);
+    const overItem = items.find(item => item.id === over.id);
+    
+    if (!activeItem || !overItem) return;
+    
+    if (activeItem.stageId !== overItem.stageId) {
+      return;
+    }
 
-    const newItems = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({
+    const stageId = activeItem.stageId;
+    const stageItems = items.filter(item => item.stageId === stageId);
+    const otherItems = items.filter(item => item.stageId !== stageId);
+    
+    const oldIndex = stageItems.findIndex(item => item.id === active.id);
+    const newIndex = stageItems.findIndex(item => item.id === over.id);
+
+    const reorderedStageItems = arrayMove(stageItems, oldIndex, newIndex).map((item, idx) => ({
       ...item,
       sortOrder: idx,
     }));
 
-    updateMutation.mutate({ templateData: newItems });
+    saveTemplateData({ stages, items: [...otherItems, ...reorderedStageItems] });
+  };
+
+  const handleAddStage = () => {
+    if (!newStageName.trim()) {
+      toast({
+        title: "Missing name",
+        description: "Please enter a stage name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newStage: TemplateStage = {
+      id: `stage-${Date.now()}`,
+      name: newStageName.trim(),
+      sortOrder: stages.length,
+    };
+
+    saveTemplateData({ stages: [...stages, newStage], items });
+    setExpandedStages(prev => new Set([...prev, newStage.id]));
+    setAddStageDialogOpen(false);
+    setNewStageName("");
+    toast({ title: "Stage added" });
+  };
+
+  const handleRenameStage = (stageId: string) => {
+    if (!editingStageName.trim()) {
+      setEditingStageId(null);
+      return;
+    }
+
+    const newStages = stages.map(stage =>
+      stage.id === stageId ? { ...stage, name: editingStageName.trim() } : stage
+    );
+
+    saveTemplateData({ stages: newStages, items });
+    setEditingStageId(null);
+    setEditingStageName("");
+  };
+
+  const handleDeleteStage = (stageId: string) => {
+    const stageItems = getItemsByStage(stageId);
+    if (stageItems.length > 0) {
+      toast({
+        title: "Cannot delete stage",
+        description: "Stage must be empty before deleting. Move or delete items first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newStages = stages.filter(stage => stage.id !== stageId)
+      .map((stage, idx) => ({ ...stage, sortOrder: idx }));
+
+    saveTemplateData({ stages: newStages, items });
+    toast({ title: "Stage deleted" });
   };
 
   const handleAddItem = () => {
@@ -239,6 +384,17 @@ export default function ScopeTemplateDetail() {
       return;
     }
 
+    const targetStageId = addingToStageId || newItem.stageId || stages[0]?.id;
+    if (!targetStageId) {
+      toast({
+        title: "No stage available",
+        description: "Please create a stage first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const stageItems = getItemsByStage(targetStageId);
     const newItemData: TemplateItem = {
       id: crypto.randomUUID(),
       title: newItem.title.trim(),
@@ -246,20 +402,22 @@ export default function ScopeTemplateDetail() {
       itemType: newItem.itemType,
       quantity: newItem.quantity,
       rate: newItem.rate ? Math.round(newItem.rate * 100) : undefined,
-      stage: newItem.stage || 'default',
-      sortOrder: items.length,
+      stageId: targetStageId,
+      sortOrder: stageItems.length,
     };
 
-    updateMutation.mutate({ templateData: [...items, newItemData] });
+    saveTemplateData({ stages, items: [...items, newItemData] });
     setAddItemDialogOpen(false);
+    setAddingToStageId(null);
     setNewItem({
       title: "",
       description: "",
       itemType: "Labour",
       quantity: 1,
       rate: 0,
-      stage: "default",
+      stageId: undefined,
     });
+    toast({ title: "Item added" });
   };
 
   const handleEditItem = (item: TemplateItem) => {
@@ -282,26 +440,44 @@ export default function ScopeTemplateDetail() {
         : item
     );
 
-    updateMutation.mutate({ templateData: updatedItems });
+    saveTemplateData({ stages, items: updatedItems });
     setEditDialogOpen(false);
     setEditingItem(null);
+    toast({ title: "Item updated" });
   };
 
   const handleDeleteItem = (itemId: string) => {
     const updatedItems = items.filter(item => item.id !== itemId);
-    updateMutation.mutate({ templateData: updatedItems });
+    saveTemplateData({ stages, items: updatedItems });
   };
 
-  const toggleStage = (stage: string) => {
+  const toggleStage = (stageId: string) => {
     setExpandedStages(prev => {
       const next = new Set(prev);
-      if (next.has(stage)) {
-        next.delete(stage);
+      if (next.has(stageId)) {
+        next.delete(stageId);
       } else {
-        next.add(stage);
+        next.add(stageId);
       }
       return next;
     });
+  };
+
+  const openAddItemForStage = (stageId: string) => {
+    setAddingToStageId(stageId);
+    setNewItem(prev => ({ ...prev, stageId }));
+    setAddItemDialogOpen(true);
+  };
+
+  const handleStageKeyDown = (e: React.KeyboardEvent, stageId: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRenameStage(stageId);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setEditingStageId(null);
+      setEditingStageName("");
+    }
   };
 
   if (isLoading) {
@@ -346,6 +522,9 @@ export default function ScopeTemplateDetail() {
           </Badge>
         )}
         <Badge variant="outline" className="text-xs">
+          {stages.length} {stages.length === 1 ? 'stage' : 'stages'}
+        </Badge>
+        <Badge variant="outline" className="text-xs">
           {items.length} {items.length === 1 ? 'item' : 'items'}
         </Badge>
       </div>
@@ -364,32 +543,45 @@ export default function ScopeTemplateDetail() {
             Settings
           </Button>
         </div>
-        <button
-          className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setAddItemDialogOpen(true)}
-          data-testid="button-add-item"
-        >
-          <Plus className="w-3 h-3" />
-          <span>Add Item</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-background hover-elevate active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setAddStageDialogOpen(true)}
+            data-testid="button-add-stage"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Stage</span>
+          </button>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => {
+              setAddingToStageId(null);
+              setAddItemDialogOpen(true);
+            }}
+            data-testid="button-add-item"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Item</span>
+          </button>
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {items.length === 0 ? (
+        {stages.length === 0 ? (
           <div className="text-center py-12">
             <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-sm font-medium mb-2">No items yet</h3>
+            <h3 className="text-sm font-medium mb-2">No stages yet</h3>
             <p className="text-xs text-muted-foreground mb-4">
-              Add scope items to this template
+              Add stages to organize your scope items
             </p>
             <button
               className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 mx-auto"
-              onClick={() => setAddItemDialogOpen(true)}
-              data-testid="button-add-first-item"
+              onClick={() => setAddStageDialogOpen(true)}
+              data-testid="button-add-first-stage"
             >
               <Plus className="h-3 w-3" />
-              Add Item
+              Add Stage
             </button>
           </div>
         ) : (
@@ -398,50 +590,168 @@ export default function ScopeTemplateDetail() {
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
-            <div className="space-y-4">
+            <div className="space-y-3">
               {stages.map(stage => {
-                const stageItems = getItemsByStage(stage);
-                const isExpanded = expandedStages.has(stage);
+                const stageItems = getItemsByStage(stage.id);
+                const isExpanded = expandedStages.has(stage.id);
+                const stageTotal = getStageTotal(stage.id);
+                const isEditing = editingStageId === stage.id;
                 
                 return (
-                  <div key={stage} className="border rounded-md">
+                  <div 
+                    key={stage.id} 
+                    className="rounded-xl bg-muted/20 border border-border/50 overflow-hidden"
+                  >
+                    {/* Stage Header */}
                     <div 
-                      className="flex items-center gap-2 p-2 bg-muted/50 cursor-pointer"
-                      onClick={() => toggleStage(stage)}
+                      className="h-9 px-3 flex items-center justify-between bg-background/50 group cursor-pointer hover-elevate"
+                      onClick={() => !isEditing && toggleStage(stage.id)}
+                      data-testid={`stage-header-${stage.id}`}
                     >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                      <span className="font-medium text-sm capitalize">
-                        {stage === 'default' ? 'General' : stage}
-                      </span>
-                      <Badge variant="outline" className="h-4 text-[10px]">
-                        {stageItems.length}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        
+                        {isEditing ? (
+                          <Input
+                            ref={editInputRef}
+                            value={editingStageName}
+                            onChange={(e) => setEditingStageName(e.target.value)}
+                            onKeyDown={(e) => handleStageKeyDown(e, stage.id)}
+                            onBlur={() => handleRenameStage(stage.id)}
+                            autoFocus
+                            className="h-6 text-sm font-semibold px-2 w-40"
+                            data-testid={`input-edit-stage-${stage.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span 
+                            className="text-sm font-semibold" 
+                            data-testid={`text-stage-name-${stage.id}`}
+                          >
+                            {stage.name}
+                          </span>
+                        )}
+
+                        {stageItems.length > 0 && (
+                          <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/20">
+                            {stageItems.length}
+                          </span>
+                        )}
+
+                        {stageTotal > 0 && (
+                          <span className="text-[10px] text-muted-foreground font-medium">
+                            ${(stageTotal / 100).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {!isEditing && (
+                          <button
+                            className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover-elevate"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingStageId(stage.id);
+                              setEditingStageName(stage.name);
+                            }}
+                            data-testid={`button-edit-stage-${stage.id}`}
+                          >
+                            <Pen className="h-3 w-3" />
+                          </button>
+                        )}
+
+                        <button
+                          className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-0.5"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAddItemForStage(stage.id);
+                          }}
+                          data-testid={`button-add-item-${stage.id}`}
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>Item</span>
+                        </button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover-elevate"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`button-menu-stage-${stage.id}`}
+                            >
+                              <span className="text-sm leading-none">⋯</span>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingStageId(stage.id);
+                                setEditingStageName(stage.name);
+                              }}
+                              data-testid={`menu-rename-stage-${stage.id}`}
+                            >
+                              <Pen className="h-4 w-4 mr-2" />
+                              Rename Stage
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteStage(stage.id);
+                              }}
+                              className="text-destructive"
+                              data-testid={`menu-delete-stage-${stage.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete Stage
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                     
+                    {/* Items Container */}
                     {isExpanded && (
-                      <div className="p-2 space-y-2">
-                        <SortableContext
-                          items={stageItems.map(item => item.id)}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          {stageItems.map(item => (
-                            <SortableItem
-                              key={item.id}
-                              item={item}
-                              onEdit={handleEditItem}
-                              onDelete={handleDeleteItem}
-                            />
-                          ))}
-                        </SortableContext>
-                        
-                        {stageItems.length === 0 && (
-                          <div className="text-center py-4 text-xs text-muted-foreground">
-                            No items in this stage
+                      <div className="p-2">
+                        {stageItems.length === 0 ? (
+                          <div 
+                            className="text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg flex items-center justify-center"
+                            style={{ 
+                              height: '60px',
+                              borderColor: CASVA_LILAC + '40'
+                            }}
+                          >
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xs opacity-60">No items in this stage</span>
+                              <button
+                                className="text-[10px] text-[#bba7db] hover:underline"
+                                onClick={() => openAddItemForStage(stage.id)}
+                              >
+                                Add first item
+                              </button>
+                            </div>
                           </div>
+                        ) : (
+                          <SortableContext
+                            items={stageItems.map(item => item.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-2">
+                              {stageItems.map(item => (
+                                <SortableItem
+                                  key={item.id}
+                                  item={item}
+                                  onEdit={handleEditItem}
+                                  onDelete={handleDeleteItem}
+                                />
+                              ))}
+                            </div>
+                          </SortableContext>
                         )}
                       </div>
                     )}
@@ -452,6 +762,49 @@ export default function ScopeTemplateDetail() {
           </DndContext>
         )}
       </div>
+
+      {/* Add Stage Dialog */}
+      <Dialog open={addStageDialogOpen} onOpenChange={setAddStageDialogOpen}>
+        <DialogContent data-testid="dialog-add-stage">
+          <DialogHeader>
+            <DialogTitle>Add Stage</DialogTitle>
+            <DialogDescription>
+              Create a new stage to organize scope items.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Stage Name *</Label>
+              <Input
+                placeholder="e.g., Foundation, Framing, Electrical"
+                value={newStageName}
+                onChange={(e) => setNewStageName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddStage();
+                  }
+                }}
+                data-testid="input-stage-name"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddStageDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddStage}
+              disabled={updateMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              data-testid="button-confirm-add-stage"
+            >
+              {updateMutation.isPending ? "Adding..." : "Add Stage"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Item Dialog */}
       <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
@@ -504,20 +857,21 @@ export default function ScopeTemplateDetail() {
               <div className="space-y-2">
                 <Label>Stage</Label>
                 <Select
-                  value={newItem.stage || "default"}
-                  onValueChange={(value) => setNewItem({ ...newItem, stage: value })}
+                  value={addingToStageId || newItem.stageId || ""}
+                  onValueChange={(value) => {
+                    setAddingToStageId(value);
+                    setNewItem({ ...newItem, stageId: value });
+                  }}
                 >
                   <SelectTrigger data-testid="select-item-stage">
-                    <SelectValue />
+                    <SelectValue placeholder="Select a stage" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="default">General</SelectItem>
-                    <SelectItem value="foundation">Foundation</SelectItem>
-                    <SelectItem value="framing">Framing</SelectItem>
-                    <SelectItem value="roofing">Roofing</SelectItem>
-                    <SelectItem value="electrical">Electrical</SelectItem>
-                    <SelectItem value="plumbing">Plumbing</SelectItem>
-                    <SelectItem value="finishing">Finishing</SelectItem>
+                    {stages.map(stage => (
+                      <SelectItem key={stage.id} value={stage.id}>
+                        {stage.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -613,20 +967,18 @@ export default function ScopeTemplateDetail() {
                 <div className="space-y-2">
                   <Label>Stage</Label>
                   <Select
-                    value={editingItem.stage || "default"}
-                    onValueChange={(value) => setEditingItem({ ...editingItem, stage: value })}
+                    value={editingItem.stageId || ""}
+                    onValueChange={(value) => setEditingItem({ ...editingItem, stageId: value })}
                   >
                     <SelectTrigger data-testid="select-edit-stage">
-                      <SelectValue />
+                      <SelectValue placeholder="Select a stage" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="default">General</SelectItem>
-                      <SelectItem value="foundation">Foundation</SelectItem>
-                      <SelectItem value="framing">Framing</SelectItem>
-                      <SelectItem value="roofing">Roofing</SelectItem>
-                      <SelectItem value="electrical">Electrical</SelectItem>
-                      <SelectItem value="plumbing">Plumbing</SelectItem>
-                      <SelectItem value="finishing">Finishing</SelectItem>
+                      {stages.map(stage => (
+                        <SelectItem key={stage.id} value={stage.id}>
+                          {stage.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
