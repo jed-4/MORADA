@@ -201,10 +201,9 @@ function DraggableProjectCard({
   };
 
   // Handle click - navigate to project
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = () => {
     // Prevent click if dragging
     if (isDragging) {
-      e.preventDefault();
       return;
     }
     onClick?.();
