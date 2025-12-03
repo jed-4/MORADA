@@ -140,7 +140,7 @@ export default function BusinessProjects() {
   return (
     <div className="h-full flex flex-col" data-testid="business-projects">
       {/* Row 2 - Views & Controls (36px) */}
-      <div className="h-9 bg-white flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View Tabs */}
         <div className="flex items-center gap-0.5" data-testid="tabs-project-views">
           <button
