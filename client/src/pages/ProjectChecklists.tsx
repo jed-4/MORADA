@@ -578,15 +578,16 @@ export default function ProjectChecklists() {
             </div>
 
             <div className="space-y-2">
-              <Label>Assignee</Label>
+              <Label>Assignee (optional)</Label>
               <Select
-                value={formData.assigneeId}
-                onValueChange={(value) => setFormData({ ...formData, assigneeId: value })}
+                value={formData.assigneeId || "unassigned"}
+                onValueChange={(value) => setFormData({ ...formData, assigneeId: value === "unassigned" ? "" : value })}
               >
                 <SelectTrigger data-testid="select-assignee">
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {teamMembers.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
                       {member.name}
