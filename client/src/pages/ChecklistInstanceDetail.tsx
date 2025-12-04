@@ -9,6 +9,8 @@ import {
   type ChecklistInstance,
   type ChecklistInstanceItem,
   type User,
+  type Task,
+  type ScheduleItem,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -95,6 +97,7 @@ export default function ChecklistInstanceDetail() {
   const [showNotesDialog, setShowNotesDialog] = useState<ChecklistInstanceItem | null>(null);
   const [newNoteText, setNewNoteText] = useState("");
   const [openAssignPopover, setOpenAssignPopover] = useState<string | null>(null);
+  const [openLinkPopover, setOpenLinkPopover] = useState<string | null>(null);
   
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -139,6 +142,32 @@ export default function ChecklistInstanceDetail() {
     queryKey: ["/api/users"],
   });
 
+  // Fetch tasks for this project for linking
+  const { data: projectTasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/tasks", { projectId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks?projectId=${projectId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  // Fetch schedule items for this project for linking
+  const { data: scheduleItems = [] } = useQuery<ScheduleItem[]>({
+    queryKey: ["/api/projects", projectId, "schedule-items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/schedule-items`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
   const updateChecklistMutation = useMutation({
     mutationFn: async (data: Partial<ChecklistInstance>) => {
       const res = await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", data);
@@ -160,13 +189,21 @@ export default function ChecklistInstanceDetail() {
       const res = await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (updatedItem) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
+      // Update dialog state if the notes dialog is open for this item
+      if (showNotesDialog && showNotesDialog.id === updatedItem.id) {
+        setShowNotesDialog(updatedItem);
+      }
+      // Close link popover after successful update
+      setOpenLinkPopover(null);
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update item.", variant: "destructive" });
+      // Also close popover on error to prevent stuck state
+      setOpenLinkPopover(null);
     },
   });
 
@@ -567,12 +604,26 @@ export default function ChecklistInstanceDetail() {
                             )}
                             
                             {/* Description */}
-                            <div className="flex-1 min-w-0 flex items-center gap-1">
-                              <span className={`text-xs truncate ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
-                                {item.description}
-                              </span>
-                              {item.isRequired && (
-                                <Asterisk className="h-2.5 w-2.5 text-red-500 shrink-0" />
+                            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1">
+                                <span className={`text-xs truncate ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
+                                  {item.description}
+                                </span>
+                                {item.isRequired && (
+                                  <Asterisk className="h-2.5 w-2.5 text-red-500 shrink-0" />
+                                )}
+                              </div>
+                              {/* Linked Item Indicator */}
+                              {(item.linkedTaskId || item.linkedScheduleItemId) && (
+                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                  <Link2 className="h-2.5 w-2.5 text-[#bba7db]" />
+                                  <span className="truncate">
+                                    {item.linkedTaskId 
+                                      ? projectTasks.find(t => t.id === item.linkedTaskId)?.title || "Linked task"
+                                      : scheduleItems.find(s => s.id === item.linkedScheduleItemId)?.name || "Linked schedule"
+                                    }
+                                  </span>
+                                </div>
                               )}
                             </div>
                             
@@ -648,6 +699,119 @@ export default function ChecklistInstanceDetail() {
                                 </PopoverContent>
                               </Popover>
                               
+                              {/* Link Icon */}
+                              <Popover open={openLinkPopover === item.id} onOpenChange={(open) => setOpenLinkPopover(open ? item.id : null)}>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    data-testid={`button-link-${item.id}`}
+                                  >
+                                    <Link2 className={`h-3 w-3 ${item.linkedTaskId || item.linkedScheduleItemId ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-64 p-2" align="end">
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-medium text-muted-foreground px-1">Link to:</p>
+                                    
+                                    {/* Tasks Section */}
+                                    {projectTasks.length > 0 && (
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Tasks</p>
+                                        <ScrollArea className="max-h-32">
+                                          <div className="space-y-0.5">
+                                            {projectTasks.map((task) => (
+                                              <Button
+                                                key={task.id}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full justify-start h-7 text-xs px-1"
+                                                disabled={updateItemMutation.isPending}
+                                                onClick={() => {
+                                                  updateItemMutation.mutate({
+                                                    itemId: item.id,
+                                                    data: { 
+                                                      linkedTaskId: item.linkedTaskId === task.id ? null : task.id,
+                                                      linkedScheduleItemId: null 
+                                                    }
+                                                  });
+                                                }}
+                                              >
+                                                <span className="truncate">{task.title}</span>
+                                                {item.linkedTaskId === task.id && (
+                                                  <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                                )}
+                                              </Button>
+                                            ))}
+                                          </div>
+                                        </ScrollArea>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Schedule Items Section */}
+                                    {scheduleItems.length > 0 && (
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Schedule</p>
+                                        <ScrollArea className="max-h-32">
+                                          <div className="space-y-0.5">
+                                            {scheduleItems.map((schedItem) => (
+                                              <Button
+                                                key={schedItem.id}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full justify-start h-7 text-xs px-1"
+                                                disabled={updateItemMutation.isPending}
+                                                onClick={() => {
+                                                  updateItemMutation.mutate({
+                                                    itemId: item.id,
+                                                    data: { 
+                                                      linkedScheduleItemId: item.linkedScheduleItemId === schedItem.id ? null : schedItem.id,
+                                                      linkedTaskId: null 
+                                                    }
+                                                  });
+                                                }}
+                                              >
+                                                <span className="truncate">{schedItem.name}</span>
+                                                {item.linkedScheduleItemId === schedItem.id && (
+                                                  <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                                )}
+                                              </Button>
+                                            ))}
+                                          </div>
+                                        </ScrollArea>
+                                      </div>
+                                    )}
+                                    
+                                    {/* No items message */}
+                                    {projectTasks.length === 0 && scheduleItems.length === 0 && (
+                                      <p className="text-xs text-muted-foreground text-center py-2">
+                                        No tasks or schedule items available
+                                      </p>
+                                    )}
+                                    
+                                    {/* Remove link button */}
+                                    {(item.linkedTaskId || item.linkedScheduleItemId) && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full justify-center h-7 text-xs text-destructive hover:text-destructive"
+                                        disabled={updateItemMutation.isPending}
+                                        onClick={() => {
+                                          updateItemMutation.mutate({
+                                            itemId: item.id,
+                                            data: { linkedTaskId: null, linkedScheduleItemId: null }
+                                          });
+                                        }}
+                                      >
+                                        <X className="h-3 w-3 mr-1" />
+                                        Remove link
+                                      </Button>
+                                    )}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+
                               {/* Notes Icon */}
                               <Button
                                 variant="ghost"
