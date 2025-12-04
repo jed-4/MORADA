@@ -650,52 +650,50 @@ export default function ProjectChecklists() {
                         return (
                           <div
                             key={group.id}
-                            className={`rounded-md border-2 bg-muted/20 transition-all ${
-                              group.status === "in_progress" 
-                                ? "border-l-4 border-l-[#bba7db] border-t-border/80 border-r-border/80 border-b-border/80 bg-[#bba7db]/5" 
-                                : "border-border/60"
-                            }`}
+                            className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
                             data-testid={`checklist-card-${group.id}`}
+                            onClick={() => toggleChecklistExpand(group.id)}
                           >
                             {/* Checklist Header */}
-                            <div
-                              className="p-3 cursor-pointer hover:bg-muted/30 transition-colors"
-                              onClick={() => toggleChecklistExpand(group.id)}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-start gap-2 flex-1 min-w-0">
-                                  <div className={`transition-transform duration-200 mt-0.5 ${isExpanded ? 'rotate-90' : ''}`}>
-                                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                      <span className="font-semibold text-sm">{group.name}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <Badge 
-                                        className={`${getStatusBadgeClass(group.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const { status, completionData } = getNextStatus(group.status);
-                                          updateGroupMutation.mutate({
-                                            groupId: group.id,
-                                            data: { status, ...completionData }
-                                          });
-                                        }}
-                                        data-testid={`status-toggle-${group.id}`}
-                                      >
-                                        {getStatusLabel(group.status)}
-                                      </Badge>
-                                      {getPriorityBadge(group.priority || "medium")}
-                                      {(group.linkedTaskId || group.linkedScheduleItemId) && (
-                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db] text-[10px]">
-                                          <Link2 className="h-3 w-3" />
-                                          Linked
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
+                            <div className="flex items-start gap-2">
+                              {/* Left: Chevron + Chips */}
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </div>
+                                <Badge 
+                                  className={`${getStatusBadgeClass(group.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const { status, completionData } = getNextStatus(group.status);
+                                    updateGroupMutation.mutate({
+                                      groupId: group.id,
+                                      data: { status, ...completionData }
+                                    });
+                                  }}
+                                  data-testid={`status-toggle-${group.id}`}
+                                >
+                                  {getStatusLabel(group.status)}
+                                </Badge>
+                                {getPriorityBadge(group.priority || "medium")}
+                                {(group.linkedTaskId || group.linkedScheduleItemId) && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db] text-[10px]">
+                                    <Link2 className="h-3 w-3" />
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* Center: Title */}
+                              <div className="flex-1 min-w-0">
+                                <span className="font-semibold text-sm line-clamp-1">{group.name}</span>
+                                {items.length > 0 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {completedItems} of {items.length} items
+                                  </p>
+                                )}
+                              </div>
+                              
+                              {/* Right: Actions */}
                                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                   {/* Quick Assignee */}
                                   <Popover>
@@ -891,7 +889,6 @@ export default function ProjectChecklists() {
                                     </PopoverContent>
                                   </Popover>
                                 </div>
-                              </div>
                             </div>
                             
                             {/* Expanded Items Panel */}
