@@ -1,9 +1,9 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { insertChecklistTemplateSchema } from "@shared/schema";
+import { insertChecklistTemplateSchema, FieldCategoryWithOptions } from "@shared/schema";
 import { z } from "zod";
 import {
   Dialog,
@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 
 const formSchema = insertChecklistTemplateSchema.extend({
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["Task", "Job", "Estimation", "Lead"]),
+  type: z.string().min(1, "Type is required"),
   description: z.string().optional(),
 });
 
@@ -50,12 +50,19 @@ export function ChecklistTemplateFormDialog({
 }) {
   const { toast } = useToast();
 
+  const { data: checklistTypesCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ['/api/field-categories/by-key', 'checklist.type'],
+  });
+
+  const checklistTypes = checklistTypesCategory?.options?.filter(o => o.isActive) || [];
+  const defaultType = checklistTypes.find(t => t.isDefault)?.key || checklistTypes[0]?.key || "Task";
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
       description: "",
-      type: "Task",
+      type: defaultType,
     },
   });
 
@@ -125,17 +132,27 @@ export function ChecklistTemplateFormDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger data-testid="select-template-type">
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Task">Task</SelectItem>
-                      <SelectItem value="Job">Job</SelectItem>
-                      <SelectItem value="Estimation">Estimation</SelectItem>
-                      <SelectItem value="Lead">Lead</SelectItem>
+                      {checklistTypes.length > 0 ? (
+                        checklistTypes.map((type) => (
+                          <SelectItem key={type.id} value={type.key}>
+                            {type.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <>
+                          <SelectItem value="Task">Task</SelectItem>
+                          <SelectItem value="Job">Job</SelectItem>
+                          <SelectItem value="Estimation">Estimation</SelectItem>
+                          <SelectItem value="Lead">Lead</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                   <FormMessage />
