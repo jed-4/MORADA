@@ -1174,12 +1174,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
+      const userRoleId = user?.roleId;
       
       if (!companyId) {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
-      const templates = await storage.getNoteTemplates(companyId);
+      const { activeOnly } = req.query;
+      let templates = await storage.getNoteTemplates(companyId);
+      
+      // Filter by active status if activeOnly is true (used when creating notes)
+      if (activeOnly === "true") {
+        templates = templates.filter(t => t.isActive);
+      }
+      
+      // Filter by user's role if visibleToRoles is specified (used when creating notes)
+      if (activeOnly === "true" && userRoleId) {
+        templates = templates.filter(t => {
+          const roles = t.visibleToRoles as string[] | null;
+          // If no roles specified, template is visible to all
+          if (!roles || roles.length === 0) return true;
+          // Check if user's role is in the visible roles
+          return roles.includes(userRoleId);
+        });
+      }
+      
       res.json(templates);
     } catch (error) {
       console.error("[Note Templates API] Error fetching templates:", error);

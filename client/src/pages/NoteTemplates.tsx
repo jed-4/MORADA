@@ -1,18 +1,24 @@
 import { useState, useRef } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Eye, EyeOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { NoteTemplatesLibrary, type NoteTemplatesLibraryHandle } from "@/components/systems/NoteTemplatesLibrary";
 import { useQuery } from "@tanstack/react-query";
 import type { NoteTemplate } from "@shared/schema";
 
 export default function NoteTemplates() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [showInactive, setShowInactive] = useState(true);
   const noteTemplatesRef = useRef<NoteTemplatesLibraryHandle>(null);
 
-  const { data: templates = [] } = useQuery<NoteTemplate[]>({
+  const { data: allTemplates = [] } = useQuery<NoteTemplate[]>({
     queryKey: ["/api/note-templates"],
   });
+  
+  // Filter templates based on showInactive toggle
+  const templates = showInactive ? allTemplates : allTemplates.filter(t => t.isActive);
+  const inactiveCount = allTemplates.filter(t => !t.isActive).length;
 
   return (
     <div className="h-full flex flex-col" data-testid="note-templates-page">
@@ -56,11 +62,39 @@ export default function NoteTemplates() {
             />
           </div>
         </div>
+        
+        {/* Right: Status Filter */}
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant={showInactive ? "secondary" : "outline"}
+            size="sm"
+            className="h-6 text-xs px-2"
+            onClick={() => setShowInactive(!showInactive)}
+            data-testid="button-toggle-inactive"
+          >
+            {showInactive ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" />
+                Showing All
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" />
+                Active Only
+              </>
+            )}
+            {inactiveCount > 0 && (
+              <Badge variant="outline" className="ml-1 h-4 px-1 text-[10px]">
+                {inactiveCount} inactive
+              </Badge>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        <NoteTemplatesLibrary ref={noteTemplatesRef} searchQuery={searchQuery} />
+        <NoteTemplatesLibrary ref={noteTemplatesRef} searchQuery={searchQuery} showInactive={showInactive} />
       </div>
     </div>
   );

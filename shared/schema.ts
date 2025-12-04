@@ -420,6 +420,7 @@ export const noteTemplates = pgTable("note_templates", {
   ownerName: text("owner_name"), // Cached for performance
   isPublic: boolean("is_public").notNull().default(false), // Can other users see/use this template
   isActive: boolean("is_active").notNull().default(true),
+  visibleToRoles: json("visible_to_roles").default([]), // Array of role IDs that can see this template (empty = all roles)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -431,6 +432,8 @@ export const insertNoteTemplateSchema = createInsertSchema(noteTemplates).omit({
   ownerName: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  visibleToRoles: z.array(z.string()).default([]),
 });
 
 export type InsertNoteTemplate = z.infer<typeof insertNoteTemplateSchema>;

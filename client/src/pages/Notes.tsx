@@ -144,7 +144,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   });
 
   const { data: noteTemplates = [], isLoading: isLoadingTemplates } = useQuery<NoteTemplate[]>({
-    queryKey: ["/api/note-templates"],
+    queryKey: ["/api/note-templates", { activeOnly: "true" }],
+    queryFn: async () => {
+      const response = await fetch("/api/note-templates?activeOnly=true", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch templates");
+      return response.json();
+    },
   });
 
   // Get the selected template object

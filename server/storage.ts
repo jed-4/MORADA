@@ -2574,7 +2574,7 @@ export class MemStorage implements IStorage {
   async getNoteTemplates(companyId: string): Promise<NoteTemplate[]> {
     const allTemplates = Array.from(this.noteTemplates.values());
     return allTemplates
-      .filter(template => template.companyId === companyId && template.isActive !== false)
+      .filter(template => template.companyId === companyId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
@@ -2606,6 +2606,7 @@ export class MemStorage implements IStorage {
       isPublic: insertTemplate.isPublic ?? false,
       isFormBased: insertTemplate.isFormBased ?? false,
       isActive: insertTemplate.isActive ?? true,
+      visibleToRoles: insertTemplate.visibleToRoles ?? [],
       defaultCustomFields: insertTemplate.defaultCustomFields ?? {},
       createdAt: now,
       updatedAt: now,

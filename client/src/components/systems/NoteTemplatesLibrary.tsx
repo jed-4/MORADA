@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { NoteTemplate, NoteTemplateField } from "@shared/schema";
+import type { NoteTemplate, NoteTemplateField, UserRole } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -96,6 +97,7 @@ export interface NoteTemplatesLibraryHandle {
 
 interface NoteTemplatesLibraryProps {
   searchQuery?: string;
+  showInactive?: boolean;
 }
 
 const FIELD_TYPES = [
@@ -112,13 +114,15 @@ interface FieldWithId extends Partial<NoteTemplateField> {
 }
 
 export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteTemplatesLibraryProps>(
-  ({ searchQuery = "" }, ref) => {
+  ({ searchQuery = "", showInactive = true }, ref) => {
     const { toast } = useToast();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<NoteTemplate | null>(null);
     const [templateName, setTemplateName] = useState("");
     const [templateDescription, setTemplateDescription] = useState("");
     const [isFormBased, setIsFormBased] = useState(true);
+    const [isActive, setIsActive] = useState(true);
+    const [visibleToRoles, setVisibleToRoles] = useState<string[]>([]);
     const [templateFields, setTemplateFields] = useState<FieldWithId[]>([]);
     const [isFieldDialogOpen, setIsFieldDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<Partial<NoteTemplateField> | null>(null);
@@ -157,10 +161,18 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       queryKey: ["/api/note-templates"],
     });
 
-    const filteredTemplates = templates.filter(template =>
-      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (template.description?.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    const { data: roles = [] } = useQuery<UserRole[]>({
+      queryKey: ["/api/roles"],
+    });
+
+    const filteredTemplates = templates.filter(template => {
+      // Filter by active status
+      if (!showInactive && !template.isActive) return false;
+      
+      // Filter by search query
+      return template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (template.description?.toLowerCase().includes(searchQuery.toLowerCase()));
+    });
 
     const createTemplateMutation = useMutation({
       mutationFn: async (data: any) => {
@@ -261,6 +273,8 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       setTemplateName("");
       setTemplateDescription("");
       setIsFormBased(true);
+      setIsActive(true);
+      setVisibleToRoles([]);
       setTemplateFields([]);
       setIsLoadingFields(false);
     };
@@ -275,6 +289,8 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
       setTemplateName(template.name);
       setTemplateDescription(template.description || "");
       setIsFormBased(template.isFormBased);
+      setIsActive(template.isActive);
+      setVisibleToRoles((template.visibleToRoles as string[]) || []);
       setTemplateFields([]);
       setIsDialogOpen(true);
       
@@ -312,6 +328,8 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
         name: templateName.trim(),
         description: templateDescription.trim() || undefined,
         isFormBased,
+        isActive,
+        visibleToRoles,
       };
 
       if (editingTemplate) {
@@ -590,6 +608,56 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                     onCheckedChange={setIsFormBased}
                     data-testid="switch-form-based"
                   />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Active</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Inactive templates won't appear when creating notes
+                    </p>
+                  </div>
+                  <Switch
+                    checked={isActive}
+                    onCheckedChange={setIsActive}
+                    data-testid="switch-is-active"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Visible to Roles</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Select which roles can see this template. Leave empty for all roles.
+                  </p>
+                  <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto">
+                    {roles.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No roles available</p>
+                    ) : (
+                      roles.filter(role => role.isActive).map((role) => (
+                        <div key={role.id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`role-${role.id}`}
+                            checked={visibleToRoles.includes(role.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setVisibleToRoles([...visibleToRoles, role.id]);
+                              } else {
+                                setVisibleToRoles(visibleToRoles.filter(id => id !== role.id));
+                              }
+                            }}
+                            className="data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+                            data-testid={`checkbox-role-${role.id}`}
+                          />
+                          <label
+                            htmlFor={`role-${role.id}`}
+                            className="text-sm cursor-pointer"
+                          >
+                            {role.name}
+                          </label>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
 
                 {isFormBased && (
