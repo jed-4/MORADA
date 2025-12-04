@@ -2439,9 +2439,9 @@ export default function EstimateDetail() {
     // Define min/max constraints per column type
     const getColumnConstraints = (columnId: string) => {
       if (columnId === 'description' || columnId === 'item') {
-        return { min: 150, max: 600 };
+        return { min: 80, max: 600 };
       }
-      return { min: 80, max: 400 };
+      return { min: 40, max: 400 };
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -4299,8 +4299,46 @@ export default function EstimateDetail() {
 
       {/* Row 2 - Filters + Controls (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Filter Chips */}
+        {/* Left: Controls + Filter Chips */}
         <div className="flex items-center gap-1.5 flex-1">
+          {/* Group Expand/Collapse - Icon only */}
+          {groups.length > 0 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                    onClick={handleToggleAllGroups}
+                    data-testid="button-toggle-all-groups"
+                  >
+                    {groups.some(group => !group.isCollapsed) ? (
+                      <ChevronsUpDown className="h-3 w-3" />
+                    ) : (
+                      <ChevronsUpDown className="h-3 w-3" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{groups.some(group => !group.isCollapsed) ? 'Collapse all groups' : 'Expand all groups'}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          
+          {/* Hide/Show Add Lines toggle */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
+                  onClick={() => setHideAddLines(!hideAddLines)}
+                  data-testid="button-toggle-add-lines"
+                >
+                  {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           {/* Search Input */}
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -4322,55 +4360,17 @@ export default function EstimateDetail() {
             )}
           </div>
           
-          {/* Group Expand/Collapse */}
-          {groups.length > 0 && (
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-              onClick={handleToggleAllGroups}
-              data-testid="button-toggle-all-groups"
-            >
-              {groups.some(group => !group.isCollapsed) ? (
-                <>
-                  <ChevronDown className="h-3 w-3" />
-                  <span>Collapse All</span>
-                </>
-              ) : (
-                <>
-                  <ChevronRight className="h-3 w-3" />
-                  <span>Expand All</span>
-                </>
-              )}
-            </button>
-          )}
-          
-          {/* Hide/Show Add Lines toggle */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
-                  onClick={() => setHideAddLines(!hideAddLines)}
-                  data-testid="button-toggle-add-lines"
-                >
-                  {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          
-          {/* Filter by Type - Chip Style */}
+          {/* Filter by Type - Text only */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-0.5 ${
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
                   filterType !== 'all' 
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                     : 'hover-elevate'
                 } active-elevate-2`}
                 data-testid="filter-type"
               >
-                <Filter className="h-3 w-3" />
                 <span>{filterType === 'all' ? 'All Types' : filterType}</span>
               </button>
             </DropdownMenuTrigger>
@@ -4382,18 +4382,17 @@ export default function EstimateDetail() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Filter by Status - Chip Style */}
+          {/* Filter by Status - Text only */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-0.5 ${
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
                   filterStatus !== 'all' 
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                     : 'hover-elevate'
                 } active-elevate-2`}
                 data-testid="filter-status"
               >
-                <Flag className="h-3 w-3" />
                 <span>{filterStatus === 'all' ? 'All Status' : estimateItemStatusCategory?.options?.find((opt: any) => opt.key === filterStatus)?.name || filterStatus}</span>
               </button>
             </DropdownMenuTrigger>
@@ -4404,31 +4403,6 @@ export default function EstimateDetail() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Filter by Group - Chip Style */}
-          {groups.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button 
-                  className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-0.5 ${
-                    filterGroup !== 'all' 
-                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                      : 'hover-elevate'
-                  } active-elevate-2`}
-                  data-testid="filter-group"
-                >
-                  <Layers className="h-3 w-3" />
-                  <span>{filterGroup === 'all' ? 'All Groups' : groups.find(g => g.id === filterGroup)?.name || 'Group'}</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterGroup('all'); }}>All Groups</DropdownMenuItem>
-                {groups.map(group => (
-                  <DropdownMenuItem key={group.id} onClick={() => { hasUserModifiedRef.current = true; setFilterGroup(group.id); }}>{group.name}</DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
         </div>
 
         {/* Right: Controls */}

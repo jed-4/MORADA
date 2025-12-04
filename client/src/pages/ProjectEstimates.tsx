@@ -62,7 +62,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { type Estimate, type EstimateSummary, type Project, type FieldOption } from "@shared/schema";
+import { type Estimate, type EstimateSummary, type Project, type FieldOption, type FieldCategoryWithOptions } from "@shared/schema";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
 interface ProjectEstimatesParams {
@@ -238,18 +238,11 @@ export default function ProjectEstimates() {
   };
 
   // Fetch estimate statuses from field settings
-  const { data: estimateStatuses = [] } = useQuery<FieldOption[]>({
-    queryKey: ["/api/field-categories/estimate.status/options"],
-    queryFn: async () => {
-      const response = await fetch("/api/field-categories/estimate.status/options", {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        throw new Error(`${response.status}: ${response.statusText}`);
-      }
-      return response.json();
-    },
+  const { data: estimateStatusCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate.status"],
   });
+  
+  const estimateStatuses = estimateStatusCategory?.options?.filter(o => o.isActive) || [];
 
   // Calculate status counts
   const statusCounts = useMemo(() => {
