@@ -475,86 +475,82 @@ export default function ProjectChecklists() {
     <div className="flex flex-col h-full">
       {/* Row 1: Title & Actions */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <ListChecks className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-semibold">Checklists</h1>
-          <Badge variant="secondary" className="text-xs">{allGroups.length}</Badge>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">Checklists</h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-checklist-count">
+            {allGroups.length} groups
+          </Badge>
         </div>
-        <Button
-          size="sm"
-          className="h-6 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
-          onClick={() => setShowAddDialog(true)}
-          data-testid="button-add-checklist"
-        >
-          <Plus className="h-3 w-3 mr-1" />
-          Add Checklist Group
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowAddDialog(true)}
+            data-testid="button-add-checklist"
+          >
+            <Plus className="h-3 w-3" />
+            Add Checklist Group
+          </button>
+        </div>
       </div>
 
       {/* Row 2: Tabs */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="outline"
-            size="sm"
-            className={`h-6 text-xs border rounded-md ${
+        <div className="flex items-center gap-0.5" data-testid="tabs-checklist-status">
+          <button
+            onClick={() => setActiveTab("upcoming")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "upcoming"
                 ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
-                : "hover-elevate active-elevate-2"
-            }`}
-            onClick={() => setActiveTab("upcoming")}
+                : "hover-elevate"
+            } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-upcoming"
           >
             Upcoming
             <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{upcomingCount}</Badge>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className={`h-6 text-xs border rounded-md ${
+          </button>
+          <button
+            onClick={() => setActiveTab("action")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "action"
                 ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
-                : "hover-elevate active-elevate-2"
-            }`}
-            onClick={() => setActiveTab("action")}
+                : "hover-elevate"
+            } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-action"
           >
             Action
             <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{actionCount}</Badge>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className={`h-6 text-xs border rounded-md ${
+          </button>
+          <button
+            onClick={() => setActiveTab("done")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
               activeTab === "done"
                 ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
-                : "hover-elevate active-elevate-2"
-            }`}
-            onClick={() => setActiveTab("done")}
+                : "hover-elevate"
+            } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-done"
           >
             Done
             <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{doneCount}</Badge>
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* Row 3: Search & Filters */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+        <div className="flex items-center gap-1.5 flex-1">
+          <div className="relative w-48">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
-              placeholder="Search checklists..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-48 h-6 text-xs pl-7"
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
               data-testid="input-search"
             />
           </div>
           <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-            <SelectTrigger className="h-6 w-32 text-xs">
-              <Filter className="h-3 w-3 mr-1" />
+            <SelectTrigger className="h-6 w-auto text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+              <Filter className="h-3 w-3" />
               <SelectValue placeholder="Assignee" />
             </SelectTrigger>
             <SelectContent>
