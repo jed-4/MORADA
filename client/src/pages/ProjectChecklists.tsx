@@ -641,7 +641,7 @@ export default function ProjectChecklists() {
                   
                   {/* Checklists Grid - only show if not collapsed */}
                   {!isCollapsed && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 ml-2 pl-4 border-l-2 border-[#bba7db]/30">
+                    <div className="space-y-3 ml-2 pl-4 border-l-2 border-[#bba7db]/30">
                       {groups.map((group) => {
                         const isExpanded = expandedChecklists.has(group.id);
                         const items = checklistItems[group.id] || [];
@@ -931,7 +931,7 @@ export default function ProjectChecklists() {
                                           className="data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
                                         />
                                         <span className={`text-sm flex-1 ${item.isCompleted ? 'line-through text-muted-foreground' : ''}`}>
-                                          {item.name}
+                                          {item.description}
                                         </span>
                                         {item.isRequired && (
                                           <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">
