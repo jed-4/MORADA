@@ -117,8 +117,8 @@ export default function ChecklistTemplateDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", templateId] });
       toast({
-        title: "Group deleted",
-        description: "The group has been deleted successfully.",
+        title: "Checklist deleted",
+        description: "The checklist has been deleted successfully.",
       });
     },
   });
@@ -191,25 +191,25 @@ export default function ChecklistTemplateDetail() {
             <Card className="border-dashed max-w-md w-full">
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <CheckSquare className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No groups yet</h3>
+                <h3 className="text-lg font-semibold mb-2">No checklists yet</h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  Add groups to organize your checklist items
+                  Add checklists to organize your items
                 </p>
                 <Button onClick={() => setIsAddingGroup(true)} data-testid="button-create-first-group">
                   <Plus className="h-4 w-4 mr-2" />
-                  Create First Group
+                  Create First Checklist
                 </Button>
               </CardContent>
             </Card>
           </div>
         ) : (
           <ResizablePanelGroup direction="horizontal" className="h-full">
-            {/* Groups Column */}
+            {/* Checklists Column */}
             <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
               <Card className="flex flex-col h-full mr-3">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">Groups</CardTitle>
+                    <CardTitle className="text-lg">Checklists</CardTitle>
                     <Button 
                       onClick={() => setIsAddingGroup(true)} 
                       size="sm"
@@ -280,7 +280,7 @@ export default function ChecklistTemplateDetail() {
                       <div className="flex flex-col items-center justify-center h-full text-center py-12">
                         <CheckSquare className="h-10 w-10 text-muted-foreground mb-3" />
                         <p className="text-sm text-muted-foreground mb-3">
-                          No items in this group
+                          No items in this checklist
                         </p>
                         <Button 
                           onClick={() => setAddingItemToGroup(selectedGroupId)} 
@@ -370,9 +370,9 @@ export default function ChecklistTemplateDetail() {
   );
 }
 
-// Group Form Dialog
+// Checklist Form Dialog (formerly Group)
 const groupSchema = z.object({
-  name: z.string().min(1, "Group name is required"),
+  name: z.string().min(1, "Checklist name is required"),
 });
 
 function GroupFormDialog({
@@ -406,8 +406,8 @@ function GroupFormDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
       toast({
-        title: "Group created",
-        description: "The group has been created successfully.",
+        title: "Checklist created",
+        description: "The checklist has been created successfully.",
       });
       onOpenChange(false);
       form.reset();
@@ -422,9 +422,9 @@ function GroupFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{group ? "Edit" : "Add"} Group</DialogTitle>
+          <DialogTitle>{group ? "Edit" : "Add"} Checklist</DialogTitle>
           <DialogDescription>
-            {group ? "Update" : "Create"} a group to organize checklist items
+            {group ? "Update" : "Create"} a checklist to organize items
           </DialogDescription>
         </DialogHeader>
 
@@ -435,10 +435,10 @@ function GroupFormDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Group Name</FormLabel>
+                  <FormLabel>Checklist Name</FormLabel>
                   <FormControl>
                     <Input 
-                      placeholder="e.g., Site Preparation" 
+                      placeholder="e.g., ITP001 - Site Preparation" 
                       {...field} 
                       data-testid="input-group-name"
                     />

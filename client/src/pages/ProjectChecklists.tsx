@@ -65,9 +65,21 @@ import {
   ClipboardList,
   Check,
   X,
+  Users,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type TabType = "active" | "completed";
 
@@ -160,6 +172,22 @@ export default function ProjectChecklists() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete checklist.", variant: "destructive" });
+    },
+  });
+
+  const quickAssignMutation = useMutation({
+    mutationFn: async ({ checklistId, assigneeId }: { checklistId: string; assigneeId: string | null }) => {
+      const assignee = teamMembers.find(u => u.id === assigneeId);
+      await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", {
+        assigneeId: assigneeId || null,
+        assigneeName: assignee?.name || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to assign checklist.", variant: "destructive" });
     },
   });
 
@@ -368,7 +396,11 @@ export default function ProjectChecklists() {
               return (
                 <div
                   key={checklist.id}
-                  className="border rounded-md p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                  className={`border rounded-md p-3 hover:bg-muted/30 cursor-pointer transition-colors ${
+                    checklist.status === "in_progress" 
+                      ? "border-l-4 border-l-[#bba7db] bg-[#bba7db]/5" 
+                      : ""
+                  }`}
                   onClick={() => navigate(`/projects/${projectId}/checklists/${checklist.id}`)}
                   data-testid={`checklist-card-${checklist.id}`}
                 >
@@ -385,21 +417,16 @@ export default function ProjectChecklists() {
                             {checklist.description}
                           </p>
                         )}
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          {checklist.assigneeName && (
-                            <span className="flex items-center gap-1">
-                              <UserIcon className="h-3 w-3" />
-                              {checklist.assigneeName}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
                           {checklist.dueDate && (
-                            <span className="flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50">
                               <Calendar className="h-3 w-3" />
-                              {format(new Date(checklist.dueDate), "MMM d, yyyy")}
+                              {format(new Date(checklist.dueDate), "MMM d")}
                             </span>
                           )}
-                          <span>
-                            {checklist.completedCount || 0}/{checklist.totalCount || 0} items
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50">
+                            <ListChecks className="h-3 w-3" />
+                            {checklist.completedCount || 0}/{checklist.totalCount || 0}
                           </span>
                         </div>
                         {checklist.totalCount && checklist.totalCount > 0 && (
@@ -410,6 +437,75 @@ export default function ProjectChecklists() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      {/* Quick Assignee Selector */}
+                      <Popover>
+                        <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-quick-assign-${checklist.id}`}>
+                            {checklist.assigneeName ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Avatar className="h-5 w-5">
+                                    <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
+                                      {checklist.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                </TooltipTrigger>
+                                <TooltipContent>{checklist.assigneeName}</TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
+                                    <UserIcon className="h-3 w-3 text-muted-foreground/50" />
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>Assign someone</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-1" align="end" onClick={(e) => e.stopPropagation()}>
+                          <div className="text-xs font-medium text-muted-foreground px-2 py-1">Assign to</div>
+                          <div className="max-h-48 overflow-auto">
+                            {checklist.assigneeId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start text-xs text-muted-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  quickAssignMutation.mutate({ checklistId: checklist.id, assigneeId: null });
+                                }}
+                              >
+                                <X className="h-3 w-3 mr-2" />
+                                Unassign
+                              </Button>
+                            )}
+                            {teamMembers.map((member) => (
+                              <Button
+                                key={member.id}
+                                variant="ghost"
+                                size="sm"
+                                className={`w-full justify-start text-xs ${checklist.assigneeId === member.id ? 'bg-accent' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  quickAssignMutation.mutate({ checklistId: checklist.id, assigneeId: member.id });
+                                }}
+                              >
+                                <Avatar className="h-4 w-4 mr-2">
+                                  <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                    {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                {member.name}
+                                {checklist.assigneeId === member.id && (
+                                  <Check className="h-3 w-3 ml-auto text-[#bba7db]" />
+                                )}
+                              </Button>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -445,17 +541,17 @@ export default function ProjectChecklists() {
           <DialogHeader>
             <DialogTitle>Add Checklist</DialogTitle>
             <DialogDescription>
-              Create a new checklist from a template or from scratch.
+              Create a new checklist from a checklist group or from scratch.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             {templates.length > 0 && (
               <div className="space-y-2">
-                <Label>Start from Template (optional)</Label>
+                <Label>Start from Checklist Group (optional)</Label>
                 <Select value={formData.templateId} onValueChange={handleTemplateSelect}>
                   <SelectTrigger data-testid="select-template">
-                    <SelectValue placeholder="Select a template..." />
+                    <SelectValue placeholder="Select a checklist group..." />
                   </SelectTrigger>
                   <SelectContent>
                     {templates.map((template) => (
@@ -471,7 +567,7 @@ export default function ProjectChecklists() {
             {formData.templateId && templateGroups.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Select Groups to Include</Label>
+                  <Label>Select Checklists to Include</Label>
                   <div className="flex items-center gap-2">
                     <Button
                       type="button"
@@ -517,8 +613,8 @@ export default function ProjectChecklists() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {formData.selectedGroupIds.length === 0
-                    ? "All groups will be included"
-                    : `${formData.selectedGroupIds.length} of ${templateGroups.length} groups selected`}
+                    ? "All checklists will be included"
+                    : `${formData.selectedGroupIds.length} of ${templateGroups.length} checklists selected`}
                 </p>
               </div>
             )}

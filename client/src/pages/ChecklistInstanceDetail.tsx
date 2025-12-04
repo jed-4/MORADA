@@ -58,10 +58,20 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
   Settings,
   MessageSquare,
+  MessageSquareText,
   Ban,
+  Asterisk,
 } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export default function ChecklistInstanceDetail() {
   const { projectId, checklistId } = useParams<{ projectId: string; checklistId: string }>();
@@ -283,6 +293,15 @@ export default function ChecklistInstanceDetail() {
     return groups;
   }, [items]);
 
+  const expandAll = () => {
+    setCollapsedGroups(new Set());
+  };
+
+  const collapseAll = () => {
+    const allGroupNames = Object.keys(groupedItems);
+    setCollapsedGroups(new Set(allGroupNames));
+  };
+
   const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
   const totalCount = items.length;
   const progress = totalCount > 0 ? Math.round(completedCount / totalCount * 100) : 0;
@@ -380,10 +399,34 @@ export default function ChecklistInstanceDetail() {
         </div>
       </div>
 
-      {/* Row 3: Search & Add */}
+      {/* Row 3: Expand/Collapse & Add */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="text-xs text-muted-foreground">
-          {checklist.description}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs px-2"
+            onClick={expandAll}
+            data-testid="button-expand-all"
+          >
+            <ChevronsDown className="h-3 w-3 mr-1" />
+            Expand
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs px-2"
+            onClick={collapseAll}
+            data-testid="button-collapse-all"
+          >
+            <ChevronsUp className="h-3 w-3 mr-1" />
+            Collapse
+          </Button>
+          {checklist.description && (
+            <span className="text-xs text-muted-foreground ml-2">
+              {checklist.description}
+            </span>
+          )}
         </div>
         {checklist.status !== "completed" && (
           <Button
@@ -470,19 +513,21 @@ export default function ChecklistInstanceDetail() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1">
-                                  <p className={`text-sm ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
-                                    {item.description}
+                                  <div className="flex items-center gap-1">
+                                    <p className={`text-sm ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
+                                      {item.description}
+                                    </p>
                                     {item.isRequired && (
-                                      <span className="text-red-500 ml-1">*</span>
+                                      <Tooltip>
+                                        <TooltipTrigger>
+                                          <Asterisk className="h-3 w-3 text-red-500" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>Required item</TooltipContent>
+                                      </Tooltip>
                                     )}
-                                  </p>
+                                  </div>
                                   {item.tooltip && (
                                     <p className="text-xs text-muted-foreground mt-1">{item.tooltip}</p>
-                                  )}
-                                  {item.notes && (
-                                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 italic">
-                                      Note: {item.notes}
-                                    </p>
                                   )}
                                   {item.completedByName && item.completedAt && (
                                     <p className="text-xs text-muted-foreground mt-1">
@@ -491,39 +536,86 @@ export default function ChecklistInstanceDetail() {
                                     </p>
                                   )}
                                 </div>
-                                {checklist.status !== "completed" && (
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-6 w-6">
-                                        <MoreVertical className="h-3 w-3" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {/* Assignee Avatar */}
+                                  {item.assigneeName ? (
+                                    <Tooltip>
+                                      <TooltipTrigger>
+                                        <Avatar className="h-5 w-5">
+                                          <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
+                                            {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{item.assigneeName}</TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <Tooltip>
+                                      <TooltipTrigger>
+                                        <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
+                                          <UserIcon className="h-3 w-3 text-muted-foreground/30" />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Unassigned</TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                  {/* Notes Icon */}
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-5 w-5"
                                         onClick={() => {
                                           setItemNote(item.notes || "");
                                           setShowNotesDialog(item);
                                         }}
+                                        data-testid={`button-notes-${item.id}`}
                                       >
-                                        <MessageSquare className="h-3 w-3 mr-2" />
-                                        Add Note
-                                      </DropdownMenuItem>
-                                      {item.status !== "na" && (
-                                        <DropdownMenuItem onClick={() => handleMarkNA(item)}>
-                                          <Ban className="h-3 w-3 mr-2" />
-                                          Mark as N/A
+                                        {item.notes ? (
+                                          <MessageSquareText className="h-3 w-3 text-blue-500" />
+                                        ) : (
+                                          <MessageSquare className="h-3 w-3 text-muted-foreground/50" />
+                                        )}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{item.notes ? "View/edit note" : "Add note"}</TooltipContent>
+                                  </Tooltip>
+                                  {/* Menu */}
+                                  {checklist.status !== "completed" && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-5 w-5">
+                                          <MoreVertical className="h-3 w-3" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            setItemNote(item.notes || "");
+                                            setShowNotesDialog(item);
+                                          }}
+                                        >
+                                          <MessageSquare className="h-3 w-3 mr-2" />
+                                          {item.notes ? "Edit Note" : "Add Note"}
                                         </DropdownMenuItem>
-                                      )}
-                                      <DropdownMenuItem
-                                        className="text-destructive"
-                                        onClick={() => deleteItemMutation.mutate(item.id)}
-                                      >
-                                        <Trash2 className="h-3 w-3 mr-2" />
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                )}
+                                        {item.status !== "na" && (
+                                          <DropdownMenuItem onClick={() => handleMarkNA(item)}>
+                                            <Ban className="h-3 w-3 mr-2" />
+                                            Mark as N/A
+                                          </DropdownMenuItem>
+                                        )}
+                                        <DropdownMenuItem
+                                          className="text-destructive"
+                                          onClick={() => deleteItemMutation.mutate(item.id)}
+                                        >
+                                          <Trash2 className="h-3 w-3 mr-2" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -648,13 +740,46 @@ export default function ChecklistInstanceDetail() {
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="itemGroupName">Group</Label>
-              <Input
-                id="itemGroupName"
-                value={itemForm.groupName}
-                onChange={(e) => setItemForm({ ...itemForm, groupName: e.target.value })}
-                placeholder="e.g., Exterior, Interior..."
-              />
+              <Label htmlFor="itemGroupName">Checklist (Group)</Label>
+              {Object.keys(groupedItems).length > 0 ? (
+                <Select
+                  value={itemForm.groupName}
+                  onValueChange={(value) => setItemForm({ ...itemForm, groupName: value === "__new__" ? "" : value })}
+                >
+                  <SelectTrigger data-testid="select-group">
+                    <SelectValue placeholder="Select a checklist..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(groupedItems).map((groupName) => (
+                      <SelectItem key={groupName} value={groupName}>
+                        {groupName}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__new__">
+                      <span className="flex items-center gap-1">
+                        <Plus className="h-3 w-3" />
+                        New Checklist...
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="itemGroupName"
+                  value={itemForm.groupName}
+                  onChange={(e) => setItemForm({ ...itemForm, groupName: e.target.value })}
+                  placeholder="e.g., Exterior, Interior..."
+                />
+              )}
+              {itemForm.groupName === "" && Object.keys(groupedItems).length > 0 && (
+                <Input
+                  className="mt-2"
+                  value={itemForm.groupName}
+                  onChange={(e) => setItemForm({ ...itemForm, groupName: e.target.value })}
+                  placeholder="Enter new checklist name..."
+                  data-testid="input-new-group"
+                />
+              )}
             </div>
 
             <div className="space-y-2">
@@ -664,6 +789,7 @@ export default function ChecklistInstanceDetail() {
                 value={itemForm.description}
                 onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
                 placeholder="What needs to be checked?"
+                data-testid="input-item-description"
               />
             </div>
 
@@ -683,6 +809,7 @@ export default function ChecklistInstanceDetail() {
                 id="itemRequired"
                 checked={itemForm.isRequired}
                 onCheckedChange={(checked) => setItemForm({ ...itemForm, isRequired: !!checked })}
+                data-testid="checkbox-required"
               />
               <Label htmlFor="itemRequired" className="text-sm font-normal">
                 Required item (must be completed before checklist can be closed)
@@ -697,6 +824,7 @@ export default function ChecklistInstanceDetail() {
             <Button
               onClick={() => createItemMutation.mutate(itemForm)}
               disabled={createItemMutation.isPending || !itemForm.description.trim()}
+              data-testid="button-add-item-submit"
             >
               {createItemMutation.isPending ? (
                 <>

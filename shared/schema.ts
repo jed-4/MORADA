@@ -2053,6 +2053,8 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
   status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   dueDate: z.coerce.date().optional().nullable(),
+  assigneeId: z.string().nullish(),
+  assigneeName: z.string().nullish(),
   selectedGroupIds: z.array(z.string()).optional(),
 });
 
@@ -2070,6 +2072,8 @@ export const checklistInstanceItems = pgTable("checklist_instance_items", {
   order: integer("order").notNull().default(0),
   isRequired: boolean("is_required").notNull().default(false),
   status: text("status").notNull().default("pending"), // "pending" | "completed" | "na"
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
   completedAt: timestamp("completed_at"),
   completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
   completedByName: text("completed_by_name"),
@@ -2086,6 +2090,8 @@ export const insertChecklistInstanceItemSchema = createInsertSchema(checklistIns
 }).extend({
   status: z.enum(["pending", "completed", "na"]).default("pending"),
   attachmentIds: z.array(z.string()).optional(),
+  assigneeId: z.string().nullish(),
+  assigneeName: z.string().nullish(),
 });
 
 export type InsertChecklistInstanceItem = z.infer<typeof insertChecklistInstanceItemSchema>;

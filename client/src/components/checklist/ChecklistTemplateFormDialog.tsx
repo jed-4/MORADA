@@ -71,8 +71,8 @@ export function ChecklistTemplateFormDialog({
     onSuccess: (template) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
-        title: "Template created",
-        description: "The checklist template has been created successfully.",
+        title: "Checklist group created",
+        description: "The checklist group has been created successfully.",
       });
       onOpenChange(false);
       form.reset();
@@ -83,7 +83,7 @@ export function ChecklistTemplateFormDialog({
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to create template.",
+        description: error.message || "Failed to create checklist group.",
         variant: "destructive",
       });
     },
@@ -97,9 +97,9 @@ export function ChecklistTemplateFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create Checklist Template</DialogTitle>
+          <DialogTitle>Create Checklist Group</DialogTitle>
           <DialogDescription>
-            Create a new checklist template. You can add groups and items after creation.
+            Create a new checklist group. You can add checklists and items after creation.
           </DialogDescription>
         </DialogHeader>
 
@@ -110,9 +110,9 @@ export function ChecklistTemplateFormDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Template Name</FormLabel>
+                  <FormLabel>Checklist Group Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Pre-Construction Checklist" {...field} data-testid="input-template-name" />
+                    <Input placeholder="e.g., New Home ITP Checklist" {...field} data-testid="input-template-name" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
