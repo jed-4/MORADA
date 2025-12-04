@@ -14,6 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
@@ -25,6 +32,10 @@ import {
   GripVertical,
   CheckSquare,
   FileText,
+  Type,
+  CircleDot,
+  ListChecks,
+  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -295,41 +306,64 @@ export default function ChecklistTemplateDetail() {
                       <div className="space-y-1">
                         {allItems
                           .filter(item => item.groupId === selectedGroupId)
-                          .map((item) => (
-                            <div
-                              key={item.id}
-                              className="py-2 px-2 rounded border hover-elevate"
-                              data-testid={`item-${item.id}`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
-                                <span className="flex-1 text-sm">{item.description}</span>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 shrink-0"
-                                  onClick={() => setEditingItem(item)}
-                                  data-testid={`button-edit-item-${item.id}`}
-                                >
-                                  <FileText className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 shrink-0"
-                                  onClick={() => deleteItemMutation.mutate(item.id)}
-                                  data-testid={`button-delete-item-${item.id}`}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                              {item.tooltip && (
-                                <div className="ml-6 mt-1 text-xs text-muted-foreground">
-                                  {item.tooltip}
+                          .map((item) => {
+                            const responseType = (item.responseType as string) || "checkbox";
+                            const responseOptions = (item.responseOptions as string[]) || [];
+                            const ResponseIcon = responseType === "checkbox" ? CheckSquare 
+                              : responseType === "text" ? Type 
+                              : responseType === "single_choice" ? CircleDot 
+                              : ListChecks;
+                            
+                            return (
+                              <div
+                                key={item.id}
+                                className="py-2 px-2 rounded border hover-elevate"
+                                data-testid={`item-${item.id}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <ResponseIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  <span className="flex-1 text-sm">{item.description}</span>
+                                  {responseType !== "checkbox" && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                                      {responseType === "text" ? "Text" : responseType === "single_choice" ? "Single" : "Multiple"}
+                                    </Badge>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0"
+                                    onClick={() => setEditingItem(item)}
+                                    data-testid={`button-edit-item-${item.id}`}
+                                  >
+                                    <FileText className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0"
+                                    onClick={() => deleteItemMutation.mutate(item.id)}
+                                    data-testid={`button-delete-item-${item.id}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
                                 </div>
-                              )}
-                            </div>
-                          ))}
+                                {item.tooltip && (
+                                  <div className="ml-6 mt-1 text-xs text-muted-foreground">
+                                    {item.tooltip}
+                                  </div>
+                                )}
+                                {responseOptions.length > 0 && (
+                                  <div className="ml-6 mt-1 flex flex-wrap gap-1">
+                                    {responseOptions.map((opt, i) => (
+                                      <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                        {opt}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                       </div>
                     )}
                   </CardContent>
@@ -476,7 +510,11 @@ function GroupFormDialog({
 const itemSchema = z.object({
   description: z.string().min(1, "Item description is required"),
   tooltip: z.string().optional(),
+  responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
+  responseOptions: z.array(z.string()).optional().default([]),
 });
+
+type ItemFormData = z.infer<typeof itemSchema>;
 
 function ItemFormDialog({
   open,
@@ -492,14 +530,20 @@ function ItemFormDialog({
   templateId: string;
 }) {
   const { toast } = useToast();
+  const [newOption, setNewOption] = useState("");
 
-  const form = useForm({
+  const form = useForm<ItemFormData>({
     resolver: zodResolver(itemSchema),
     defaultValues: {
       description: item?.description || "",
       tooltip: item?.tooltip || "",
+      responseType: (item?.responseType as ItemFormData["responseType"]) || "checkbox",
+      responseOptions: (item?.responseOptions as string[]) || [],
     },
   });
+
+  const responseType = form.watch("responseType");
+  const responseOptions = form.watch("responseOptions") || [];
 
   // Reset form when item changes
   useEffect(() => {
@@ -507,18 +551,41 @@ function ItemFormDialog({
       form.reset({
         description: item?.description || "",
         tooltip: item?.tooltip || "",
+        responseType: (item?.responseType as ItemFormData["responseType"]) || "checkbox",
+        responseOptions: (item?.responseOptions as string[]) || [],
       });
+      setNewOption("");
     }
   }, [item, open, form]);
 
+  const addOption = () => {
+    if (newOption.trim()) {
+      const current = form.getValues("responseOptions") || [];
+      form.setValue("responseOptions", [...current, newOption.trim()]);
+      setNewOption("");
+    }
+  };
+
+  const removeOption = (index: number) => {
+    const current = form.getValues("responseOptions") || [];
+    form.setValue("responseOptions", current.filter((_, i) => i !== index));
+  };
+
   const createMutation = useMutation({
-    mutationFn: async (data: { description: string; tooltip?: string }) => {
+    mutationFn: async (data: ItemFormData) => {
       const url = item ? `/api/checklist-template-items/${item.id}` : "/api/checklist-template-items";
       const method = item ? 'PATCH' : 'POST';
-      const body = item ? data : {
+      const body = item ? {
+        description: data.description,
+        tooltip: data.tooltip || null,
+        responseType: data.responseType,
+        responseOptions: data.responseOptions || [],
+      } : {
         groupId,
         description: data.description,
         tooltip: data.tooltip || null,
+        responseType: data.responseType,
+        responseOptions: data.responseOptions || [],
         order: 0,
       };
       return await apiRequest(url, method, body);
@@ -526,21 +593,21 @@ function ItemFormDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", templateId] });
       toast({
-        title: "Item created",
-        description: "The item has been created successfully.",
+        title: item ? "Item updated" : "Item created",
+        description: `The item has been ${item ? "updated" : "created"} successfully.`,
       });
       onOpenChange(false);
       form.reset();
     },
   });
 
-  const onSubmit = (data: { description: string; tooltip?: string }) => {
+  const onSubmit = (data: ItemFormData) => {
     createMutation.mutate(data);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{item ? "Edit" : "Add"} Item</DialogTitle>
           <DialogDescription>
@@ -578,7 +645,7 @@ function ItemFormDialog({
                     <Textarea 
                       placeholder="Add extra details or notes..."
                       className="resize-none"
-                      rows={3}
+                      rows={2}
                       {...field} 
                       data-testid="input-item-tooltip"
                     />
@@ -588,7 +655,106 @@ function ItemFormDialog({
               )}
             />
 
-            <div className="flex justify-end gap-2">
+            <FormField
+              control={form.control}
+              name="responseType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Response Type</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-response-type">
+                        <SelectValue placeholder="Select response type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="checkbox">
+                        <div className="flex items-center gap-2">
+                          <CheckSquare className="h-4 w-4" />
+                          <span>Checkbox (Yes/No)</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="text">
+                        <div className="flex items-center gap-2">
+                          <Type className="h-4 w-4" />
+                          <span>Text Response</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="single_choice">
+                        <div className="flex items-center gap-2">
+                          <CircleDot className="h-4 w-4" />
+                          <span>Single Choice</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="multiple_choice">
+                        <div className="flex items-center gap-2">
+                          <ListChecks className="h-4 w-4" />
+                          <span>Multiple Choice</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {(responseType === "single_choice" || responseType === "multiple_choice") && (
+              <div className="space-y-2">
+                <FormLabel>Answer Options</FormLabel>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="e.g., Pass, Fail, N/A"
+                    value={newOption}
+                    onChange={(e) => setNewOption(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addOption();
+                      }
+                    }}
+                    data-testid="input-new-option"
+                  />
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="icon"
+                    onClick={addOption}
+                    data-testid="button-add-option"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {responseOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {responseOptions.map((option, index) => (
+                      <Badge 
+                        key={index} 
+                        variant="secondary"
+                        className="pl-2 pr-1 py-1 flex items-center gap-1"
+                      >
+                        {option}
+                        <button
+                          type="button"
+                          onClick={() => removeOption(index)}
+                          className="ml-1 hover:bg-muted rounded-full p-0.5"
+                          data-testid={`button-remove-option-${index}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {(responseType === "single_choice" || responseType === "multiple_choice") && responseOptions.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Add at least 2 options for {responseType === "single_choice" ? "single" : "multiple"} choice
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"

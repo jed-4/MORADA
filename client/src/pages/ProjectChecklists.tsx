@@ -78,8 +78,12 @@ import {
   FolderOpen,
   Square,
   CheckSquare,
+  Info,
+  Type,
+  CircleDot,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -917,38 +921,179 @@ export default function ProjectChecklists() {
                                         {completedItems} of {items.length} completed
                                       </span>
                                     </div>
-                                    {items.map((item) => (
-                                      <div
-                                        key={item.id}
-                                        className={`flex items-center gap-2 p-2 rounded-md border border-border/40 bg-background/50 transition-colors ${
-                                          item.isCompleted ? 'opacity-60' : ''
-                                        }`}
-                                      >
-                                        <Checkbox
-                                          checked={item.isCompleted || false}
-                                          onCheckedChange={(checked) => {
-                                            updateItemMutation.mutate({
-                                              itemId: item.id,
-                                              data: { 
-                                                isCompleted: !!checked,
-                                                completedAt: checked ? new Date().toISOString() : null,
-                                                completedBy: checked ? user?.id : null,
-                                                completedByName: checked ? user?.name : null,
-                                              }
-                                            });
-                                          }}
-                                          className="data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
-                                        />
-                                        <span className={`text-sm flex-1 ${item.isCompleted ? 'line-through text-muted-foreground' : ''}`}>
-                                          {item.description}
-                                        </span>
-                                        {item.isRequired && (
-                                          <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">
-                                            Required
-                                          </Badge>
-                                        )}
-                                      </div>
-                                    ))}
+                                    {items.map((item) => {
+                                      const responseType = (item.responseType as string) || "checkbox";
+                                      const responseOptions = (item.responseOptions as string[]) || [];
+                                      const selectedResponses = (item.selectedResponses as string[]) || [];
+                                      const textResponse = item.textResponse || "";
+                                      const isAnswered = responseType === "checkbox" 
+                                        ? item.isCompleted 
+                                        : responseType === "text" 
+                                        ? !!textResponse 
+                                        : selectedResponses.length > 0;
+
+                                      return (
+                                        <div
+                                          key={item.id}
+                                          className={`p-2 rounded-md border border-border/40 bg-background/50 transition-colors ${
+                                            isAnswered ? 'opacity-80' : ''
+                                          }`}
+                                        >
+                                          <div className="flex items-start gap-2">
+                                            {/* Response Type Icon/Input */}
+                                            {responseType === "checkbox" && (
+                                              <Checkbox
+                                                checked={item.isCompleted || false}
+                                                onCheckedChange={(checked) => {
+                                                  updateItemMutation.mutate({
+                                                    itemId: item.id,
+                                                    data: { 
+                                                      isCompleted: !!checked,
+                                                      completedAt: checked ? new Date().toISOString() : null,
+                                                      completedBy: checked ? user?.id : null,
+                                                      completedByName: checked ? user?.name : null,
+                                                    }
+                                                  });
+                                                }}
+                                                className="mt-0.5 data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+                                              />
+                                            )}
+                                            {responseType === "text" && (
+                                              <Type className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                                            )}
+                                            {responseType === "single_choice" && (
+                                              <CircleDot className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                                            )}
+                                            {responseType === "multiple_choice" && (
+                                              <ListChecks className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                                            )}
+                                            
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2">
+                                                <span className={`text-sm ${isAnswered && responseType === "checkbox" ? 'line-through text-muted-foreground' : ''}`}>
+                                                  {item.description}
+                                                </span>
+                                                {item.tooltip && (
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <button className="text-muted-foreground hover:text-foreground transition-colors">
+                                                        <Info className="h-3.5 w-3.5" />
+                                                      </button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-xs">
+                                                      <p className="text-xs">{item.tooltip}</p>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                )}
+                                                {item.isRequired && (
+                                                  <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">
+                                                    Required
+                                                  </Badge>
+                                                )}
+                                              </div>
+
+                                              {/* Text Response Input */}
+                                              {responseType === "text" && (
+                                                <div className="mt-2">
+                                                  <Input
+                                                    placeholder="Enter your response..."
+                                                    value={textResponse}
+                                                    onChange={(e) => {
+                                                      updateItemMutation.mutate({
+                                                        itemId: item.id,
+                                                        data: { 
+                                                          textResponse: e.target.value,
+                                                          isCompleted: !!e.target.value,
+                                                          completedAt: e.target.value ? new Date().toISOString() : null,
+                                                          completedBy: e.target.value ? user?.id : null,
+                                                          completedByName: e.target.value ? user?.name : null,
+                                                        }
+                                                      });
+                                                    }}
+                                                    className="h-8 text-sm"
+                                                  />
+                                                </div>
+                                              )}
+
+                                              {/* Single Choice Radio Buttons */}
+                                              {responseType === "single_choice" && responseOptions.length > 0 && (
+                                                <RadioGroup
+                                                  value={selectedResponses[0] || ""}
+                                                  onValueChange={(value) => {
+                                                    updateItemMutation.mutate({
+                                                      itemId: item.id,
+                                                      data: { 
+                                                        selectedResponses: [value],
+                                                        isCompleted: true,
+                                                        completedAt: new Date().toISOString(),
+                                                        completedBy: user?.id,
+                                                        completedByName: user?.name,
+                                                      }
+                                                    });
+                                                  }}
+                                                  className="mt-2 flex flex-wrap gap-3"
+                                                >
+                                                  {responseOptions.map((option, idx) => (
+                                                    <div key={idx} className="flex items-center gap-1.5">
+                                                      <RadioGroupItem 
+                                                        value={option} 
+                                                        id={`${item.id}-${idx}`}
+                                                        className="h-3.5 w-3.5 border-muted-foreground/50 data-[state=checked]:border-[#bba7db] data-[state=checked]:text-[#bba7db]"
+                                                      />
+                                                      <label 
+                                                        htmlFor={`${item.id}-${idx}`}
+                                                        className="text-xs cursor-pointer"
+                                                      >
+                                                        {option}
+                                                      </label>
+                                                    </div>
+                                                  ))}
+                                                </RadioGroup>
+                                              )}
+
+                                              {/* Multiple Choice Checkboxes */}
+                                              {responseType === "multiple_choice" && responseOptions.length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-3">
+                                                  {responseOptions.map((option, idx) => {
+                                                    const isSelected = selectedResponses.includes(option);
+                                                    return (
+                                                      <div key={idx} className="flex items-center gap-1.5">
+                                                        <Checkbox
+                                                          id={`${item.id}-mc-${idx}`}
+                                                          checked={isSelected}
+                                                          onCheckedChange={(checked) => {
+                                                            const newSelected = checked
+                                                              ? [...selectedResponses, option]
+                                                              : selectedResponses.filter(s => s !== option);
+                                                            updateItemMutation.mutate({
+                                                              itemId: item.id,
+                                                              data: { 
+                                                                selectedResponses: newSelected,
+                                                                isCompleted: newSelected.length > 0,
+                                                                completedAt: newSelected.length > 0 ? new Date().toISOString() : null,
+                                                                completedBy: newSelected.length > 0 ? user?.id : null,
+                                                                completedByName: newSelected.length > 0 ? user?.name : null,
+                                                              }
+                                                            });
+                                                          }}
+                                                          className="h-3.5 w-3.5 data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
+                                                        />
+                                                        <label 
+                                                          htmlFor={`${item.id}-mc-${idx}`}
+                                                          className="text-xs cursor-pointer"
+                                                        >
+                                                          {option}
+                                                        </label>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
@@ -1034,6 +1179,7 @@ export default function ProjectChecklists() {
                           <Checkbox
                             checked={formData.selectedGroupIds.includes(group.id)}
                             onCheckedChange={() => toggleGroupSelection(group.id)}
+                            onClick={(e) => e.stopPropagation()}
                           />
                           <span className="text-sm">{group.name}</span>
                         </div>

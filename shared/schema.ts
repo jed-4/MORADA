@@ -2000,6 +2000,8 @@ export const checklistTemplateItems = pgTable("checklist_template_items", {
   description: text("description").notNull(), // The main task description
   tooltip: text("tooltip"), // Additional description/notes shown underneath
   order: integer("order").notNull().default(0),
+  responseType: text("response_type").notNull().default("checkbox"), // "checkbox" | "text" | "single_choice" | "multiple_choice"
+  responseOptions: json("response_options").default([]), // Array of option strings for single/multiple choice
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2008,6 +2010,9 @@ export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTem
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
+  responseOptions: z.array(z.string()).optional().default([]),
 });
 
 export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
@@ -2113,6 +2118,10 @@ export const checklistInstanceItems = pgTable("checklist_instance_items", {
   order: integer("order").notNull().default(0),
   isRequired: boolean("is_required").notNull().default(false),
   status: text("status").notNull().default("pending"), // "pending" | "completed" | "na"
+  responseType: text("response_type").notNull().default("checkbox"), // "checkbox" | "text" | "single_choice" | "multiple_choice"
+  responseOptions: json("response_options").default([]), // Array of option strings for single/multiple choice (copied from template)
+  textResponse: text("text_response"), // User's text response for "text" type
+  selectedResponses: json("selected_responses").default([]), // User's selected options for single/multiple choice
   assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
   assigneeName: text("assignee_name"),
   completedAt: timestamp("completed_at"),
@@ -2130,6 +2139,10 @@ export const insertChecklistInstanceItemSchema = createInsertSchema(checklistIns
   updatedAt: true,
 }).extend({
   status: z.enum(["pending", "completed", "na"]).default("pending"),
+  responseType: z.enum(["checkbox", "text", "single_choice", "multiple_choice"]).default("checkbox"),
+  responseOptions: z.array(z.string()).optional().default([]),
+  textResponse: z.string().nullish(),
+  selectedResponses: z.array(z.string()).optional().default([]),
   attachmentIds: z.array(z.string()).optional(),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
