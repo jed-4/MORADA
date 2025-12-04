@@ -5,6 +5,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { insertChecklistTemplateSchema, FieldCategoryWithOptions } from "@shared/schema";
 import { z } from "zod";
+import { useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -30,14 +31,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
-const formSchema = insertChecklistTemplateSchema.extend({
-  name: z.string().min(1, "Name is required"),
-  type: z.string().min(1, "Type is required"),
-  description: z.string().optional(),
-});
-
-type FormData = z.infer<typeof formSchema>;
+type FormData = {
+  name: string;
+  description?: string;
+  type: string;
+};
 
 export function ChecklistTemplateFormDialog({
   open,
@@ -50,21 +50,50 @@ export function ChecklistTemplateFormDialog({
 }) {
   const { toast } = useToast();
 
-  const { data: checklistTypesCategory } = useQuery<FieldCategoryWithOptions>({
+  const { data: checklistTypesCategory, isLoading: isLoadingTypes } = useQuery<FieldCategoryWithOptions>({
     queryKey: ['/api/field-categories/by-key', 'checklist.type'],
   });
 
-  const checklistTypes = checklistTypesCategory?.options?.filter(o => o.isActive) || [];
-  const defaultType = checklistTypes.find(t => t.isDefault)?.key || checklistTypes[0]?.key || "Task";
+  const checklistTypes = useMemo(() => 
+    checklistTypesCategory?.options?.filter(o => o.isActive) || [],
+    [checklistTypesCategory]
+  );
+
+  const defaultType = useMemo(() => 
+    checklistTypes.find(t => t.isDefault)?.key || checklistTypes[0]?.key || "",
+    [checklistTypes]
+  );
+
+  const validTypeKeys = useMemo(() => 
+    checklistTypes.map(t => t.key),
+    [checklistTypes]
+  );
+
+  const formSchema = useMemo(() => 
+    insertChecklistTemplateSchema.extend({
+      name: z.string().min(1, "Name is required"),
+      type: validTypeKeys.length > 0 
+        ? z.enum(validTypeKeys as [string, ...string[]])
+        : z.string().min(1, "Type is required"),
+      description: z.string().optional(),
+    }),
+    [validTypeKeys]
+  );
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
       description: "",
-      type: defaultType,
+      type: "",
     },
   });
+
+  useEffect(() => {
+    if (defaultType && !form.getValues("type")) {
+      form.setValue("type", defaultType);
+    }
+  }, [defaultType, form]);
 
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -132,27 +161,29 @@ export function ChecklistTemplateFormDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Type</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select 
+                    onValueChange={field.onChange} 
+                    value={field.value}
+                    disabled={isLoadingTypes || checklistTypes.length === 0}
+                  >
                     <FormControl>
                       <SelectTrigger data-testid="select-template-type">
-                        <SelectValue placeholder="Select type" />
+                        {isLoadingTypes ? (
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading types...
+                          </span>
+                        ) : (
+                          <SelectValue placeholder="Select type" />
+                        )}
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {checklistTypes.length > 0 ? (
-                        checklistTypes.map((type) => (
-                          <SelectItem key={type.id} value={type.key}>
-                            {type.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <>
-                          <SelectItem value="Task">Task</SelectItem>
-                          <SelectItem value="Job">Job</SelectItem>
-                          <SelectItem value="Estimation">Estimation</SelectItem>
-                          <SelectItem value="Lead">Lead</SelectItem>
-                        </>
-                      )}
+                      {checklistTypes.map((type) => (
+                        <SelectItem key={type.id} value={type.key}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -189,7 +220,7 @@ export function ChecklistTemplateFormDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || isLoadingTypes || checklistTypes.length === 0}
                 data-testid="button-save-template"
               >
                 {createMutation.isPending ? "Creating..." : "Create Template"}
