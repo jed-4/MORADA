@@ -89,7 +89,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type TabType = "active" | "completed";
+type TabType = "upcoming" | "action" | "done";
 
 export default function ProjectChecklists() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -97,7 +97,7 @@ export default function ProjectChecklists() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<TabType>("active");
+  const [activeTab, setActiveTab] = useState<TabType>("upcoming");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -286,9 +286,10 @@ export default function ProjectChecklists() {
 
   const filteredChecklists = useMemo(() => {
     return checklists.filter(c => {
-      const isCompleted = c.status === "completed";
-      if (activeTab === "active" && isCompleted) return false;
-      if (activeTab === "completed" && !isCompleted) return false;
+      // Filter by tab
+      if (activeTab === "upcoming" && c.status !== "active") return false;
+      if (activeTab === "action" && c.status !== "in_progress") return false;
+      if (activeTab === "done" && c.status !== "completed") return false;
       
       if (searchTerm && !c.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       if (assigneeFilter !== "all" && c.assigneeId !== assigneeFilter) return false;
@@ -297,8 +298,9 @@ export default function ProjectChecklists() {
     });
   }, [checklists, activeTab, searchTerm, assigneeFilter]);
 
-  const activeCount = checklists.filter(c => c.status !== "completed").length;
-  const completedCount = checklists.filter(c => c.status === "completed").length;
+  const upcomingCount = checklists.filter(c => c.status === "active").length;
+  const actionCount = checklists.filter(c => c.status === "in_progress").length;
+  const doneCount = checklists.filter(c => c.status === "completed").length;
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
@@ -343,16 +345,27 @@ export default function ProjectChecklists() {
     }
   };
 
-  const cycleStatus = (currentStatus: string) => {
+  const getStatusUpdateData = (currentStatus: string): Partial<ChecklistInstance> => {
+    const now = new Date().toISOString();
     switch (currentStatus) {
       case "active":
-        return "in_progress";
+        return { status: "in_progress" };
       case "in_progress":
-        return "completed";
+        return { 
+          status: "completed",
+          completedAt: now,
+          completedBy: user?.id || null,
+          completedByName: user?.name || null,
+        };
       case "completed":
-        return "active";
+        return { 
+          status: "active",
+          completedAt: null,
+          completedBy: null,
+          completedByName: null,
+        };
       default:
-        return "in_progress";
+        return { status: "in_progress" };
     }
   };
 
@@ -391,29 +404,43 @@ export default function ProjectChecklists() {
             variant="outline"
             size="sm"
             className={`h-6 text-xs border rounded-md ${
-              activeTab === "active"
+              activeTab === "upcoming"
                 ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
                 : "hover-elevate active-elevate-2"
             }`}
-            onClick={() => setActiveTab("active")}
-            data-testid="tab-active"
+            onClick={() => setActiveTab("upcoming")}
+            data-testid="tab-upcoming"
           >
-            Active
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{activeCount}</Badge>
+            Upcoming
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{upcomingCount}</Badge>
           </Button>
           <Button
             variant="outline"
             size="sm"
             className={`h-6 text-xs border rounded-md ${
-              activeTab === "completed"
+              activeTab === "action"
                 ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
                 : "hover-elevate active-elevate-2"
             }`}
-            onClick={() => setActiveTab("completed")}
-            data-testid="tab-completed"
+            onClick={() => setActiveTab("action")}
+            data-testid="tab-action"
           >
-            Completed
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{completedCount}</Badge>
+            Action
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{actionCount}</Badge>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className={`h-6 text-xs border rounded-md ${
+              activeTab === "done"
+                ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+                : "hover-elevate active-elevate-2"
+            }`}
+            onClick={() => setActiveTab("done")}
+            data-testid="tab-done"
+          >
+            Done
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{doneCount}</Badge>
           </Button>
         </div>
       </div>
@@ -454,11 +481,13 @@ export default function ProjectChecklists() {
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
             <ClipboardList className="h-12 w-12 opacity-50" />
             <p className="text-sm">
-              {activeTab === "active" 
-                ? "No active checklists" 
-                : "No completed checklists"}
+              {activeTab === "upcoming" 
+                ? "No upcoming checklists" 
+                : activeTab === "action"
+                  ? "No checklists in action"
+                  : "No completed checklists"}
             </p>
-            {activeTab === "active" && (
+            {activeTab !== "done" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -500,7 +529,7 @@ export default function ProjectChecklists() {
                               e.stopPropagation();
                               updateChecklistMutation.mutate({
                                 checklistId: checklist.id,
-                                data: { status: cycleStatus(checklist.status) }
+                                data: getStatusUpdateData(checklist.status)
                               });
                             }}
                             data-testid={`status-toggle-${checklist.id}`}
