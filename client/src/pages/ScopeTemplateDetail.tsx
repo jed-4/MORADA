@@ -49,8 +49,38 @@ import {
 } from "lucide-react";
 import type { ScopeTemplate, Project } from "@shared/schema";
 
-const ITEM_TYPES = ['Labour', 'Material', 'Equipment', 'Subcontractor', 'Other'] as const;
+const ITEM_TYPES = ['e-note', 'scope', 'note', 'tool', 'material'] as const;
 type ItemType = typeof ITEM_TYPES[number];
+
+const getTypeLabel = (type: string | null | undefined): string => {
+  const typeMap: Record<string, string> = {
+    'e-note': 'E-NOTE',
+    'scope': 'SCOPE',
+    'note': 'NOTE',
+    'tool': 'TOOL',
+    'material': 'MATERIAL',
+    // Legacy types - map to closest equivalent
+    'Labour': 'SCOPE',
+    'Material': 'MATERIAL',
+    'Equipment': 'TOOL',
+    'Subcontractor': 'SCOPE',
+    'Other': 'SCOPE',
+  };
+  return typeMap[type || 'scope'] || type?.toUpperCase() || 'SCOPE';
+};
+
+// Normalize legacy item type to new format
+const normalizeItemType = (type: string | null | undefined): string => {
+  const legacyMap: Record<string, string> = {
+    'Labour': 'scope',
+    'Material': 'material',
+    'Equipment': 'tool',
+    'Subcontractor': 'scope',
+    'Other': 'scope',
+  };
+  if (!type) return 'scope';
+  return legacyMap[type] || type;
+};
 import { DndContext, closestCenter, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -134,7 +164,7 @@ function SortableItem({ item, onEdit, onDelete, isSelected, onToggleSelect }: So
           <span className="font-medium text-sm">{item.title}</span>
           {item.itemType && (
             <Badge variant="outline" className="h-4 text-[10px]">
-              {item.itemType}
+              {getTypeLabel(item.itemType)}
             </Badge>
           )}
         </div>
@@ -199,7 +229,7 @@ export default function ScopeTemplateDetail() {
   const [newItem, setNewItem] = useState<Partial<TemplateItem>>({
     title: "",
     description: "",
-    itemType: "Labour",
+    itemType: "scope",
     quantity: 1,
     rate: 0,
     stageId: undefined,
@@ -444,7 +474,7 @@ export default function ScopeTemplateDetail() {
     setNewItem({
       title: "",
       description: "",
-      itemType: "Labour",
+      itemType: "scope",
       quantity: 1,
       rate: 0,
       stageId: undefined,
@@ -498,7 +528,7 @@ export default function ScopeTemplateDetail() {
 
   const toggleSelectAll = () => {
     const filteredItemIds = items
-      .filter(item => !item.itemType || activeTypeFilters.has(item.itemType))
+      .filter(item => !item.itemType || activeTypeFilters.has(normalizeItemType(item.itemType)))
       .map(item => item.id);
     
     const allSelected = filteredItemIds.every(id => selectedItems.has(id));
@@ -569,7 +599,8 @@ export default function ScopeTemplateDetail() {
   // Check if item passes current filters
   const passesFilter = (item: TemplateItem) => {
     if (!item.itemType) return true; // Items without type always show
-    return activeTypeFilters.has(item.itemType);
+    const normalizedType = normalizeItemType(item.itemType);
+    return activeTypeFilters.has(normalizedType);
   };
 
   const toggleStage = (stageId: string) => {
@@ -714,9 +745,9 @@ export default function ScopeTemplateDetail() {
                     : 'hover:bg-muted'
                 }`}
                 onClick={() => toggleTypeFilter(type)}
-                data-testid={`filter-${type.toLowerCase()}`}
+                data-testid={`filter-${type.toLowerCase().replace('-', '')}`}
               >
-                {type}
+                {getTypeLabel(type)}
               </Badge>
             ))}
           </div>
@@ -1010,18 +1041,16 @@ export default function ScopeTemplateDetail() {
               <div className="space-y-2">
                 <Label>Type</Label>
                 <Select
-                  value={newItem.itemType || "Labour"}
+                  value={newItem.itemType || "scope"}
                   onValueChange={(value) => setNewItem({ ...newItem, itemType: value })}
                 >
                   <SelectTrigger data-testid="select-item-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Labour">Labour</SelectItem>
-                    <SelectItem value="Material">Material</SelectItem>
-                    <SelectItem value="Subcontractor">Subcontractor</SelectItem>
-                    <SelectItem value="Equipment">Equipment</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
+                    {ITEM_TYPES.map(type => (
+                      <SelectItem key={type} value={type}>{getTypeLabel(type)}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1120,18 +1149,16 @@ export default function ScopeTemplateDetail() {
                 <div className="space-y-2">
                   <Label>Type</Label>
                   <Select
-                    value={editingItem.itemType || "Labour"}
+                    value={editingItem.itemType || "scope"}
                     onValueChange={(value) => setEditingItem({ ...editingItem, itemType: value })}
                   >
                     <SelectTrigger data-testid="select-edit-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Labour">Labour</SelectItem>
-                      <SelectItem value="Material">Material</SelectItem>
-                      <SelectItem value="Subcontractor">Subcontractor</SelectItem>
-                      <SelectItem value="Equipment">Equipment</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      {ITEM_TYPES.map(type => (
+                        <SelectItem key={type} value={type}>{getTypeLabel(type)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1277,7 +1304,7 @@ export default function ScopeTemplateDetail() {
                       <Check className="h-3 w-3 text-[#bba7db]" />
                       <span>{item.title}</span>
                       {item.itemType && (
-                        <Badge variant="outline" className="h-4 text-[10px]">{item.itemType}</Badge>
+                        <Badge variant="outline" className="h-4 text-[10px]">{getTypeLabel(item.itemType)}</Badge>
                       )}
                     </li>
                   ) : null;

@@ -2674,7 +2674,17 @@ export const insertScopeTemplateSchema = createInsertSchema(scopeTemplates).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
-  templateData: z.array(z.any()), // Array of scope item objects
+  templateData: z.union([
+    z.array(z.any()), // Legacy: Array of scope item objects
+    z.object({
+      stages: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        sortOrder: z.number(),
+      })),
+      items: z.array(z.any()),
+    }), // New: Object with stages and items
+  ]),
 });
 
 export type InsertScopeTemplate = z.infer<typeof insertScopeTemplateSchema>;
