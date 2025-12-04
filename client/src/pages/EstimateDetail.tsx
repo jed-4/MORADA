@@ -4111,7 +4111,7 @@ export default function EstimateDetail() {
   // Helper function to get status badge
   const getStatusBadge = (estimate: Estimate) => {
     if (estimate.isLocked) {
-      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20"><Lock className="w-3 h-3 mr-1" />Locked v{estimate.version}</Badge>;
+      return <Badge variant="secondary" className="h-6 px-2 text-xs bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
     }
     
     // Use field settings for status
@@ -4127,13 +4127,13 @@ export default function EstimateDetail() {
             borderColor: `${statusOption.color}40`
           }}
         >
-          {statusOption.name} v{estimate.version}
+          {statusOption.name}
         </Badge>
       );
     }
     
     // Fallback
-    return <Badge variant="outline" className="h-6 px-2 text-xs">{statusOption?.name || estimate.status || 'Draft'} v{estimate.version}</Badge>;
+    return <Badge variant="outline" className="h-6 px-2 text-xs">{statusOption?.name || estimate.status || 'Draft'}</Badge>;
   };
 
   // Handle new estimate creation
