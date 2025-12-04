@@ -2092,6 +2092,9 @@ export const insertChecklistInstanceItemSchema = createInsertSchema(checklistIns
   attachmentIds: z.array(z.string()).optional(),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
+  completedAt: z.coerce.date().nullish(),
+  completedBy: z.string().nullish(),
+  completedByName: z.string().nullish(),
 });
 
 export type InsertChecklistInstanceItem = z.infer<typeof insertChecklistInstanceItemSchema>;

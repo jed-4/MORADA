@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -58,13 +58,16 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
-  ChevronsDown,
-  ChevronsUp,
+  ChevronsDownUp,
   Settings,
   MessageSquare,
   MessageSquareText,
   Ban,
   Asterisk,
+  Check,
+  X,
+  Link2,
+  Send,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -72,6 +75,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function ChecklistInstanceDetail() {
   const { projectId, checklistId } = useParams<{ projectId: string; checklistId: string }>();
@@ -84,7 +93,8 @@ export default function ChecklistInstanceDetail() {
   const [editingItem, setEditingItem] = useState<ChecklistInstanceItem | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [showNotesDialog, setShowNotesDialog] = useState<ChecklistInstanceItem | null>(null);
-  const [itemNote, setItemNote] = useState("");
+  const [newNoteText, setNewNoteText] = useState("");
+  const [openAssignPopover, setOpenAssignPopover] = useState<string | null>(null);
   
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -220,14 +230,42 @@ export default function ChecklistInstanceDetail() {
     });
   };
 
-  const handleSaveNote = () => {
-    if (!showNotesDialog) return;
+  // Helper to parse notes into feed entries
+  const parseNoteFeed = (notes: string | null | undefined): Array<{ author: string; date: string; text: string }> => {
+    if (!notes) return [];
+    
+    try {
+      const parsed = JSON.parse(notes);
+      if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && 'text' in parsed[0]) {
+        return parsed;
+      }
+      // Invalid JSON array format - treat as legacy text
+      return [{ author: "Previous note", date: new Date().toISOString(), text: notes }];
+    } catch {
+      // Plain text format - treat as legacy entry
+      return [{ author: "Previous note", date: new Date().toISOString(), text: notes }];
+    }
+  };
+
+  const handleAddNote = () => {
+    if (!showNotesDialog || !newNoteText.trim()) return;
+    
+    // Get existing notes (properly parsed)
+    const existingNotes = parseNoteFeed(showNotesDialog.notes);
+    
+    // Add new note entry
+    const newEntry = {
+      author: user?.name || "Unknown",
+      date: new Date().toISOString(),
+      text: newNoteText.trim()
+    };
+    existingNotes.push(newEntry);
+    
     updateItemMutation.mutate({
       itemId: showNotesDialog.id,
-      data: { notes: itemNote },
+      data: { notes: JSON.stringify(existingNotes) },
     });
-    setShowNotesDialog(null);
-    setItemNote("");
+    setNewNoteText("");
   };
 
   const handleOpenSettings = () => {
@@ -293,13 +331,37 @@ export default function ChecklistInstanceDetail() {
     return groups;
   }, [items]);
 
-  const expandAll = () => {
-    setCollapsedGroups(new Set());
-  };
+  // Get current group names
+  const allGroupNames = useMemo(() => Object.keys(groupedItems), [groupedItems]);
 
-  const collapseAll = () => {
-    const allGroupNames = Object.keys(groupedItems);
-    setCollapsedGroups(new Set(allGroupNames));
+  // Clean up stale collapsed groups when data changes
+  useEffect(() => {
+    setCollapsedGroups(prev => {
+      const validGroups = new Set<string>();
+      prev.forEach(groupName => {
+        if (allGroupNames.includes(groupName)) {
+          validGroups.add(groupName);
+        }
+      });
+      // Only update if there are stale entries
+      if (validGroups.size !== prev.size) {
+        return validGroups;
+      }
+      return prev;
+    });
+  }, [allGroupNames]);
+
+  // Compute allExpanded from actual state (only count valid groups)
+  const allExpanded = allGroupNames.length > 0 && collapsedGroups.size === 0;
+
+  const toggleAllGroups = () => {
+    if (allExpanded) {
+      // Collapse all
+      setCollapsedGroups(new Set(allGroupNames));
+    } else {
+      // Expand all
+      setCollapsedGroups(new Set());
+    }
   };
 
   const completedCount = items.filter(i => i.status === "completed" || i.status === "na").length;
@@ -402,28 +464,22 @@ export default function ChecklistInstanceDetail() {
       {/* Row 3: Expand/Collapse & Add */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs px-2"
-            onClick={expandAll}
-            data-testid="button-expand-all"
-          >
-            <ChevronsDown className="h-3 w-3 mr-1" />
-            Expand
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs px-2"
-            onClick={collapseAll}
-            data-testid="button-collapse-all"
-          >
-            <ChevronsUp className="h-3 w-3 mr-1" />
-            Collapse
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={toggleAllGroups}
+                data-testid="button-toggle-expand"
+              >
+                <ChevronsDownUp className={`h-3.5 w-3.5 transition-transform ${allExpanded ? '' : 'rotate-180'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{allExpanded ? 'Collapse all' : 'Expand all'}</TooltipContent>
+          </Tooltip>
           {checklist.description && (
-            <span className="text-xs text-muted-foreground ml-2">
+            <span className="text-xs text-muted-foreground">
               {checklist.description}
             </span>
           )}
@@ -490,133 +546,148 @@ export default function ChecklistInstanceDetail() {
                         {groupItems.map((item) => (
                           <div
                             key={item.id}
-                            className={`flex items-start gap-3 p-3 border-b last:border-b-0 ${
+                            className={`flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 ${
                               item.status === "completed" ? "bg-green-50/50 dark:bg-green-900/10" :
                               item.status === "na" ? "bg-gray-50/50 dark:bg-gray-900/10" : ""
                             }`}
                           >
-                            <div className="pt-0.5">
-                              {item.status === "na" ? (
-                                <div className="h-5 w-5 rounded-md bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                                  <Ban className="h-3 w-3 text-gray-500" />
-                                </div>
-                              ) : (
-                                <Checkbox
-                                  checked={item.status === "completed"}
-                                  onCheckedChange={() => handleToggleItem(item)}
-                                  disabled={checklist.status === "completed"}
-                                  className="h-5 w-5"
-                                  data-testid={`checkbox-item-${item.id}`}
-                                />
+                            {/* Checkbox */}
+                            {item.status === "na" ? (
+                              <div className="h-4 w-4 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
+                                <Ban className="h-2.5 w-2.5 text-gray-500" />
+                              </div>
+                            ) : (
+                              <Checkbox
+                                checked={item.status === "completed"}
+                                onCheckedChange={() => handleToggleItem(item)}
+                                disabled={checklist.status === "completed"}
+                                className="h-4 w-4 shrink-0"
+                                data-testid={`checkbox-item-${item.id}`}
+                              />
+                            )}
+                            
+                            {/* Description */}
+                            <div className="flex-1 min-w-0 flex items-center gap-1">
+                              <span className={`text-xs truncate ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
+                                {item.description}
+                              </span>
+                              {item.isRequired && (
+                                <Asterisk className="h-2.5 w-2.5 text-red-500 shrink-0" />
                               )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-1">
-                                    <p className={`text-sm ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
-                                      {item.description}
-                                    </p>
-                                    {item.isRequired && (
-                                      <Tooltip>
-                                        <TooltipTrigger>
-                                          <Asterisk className="h-3 w-3 text-red-500" />
-                                        </TooltipTrigger>
-                                        <TooltipContent>Required item</TooltipContent>
-                                      </Tooltip>
+                            
+                            {/* Actions */}
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {/* Assignee Avatar with Popover */}
+                              <Popover open={openAssignPopover === item.id} onOpenChange={(open) => setOpenAssignPopover(open ? item.id : null)}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" data-testid={`button-assign-item-${item.id}`}>
+                                    {item.assigneeName ? (
+                                      <Avatar className="h-4 w-4">
+                                        <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                          {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                    ) : (
+                                      <div className="h-4 w-4 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
+                                        <UserIcon className="h-2.5 w-2.5 text-muted-foreground/30" />
+                                      </div>
                                     )}
-                                  </div>
-                                  {item.tooltip && (
-                                    <p className="text-xs text-muted-foreground mt-1">{item.tooltip}</p>
-                                  )}
-                                  {item.completedByName && item.completedAt && (
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                      {item.status === "na" ? "Marked N/A" : "Completed"} by {item.completedByName} on{" "}
-                                      {format(new Date(item.completedAt), "MMM d, yyyy 'at' h:mm a")}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {/* Assignee Avatar */}
-                                  {item.assigneeName ? (
-                                    <Tooltip>
-                                      <TooltipTrigger>
-                                        <Avatar className="h-5 w-5">
-                                          <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
-                                            {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                      </TooltipTrigger>
-                                      <TooltipContent>{item.assigneeName}</TooltipContent>
-                                    </Tooltip>
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-44 p-1" align="end">
+                                  <div className="text-xs font-medium text-muted-foreground px-2 py-1">Assign to</div>
+                                  {teamMembers.length === 0 ? (
+                                    <div className="text-xs text-muted-foreground px-2 py-2">No team members</div>
                                   ) : (
-                                    <Tooltip>
-                                      <TooltipTrigger>
-                                        <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
-                                          <UserIcon className="h-3 w-3 text-muted-foreground/30" />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Unassigned</TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                  {/* Notes Icon */}
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-5 w-5"
-                                        onClick={() => {
-                                          setItemNote(item.notes || "");
-                                          setShowNotesDialog(item);
-                                        }}
-                                        data-testid={`button-notes-${item.id}`}
-                                      >
-                                        {item.notes ? (
-                                          <MessageSquareText className="h-3 w-3 text-blue-500" />
-                                        ) : (
-                                          <MessageSquare className="h-3 w-3 text-muted-foreground/50" />
-                                        )}
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>{item.notes ? "View/edit note" : "Add note"}</TooltipContent>
-                                  </Tooltip>
-                                  {/* Menu */}
-                                  {checklist.status !== "completed" && (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-5 w-5">
-                                          <MoreVertical className="h-3 w-3" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem
+                                    <div className="max-h-40 overflow-auto">
+                                      {item.assigneeId && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="w-full justify-start text-xs h-7"
                                           onClick={() => {
-                                            setItemNote(item.notes || "");
-                                            setShowNotesDialog(item);
+                                            updateItemMutation.mutate({
+                                              itemId: item.id,
+                                              data: { assigneeId: null, assigneeName: null }
+                                            });
+                                            setOpenAssignPopover(null);
                                           }}
                                         >
-                                          <MessageSquare className="h-3 w-3 mr-2" />
-                                          {item.notes ? "Edit Note" : "Add Note"}
-                                        </DropdownMenuItem>
-                                        {item.status !== "na" && (
-                                          <DropdownMenuItem onClick={() => handleMarkNA(item)}>
-                                            <Ban className="h-3 w-3 mr-2" />
-                                            Mark as N/A
-                                          </DropdownMenuItem>
-                                        )}
-                                        <DropdownMenuItem
-                                          className="text-destructive"
-                                          onClick={() => deleteItemMutation.mutate(item.id)}
+                                          <X className="h-3 w-3 mr-2" />
+                                          Unassign
+                                        </Button>
+                                      )}
+                                      {teamMembers.map((member) => (
+                                        <Button
+                                          key={member.id}
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`w-full justify-start text-xs h-7 ${item.assigneeId === member.id ? 'bg-accent' : ''}`}
+                                          onClick={() => {
+                                            updateItemMutation.mutate({
+                                              itemId: item.id,
+                                              data: { assigneeId: member.id, assigneeName: member.name }
+                                            });
+                                            setOpenAssignPopover(null);
+                                          }}
                                         >
-                                          <Trash2 className="h-3 w-3 mr-2" />
-                                          Delete
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
+                                          <Avatar className="h-4 w-4 mr-2">
+                                            <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                              {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                          <span className="truncate">{member.name}</span>
+                                          {item.assigneeId === member.id && (
+                                            <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                          )}
+                                        </Button>
+                                      ))}
+                                    </div>
                                   )}
-                                </div>
-                              </div>
+                                </PopoverContent>
+                              </Popover>
+                              
+                              {/* Notes Icon */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => setShowNotesDialog(item)}
+                                data-testid={`button-notes-${item.id}`}
+                              >
+                                {item.notes ? (
+                                  <MessageSquareText className="h-3 w-3 text-blue-500" />
+                                ) : (
+                                  <MessageSquare className="h-3 w-3 text-muted-foreground/50" />
+                                )}
+                              </Button>
+                              
+                              {/* Menu */}
+                              {checklist.status !== "completed" && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-5 w-5">
+                                      <MoreVertical className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {item.status !== "na" && (
+                                      <DropdownMenuItem onClick={() => handleMarkNA(item)}>
+                                        <Ban className="h-3 w-3 mr-2" />
+                                        Mark as N/A
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => deleteItemMutation.mutate(item.id)}
+                                    >
+                                      <Trash2 className="h-3 w-3 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -839,33 +910,86 @@ export default function ChecklistInstanceDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Notes Dialog */}
-      <Dialog open={!!showNotesDialog} onOpenChange={() => setShowNotesDialog(null)}>
-        <DialogContent>
+      {/* Notes Dialog - Feed Style */}
+      <Dialog open={!!showNotesDialog} onOpenChange={() => { setShowNotesDialog(null); setNewNoteText(""); }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Item Note</DialogTitle>
-            <DialogDescription>
-              Add a note for this checklist item.
+            <DialogTitle className="text-sm">Notes</DialogTitle>
+            <DialogDescription className="text-xs">
+              {showNotesDialog?.description}
             </DialogDescription>
           </DialogHeader>
           
-          <div className="py-4">
-            <Textarea
-              value={itemNote}
-              onChange={(e) => setItemNote(e.target.value)}
-              placeholder="Enter note..."
-              rows={4}
-            />
+          <div className="flex flex-col h-[300px]">
+            {/* Notes Feed */}
+            <ScrollArea className="flex-1 pr-2">
+              {(() => {
+                const noteEntries = parseNoteFeed(showNotesDialog?.notes);
+                
+                if (noteEntries.length === 0) {
+                  return (
+                    <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+                      No notes yet
+                    </div>
+                  );
+                }
+                
+                return (
+                  <div className="space-y-3 py-2">
+                    {noteEntries.map((entry, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <Avatar className="h-6 w-6 shrink-0">
+                          <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                            {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium">{entry.author}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {format(new Date(entry.date), "MMM d 'at' h:mm a")}
+                            </span>
+                          </div>
+                          <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap">{entry.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </ScrollArea>
+            
+            {/* Add Note Input */}
+            <div className="border-t pt-3 mt-2">
+              <div className="flex gap-2">
+                <Textarea
+                  value={newNoteText}
+                  onChange={(e) => setNewNoteText(e.target.value)}
+                  placeholder="Add a note..."
+                  rows={2}
+                  className="text-xs resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleAddNote();
+                    }
+                  }}
+                />
+                <Button
+                  size="icon"
+                  className="h-8 w-8 shrink-0 self-end bg-[#bba7db] hover:bg-[#a896c9]"
+                  onClick={handleAddNote}
+                  disabled={!newNoteText.trim() || updateItemMutation.isPending}
+                >
+                  {updateItemMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Send className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Press Cmd+Enter to send</p>
+            </div>
           </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNotesDialog(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveNote}>
-              Save Note
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

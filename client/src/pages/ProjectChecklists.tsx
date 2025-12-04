@@ -266,9 +266,20 @@ export default function ProjectChecklists() {
       case "completed":
         return <CheckCircle2 className="h-4 w-4 text-green-500" />;
       case "in_progress":
-        return <Clock className="h-4 w-4 text-blue-500" />;
+        return <Clock className="h-4 w-4 text-[#bba7db]" />;
       default:
         return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] px-1.5 py-0">Completed</Badge>;
+      case "in_progress":
+        return <Badge className="bg-[#bba7db]/20 text-[#bba7db] text-[10px] px-1.5 py-0">In Progress</Badge>;
+      default:
+        return <Badge className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 text-[10px] px-1.5 py-0">Active</Badge>;
     }
   };
 
@@ -398,7 +409,7 @@ export default function ProjectChecklists() {
                   key={checklist.id}
                   className={`border rounded-md p-3 hover:bg-muted/30 cursor-pointer transition-colors ${
                     checklist.status === "in_progress" 
-                      ? "border-l-4 border-l-[#bba7db] bg-[#bba7db]/5" 
+                      ? "border-[#bba7db] border-l-4 bg-[#bba7db]/5" 
                       : ""
                   }`}
                   onClick={() => navigate(`/projects/${projectId}/checklists/${checklist.id}`)}
@@ -408,8 +419,9 @@ export default function ProjectChecklists() {
                     <div className="flex items-start gap-3 flex-1 min-w-0">
                       {getStatusIcon(checklist.status)}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="font-medium text-sm truncate">{checklist.name}</span>
+                          {getStatusBadge(checklist.status)}
                           {getPriorityBadge(checklist.priority || "medium")}
                         </div>
                         {checklist.description && (
