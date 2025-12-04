@@ -9608,6 +9608,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: user?.companyId,
         createdBy: user?.id,
         createdByName: user?.name,
+        // Convert empty string assigneeId to null for foreign key constraint
+        assigneeId: validationResult.data.assigneeId || null,
       };
 
       // Extract selectedGroupIds before creating instance (it's not a db column)
