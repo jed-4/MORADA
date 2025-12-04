@@ -9610,12 +9610,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdByName: user?.name,
       };
 
+      // Extract selectedGroupIds before creating instance (it's not a db column)
+      const selectedGroupIds = data.selectedGroupIds;
+      delete (data as any).selectedGroupIds;
+
       const instance = await storage.createChecklistInstance(data);
 
       // If created from a template, copy the template items
       if (data.templateId) {
         const groups = await storage.getChecklistTemplateGroups(data.templateId);
-        for (const group of groups) {
+        
+        // Filter groups if selectedGroupIds is provided
+        const filteredGroups = selectedGroupIds && selectedGroupIds.length > 0
+          ? groups.filter(g => selectedGroupIds.includes(g.id))
+          : groups;
+        
+        for (const group of filteredGroups) {
           const templateItems = await storage.getChecklistTemplateItems(group.id);
           for (const templateItem of templateItems) {
             await storage.createChecklistInstanceItem({

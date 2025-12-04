@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import {
   type ChecklistInstance,
   type ChecklistTemplate,
+  type ChecklistTemplateGroup,
   type User,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,11 @@ import {
   ChevronRight,
   Filter,
   ClipboardList,
+  Check,
+  X,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 type TabType = "active" | "completed";
 
@@ -85,6 +90,7 @@ export default function ProjectChecklists() {
     priority: "medium" as "low" | "medium" | "high" | "urgent",
     dueDate: "",
     assigneeId: "",
+    selectedGroupIds: [] as string[],
   });
 
   const { data: checklists = [], isLoading } = useQuery<(ChecklistInstance & { completedCount?: number; totalCount?: number })[]>({
@@ -107,6 +113,19 @@ export default function ProjectChecklists() {
     queryKey: ["/api/users"],
   });
 
+  const { data: templateGroups = [] } = useQuery<ChecklistTemplateGroup[]>({
+    queryKey: ["/api/checklist-templates", formData.templateId, "groups"],
+    queryFn: async () => {
+      if (!formData.templateId) return [];
+      const res = await fetch(`/api/checklist-templates/${formData.templateId}/groups`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch template groups");
+      return res.json();
+    },
+    enabled: !!formData.templateId,
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const res = await apiRequest("/api/checklist-instances", "POST", {
@@ -114,6 +133,7 @@ export default function ProjectChecklists() {
         projectId,
         assigneeName: teamMembers.find(u => u.id === data.assigneeId)?.name,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        selectedGroupIds: data.selectedGroupIds.length > 0 ? data.selectedGroupIds : undefined,
       });
       return res.json();
     },
@@ -121,7 +141,7 @@ export default function ProjectChecklists() {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
       toast({ title: "Checklist created", description: "The checklist has been created successfully." });
       setShowAddDialog(false);
-      setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "" });
+      setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
       navigate(`/projects/${projectId}/checklists/${instance.id}`);
     },
     onError: () => {
@@ -151,8 +171,32 @@ export default function ProjectChecklists() {
         templateId,
         name: template.name,
         description: template.description || "",
+        selectedGroupIds: [],
       });
     }
+  };
+
+  const toggleGroupSelection = (groupId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      selectedGroupIds: prev.selectedGroupIds.includes(groupId)
+        ? prev.selectedGroupIds.filter(id => id !== groupId)
+        : [...prev.selectedGroupIds, groupId],
+    }));
+  };
+
+  const selectAllGroups = () => {
+    setFormData(prev => ({
+      ...prev,
+      selectedGroupIds: templateGroups.map(g => g.id),
+    }));
+  };
+
+  const clearGroupSelection = () => {
+    setFormData(prev => ({
+      ...prev,
+      selectedGroupIds: [],
+    }));
   };
 
   const handleCreateChecklist = () => {
@@ -421,6 +465,61 @@ export default function ProjectChecklists() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {formData.templateId && templateGroups.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Select Groups to Include</Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      onClick={selectAllGroups}
+                      data-testid="button-select-all-groups"
+                    >
+                      Select All
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      onClick={clearGroupSelection}
+                      data-testid="button-clear-groups"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+                <div className="border rounded-md">
+                  <ScrollArea className="h-[140px]">
+                    <div className="p-2 space-y-1">
+                      {templateGroups.map((group) => (
+                        <div
+                          key={group.id}
+                          className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer"
+                          onClick={() => toggleGroupSelection(group.id)}
+                          data-testid={`group-checkbox-${group.id}`}
+                        >
+                          <Checkbox
+                            checked={formData.selectedGroupIds.includes(group.id)}
+                            onCheckedChange={() => toggleGroupSelection(group.id)}
+                          />
+                          <span className="text-sm">{group.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {formData.selectedGroupIds.length === 0
+                    ? "All groups will be included"
+                    : `${formData.selectedGroupIds.length} of ${templateGroups.length} groups selected`}
+                </p>
               </div>
             )}
 

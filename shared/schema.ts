@@ -2043,10 +2043,17 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
   id: true,
   createdAt: true,
   updatedAt: true,
+  companyId: true,
+  createdBy: true,
+  createdByName: true,
 }).extend({
+  companyId: z.string().optional(),
+  createdBy: z.string().optional(),
+  createdByName: z.string().optional(),
   status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   dueDate: z.coerce.date().optional().nullable(),
+  selectedGroupIds: z.array(z.string()).optional(),
 });
 
 export type InsertChecklistInstance = z.infer<typeof insertChecklistInstanceSchema>;
