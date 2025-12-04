@@ -1319,6 +1319,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Simple roles endpoint for selection dropdowns (no admin permission required)
+  app.get("/api/roles", async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const roles = await storage.getUserRoles(undefined, companyId);
+      res.json(roles);
+    } catch (error) {
+      console.error("[Roles API] Error fetching roles:", error);
+      res.status(500).json({ error: "Failed to fetch roles" });
+    }
+  });
+
   // Note Template Fields API Routes
   app.get("/api/note-templates/:templateId/fields", async (req, res) => {
     try {
