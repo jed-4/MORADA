@@ -71,8 +71,8 @@ export function ChecklistTemplateFormDialog({
     onSuccess: (template) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
-        title: "Checklist group created",
-        description: "The checklist group has been created successfully.",
+        title: "Checklist created",
+        description: "The checklist has been created successfully.",
       });
       onOpenChange(false);
       form.reset();
@@ -83,7 +83,7 @@ export function ChecklistTemplateFormDialog({
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to create checklist group.",
+        description: error.message || "Failed to create checklist.",
         variant: "destructive",
       });
     },
@@ -97,9 +97,9 @@ export function ChecklistTemplateFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create Checklist Group</DialogTitle>
+          <DialogTitle>Create Checklist</DialogTitle>
           <DialogDescription>
-            Create a new checklist group. You can add checklists and items after creation.
+            Create a new checklist template. You can add checklists and items after creation.
           </DialogDescription>
         </DialogHeader>
 
@@ -110,7 +110,7 @@ export function ChecklistTemplateFormDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Checklist Group Name</FormLabel>
+                  <FormLabel>Checklist Name</FormLabel>
                   <FormControl>
                     <Input placeholder="e.g., New Home ITP Checklist" {...field} data-testid="input-template-name" />
                   </FormControl>

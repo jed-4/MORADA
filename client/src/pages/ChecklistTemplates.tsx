@@ -52,14 +52,14 @@ export default function ChecklistTemplates() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
-        title: "Checklist group deleted",
-        description: "The checklist group has been archived successfully.",
+        title: "Checklist deleted",
+        description: "The checklist has been archived successfully.",
       });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to delete checklist group.",
+        description: "Failed to delete checklist.",
         variant: "destructive",
       });
     },
@@ -72,14 +72,14 @@ export default function ChecklistTemplates() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
-        title: "Checklist group duplicated",
-        description: "The checklist group has been duplicated with all checklists and items.",
+        title: "Checklist duplicated",
+        description: "The checklist has been duplicated with all items.",
       });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to duplicate checklist group.",
+        description: "Failed to duplicate checklist.",
         variant: "destructive",
       });
     },
@@ -153,10 +153,10 @@ export default function ChecklistTemplates() {
         {/* Left: Title + Count */}
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Checklist Groups
+            Checklists
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-template-count">
-            {templates.length} {templates.length === 1 ? 'group' : 'groups'}
+            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
           </Badge>
         </div>
 
@@ -184,7 +184,7 @@ export default function ChecklistTemplates() {
             data-testid="button-add-template"
           >
             <Plus className="w-3 h-3" />
-            <span>New Checklist Group</span>
+            <span>New Checklist</span>
           </button>
         </div>
       </div>
@@ -210,18 +210,18 @@ export default function ChecklistTemplates() {
       <div className="flex-1 overflow-auto p-4">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
-            Loading checklist groups...
+            Loading checklists...
           </div>
         ) : filteredTemplates.length === 0 ? (
           <div className="text-center py-8">
             <CheckSquare className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-sm font-medium mb-2">
-              {searchTerm ? "No checklist groups found" : "No checklist groups yet"}
+              {searchTerm ? "No checklists found" : "No checklists yet"}
             </h3>
             <p className="text-xs text-muted-foreground mb-4">
               {searchTerm
                 ? "Try adjusting your search terms"
-                : "Start by adding your first checklist group"}
+                : "Start by adding your first checklist template"}
             </p>
             {!searchTerm && (
               <button 
@@ -230,7 +230,7 @@ export default function ChecklistTemplates() {
                 data-testid="button-create-first-template"
               >
                 <Plus className="h-3 w-3" />
-                Add Your First Checklist Group
+                Add Your First Checklist
               </button>
             )}
           </div>
