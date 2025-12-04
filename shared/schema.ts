@@ -2061,11 +2061,52 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
 export type InsertChecklistInstance = z.infer<typeof insertChecklistInstanceSchema>;
 export type ChecklistInstance = typeof checklistInstances.$inferSelect;
 
+// Checklist Instance Groups (individual checklists within a checklist group)
+// User terminology: checklistInstances = "Checklist Group", checklistInstanceGroups = "Checklist"
+export const checklistInstanceGroups = pgTable("checklist_instance_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").notNull().references(() => checklistInstances.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // Group name (e.g., "ITP013 - DILAPIDATION REPORT")
+  order: integer("order").notNull().default(0),
+  status: text("status").notNull().default("active"), // "active" | "in_progress" | "completed"
+  priority: text("priority").default("medium"), // "low" | "medium" | "high" | "urgent"
+  assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
+  linkedTaskId: varchar("linked_task_id"),
+  linkedScheduleItemId: varchar("linked_schedule_item_id"),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id, { onDelete: "set null" }),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistInstanceGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  status: z.enum(["active", "in_progress", "completed"]).default("active"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  assigneeId: z.string().nullish(),
+  assigneeName: z.string().nullish(),
+  linkedTaskId: z.string().nullish(),
+  linkedScheduleItemId: z.string().nullish(),
+  completedAt: z.coerce.date().nullish(),
+  completedBy: z.string().nullish(),
+  completedByName: z.string().nullish(),
+});
+
+export type InsertChecklistInstanceGroup = z.infer<typeof insertChecklistInstanceGroupSchema>;
+export type ChecklistInstanceGroup = typeof checklistInstanceGroups.$inferSelect;
+
 // Checklist Instance Items (individual items within an instance with completion tracking)
 export const checklistInstanceItems = pgTable("checklist_instance_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   instanceId: varchar("instance_id").notNull().references(() => checklistInstances.id, { onDelete: "cascade" }),
-  groupName: text("group_name"), // Group name (copied from template group)
+  groupId: varchar("group_id").references(() => checklistInstanceGroups.id, { onDelete: "cascade" }),
+  groupName: text("group_name"), // Group name (copied from template group) - kept for backwards compatibility
   groupOrder: integer("group_order").notNull().default(0),
   description: text("description").notNull(),
   tooltip: text("tooltip"),

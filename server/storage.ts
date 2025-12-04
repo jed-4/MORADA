@@ -55,6 +55,7 @@ import {
   type ChecklistTemplateGroup, type InsertChecklistTemplateGroup,
   type ChecklistTemplateItem, type InsertChecklistTemplateItem,
   type ChecklistInstance, type InsertChecklistInstance,
+  type ChecklistInstanceGroup, type InsertChecklistInstanceGroup,
   type ChecklistInstanceItem, type InsertChecklistInstanceItem,
   type Budget, type InsertBudget,
   type BudgetLineItem, type InsertBudgetLineItem,
@@ -625,12 +626,19 @@ export interface IStorage {
   updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined>;
   deleteChecklistTemplateItem(id: string): Promise<boolean>;
 
-  // Checklist Instances CRUD
+  // Checklist Instances CRUD (these are "Checklist Groups" in user terminology)
   getChecklistInstances(projectId?: string): Promise<ChecklistInstance[]>;
   getChecklistInstance(id: string): Promise<ChecklistInstance | undefined>;
   createChecklistInstance(instance: InsertChecklistInstance): Promise<ChecklistInstance>;
   updateChecklistInstance(id: string, instance: Partial<InsertChecklistInstance>): Promise<ChecklistInstance | undefined>;
   deleteChecklistInstance(id: string): Promise<boolean>;
+
+  // Checklist Instance Groups CRUD (these are "Checklists" in user terminology)
+  getChecklistInstanceGroups(instanceId: string): Promise<ChecklistInstanceGroup[]>;
+  getChecklistInstanceGroup(id: string): Promise<ChecklistInstanceGroup | undefined>;
+  createChecklistInstanceGroup(group: InsertChecklistInstanceGroup): Promise<ChecklistInstanceGroup>;
+  updateChecklistInstanceGroup(id: string, group: Partial<InsertChecklistInstanceGroup>): Promise<ChecklistInstanceGroup | undefined>;
+  deleteChecklistInstanceGroup(id: string): Promise<boolean>;
 
   // Checklist Instance Items CRUD
   getChecklistInstanceItems(instanceId: string): Promise<ChecklistInstanceItem[]>;
@@ -10966,6 +10974,9 @@ export class DbStorage implements IStorage {
       // First delete all items
       await db.delete(schema.checklistInstanceItems)
         .where(eq(schema.checklistInstanceItems.instanceId, id));
+      // Delete all groups
+      await db.delete(schema.checklistInstanceGroups)
+        .where(eq(schema.checklistInstanceGroups.instanceId, id));
       // Then delete the instance
       const result = await db.delete(schema.checklistInstances)
         .where(eq(schema.checklistInstances.id, id))
@@ -10973,6 +10984,73 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteChecklistInstance:", error);
+      throw error;
+    }
+  }
+
+  // Checklist Instance Groups CRUD (these are "Checklists" in user terminology)
+  async getChecklistInstanceGroups(instanceId: string): Promise<ChecklistInstanceGroup[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistInstanceGroups)
+        .where(eq(schema.checklistInstanceGroups.instanceId, instanceId))
+        .orderBy(schema.checklistInstanceGroups.order);
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceGroups:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistInstanceGroup(id: string): Promise<ChecklistInstanceGroup | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.checklistInstanceGroups)
+        .where(eq(schema.checklistInstanceGroups.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceGroup:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistInstanceGroup(group: InsertChecklistInstanceGroup): Promise<ChecklistInstanceGroup> {
+    try {
+      const result = await db.insert(schema.checklistInstanceGroups)
+        .values(group)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createChecklistInstanceGroup:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistInstanceGroup(id: string, group: Partial<InsertChecklistInstanceGroup>): Promise<ChecklistInstanceGroup | undefined> {
+    try {
+      const result = await db.update(schema.checklistInstanceGroups)
+        .set({ ...group, updatedAt: new Date() })
+        .where(eq(schema.checklistInstanceGroups.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateChecklistInstanceGroup:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistInstanceGroup(id: string): Promise<boolean> {
+    try {
+      // First delete all items in this group
+      await db.delete(schema.checklistInstanceItems)
+        .where(eq(schema.checklistInstanceItems.groupId, id));
+      // Then delete the group
+      const result = await db.delete(schema.checklistInstanceGroups)
+        .where(eq(schema.checklistInstanceGroups.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistInstanceGroup:", error);
       throw error;
     }
   }

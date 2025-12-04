@@ -62,6 +62,7 @@ import {
   insertChecklistTemplateGroupSchema,
   insertChecklistTemplateItemSchema,
   insertChecklistInstanceSchema,
+  insertChecklistInstanceGroupSchema,
   insertChecklistInstanceItemSchema,
   updateBudgetSchema,
   updateBudgetLineItemSchema,
@@ -9686,6 +9687,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to delete checklist instance",
+        details: error.message 
+      });
+    }
+  });
+
+  // Checklist Instance Group routes (these are "Checklists" in user terminology)
+  app.get("/api/checklist-instances/:instanceId/groups", async (req, res) => {
+    try {
+      const groups = await storage.getChecklistInstanceGroups(req.params.instanceId);
+      res.json(groups);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist groups",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/checklist-instance-groups/:id", async (req, res) => {
+    try {
+      const group = await storage.getChecklistInstanceGroup(req.params.id);
+      if (!group) {
+        return res.status(404).json({ error: "Checklist group not found" });
+      }
+      res.json(group);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist group",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/checklist-instances/:instanceId/groups", async (req, res) => {
+    try {
+      const validationResult = insertChecklistInstanceGroupSchema.safeParse({
+        ...req.body,
+        instanceId: req.params.instanceId,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const group = await storage.createChecklistInstanceGroup(validationResult.data);
+      res.status(201).json(group);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create checklist group",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/checklist-instance-groups/:id", async (req, res) => {
+    try {
+      const validationResult = insertChecklistInstanceGroupSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const group = await storage.updateChecklistInstanceGroup(req.params.id, validationResult.data);
+      if (!group) {
+        return res.status(404).json({ error: "Checklist group not found" });
+      }
+      res.json(group);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update checklist group",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/checklist-instance-groups/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteChecklistInstanceGroup(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Checklist group not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete checklist group",
         details: error.message 
       });
     }

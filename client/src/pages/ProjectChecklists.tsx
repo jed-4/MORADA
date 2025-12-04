@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import {
   type ChecklistInstance,
+  type ChecklistInstanceGroup,
   type ChecklistTemplate,
   type ChecklistTemplateGroup,
   type User,
@@ -18,6 +19,7 @@ type Task = {
   title: string;
   projectId: string | null;
 };
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -56,6 +58,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   ListChecks,
   Plus,
   Search,
@@ -68,12 +75,13 @@ import {
   AlertCircle,
   Loader2,
   ChevronRight,
+  ChevronDown,
   Filter,
   ClipboardList,
   Check,
   X,
-  Users,
   Link2,
+  FolderOpen,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -88,8 +96,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Card } from "@/components/ui/card";
 
 type TabType = "upcoming" | "action" | "done";
+
+// Extended type for groups with item counts
+type ChecklistGroupWithCounts = ChecklistInstanceGroup & {
+  completedCount?: number;
+  totalCount?: number;
+};
 
 export default function ProjectChecklists() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -103,6 +118,7 @@ export default function ProjectChecklists() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [openLinkPopover, setOpenLinkPopover] = useState<string | null>(null);
+  const [expandedInstances, setExpandedInstances] = useState<Set<string>>(new Set());
   
   const [formData, setFormData] = useState({
     templateId: "",
@@ -114,16 +130,35 @@ export default function ProjectChecklists() {
     selectedGroupIds: [] as string[],
   });
 
-  const { data: checklists = [], isLoading } = useQuery<(ChecklistInstance & { completedCount?: number; totalCount?: number })[]>({
+  // Fetch checklist instances (these are "Checklist Groups" in user terminology)
+  const { data: instances = [], isLoading } = useQuery<ChecklistInstance[]>({
     queryKey: ["/api/checklist-instances", { projectId }],
     queryFn: async () => {
       const res = await fetch(`/api/checklist-instances?projectId=${projectId}`, {
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to fetch checklists");
+      if (!res.ok) throw new Error("Failed to fetch checklist groups");
       return res.json();
     },
     enabled: !!projectId,
+  });
+
+  // Fetch all groups for all instances
+  const { data: allGroups = [] } = useQuery<ChecklistGroupWithCounts[]>({
+    queryKey: ["/api/checklist-instance-groups", { projectId }],
+    queryFn: async () => {
+      // Fetch groups for each instance and combine them
+      const groupPromises = instances.map(async (instance) => {
+        const res = await fetch(`/api/checklist-instances/${instance.id}/groups`, {
+          credentials: "include",
+        });
+        if (!res.ok) return [];
+        return res.json();
+      });
+      const groupArrays = await Promise.all(groupPromises);
+      return groupArrays.flat();
+    },
+    enabled: instances.length > 0,
   });
 
   const { data: templates = [] } = useQuery<ChecklistTemplate[]>({
@@ -186,52 +221,39 @@ export default function ProjectChecklists() {
     },
     onSuccess: (instance) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-      toast({ title: "Checklist created", description: "The checklist has been created successfully." });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
+      toast({ title: "Checklist Group created", description: "The checklist group has been created successfully." });
       setShowAddDialog(false);
       setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
       navigate(`/projects/${projectId}/checklists/${instance.id}`);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to create checklist.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to create checklist group.", variant: "destructive" });
     },
   });
 
-  const deleteMutation = useMutation({
+  const deleteInstanceMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest(`/api/checklist-instances/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-      toast({ title: "Checklist deleted", description: "The checklist has been deleted." });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
+      toast({ title: "Checklist Group deleted", description: "The checklist group has been deleted." });
       setShowDeleteConfirm(null);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete checklist.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete checklist group.", variant: "destructive" });
     },
   });
 
-  const quickAssignMutation = useMutation({
-    mutationFn: async ({ checklistId, assigneeId }: { checklistId: string; assigneeId: string | null }) => {
-      const assignee = teamMembers.find(u => u.id === assigneeId);
-      await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", {
-        assigneeId: assigneeId || null,
-        assigneeName: assignee?.name || null,
-      });
+  // Mutation for updating checklist (group) - status, assignee, link
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ groupId, data }: { groupId: string; data: Partial<ChecklistInstanceGroup> }) => {
+      await apiRequest(`/api/checklist-instance-groups/${groupId}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to assign checklist.", variant: "destructive" });
-    },
-  });
-
-  const updateChecklistMutation = useMutation({
-    mutationFn: async ({ checklistId, data }: { checklistId: string; data: Partial<ChecklistInstance> }) => {
-      await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
       setOpenLinkPopover(null);
     },
     onError: () => {
@@ -278,53 +300,66 @@ export default function ProjectChecklists() {
 
   const handleCreateChecklist = () => {
     if (!formData.name.trim()) {
-      toast({ title: "Name required", description: "Please enter a checklist name.", variant: "destructive" });
+      toast({ title: "Name required", description: "Please enter a name.", variant: "destructive" });
       return;
     }
     createMutation.mutate(formData);
   };
 
-  const filteredChecklists = useMemo(() => {
-    return checklists.filter(c => {
+  const toggleInstanceExpansion = (instanceId: string) => {
+    setExpandedInstances(prev => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) {
+        next.delete(instanceId);
+      } else {
+        next.add(instanceId);
+      }
+      return next;
+    });
+  };
+
+  // Filter groups by tab (status), search, and assignee
+  const filteredGroups = useMemo(() => {
+    return allGroups.filter(group => {
       // Filter by tab
-      if (activeTab === "upcoming" && c.status !== "active") return false;
-      if (activeTab === "action" && c.status !== "in_progress") return false;
-      if (activeTab === "done" && c.status !== "completed") return false;
+      if (activeTab === "upcoming" && group.status !== "active") return false;
+      if (activeTab === "action" && group.status !== "in_progress") return false;
+      if (activeTab === "done" && group.status !== "completed") return false;
       
-      if (searchTerm && !c.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (assigneeFilter !== "all" && c.assigneeId !== assigneeFilter) return false;
+      if (searchTerm && !group.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (assigneeFilter !== "all" && group.assigneeId !== assigneeFilter) return false;
       
       return true;
     });
-  }, [checklists, activeTab, searchTerm, assigneeFilter]);
+  }, [allGroups, activeTab, searchTerm, assigneeFilter]);
 
-  // Group filtered checklists by their originating template
-  const groupedChecklists = useMemo(() => {
-    const groups: Record<string, { templateName: string; checklists: typeof filteredChecklists }> = {};
+  // Group filtered groups by their instance
+  const groupedByInstance = useMemo(() => {
+    const grouped: Record<string, { instance: ChecklistInstance; groups: ChecklistGroupWithCounts[] }> = {};
     
-    filteredChecklists.forEach(checklist => {
-      // Use template name from the instance, or fallback to "Ungrouped"
-      const template = templates.find(t => t.id === checklist.templateId);
-      const groupKey = checklist.templateId || "ungrouped";
-      const templateName = template?.name || (checklist.templateId ? "Unknown Template" : "Ungrouped");
+    filteredGroups.forEach(group => {
+      const instance = instances.find(i => i.id === group.instanceId);
+      if (!instance) return;
       
-      if (!groups[groupKey]) {
-        groups[groupKey] = { templateName, checklists: [] };
+      if (!grouped[instance.id]) {
+        grouped[instance.id] = { instance, groups: [] };
       }
-      groups[groupKey].checklists.push(checklist);
+      grouped[instance.id].groups.push(group);
     });
     
-    // Sort groups: named templates first (alphabetically), then ungrouped last
-    return Object.entries(groups).sort(([keyA, a], [keyB, b]) => {
-      if (keyA === "ungrouped") return 1;
-      if (keyB === "ungrouped") return -1;
-      return a.templateName.localeCompare(b.templateName);
+    // Sort groups within each instance by order
+    Object.values(grouped).forEach(({ groups }) => {
+      groups.sort((a, b) => (a.order || 0) - (b.order || 0));
     });
-  }, [filteredChecklists, templates]);
+    
+    return Object.values(grouped).sort((a, b) => 
+      a.instance.name.localeCompare(b.instance.name)
+    );
+  }, [filteredGroups, instances]);
 
-  const upcomingCount = checklists.filter(c => c.status === "active").length;
-  const actionCount = checklists.filter(c => c.status === "in_progress").length;
-  const doneCount = checklists.filter(c => c.status === "completed").length;
+  const upcomingCount = allGroups.filter(g => g.status === "active").length;
+  const actionCount = allGroups.filter(g => g.status === "in_progress").length;
+  const doneCount = allGroups.filter(g => g.status === "completed").length;
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, string> = {
@@ -369,27 +404,31 @@ export default function ProjectChecklists() {
     }
   };
 
-  const getStatusUpdateData = (currentStatus: string): Partial<ChecklistInstance> => {
+  const getNextStatus = (currentStatus: string): { status: string; completionData: Partial<ChecklistInstanceGroup> } => {
     const now = new Date().toISOString();
     switch (currentStatus) {
       case "active":
-        return { status: "in_progress" };
+        return { status: "in_progress", completionData: {} };
       case "in_progress":
         return { 
-          status: "completed",
-          completedAt: now,
-          completedBy: user?.id || null,
-          completedByName: user?.name || null,
+          status: "completed", 
+          completionData: { 
+            completedAt: now,
+            completedBy: user?.id || null,
+            completedByName: user?.name || null,
+          } 
         };
       case "completed":
         return { 
-          status: "active",
-          completedAt: null,
-          completedBy: null,
-          completedByName: null,
+          status: "active", 
+          completionData: { 
+            completedAt: null,
+            completedBy: null,
+            completedByName: null,
+          } 
         };
       default:
-        return { status: "in_progress" };
+        return { status: "in_progress", completionData: {} };
     }
   };
 
@@ -408,7 +447,7 @@ export default function ProjectChecklists() {
         <div className="flex items-center gap-2">
           <ListChecks className="h-4 w-4 text-muted-foreground" />
           <h1 className="text-sm font-semibold">Checklists</h1>
-          <Badge variant="secondary" className="text-xs">{checklists.length}</Badge>
+          <Badge variant="secondary" className="text-xs">{allGroups.length}</Badge>
         </div>
         <Button
           size="sm"
@@ -417,7 +456,7 @@ export default function ProjectChecklists() {
           data-testid="button-add-checklist"
         >
           <Plus className="h-3 w-3 mr-1" />
-          Add Checklist
+          Add Checklist Group
         </Button>
       </div>
 
@@ -501,7 +540,7 @@ export default function ProjectChecklists() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {filteredChecklists.length === 0 ? (
+        {filteredGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
             <ClipboardList className="h-12 w-12 opacity-50" />
             <p className="text-sm">
@@ -519,356 +558,359 @@ export default function ProjectChecklists() {
                 data-testid="button-add-first-checklist"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add First Checklist
+                Add First Checklist Group
               </Button>
             )}
           </div>
         ) : (
           <div className="space-y-6">
-            {groupedChecklists.map(([groupKey, group]) => (
-              <div key={groupKey} className="space-y-2">
-                {/* Group Header - Simple Section Divider */}
-                <div className="flex items-center gap-2 px-1 py-1.5 border-b border-muted/50 bg-muted/20 rounded-t-sm">
-                  <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/70" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {group.templateName}
-                  </span>
-                  <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">
-                    {group.checklists.length}
-                  </Badge>
-                </div>
-                
-                {/* Individual Checklist Rows */}
-                <div className="space-y-1.5 pl-2">
-                  {group.checklists.map((checklist) => {
-                    const progress = checklist.totalCount && checklist.totalCount > 0
-                      ? Math.round((checklist.completedCount || 0) / checklist.totalCount * 100)
-                      : 0;
-                    
-                    return (
-                      <div
-                        key={checklist.id}
-                        className={`border rounded-md p-3 hover:bg-muted/30 cursor-pointer transition-colors ${
-                          checklist.status === "in_progress" 
-                            ? "border-[#bba7db] border-l-4 bg-[#bba7db]/5" 
-                            : ""
-                        }`}
-                        onClick={() => navigate(`/projects/${projectId}/checklists/${checklist.id}`)}
-                        data-testid={`checklist-card-${checklist.id}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3 flex-1 min-w-0">
-                            {getStatusIcon(checklist.status)}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className="font-medium text-sm truncate">{checklist.name}</span>
-                                <Badge 
-                                  className={`${getStatusBadgeClass(checklist.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateChecklistMutation.mutate({
-                                      checklistId: checklist.id,
-                                      data: getStatusUpdateData(checklist.status)
-                                    });
-                                  }}
-                                  data-testid={`status-toggle-${checklist.id}`}
-                                >
-                                  {getStatusLabel(checklist.status)}
-                                </Badge>
-                                {getPriorityBadge(checklist.priority || "medium")}
-                              </div>
-                              {checklist.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-1 mb-2">
-                                  {checklist.description}
-                                </p>
-                              )}
-                              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                                {checklist.dueDate && (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50">
-                                    <Calendar className="h-3 w-3" />
-                                    {format(new Date(checklist.dueDate), "MMM d")}
-                                  </span>
-                                )}
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50">
-                                  <ListChecks className="h-3 w-3" />
-                                  {checklist.completedCount || 0}/{checklist.totalCount || 0}
-                                </span>
-                                {/* Linked Item Display */}
-                                {(checklist.linkedTaskId || checklist.linkedScheduleItemId) && (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db]">
-                                    <Link2 className="h-3 w-3" />
-                                    <span className="truncate max-w-[120px]">
-                                      {checklist.linkedTaskId 
-                                        ? projectTasks.find(t => t.id === checklist.linkedTaskId)?.title || "Task"
-                                        : scheduleItems.find(s => s.id === checklist.linkedScheduleItemId)?.name || "Schedule"
-                                      }
-                                    </span>
-                                  </span>
-                                )}
-                              </div>
-                              {checklist.totalCount && checklist.totalCount > 0 && (
-                                <div className="mt-2">
-                                  <Progress value={progress} className="h-1" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {/* Quick Assignee Selector */}
-                            <Popover>
-                              <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-quick-assign-${checklist.id}`}>
-                                  {checklist.assigneeName ? (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Avatar className="h-5 w-5">
-                                          <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
-                                            {checklist.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                      </TooltipTrigger>
-                                      <TooltipContent>{checklist.assigneeName}</TooltipContent>
-                                    </Tooltip>
-                                  ) : (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
-                                          <UserIcon className="h-3 w-3 text-muted-foreground/50" />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Assign someone</TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-48 p-1" align="end" onClick={(e) => e.stopPropagation()}>
-                                <div className="text-xs font-medium text-muted-foreground px-2 py-1">Assign to</div>
-                                <div className="max-h-48 overflow-auto">
-                                  {checklist.assigneeId && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-full justify-start text-xs text-muted-foreground"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        quickAssignMutation.mutate({ checklistId: checklist.id, assigneeId: null });
-                                      }}
-                                    >
-                                      <X className="h-3 w-3 mr-2" />
-                                      Unassign
-                                    </Button>
-                                  )}
-                                  {teamMembers.map((member) => (
-                                    <Button
-                                      key={member.id}
-                                      variant="ghost"
-                                      size="sm"
-                                      className={`w-full justify-start text-xs ${checklist.assigneeId === member.id ? 'bg-accent' : ''}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        quickAssignMutation.mutate({ checklistId: checklist.id, assigneeId: member.id });
-                                      }}
-                                    >
-                                      <Avatar className="h-4 w-4 mr-2">
-                                        <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
-                                          {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      {member.name}
-                                      {checklist.assigneeId === member.id && (
-                                        <Check className="h-3 w-3 ml-auto text-[#bba7db]" />
-                                      )}
-                                    </Button>
-                                  ))}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                            
-                            {/* Link to Task/Schedule Popover */}
-                            <Popover 
-                              open={openLinkPopover === checklist.id} 
-                              onOpenChange={(open) => {
-                                if (!open) setOpenLinkPopover(null);
+            {groupedByInstance.map(({ instance, groups }) => (
+              <div key={instance.id} className="space-y-2">
+                {/* Checklist Group Header (Instance) - Simple category divider */}
+                <Collapsible 
+                  open={expandedInstances.has(instance.id) || expandedInstances.size === 0}
+                  onOpenChange={() => toggleInstanceExpansion(instance.id)}
+                >
+                  <CollapsibleTrigger asChild>
+                    <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border border-muted/50 rounded-md cursor-pointer hover:bg-muted/50 transition-colors">
+                      {expandedInstances.has(instance.id) || expandedInstances.size === 0 ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">{instance.name}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {groups.length} checklists
+                      </Badge>
+                      <div className="ml-auto flex items-center gap-1">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6">
+                              <MoreVertical className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/projects/${projectId}/checklists/${instance.id}`);
                               }}
                             >
-                              <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-6 w-6"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOpenLinkPopover(checklist.id);
-                                  }}
-                                  data-testid={`button-link-${checklist.id}`}
-                                >
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Link2 className={`h-3.5 w-3.5 ${checklist.linkedTaskId || checklist.linkedScheduleItemId ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      {checklist.linkedTaskId 
-                                        ? projectTasks.find(t => t.id === checklist.linkedTaskId)?.title || "Linked to task"
-                                        : checklist.linkedScheduleItemId 
-                                          ? scheduleItems.find(s => s.id === checklist.linkedScheduleItemId)?.name || "Linked to schedule"
-                                          : "Link to task or schedule"
-                                      }
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-64 p-2" align="end" onClick={(e) => e.stopPropagation()}>
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-muted-foreground px-1">Link checklist to:</p>
-                                  
-                                  {/* Tasks Section */}
-                                  {projectTasks.length > 0 && (
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Tasks</p>
-                                      <ScrollArea className="max-h-32">
-                                        <div className="space-y-0.5">
-                                          {projectTasks.map((task) => (
-                                            <Button
-                                              key={task.id}
-                                              variant="ghost"
-                                              size="sm"
-                                              className="w-full justify-start h-7 text-xs px-1"
-                                              disabled={updateChecklistMutation.isPending}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                updateChecklistMutation.mutate({
-                                                  checklistId: checklist.id,
-                                                  data: {
-                                                    linkedTaskId: checklist.linkedTaskId === task.id ? null : task.id,
-                                                    linkedScheduleItemId: null
-                                                  }
-                                                });
-                                              }}
-                                            >
-                                              <span className="truncate">{task.title}</span>
-                                              {checklist.linkedTaskId === task.id && (
-                                                <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
-                                              )}
-                                            </Button>
-                                          ))}
-                                        </div>
-                                      </ScrollArea>
-                                    </div>
-                                  )}
-                                  
-                                  {/* Schedule Items Section */}
-                                  {scheduleItems.length > 0 && (
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Schedule</p>
-                                      <ScrollArea className="max-h-32">
-                                        <div className="space-y-0.5">
-                                          {scheduleItems.map((schedItem) => (
-                                            <Button
-                                              key={schedItem.id}
-                                              variant="ghost"
-                                              size="sm"
-                                              className="w-full justify-start h-7 text-xs px-1"
-                                              disabled={updateChecklistMutation.isPending}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                updateChecklistMutation.mutate({
-                                                  checklistId: checklist.id,
-                                                  data: {
-                                                    linkedScheduleItemId: checklist.linkedScheduleItemId === schedItem.id ? null : schedItem.id,
-                                                    linkedTaskId: null
-                                                  }
-                                                });
-                                              }}
-                                            >
-                                              <span className="truncate">{schedItem.name}</span>
-                                              {checklist.linkedScheduleItemId === schedItem.id && (
-                                                <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
-                                              )}
-                                            </Button>
-                                          ))}
-                                        </div>
-                                      </ScrollArea>
-                                    </div>
-                                  )}
-                                  
-                                  {projectTasks.length === 0 && scheduleItems.length === 0 && (
-                                    <p className="text-xs text-muted-foreground px-1 py-2">
-                                      No tasks or schedule items available
-                                    </p>
-                                  )}
-                                  
-                                  {/* Remove link button */}
-                                  {(checklist.linkedTaskId || checklist.linkedScheduleItemId) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-full justify-center h-7 text-xs text-destructive hover:text-destructive"
-                                      disabled={updateChecklistMutation.isPending}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        updateChecklistMutation.mutate({
-                                          checklistId: checklist.id,
-                                          data: { linkedTaskId: null, linkedScheduleItemId: null }
-                                        });
-                                      }}
-                                    >
-                                      <X className="h-3 w-3 mr-1" />
-                                      Remove link
-                                    </Button>
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDeleteConfirm(instance.id);
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3 mr-2" />
+                              Delete Group
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </CollapsibleTrigger>
+                  
+                  <CollapsibleContent>
+                    {/* Individual Checklists (Groups) - Cards with all controls */}
+                    <div className="space-y-2 mt-2 ml-4 pl-4 border-l-2 border-muted/30">
+                      {groups.map((group) => (
+                        <Card
+                          key={group.id}
+                          className={`p-3 cursor-pointer transition-colors hover:bg-muted/20 ${
+                            group.status === "in_progress" 
+                              ? "border-[#bba7db] border-l-4 bg-[#bba7db]/5" 
+                              : ""
+                          }`}
+                          onClick={() => navigate(`/projects/${projectId}/checklists/${instance.id}?group=${group.id}`)}
+                          data-testid={`checklist-card-${group.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              {getStatusIcon(group.status)}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="font-medium text-sm">{group.name}</span>
+                                  <Badge 
+                                    className={`${getStatusBadgeClass(group.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const { status, completionData } = getNextStatus(group.status);
+                                      updateGroupMutation.mutate({
+                                        groupId: group.id,
+                                        data: { status, ...completionData }
+                                      });
+                                    }}
+                                    data-testid={`status-toggle-${group.id}`}
+                                  >
+                                    {getStatusLabel(group.status)}
+                                  </Badge>
+                                  {getPriorityBadge(group.priority || "medium")}
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                                  {/* Linked Item Display */}
+                                  {(group.linkedTaskId || group.linkedScheduleItemId) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db]">
+                                      <Link2 className="h-3 w-3" />
+                                      <span className="truncate max-w-[120px]">
+                                        {group.linkedTaskId 
+                                          ? projectTasks.find(t => t.id === group.linkedTaskId)?.title || "Task"
+                                          : scheduleItems.find(s => s.id === group.linkedScheduleItemId)?.name || "Schedule"
+                                        }
+                                      </span>
+                                    </span>
                                   )}
                                 </div>
-                              </PopoverContent>
-                            </Popover>
-                            
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <Button variant="ghost" size="icon" className="h-6 w-6">
-                                  <MoreVertical className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowDeleteConfirm(checklist.id);
-                                  }}
-                                >
-                                  <Trash2 className="h-3 w-3 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {/* Quick Assignee Selector */}
+                              <Popover>
+                                <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-quick-assign-${group.id}`}>
+                                    {group.assigneeName ? (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Avatar className="h-5 w-5">
+                                            <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
+                                              {group.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                        </TooltipTrigger>
+                                        <TooltipContent>{group.assigneeName}</TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
+                                            <UserIcon className="h-3 w-3 text-muted-foreground/50" />
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Assign someone</TooltipContent>
+                                      </Tooltip>
+                                    )}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-48 p-1" align="end" onClick={(e) => e.stopPropagation()}>
+                                  <div className="text-xs font-medium text-muted-foreground px-2 py-1">Assign to</div>
+                                  <div className="max-h-48 overflow-auto">
+                                    {group.assigneeId && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full justify-start text-xs text-muted-foreground"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateGroupMutation.mutate({ 
+                                            groupId: group.id, 
+                                            data: { assigneeId: null, assigneeName: null }
+                                          });
+                                        }}
+                                      >
+                                        <X className="h-3 w-3 mr-2" />
+                                        Unassign
+                                      </Button>
+                                    )}
+                                    {teamMembers.map((member) => (
+                                      <Button
+                                        key={member.id}
+                                        variant="ghost"
+                                        size="sm"
+                                        className={`w-full justify-start text-xs ${group.assigneeId === member.id ? 'bg-accent' : ''}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateGroupMutation.mutate({ 
+                                            groupId: group.id, 
+                                            data: { assigneeId: member.id, assigneeName: member.name }
+                                          });
+                                        }}
+                                      >
+                                        <Avatar className="h-4 w-4 mr-2">
+                                          <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
+                                            {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        {member.name}
+                                        {group.assigneeId === member.id && (
+                                          <Check className="h-3 w-3 ml-auto text-[#bba7db]" />
+                                        )}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              
+                              {/* Link to Task/Schedule Popover */}
+                              <Popover 
+                                open={openLinkPopover === group.id} 
+                                onOpenChange={(open) => {
+                                  if (!open) setOpenLinkPopover(null);
+                                }}
+                              >
+                                <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenLinkPopover(group.id);
+                                    }}
+                                    data-testid={`button-link-${group.id}`}
+                                  >
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Link2 className={`h-3.5 w-3.5 ${group.linkedTaskId || group.linkedScheduleItemId ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {group.linkedTaskId 
+                                          ? projectTasks.find(t => t.id === group.linkedTaskId)?.title || "Linked to task"
+                                          : group.linkedScheduleItemId 
+                                            ? scheduleItems.find(s => s.id === group.linkedScheduleItemId)?.name || "Linked to schedule"
+                                            : "Link to task or schedule"
+                                        }
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-64 p-2" align="end" onClick={(e) => e.stopPropagation()}>
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-medium text-muted-foreground px-1">Link checklist to:</p>
+                                    
+                                    {/* Tasks Section */}
+                                    {projectTasks.length > 0 && (
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Tasks</p>
+                                        <ScrollArea className="max-h-32">
+                                          <div className="space-y-0.5">
+                                            {projectTasks.map((task) => (
+                                              <Button
+                                                key={task.id}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full justify-start h-7 text-xs px-1"
+                                                disabled={updateGroupMutation.isPending}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  updateGroupMutation.mutate({
+                                                    groupId: group.id,
+                                                    data: {
+                                                      linkedTaskId: group.linkedTaskId === task.id ? null : task.id,
+                                                      linkedScheduleItemId: null
+                                                    }
+                                                  });
+                                                }}
+                                              >
+                                                <span className="truncate">{task.title}</span>
+                                                {group.linkedTaskId === task.id && (
+                                                  <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                                )}
+                                              </Button>
+                                            ))}
+                                          </div>
+                                        </ScrollArea>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Schedule Items Section */}
+                                    {scheduleItems.length > 0 && (
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Schedule</p>
+                                        <ScrollArea className="max-h-32">
+                                          <div className="space-y-0.5">
+                                            {scheduleItems.map((schedItem) => (
+                                              <Button
+                                                key={schedItem.id}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full justify-start h-7 text-xs px-1"
+                                                disabled={updateGroupMutation.isPending}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  updateGroupMutation.mutate({
+                                                    groupId: group.id,
+                                                    data: {
+                                                      linkedScheduleItemId: group.linkedScheduleItemId === schedItem.id ? null : schedItem.id,
+                                                      linkedTaskId: null
+                                                    }
+                                                  });
+                                                }}
+                                              >
+                                                <span className="truncate">{schedItem.name}</span>
+                                                {group.linkedScheduleItemId === schedItem.id && (
+                                                  <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                                )}
+                                              </Button>
+                                            ))}
+                                          </div>
+                                        </ScrollArea>
+                                      </div>
+                                    )}
+                                    
+                                    {projectTasks.length === 0 && scheduleItems.length === 0 && (
+                                      <p className="text-xs text-muted-foreground px-1 py-2">
+                                        No tasks or schedule items available
+                                      </p>
+                                    )}
+                                    
+                                    {/* Remove link button */}
+                                    {(group.linkedTaskId || group.linkedScheduleItemId) && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full justify-center h-7 text-xs text-destructive hover:text-destructive"
+                                        disabled={updateGroupMutation.isPending}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateGroupMutation.mutate({
+                                            groupId: group.id,
+                                            data: { linkedTaskId: null, linkedScheduleItemId: null }
+                                          });
+                                        }}
+                                      >
+                                        <X className="h-3 w-3 mr-1" />
+                                        Remove link
+                                      </Button>
+                                    )}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Add Checklist Dialog */}
+      {/* Add Checklist Group Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent data-testid="dialog-add-checklist">
           <DialogHeader>
-            <DialogTitle>Add Checklist</DialogTitle>
+            <DialogTitle>Add Checklist Group</DialogTitle>
             <DialogDescription>
-              Create a new checklist from a checklist group or from scratch.
+              Create a new checklist group from a template or from scratch.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             {templates.length > 0 && (
               <div className="space-y-2">
-                <Label>Start from Checklist Group (optional)</Label>
+                <Label>Start from Template (optional)</Label>
                 <Select value={formData.templateId} onValueChange={handleTemplateSelect}>
                   <SelectTrigger data-testid="select-template">
-                    <SelectValue placeholder="Select a checklist group..." />
+                    <SelectValue placeholder="Select a template..." />
                   </SelectTrigger>
                   <SelectContent>
                     {templates.map((template) => (
@@ -958,57 +1000,6 @@ export default function ProjectChecklists() {
                 data-testid="textarea-description"
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Priority</Label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(value) => setFormData({ ...formData, priority: value as any })}
-                >
-                  <SelectTrigger data-testid="select-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="dueDate">Due Date</Label>
-                <Input
-                  id="dueDate"
-                  type="date"
-                  value={formData.dueDate}
-                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  data-testid="input-due-date"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Assignee (optional)</Label>
-              <Select
-                value={formData.assigneeId || "unassigned"}
-                onValueChange={(value) => setFormData({ ...formData, assigneeId: value === "unassigned" ? "" : value })}
-              >
-                <SelectTrigger data-testid="select-assignee">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {teamMembers.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           <DialogFooter>
@@ -1026,7 +1017,7 @@ export default function ProjectChecklists() {
                   Creating...
                 </>
               ) : (
-                "Create Checklist"
+                "Create Checklist Group"
               )}
             </Button>
           </DialogFooter>
@@ -1037,15 +1028,15 @@ export default function ProjectChecklists() {
       <AlertDialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Checklist</AlertDialogTitle>
+            <AlertDialogTitle>Delete Checklist Group</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this checklist? This action cannot be undone.
+              Are you sure you want to delete this checklist group and all its checklists? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => showDeleteConfirm && deleteMutation.mutate(showDeleteConfirm)}
+              onClick={() => showDeleteConfirm && deleteInstanceMutation.mutate(showDeleteConfirm)}
             >
               Delete
             </AlertDialogAction>
