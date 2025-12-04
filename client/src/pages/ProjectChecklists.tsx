@@ -93,7 +93,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type TabType = "upcoming" | "action" | "done";
+type TabType = "all" | "upcoming" | "action" | "done";
 
 type ChecklistGroupWithCounts = ChecklistInstanceGroup & {
   completedCount?: number;
@@ -106,7 +106,7 @@ export default function ProjectChecklists() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<TabType>("upcoming");
+  const [activeTab, setActiveTab] = useState<TabType>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -369,6 +369,7 @@ export default function ProjectChecklists() {
 
   const filteredGroups = useMemo(() => {
     return allGroups.filter(group => {
+      // "all" tab shows everything, other tabs filter by status
       if (activeTab === "upcoming" && group.status !== "active") return false;
       if (activeTab === "action" && group.status !== "in_progress") return false;
       if (activeTab === "done" && group.status !== "completed") return false;
@@ -402,6 +403,7 @@ export default function ProjectChecklists() {
     );
   }, [filteredGroups, instances]);
 
+  const allCount = allGroups.length;
   const upcomingCount = allGroups.filter(g => g.status === "active").length;
   const actionCount = allGroups.filter(g => g.status === "in_progress").length;
   const doneCount = allGroups.filter(g => g.status === "completed").length;
@@ -496,6 +498,18 @@ export default function ProjectChecklists() {
       {/* Row 2: Tabs */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-0.5" data-testid="tabs-checklist-status">
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "all"
+                ? "bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90"
+                : "hover-elevate"
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-all"
+          >
+            All
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{allCount}</Badge>
+          </button>
           <button
             onClick={() => setActiveTab("upcoming")}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
@@ -656,11 +670,23 @@ export default function ProjectChecklists() {
                           >
                             {/* Checklist Header */}
                             <div className="flex items-start gap-2">
-                              {/* Left: Chevron + Chips */}
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
+                              {/* Left: Chevron + Title */}
+                              <div className="flex items-start gap-2 flex-1 min-w-0">
+                                <div className={`transition-transform duration-200 mt-0.5 ${isExpanded ? 'rotate-90' : ''}`}>
                                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </div>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm line-clamp-1">{group.name}</span>
+                                  {items.length > 0 && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {completedItems} of {items.length} items
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Right: Chips + Assignee */}
+                              <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <Badge 
                                   className={`${getStatusBadgeClass(group.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
                                   onClick={(e) => {
@@ -677,51 +703,37 @@ export default function ProjectChecklists() {
                                 </Badge>
                                 {getPriorityBadge(group.priority || "medium")}
                                 {(group.linkedTaskId || group.linkedScheduleItemId) && (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db] text-[10px]">
+                                  <span className="inline-flex items-center px-1 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db]">
                                     <Link2 className="h-3 w-3" />
                                   </span>
                                 )}
-                              </div>
-                              
-                              {/* Center: Title */}
-                              <div className="flex-1 min-w-0">
-                                <span className="font-semibold text-sm line-clamp-1">{group.name}</span>
-                                {items.length > 0 && (
-                                  <p className="text-xs text-muted-foreground">
-                                    {completedItems} of {items.length} items
-                                  </p>
-                                )}
-                              </div>
-                              
-                              {/* Right: Actions */}
-                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                  {/* Quick Assignee */}
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-quick-assign-${group.id}`}>
-                                        {group.assigneeName ? (
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Avatar className="h-5 w-5">
-                                                <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
-                                                  {group.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                                                </AvatarFallback>
-                                              </Avatar>
-                                            </TooltipTrigger>
-                                            <TooltipContent>{group.assigneeName}</TooltipContent>
-                                          </Tooltip>
-                                        ) : (
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
-                                                <UserIcon className="h-3 w-3 text-muted-foreground/50" />
-                                              </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent>Assign someone</TooltipContent>
-                                          </Tooltip>
-                                        )}
-                                      </Button>
-                                    </PopoverTrigger>
+                                {/* Assignee */}
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`button-quick-assign-${group.id}`}>
+                                      {group.assigneeName ? (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Avatar className="h-5 w-5">
+                                              <AvatarFallback className="text-[10px] bg-[#bba7db]/20 text-[#bba7db]">
+                                                {group.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                              </AvatarFallback>
+                                            </Avatar>
+                                          </TooltipTrigger>
+                                          <TooltipContent>{group.assigneeName}</TooltipContent>
+                                        </Tooltip>
+                                      ) : (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
+                                              <UserIcon className="h-3 w-3 text-muted-foreground/50" />
+                                            </div>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Assign someone</TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                    </Button>
+                                  </PopoverTrigger>
                                     <PopoverContent className="w-48 p-1" align="end">
                                       <div className="text-xs font-medium text-muted-foreground px-2 py-1">Assign to</div>
                                       <div className="max-h-48 overflow-auto">
