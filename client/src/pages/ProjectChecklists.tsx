@@ -10,7 +10,14 @@ import {
   type ChecklistTemplate,
   type ChecklistTemplateGroup,
   type User,
+  type ScheduleItem,
 } from "@shared/schema";
+
+type Task = {
+  id: string;
+  title: string;
+  projectId: string | null;
+};
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -66,6 +73,7 @@ import {
   Check,
   X,
   Users,
+  Link2,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -94,6 +102,7 @@ export default function ProjectChecklists() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [openLinkPopover, setOpenLinkPopover] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     templateId: "",
@@ -136,6 +145,32 @@ export default function ProjectChecklists() {
       return res.json();
     },
     enabled: !!formData.templateId,
+  });
+
+  // Fetch tasks for this project for linking
+  const { data: projectTasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/tasks", { projectId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks?projectId=${projectId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  // Fetch schedule items for this project for linking
+  const { data: scheduleItems = [] } = useQuery<ScheduleItem[]>({
+    queryKey: ["/api/projects", projectId, "schedule-items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/schedule-items`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
   });
 
   const createMutation = useMutation({
@@ -188,6 +223,20 @@ export default function ProjectChecklists() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to assign checklist.", variant: "destructive" });
+    },
+  });
+
+  const updateChecklistMutation = useMutation({
+    mutationFn: async ({ checklistId, data }: { checklistId: string; data: Partial<ChecklistInstance> }) => {
+      await apiRequest(`/api/checklist-instances/${checklistId}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
+      setOpenLinkPopover(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update checklist.", variant: "destructive" });
+      setOpenLinkPopover(null);
     },
   });
 
@@ -272,14 +321,38 @@ export default function ProjectChecklists() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusLabel = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] px-1.5 py-0">Completed</Badge>;
+        return "Done";
       case "in_progress":
-        return <Badge className="bg-[#bba7db]/20 text-[#bba7db] text-[10px] px-1.5 py-0">In Progress</Badge>;
+        return "Action";
       default:
-        return <Badge className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 text-[10px] px-1.5 py-0">Active</Badge>;
+        return "Upcoming";
+    }
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+      case "in_progress":
+        return "bg-[#bba7db]/20 text-[#bba7db]";
+      default:
+        return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+    }
+  };
+
+  const cycleStatus = (currentStatus: string) => {
+    switch (currentStatus) {
+      case "active":
+        return "in_progress";
+      case "in_progress":
+        return "completed";
+      case "completed":
+        return "active";
+      default:
+        return "in_progress";
     }
   };
 
@@ -421,7 +494,19 @@ export default function ProjectChecklists() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="font-medium text-sm truncate">{checklist.name}</span>
-                          {getStatusBadge(checklist.status)}
+                          <Badge 
+                            className={`${getStatusBadgeClass(checklist.status)} text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateChecklistMutation.mutate({
+                                checklistId: checklist.id,
+                                data: { status: cycleStatus(checklist.status) }
+                              });
+                            }}
+                            data-testid={`status-toggle-${checklist.id}`}
+                          >
+                            {getStatusLabel(checklist.status)}
+                          </Badge>
                           {getPriorityBadge(checklist.priority || "medium")}
                         </div>
                         {checklist.description && (
@@ -440,6 +525,18 @@ export default function ProjectChecklists() {
                             <ListChecks className="h-3 w-3" />
                             {checklist.completedCount || 0}/{checklist.totalCount || 0}
                           </span>
+                          {/* Linked Item Display */}
+                          {(checklist.linkedTaskId || checklist.linkedScheduleItemId) && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#bba7db]/10 text-[#bba7db]">
+                              <Link2 className="h-3 w-3" />
+                              <span className="truncate max-w-[120px]">
+                                {checklist.linkedTaskId 
+                                  ? projectTasks.find(t => t.id === checklist.linkedTaskId)?.title || "Task"
+                                  : scheduleItems.find(s => s.id === checklist.linkedScheduleItemId)?.name || "Schedule"
+                                }
+                              </span>
+                            </span>
+                          )}
                         </div>
                         {checklist.totalCount && checklist.totalCount > 0 && (
                           <div className="mt-2">
@@ -518,6 +615,143 @@ export default function ProjectChecklists() {
                           </div>
                         </PopoverContent>
                       </Popover>
+                      
+                      {/* Link to Task/Schedule Popover */}
+                      <Popover 
+                        open={openLinkPopover === checklist.id} 
+                        onOpenChange={(open) => {
+                          if (!open) setOpenLinkPopover(null);
+                        }}
+                      >
+                        <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenLinkPopover(checklist.id);
+                            }}
+                            data-testid={`button-link-${checklist.id}`}
+                          >
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Link2 className={`h-3.5 w-3.5 ${checklist.linkedTaskId || checklist.linkedScheduleItemId ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {checklist.linkedTaskId 
+                                  ? projectTasks.find(t => t.id === checklist.linkedTaskId)?.title || "Linked to task"
+                                  : checklist.linkedScheduleItemId 
+                                    ? scheduleItems.find(s => s.id === checklist.linkedScheduleItemId)?.name || "Linked to schedule"
+                                    : "Link to task or schedule"
+                                }
+                              </TooltipContent>
+                            </Tooltip>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="end" onClick={(e) => e.stopPropagation()}>
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground px-1">Link checklist to:</p>
+                            
+                            {/* Tasks Section */}
+                            {projectTasks.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Tasks</p>
+                                <ScrollArea className="max-h-32">
+                                  <div className="space-y-0.5">
+                                    {projectTasks.map((task) => (
+                                      <Button
+                                        key={task.id}
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full justify-start h-7 text-xs px-1"
+                                        disabled={updateChecklistMutation.isPending}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateChecklistMutation.mutate({
+                                            checklistId: checklist.id,
+                                            data: {
+                                              linkedTaskId: checklist.linkedTaskId === task.id ? null : task.id,
+                                              linkedScheduleItemId: null
+                                            }
+                                          });
+                                        }}
+                                      >
+                                        <span className="truncate">{task.title}</span>
+                                        {checklist.linkedTaskId === task.id && (
+                                          <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                        )}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            )}
+                            
+                            {/* Schedule Items Section */}
+                            {scheduleItems.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-[10px] font-medium text-muted-foreground px-1 uppercase tracking-wide">Schedule</p>
+                                <ScrollArea className="max-h-32">
+                                  <div className="space-y-0.5">
+                                    {scheduleItems.map((schedItem) => (
+                                      <Button
+                                        key={schedItem.id}
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full justify-start h-7 text-xs px-1"
+                                        disabled={updateChecklistMutation.isPending}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateChecklistMutation.mutate({
+                                            checklistId: checklist.id,
+                                            data: {
+                                              linkedScheduleItemId: checklist.linkedScheduleItemId === schedItem.id ? null : schedItem.id,
+                                              linkedTaskId: null
+                                            }
+                                          });
+                                        }}
+                                      >
+                                        <span className="truncate">{schedItem.name}</span>
+                                        {checklist.linkedScheduleItemId === schedItem.id && (
+                                          <Check className="h-3 w-3 ml-auto text-[#bba7db] shrink-0" />
+                                        )}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            )}
+                            
+                            {projectTasks.length === 0 && scheduleItems.length === 0 && (
+                              <p className="text-xs text-muted-foreground px-1 py-2">
+                                No tasks or schedule items available
+                              </p>
+                            )}
+                            
+                            {/* Remove link button */}
+                            {(checklist.linkedTaskId || checklist.linkedScheduleItemId) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-center h-7 text-xs text-destructive hover:text-destructive"
+                                disabled={updateChecklistMutation.isPending}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateChecklistMutation.mutate({
+                                    checklistId: checklist.id,
+                                    data: { linkedTaskId: null, linkedScheduleItemId: null }
+                                  });
+                                }}
+                              >
+                                <X className="h-3 w-3 mr-1" />
+                                Remove link
+                              </Button>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-6 w-6">
