@@ -1,7 +1,7 @@
 import { useState, useImperativeHandle, forwardRef, useRef, useEffect } from "react";
 import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, FileText, MoreVertical, Pencil, Trash2, FormInput, FileSpreadsheet, GripVertical, X, Copy } from "lucide-react";
+import { Plus, FileText, MoreVertical, Pencil, Trash2, FormInput, FileSpreadsheet, GripVertical, X, Copy, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -474,6 +474,23 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                           <p className="text-xs text-muted-foreground line-clamp-1">
                             {template.description}
                           </p>
+                        )}
+                        {template.visibleToRoles && template.visibleToRoles.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1 flex-wrap">
+                            <Users className="h-3 w-3 text-muted-foreground" />
+                            {template.visibleToRoles.map((roleId) => {
+                              const role = roles.find(r => r.id === roleId);
+                              return role ? (
+                                <Badge 
+                                  key={roleId} 
+                                  variant="outline" 
+                                  className="h-4 px-1.5 text-[10px] bg-[#bba7db]/10 border-[#bba7db]/30 text-[#8b7ab3]"
+                                >
+                                  {role.name}
+                                </Badge>
+                              ) : null;
+                            })}
+                          </div>
                         )}
                       </div>
                       
