@@ -5445,6 +5445,18 @@ export class DbStorage implements IStorage {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        id: 'cat-checklist-type',
+        key: 'checklist.type',
+        label: 'Checklist Types',
+        entity: 'checklist',
+        description: 'Type categories for checklist templates',
+        isBuiltIn: true,
+        isActive: true,
+        sortOrder: 6,
+        createdAt: now,
+        updatedAt: now,
+      },
     ];
 
     await db.insert(schema.fieldCategories).values(defaultCategories);
@@ -5485,6 +5497,12 @@ export class DbStorage implements IStorage {
       { id: 'opt-room-bathroom', categoryId: 'cat-location-rooms', key: 'main-bathroom', name: 'Main Bathroom', color: '#06B6D4', isDefault: false, sortOrder: 3 },
       { id: 'opt-room-ensuite', categoryId: 'cat-location-rooms', key: 'ensuite', name: 'Ensuite', color: '#0891B2', isDefault: false, sortOrder: 4 },
       { id: 'opt-room-laundry', categoryId: 'cat-location-rooms', key: 'laundry', name: 'Laundry', color: '#65A30D', isDefault: false, sortOrder: 5 },
+      
+      // Checklist Types
+      { id: 'opt-checklist-type-task', categoryId: 'cat-checklist-type', key: 'Task', name: 'Task', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+      { id: 'opt-checklist-type-job', categoryId: 'cat-checklist-type', key: 'Job', name: 'Job', color: '#10B981', isDefault: false, sortOrder: 1 },
+      { id: 'opt-checklist-type-estimation', categoryId: 'cat-checklist-type', key: 'Estimation', name: 'Estimation', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
+      { id: 'opt-checklist-type-lead', categoryId: 'cat-checklist-type', key: 'Lead', name: 'Lead', color: '#F59E0B', isDefault: false, sortOrder: 3 },
     ];
 
     const fieldOptionsWithTimestamps = fieldOptions.map(option => ({
