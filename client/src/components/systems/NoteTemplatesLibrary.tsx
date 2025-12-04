@@ -1,7 +1,7 @@
 import { useState, useImperativeHandle, forwardRef, useRef, useEffect } from "react";
 import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, FileText, MoreVertical, Pencil, Trash2, FormInput, FileSpreadsheet, GripVertical, X, Copy, Users } from "lucide-react";
+import { Plus, FileText, MoreVertical, Pencil, Trash2, FormInput, FileSpreadsheet, GripVertical, X, Copy, Users, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
@@ -646,35 +647,98 @@ export const NoteTemplatesLibrary = forwardRef<NoteTemplatesLibraryHandle, NoteT
                   <p className="text-xs text-muted-foreground mb-2">
                     Select which roles can see this template. Leave empty for all roles.
                   </p>
-                  <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto">
-                    {roles.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No roles available</p>
-                    ) : (
-                      roles.filter(role => role.isActive).map((role) => (
-                        <div key={role.id} className="flex items-center gap-2">
-                          <Checkbox
-                            id={`role-${role.id}`}
-                            checked={visibleToRoles.includes(role.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setVisibleToRoles([...visibleToRoles, role.id]);
-                              } else {
-                                setVisibleToRoles(visibleToRoles.filter(id => id !== role.id));
-                              }
-                            }}
-                            className="data-[state=checked]:bg-[#bba7db] data-[state=checked]:border-[#bba7db]"
-                            data-testid={`checkbox-role-${role.id}`}
-                          />
-                          <label
-                            htmlFor={`role-${role.id}`}
-                            className="text-sm cursor-pointer"
-                          >
-                            {role.name}
-                          </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full justify-between font-normal"
+                        data-testid="dropdown-visible-roles"
+                      >
+                        <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
+                          {visibleToRoles.length === 0 ? (
+                            <span className="text-muted-foreground">All Roles</span>
+                          ) : (
+                            visibleToRoles.slice(0, 3).map((roleId) => {
+                              const role = roles.find(r => r.id === roleId);
+                              return role ? (
+                                <Badge 
+                                  key={roleId} 
+                                  variant="secondary" 
+                                  className="h-5 px-1.5 text-xs bg-[#bba7db]/20 text-[#8b7ab3] border-0"
+                                >
+                                  {role.name}
+                                </Badge>
+                              ) : null;
+                            })
+                          )}
+                          {visibleToRoles.length > 3 && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-xs">
+                              +{visibleToRoles.length - 3} more
+                            </Badge>
+                          )}
                         </div>
-                      ))
-                    )}
-                  </div>
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0" align="start">
+                      <div className="p-2 border-b">
+                        <div className="text-sm font-medium">Select Roles</div>
+                        <div className="text-xs text-muted-foreground">
+                          {visibleToRoles.length === 0 
+                            ? "Visible to all roles" 
+                            : `${visibleToRoles.length} role${visibleToRoles.length > 1 ? 's' : ''} selected`}
+                        </div>
+                      </div>
+                      <ScrollArea className="max-h-60">
+                        <div className="p-2 space-y-1">
+                          {roles.length === 0 ? (
+                            <p className="text-sm text-muted-foreground p-2">No roles available</p>
+                          ) : (
+                            roles.filter(role => role.isActive).map((role) => {
+                              const isSelected = visibleToRoles.includes(role.id);
+                              return (
+                                <div
+                                  key={role.id}
+                                  className="flex items-center gap-2 p-2 rounded-md cursor-pointer hover-elevate"
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      setVisibleToRoles(visibleToRoles.filter(id => id !== role.id));
+                                    } else {
+                                      setVisibleToRoles([...visibleToRoles, role.id]);
+                                    }
+                                  }}
+                                  data-testid={`option-role-${role.id}`}
+                                >
+                                  <div className={`h-4 w-4 rounded border flex items-center justify-center ${
+                                    isSelected 
+                                      ? 'bg-[#bba7db] border-[#bba7db]' 
+                                      : 'border-input'
+                                  }`}>
+                                    {isSelected && <Check className="h-3 w-3 text-white" />}
+                                  </div>
+                                  <span className="text-sm flex-1">{role.name}</span>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </ScrollArea>
+                      {visibleToRoles.length > 0 && (
+                        <div className="p-2 border-t">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full h-7 text-xs"
+                            onClick={() => setVisibleToRoles([])}
+                            data-testid="button-clear-roles"
+                          >
+                            Clear selection (visible to all)
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {isFormBased && (
