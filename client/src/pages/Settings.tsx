@@ -43,7 +43,14 @@ import {
   Type,
   List,
   GripVertical,
-  Bell
+  Bell,
+  HardDrive,
+  ExternalLink,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import {
   DndContext,
@@ -147,6 +154,12 @@ const SETTINGS_CATEGORIES = [
     label: "Notifications",
     icon: Bell,
     description: "Control what notifications you receive"
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    icon: Plug,
+    description: "Connect Google Drive and other services"
   }
 ];
 
@@ -549,6 +562,302 @@ export default function Settings() {
                 data-testid="notification-digest"
               />
             </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
+  // Integrations Section Component
+  const IntegrationsSection = () => {
+    const [showSecret, setShowSecret] = useState(false);
+    const [clientId, setClientId] = useState("");
+    const [clientSecret, setClientSecret] = useState("");
+    const { toast } = useToast();
+
+    // Fetch Google Drive status
+    const { data: driveStatus, isLoading: isDriveLoading, refetch: refetchDriveStatus } = useQuery<{
+      connected: boolean;
+      credentialsConfigured: boolean;
+      email: string | null;
+      tokenExpiry: Date | null;
+      isExpired: boolean;
+      connectedAt: Date | null;
+      connectedBy: string | null;
+      rootFolderId: string | null;
+    }>({
+      queryKey: ["/api/google-drive/status"],
+    });
+
+    // Save credentials mutation
+    const saveCredentialsMutation = useMutation({
+      mutationFn: async (data: { clientId: string; clientSecret: string }) => {
+        const response = await apiRequest("/api/google-drive/credentials", "POST", data);
+        return response.json();
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
+        toast({ title: "Google Drive credentials saved successfully" });
+        setClientId("");
+        setClientSecret("");
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Failed to save credentials",
+          description: error.message,
+          variant: "destructive",
+        });
+      },
+    });
+
+    // Connect to Google Drive mutation
+    const connectDriveMutation = useMutation({
+      mutationFn: async () => {
+        const response = await apiRequest("/api/google-drive/auth-url", "GET");
+        return response.json();
+      },
+      onSuccess: (data) => {
+        if (data.authUrl) {
+          window.location.href = data.authUrl;
+        }
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Failed to connect Google Drive",
+          description: error.message,
+          variant: "destructive",
+        });
+      },
+    });
+
+    // Disconnect Google Drive mutation
+    const disconnectDriveMutation = useMutation({
+      mutationFn: async () => {
+        const response = await apiRequest("/api/google-drive/disconnect", "POST");
+        return response.json();
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
+        toast({ title: "Google Drive disconnected successfully" });
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Failed to disconnect Google Drive",
+          description: error.message,
+          variant: "destructive",
+        });
+      },
+    });
+
+    const handleSaveCredentials = () => {
+      if (!clientId.trim() || !clientSecret.trim()) {
+        toast({
+          title: "Missing fields",
+          description: "Please enter both Client ID and Client Secret",
+          variant: "destructive",
+        });
+        return;
+      }
+      saveCredentialsMutation.mutate({ clientId: clientId.trim(), clientSecret: clientSecret.trim() });
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-semibold">Integrations</h2>
+          <p className="text-muted-foreground">
+            Connect external services to enhance your workflow
+          </p>
+        </div>
+
+        {/* Google Drive Integration */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                <HardDrive className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="flex items-center gap-2">
+                  Google Drive
+                  {driveStatus?.connected && (
+                    <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Connected
+                    </Badge>
+                  )}
+                  {driveStatus?.credentialsConfigured && !driveStatus?.connected && (
+                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Credentials Set
+                    </Badge>
+                  )}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Store and manage project files directly in your Google Drive
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* OAuth Credentials Configuration */}
+            {!driveStatus?.connected && (
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <h4 className="font-medium mb-2 flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Step 1: Configure OAuth Credentials
+                </h4>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Enter your Google Cloud OAuth 2.0 credentials. You can create these in the{" "}
+                  <a 
+                    href="https://console.cloud.google.com/apis/credentials" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Google Cloud Console
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+                
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="drive-client-id">Client ID</Label>
+                    <Input
+                      id="drive-client-id"
+                      placeholder="123456789.apps.googleusercontent.com"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      data-testid="input-drive-client-id"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="drive-client-secret">Client Secret</Label>
+                    <div className="relative">
+                      <Input
+                        id="drive-client-secret"
+                        type={showSecret ? "text" : "password"}
+                        placeholder="GOCSPX-..."
+                        value={clientSecret}
+                        onChange={(e) => setClientSecret(e.target.value)}
+                        className="pr-10"
+                        data-testid="input-drive-client-secret"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowSecret(!showSecret)}
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-muted/50 p-3 rounded-md">
+                    <h5 className="text-sm font-medium mb-2">Setup Instructions:</h5>
+                    <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                      <li>Go to Google Cloud Console and create a new project (or select existing)</li>
+                      <li>Enable the Google Drive API</li>
+                      <li>Create OAuth 2.0 credentials (Web application type)</li>
+                      <li>Add authorized redirect URI: <code className="bg-background px-1 rounded">{window.location.origin}/api/google-drive/callback</code></li>
+                      <li>Copy the Client ID and Client Secret here</li>
+                    </ol>
+                  </div>
+                  
+                  <Button
+                    onClick={handleSaveCredentials}
+                    disabled={saveCredentialsMutation.isPending || !clientId.trim() || !clientSecret.trim()}
+                    data-testid="button-save-drive-credentials"
+                  >
+                    {saveCredentialsMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Credentials
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Connection Status and Actions */}
+            {driveStatus?.credentialsConfigured && !driveStatus?.connected && (
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <h4 className="font-medium mb-2 flex items-center gap-2">
+                  <Plug className="h-4 w-4" />
+                  Step 2: Connect Google Drive
+                </h4>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Your credentials are saved. Click below to authorize access to your Google Drive.
+                </p>
+                <Button
+                  onClick={() => connectDriveMutation.mutate()}
+                  disabled={connectDriveMutation.isPending}
+                  data-testid="button-connect-drive"
+                >
+                  {connectDriveMutation.isPending ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <HardDrive className="h-4 w-4 mr-2" />
+                      Connect Google Drive
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* Connected State */}
+            {driveStatus?.connected && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Connected to Google Drive</p>
+                      <p className="text-sm text-muted-foreground">
+                        {driveStatus.email}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => disconnectDriveMutation.mutate()}
+                    disabled={disconnectDriveMutation.isPending}
+                    data-testid="button-disconnect-drive"
+                  >
+                    {disconnectDriveMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Disconnecting...
+                      </>
+                    ) : (
+                      "Disconnect"
+                    )}
+                  </Button>
+                </div>
+
+                {/* Update Credentials Option */}
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <h4 className="font-medium mb-2">Update OAuth Credentials</h4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    If you need to change your Google Cloud credentials, disconnect first, then reconfigure.
+                  </p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -999,8 +1308,9 @@ export default function Settings() {
             {activeSection === "branding" && <CompanyInfoSection />}
             {activeSection === "field-settings" && <FieldCategoriesSection />}
             {activeSection === "notifications" && <NotificationsSection />}
+            {activeSection === "integrations" && <IntegrationsSection />}
             
-            {activeSection !== "branding" && activeSection !== "field-settings" && activeSection !== "notifications" && (
+            {activeSection !== "branding" && activeSection !== "field-settings" && activeSection !== "notifications" && activeSection !== "integrations" && (
               <div className="text-center py-12">
                 <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
                   {activeCategory && <activeCategory.icon className="h-8 w-8 text-muted-foreground" />}
