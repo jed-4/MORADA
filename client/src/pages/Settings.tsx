@@ -216,12 +216,19 @@ export default function Settings() {
     queryKey: ["/api/company-settings"],
   });
 
+  // Fetch user's company data for nickname (Display Name shown in header)
+  const { data: userCompany } = useQuery<{ id: string; name: string; nickname: string | null }>({
+    queryKey: ["/api/companies", user?.companyId],
+    enabled: !!user?.companyId,
+  });
+
   // Update form when company settings data is loaded
+  // Prioritize company's nickname for Display Name (what shows in header)
   useEffect(() => {
     if (companySettings) {
       companyForm.reset({
         companyName: companySettings.companyName || "",
-        nickname: companySettings.nickname || "",
+        nickname: userCompany?.nickname || companySettings.nickname || "",
         email: companySettings.email || "",
         phone: companySettings.phone || "",
         website: companySettings.website || "",
@@ -237,7 +244,7 @@ export default function Settings() {
         yelp: companySettings.yelp || "",
       });
     }
-  }, [companySettings, companyForm]);
+  }, [companySettings, userCompany, companyForm]);
 
   // Company info mutation 
   const updateCompanyMutation = useMutation({
