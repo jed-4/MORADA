@@ -1080,15 +1080,24 @@ export const billLineTypeEnum = pgEnum("bill_line_type", ["estimate", "item", "c
 export const billApprovalStatusEnum = pgEnum("bill_approval_status", ["approved", "rejected"]);
 export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
 
-// Suppliers (for bills)
+// Supplier type enum (supplier = hardware stores, trade = subcontractors)
+export const supplierTypeEnum = pgEnum("supplier_type", ["supplier", "trade"]);
+
+// Suppliers (for bills) - includes both hardware suppliers and trades/subcontractors
 export const suppliers = pgTable("suppliers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  supplierType: supplierTypeEnum("supplier_type").notNull().default("supplier"),
   email: text("email"),
   phone: text("phone"),
   abn: text("abn"), // Australian Business Number
   address: text("address"),
   xeroContactId: text("xero_contact_id"), // For Xero integration linking
+  // Trade-specific fields
+  tradeCategory: text("trade_category"), // e.g., Electrician, Plumber, Carpenter
+  licenseNumber: text("license_number"), // Trade license/registration number
+  insuranceExpiry: timestamp("insurance_expiry"), // Public liability insurance expiry
+  contactPerson: text("contact_person"), // Primary contact name for trades
   // color: text("color").default("#bba7db"), // Gantt bar color, default lilac - Removed temporarily until migration
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
