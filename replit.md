@@ -126,3 +126,21 @@ Preferred communication style: Simple, everyday language.
 ### Date and Utility Libraries
 - **date-fns**: Date utility library.
 - **nanoid**: Unique string ID generator.
+
+## Future Integrations
+
+### Google Drive Integration (Deferred)
+- **Status**: User deferred setup - can be connected later via Replit connector
+- **Integration ID**: `connector:ccfg_google-drive_0F6D7EF5E22543468DB221F94F`
+- **Planned Features**:
+  - Company-wide folder as source of truth for document management
+  - Role-based access control for files
+  - Recommended folder structure: Company (Templates/Policies/Resources) and Projects folders with standardized subfolders (Plans/Contracts/Photos/Variations/Handover)
+  - File browser UI with folder navigation
+  - File upload through BuildPro that saves to Google Drive
+  - File preview/download for common file types
+- **To Enable**: User can set up the Google Drive connector through Replit when ready
+
+## Recent Changes
+- **Checklist Response Types**: Added support for checkbox (default), text, single_choice, and multiple_choice response types for checklist items
+- **Body Parser Limit**: Increased to 50mb for JSON/URL-encoded payloads (requires publishing for production)
