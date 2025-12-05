@@ -746,6 +746,9 @@ export const companySettings = pgTable("company_settings", {
   proposalHeaderText: text("proposal_header_text"), // Default header text for proposals
   proposalFooterText: text("proposal_footer_text"), // Default footer text for proposals
   
+  // Insurance expiry reminder settings
+  insuranceReminderRoleId: varchar("insurance_reminder_role_id").references(() => userRoles.id), // Which role receives insurance expiry reminders (defaults to General Manager)
+  
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1083,22 +1086,50 @@ export const taxTypeEnum = pgEnum("tax_type", ["GST on expenses", "No GST"]);
 // Supplier type enum (supplier = hardware stores, trade = subcontractors)
 export const supplierTypeEnum = pgEnum("supplier_type", ["supplier", "trade"]);
 
+// Payment terms enum
+export const paymentTermsEnum = pgEnum("payment_terms_type", [
+  "on_receipt",
+  "net_7",
+  "net_14",
+  "net_30",
+  "eom",
+  "end_of_next_month"
+]);
+
+// Insurance type enum
+export const insuranceTypeEnum = pgEnum("insurance_type", [
+  "public_liability",
+  "workers_comp",
+  "other"
+]);
+
 // Suppliers (for bills) - includes both hardware suppliers and trades/subcontractors
 export const suppliers = pgTable("suppliers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
   name: text("name").notNull(),
   supplierType: supplierTypeEnum("supplier_type").notNull().default("supplier"),
   email: text("email"),
   phone: text("phone"),
   abn: text("abn"), // Australian Business Number
+  businessNumber: text("business_number"), // ACN or other business registration
   address: text("address"),
   xeroContactId: text("xero_contact_id"), // For Xero integration linking
+  
+  // Default settings for bills
+  paymentTerms: paymentTermsEnum("payment_terms"), // Payment terms
+  defaultCostCodeId: varchar("default_cost_code_id").references(() => costCodes.id), // Auto-applies to bill line items
+  xeroDefaultAccount: text("xero_default_account"), // Default Xero account code (e.g., "Purchase of Materials")
+  
   // Trade-specific fields
   tradeCategory: text("trade_category"), // e.g., Electrician, Plumber, Carpenter
   licenseNumber: text("license_number"), // Trade license/registration number
-  insuranceExpiry: timestamp("insurance_expiry"), // Public liability insurance expiry
-  contactPerson: text("contact_person"), // Primary contact name for trades
-  // color: text("color").default("#bba7db"), // Gantt bar color, default lilac - Removed temporarily until migration
+  insuranceExpiry: timestamp("insurance_expiry"), // Legacy - kept for backward compatibility
+  contactPerson: text("contact_person"), // Legacy - kept for backward compatibility
+  
+  // Additional info
+  notes: text("notes"), // Internal notes about supplier
+  
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1106,12 +1137,116 @@ export const suppliers = pgTable("suppliers", {
 
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({
   id: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
 });
 
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
+
+// Supplier Labels (company-level custom label definitions)
+export const supplierLabels = pgTable("supplier_labels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  name: text("name").notNull(),
+  color: text("color").default("#bba7db"), // Label color (lilac default)
+  description: text("description"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueNamePerCompany: uniqueIndex("supplier_labels_company_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertSupplierLabelSchema = createInsertSchema(supplierLabels).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSupplierLabel = z.infer<typeof insertSupplierLabelSchema>;
+export type SupplierLabel = typeof supplierLabels.$inferSelect;
+
+// Supplier Label Assignments (many-to-many junction table)
+export const supplierLabelAssignments = pgTable("supplier_label_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  labelId: varchar("label_id").notNull().references(() => supplierLabels.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueAssignment: uniqueIndex("supplier_label_unique").on(table.supplierId, table.labelId),
+}));
+
+export const insertSupplierLabelAssignmentSchema = createInsertSchema(supplierLabelAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSupplierLabelAssignment = z.infer<typeof insertSupplierLabelAssignmentSchema>;
+export type SupplierLabelAssignment = typeof supplierLabelAssignments.$inferSelect;
+
+// Supplier Insurances (multiple insurance records per supplier)
+export const supplierInsurances = pgTable("supplier_insurances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  insuranceType: insuranceTypeEnum("insurance_type").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  policyNumber: text("policy_number"),
+  insurerName: text("insurer_name"),
+  documentUrl: text("document_url"), // Google Drive link or file reference
+  notes: text("notes"),
+  
+  // Reminder tracking
+  reminder30DaySent: boolean("reminder_30_day_sent").notNull().default(false),
+  reminder7DaySent: boolean("reminder_7_day_sent").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  supplierIdx: index("supplier_insurances_supplier_idx").on(table.supplierId),
+}));
+
+export const insertSupplierInsuranceSchema = createInsertSchema(supplierInsurances).omit({
+  id: true,
+  reminder30DaySent: true,
+  reminder7DaySent: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSupplierInsurance = z.infer<typeof insertSupplierInsuranceSchema>;
+export type SupplierInsurance = typeof supplierInsurances.$inferSelect;
+
+// Supplier Contacts (multiple contacts per supplier company)
+export const supplierContacts = pgTable("supplier_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  email: text("email"),
+  mobile: text("mobile"),
+  phone: text("phone"),
+  position: text("position"), // e.g., "Accounts", "Site Manager", "Director"
+  isPrimary: boolean("is_primary").notNull().default(false),
+  notifyFor: json("notify_for").default([]), // Array of notification types: ["invoices", "orders", "quotes"]
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  supplierIdx: index("supplier_contacts_supplier_idx").on(table.supplierId),
+}));
+
+export const insertSupplierContactSchema = createInsertSchema(supplierContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  notifyFor: z.array(z.string()).optional(),
+});
+
+export type InsertSupplierContact = z.infer<typeof insertSupplierContactSchema>;
+export type SupplierContact = typeof supplierContacts.$inferSelect;
 
 // Contact type enum
 export const contactTypeEnum = pgEnum("contact_type", ["team", "supplier", "client"]);

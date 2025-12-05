@@ -107,6 +107,8 @@ import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCost
 import type { Defect, InsertDefect } from "@shared/schema";
 import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared/schema";
 import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/schema";
+import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, InsertSupplierLabelAssignment } from "@shared/schema";
+import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -413,11 +415,32 @@ export interface IStorage {
   deleteClientSelection(id: string): Promise<boolean>;
 
   // Suppliers CRUD
-  getSuppliers(projectId?: string): Promise<Supplier[]>;
+  getSuppliers(companyId: string, supplierType?: "supplier" | "trade"): Promise<Supplier[]>;
   getSupplierById(id: string): Promise<Supplier | null>;
-  createSupplier(supplier: InsertSupplier): Promise<Supplier>;
+  createSupplier(supplier: InsertSupplier & { companyId: string }): Promise<Supplier>;
   updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier>;
   deleteSupplier(id: string): Promise<void>;
+
+  // Supplier Labels CRUD
+  getSupplierLabels(companyId: string): Promise<SupplierLabel[]>;
+  createSupplierLabel(label: InsertSupplierLabel & { companyId: string }): Promise<SupplierLabel>;
+  updateSupplierLabel(id: string, label: Partial<InsertSupplierLabel>): Promise<SupplierLabel>;
+  deleteSupplierLabel(id: string): Promise<void>;
+  getSupplierLabelAssignments(supplierId: string): Promise<SupplierLabelAssignment[]>;
+  setSupplierLabels(supplierId: string, labelIds: string[]): Promise<void>;
+
+  // Supplier Insurances CRUD
+  getSupplierInsurances(supplierId: string): Promise<SupplierInsurance[]>;
+  createSupplierInsurance(insurance: InsertSupplierInsurance): Promise<SupplierInsurance>;
+  updateSupplierInsurance(id: string, insurance: Partial<InsertSupplierInsurance>): Promise<SupplierInsurance>;
+  deleteSupplierInsurance(id: string): Promise<void>;
+  getExpiringInsurances(companyId: string, daysAhead: number): Promise<(SupplierInsurance & { supplier: Supplier })[]>;
+
+  // Supplier Contacts CRUD
+  getSupplierContacts(supplierId: string): Promise<SupplierContact[]>;
+  createSupplierContact(contact: InsertSupplierContact): Promise<SupplierContact>;
+  updateSupplierContact(id: string, contact: Partial<InsertSupplierContact>): Promise<SupplierContact>;
+  deleteSupplierContact(id: string): Promise<void>;
 
   // Contacts CRUD
   getContacts(contactType?: "team" | "supplier" | "client"): Promise<Contact[]>;
@@ -8869,14 +8892,18 @@ export class DbStorage implements IStorage {
   async createClientSelection(selection: InsertClientSelection): Promise<ClientSelection> { throw new Error("Not implemented"); }
   async deleteClientSelection(id: string): Promise<boolean> { return false; }
 
-  async getSuppliers(projectId?: string): Promise<Supplier[]> {
+  async getSuppliers(companyId: string, supplierType?: "supplier" | "trade"): Promise<Supplier[]> {
     try {
-      if (projectId) {
-        return await db.select()
-          .from(schema.suppliers)
-          .where(eq(schema.suppliers.projectId, projectId));
+      const conditions = [eq(schema.suppliers.companyId, companyId)];
+      
+      if (supplierType) {
+        conditions.push(eq(schema.suppliers.supplierType, supplierType));
       }
-      return await db.select().from(schema.suppliers);
+      
+      return await db.select()
+        .from(schema.suppliers)
+        .where(and(...conditions))
+        .orderBy(schema.suppliers.name);
     } catch (error) {
       console.error("Database error in getSuppliers:", error);
       throw error;
@@ -8895,7 +8922,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
+  async createSupplier(supplier: InsertSupplier & { companyId: string }): Promise<Supplier> {
     try {
       const newSuppliers = await db.insert(schema.suppliers)
         .values(supplier)
@@ -8931,6 +8958,223 @@ export class DbStorage implements IStorage {
         .where(eq(schema.suppliers.id, id));
     } catch (error) {
       console.error("Database error in deleteSupplier:", error);
+      throw error;
+    }
+  }
+
+  // Supplier Labels CRUD
+  async getSupplierLabels(companyId: string): Promise<SupplierLabel[]> {
+    try {
+      return await db.select()
+        .from(schema.supplierLabels)
+        .where(eq(schema.supplierLabels.companyId, companyId))
+        .orderBy(schema.supplierLabels.displayOrder, schema.supplierLabels.name);
+    } catch (error) {
+      console.error("Database error in getSupplierLabels:", error);
+      throw error;
+    }
+  }
+
+  async createSupplierLabel(label: InsertSupplierLabel & { companyId: string }): Promise<SupplierLabel> {
+    try {
+      const newLabels = await db.insert(schema.supplierLabels)
+        .values(label)
+        .returning();
+      return newLabels[0];
+    } catch (error) {
+      console.error("Database error in createSupplierLabel:", error);
+      throw error;
+    }
+  }
+
+  async updateSupplierLabel(id: string, label: Partial<InsertSupplierLabel>): Promise<SupplierLabel> {
+    try {
+      const updatedLabels = await db.update(schema.supplierLabels)
+        .set({ ...label, updatedAt: new Date() })
+        .where(eq(schema.supplierLabels.id, id))
+        .returning();
+      
+      if (!updatedLabels[0]) {
+        throw new Error("Supplier label not found");
+      }
+      
+      return updatedLabels[0];
+    } catch (error) {
+      console.error("Database error in updateSupplierLabel:", error);
+      throw error;
+    }
+  }
+
+  async deleteSupplierLabel(id: string): Promise<void> {
+    try {
+      await db.delete(schema.supplierLabels)
+        .where(eq(schema.supplierLabels.id, id));
+    } catch (error) {
+      console.error("Database error in deleteSupplierLabel:", error);
+      throw error;
+    }
+  }
+
+  async getSupplierLabelAssignments(supplierId: string): Promise<SupplierLabelAssignment[]> {
+    try {
+      return await db.select()
+        .from(schema.supplierLabelAssignments)
+        .where(eq(schema.supplierLabelAssignments.supplierId, supplierId));
+    } catch (error) {
+      console.error("Database error in getSupplierLabelAssignments:", error);
+      throw error;
+    }
+  }
+
+  async setSupplierLabels(supplierId: string, labelIds: string[]): Promise<void> {
+    try {
+      // Delete existing assignments
+      await db.delete(schema.supplierLabelAssignments)
+        .where(eq(schema.supplierLabelAssignments.supplierId, supplierId));
+      
+      // Insert new assignments
+      if (labelIds.length > 0) {
+        await db.insert(schema.supplierLabelAssignments)
+          .values(labelIds.map(labelId => ({
+            supplierId,
+            labelId,
+          })));
+      }
+    } catch (error) {
+      console.error("Database error in setSupplierLabels:", error);
+      throw error;
+    }
+  }
+
+  // Supplier Insurances CRUD
+  async getSupplierInsurances(supplierId: string): Promise<SupplierInsurance[]> {
+    try {
+      return await db.select()
+        .from(schema.supplierInsurances)
+        .where(eq(schema.supplierInsurances.supplierId, supplierId))
+        .orderBy(schema.supplierInsurances.insuranceType);
+    } catch (error) {
+      console.error("Database error in getSupplierInsurances:", error);
+      throw error;
+    }
+  }
+
+  async createSupplierInsurance(insurance: InsertSupplierInsurance): Promise<SupplierInsurance> {
+    try {
+      const newInsurances = await db.insert(schema.supplierInsurances)
+        .values(insurance)
+        .returning();
+      return newInsurances[0];
+    } catch (error) {
+      console.error("Database error in createSupplierInsurance:", error);
+      throw error;
+    }
+  }
+
+  async updateSupplierInsurance(id: string, insurance: Partial<InsertSupplierInsurance>): Promise<SupplierInsurance> {
+    try {
+      const updatedInsurances = await db.update(schema.supplierInsurances)
+        .set({ ...insurance, updatedAt: new Date() })
+        .where(eq(schema.supplierInsurances.id, id))
+        .returning();
+      
+      if (!updatedInsurances[0]) {
+        throw new Error("Supplier insurance not found");
+      }
+      
+      return updatedInsurances[0];
+    } catch (error) {
+      console.error("Database error in updateSupplierInsurance:", error);
+      throw error;
+    }
+  }
+
+  async deleteSupplierInsurance(id: string): Promise<void> {
+    try {
+      await db.delete(schema.supplierInsurances)
+        .where(eq(schema.supplierInsurances.id, id));
+    } catch (error) {
+      console.error("Database error in deleteSupplierInsurance:", error);
+      throw error;
+    }
+  }
+
+  async getExpiringInsurances(companyId: string, daysAhead: number): Promise<(SupplierInsurance & { supplier: Supplier })[]> {
+    try {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + daysAhead);
+      
+      const results = await db.select({
+        insurance: schema.supplierInsurances,
+        supplier: schema.suppliers,
+      })
+        .from(schema.supplierInsurances)
+        .innerJoin(schema.suppliers, eq(schema.supplierInsurances.supplierId, schema.suppliers.id))
+        .where(and(
+          eq(schema.suppliers.companyId, companyId),
+          lte(schema.supplierInsurances.expiryDate, futureDate),
+          gte(schema.supplierInsurances.expiryDate, new Date())
+        ));
+      
+      return results.map(r => ({
+        ...r.insurance,
+        supplier: r.supplier,
+      }));
+    } catch (error) {
+      console.error("Database error in getExpiringInsurances:", error);
+      throw error;
+    }
+  }
+
+  // Supplier Contacts CRUD
+  async getSupplierContacts(supplierId: string): Promise<SupplierContact[]> {
+    try {
+      return await db.select()
+        .from(schema.supplierContacts)
+        .where(eq(schema.supplierContacts.supplierId, supplierId))
+        .orderBy(desc(schema.supplierContacts.isPrimary), schema.supplierContacts.name);
+    } catch (error) {
+      console.error("Database error in getSupplierContacts:", error);
+      throw error;
+    }
+  }
+
+  async createSupplierContact(contact: InsertSupplierContact): Promise<SupplierContact> {
+    try {
+      const newContacts = await db.insert(schema.supplierContacts)
+        .values(contact)
+        .returning();
+      return newContacts[0];
+    } catch (error) {
+      console.error("Database error in createSupplierContact:", error);
+      throw error;
+    }
+  }
+
+  async updateSupplierContact(id: string, contact: Partial<InsertSupplierContact>): Promise<SupplierContact> {
+    try {
+      const updatedContacts = await db.update(schema.supplierContacts)
+        .set({ ...contact, updatedAt: new Date() })
+        .where(eq(schema.supplierContacts.id, id))
+        .returning();
+      
+      if (!updatedContacts[0]) {
+        throw new Error("Supplier contact not found");
+      }
+      
+      return updatedContacts[0];
+    } catch (error) {
+      console.error("Database error in updateSupplierContact:", error);
+      throw error;
+    }
+  }
+
+  async deleteSupplierContact(id: string): Promise<void> {
+    try {
+      await db.delete(schema.supplierContacts)
+        .where(eq(schema.supplierContacts.id, id));
+    } catch (error) {
+      console.error("Database error in deleteSupplierContact:", error);
       throw error;
     }
   }

@@ -38,6 +38,9 @@ import {
   insertOptionAttachmentSchema,
   insertClientSelectionSchema,
   insertSupplierSchema,
+  insertSupplierLabelSchema,
+  insertSupplierInsuranceSchema,
+  insertSupplierContactSchema,
   insertContactSchema,
   insertBillSchema,
   insertBillLineItemSchema,
@@ -5202,17 +5205,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Suppliers API Routes
-  app.get("/api/suppliers", async (req, res) => {
+  app.get("/api/suppliers", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const { projectId } = req.query;
-      const suppliers = await storage.getSuppliers(projectId as string | undefined);
+      const companyId = req.user!.companyId!;
+      const { supplierType } = req.query;
+      const suppliers = await storage.getSuppliers(companyId, supplierType as "supplier" | "trade" | undefined);
       res.json(suppliers);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch suppliers" });
     }
   });
 
-  app.get("/api/suppliers/:id", async (req, res) => {
+  app.get("/api/suppliers/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const supplier = await storage.getSupplierById(req.params.id);
       if (!supplier) {
@@ -5224,8 +5228,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/suppliers", async (req, res) => {
+  app.post("/api/suppliers", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const companyId = req.user!.companyId!;
       const validationResult = insertSupplierSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -5234,14 +5239,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const supplier = await storage.createSupplier(validationResult.data);
+      const supplier = await storage.createSupplier({ ...validationResult.data, companyId });
       res.status(201).json(supplier);
     } catch (error) {
       res.status(500).json({ error: "Failed to create supplier" });
     }
   });
 
-  app.patch("/api/suppliers/:id", async (req, res) => {
+  app.patch("/api/suppliers/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const validationResult = insertSupplierSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -5261,12 +5266,223 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/suppliers/:id", async (req, res) => {
+  app.delete("/api/suppliers/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       await storage.deleteSupplier(req.params.id);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete supplier" });
+    }
+  });
+
+  // Supplier Labels API Routes
+  app.get("/api/supplier-labels", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const labels = await storage.getSupplierLabels(companyId);
+      res.json(labels);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier labels" });
+    }
+  });
+
+  app.post("/api/supplier-labels", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const validationResult = insertSupplierLabelSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const label = await storage.createSupplierLabel({ ...validationResult.data, companyId });
+      res.status(201).json(label);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create supplier label" });
+    }
+  });
+
+  app.patch("/api/supplier-labels/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const validationResult = insertSupplierLabelSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const label = await storage.updateSupplierLabel(req.params.id, validationResult.data);
+      res.json(label);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Supplier label not found") {
+        return res.status(404).json({ error: "Supplier label not found" });
+      }
+      res.status(500).json({ error: "Failed to update supplier label" });
+    }
+  });
+
+  app.delete("/api/supplier-labels/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteSupplierLabel(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete supplier label" });
+    }
+  });
+
+  // Supplier Label Assignments
+  app.get("/api/suppliers/:id/labels", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const assignments = await storage.getSupplierLabelAssignments(req.params.id);
+      res.json(assignments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier labels" });
+    }
+  });
+
+  app.put("/api/suppliers/:id/labels", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { labelIds } = req.body;
+      if (!Array.isArray(labelIds)) {
+        return res.status(400).json({ error: "labelIds must be an array" });
+      }
+      await storage.setSupplierLabels(req.params.id, labelIds);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update supplier labels" });
+    }
+  });
+
+  // Supplier Insurances API Routes
+  app.get("/api/suppliers/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const insurances = await storage.getSupplierInsurances(req.params.id);
+      res.json(insurances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier insurances" });
+    }
+  });
+
+  app.post("/api/suppliers/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSupplierInsuranceSchema.safeParse({
+        ...req.body,
+        supplierId: req.params.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const insurance = await storage.createSupplierInsurance(validationResult.data);
+      res.status(201).json(insurance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create supplier insurance" });
+    }
+  });
+
+  app.patch("/api/supplier-insurances/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSupplierInsuranceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const insurance = await storage.updateSupplierInsurance(req.params.id, validationResult.data);
+      res.json(insurance);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Supplier insurance not found") {
+        return res.status(404).json({ error: "Supplier insurance not found" });
+      }
+      res.status(500).json({ error: "Failed to update supplier insurance" });
+    }
+  });
+
+  app.delete("/api/supplier-insurances/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      await storage.deleteSupplierInsurance(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete supplier insurance" });
+    }
+  });
+
+  // Expiring insurances (for dashboard/notifications)
+  app.get("/api/expiring-insurances", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const daysAhead = parseInt(req.query.days as string) || 30;
+      const insurances = await storage.getExpiringInsurances(companyId, daysAhead);
+      res.json(insurances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch expiring insurances" });
+    }
+  });
+
+  // Supplier Contacts API Routes
+  app.get("/api/suppliers/:id/contacts", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const contacts = await storage.getSupplierContacts(req.params.id);
+      res.json(contacts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier contacts" });
+    }
+  });
+
+  app.post("/api/suppliers/:id/contacts", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSupplierContactSchema.safeParse({
+        ...req.body,
+        supplierId: req.params.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const contact = await storage.createSupplierContact(validationResult.data);
+      res.status(201).json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create supplier contact" });
+    }
+  });
+
+  app.patch("/api/supplier-contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertSupplierContactSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const contact = await storage.updateSupplierContact(req.params.id, validationResult.data);
+      res.json(contact);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Supplier contact not found") {
+        return res.status(404).json({ error: "Supplier contact not found" });
+      }
+      res.status(500).json({ error: "Failed to update supplier contact" });
+    }
+  });
+
+  app.delete("/api/supplier-contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      await storage.deleteSupplierContact(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete supplier contact" });
     }
   });
 
