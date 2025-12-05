@@ -40,41 +40,44 @@ export interface DriveFolder {
 }
 
 export class GoogleDriveService {
-  private oauth2Client: any;
+  constructor(private storage: IStorage) {}
   
-  constructor(private storage: IStorage) {
-    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  private getRedirectUri(host: string): string {
+    const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+    const protocol = isLocalhost ? 'http' : 'https';
+    return `${protocol}://${host}/api/google-drive/callback`;
+  }
+  
+  private async getOAuthClient(companyId: string, host: string): Promise<any> {
+    const company = await this.storage.getCompany(companyId);
+    
+    if (!company) {
+      throw new Error('Company not found');
+    }
+    
+    // Use per-company credentials if configured, otherwise throw
+    const clientId = company.googleDriveClientId;
+    const clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
     
     if (!clientId || !clientSecret) {
-      throw new Error('Google OAuth credentials not configured');
+      throw new Error('Google Drive OAuth credentials not configured for this company. Please add your Client ID and Secret in Settings.');
     }
     
-    const redirectUri = this.getRedirectUri();
+    const redirectUri = this.getRedirectUri(host);
     
-    this.oauth2Client = new google.auth.OAuth2(
-      clientId,
-      clientSecret,
-      redirectUri
-    );
+    return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   }
   
-  private getRedirectUri(): string {
-    const isDev = process.env.NODE_ENV !== 'production';
-    if (isDev) {
-      return 'http://localhost:5000/api/google-drive/callback';
-    }
-    return 'https://buildpro4.replit.app/api/google-drive/callback';
-  }
-  
-  generateAuthUrl(companyId: string, userId: string): string {
+  async generateAuthUrl(companyId: string, userId: string, host: string): Promise<string> {
+    const oauth2Client = await this.getOAuthClient(companyId, host);
     const codeVerifier = this.generateCodeVerifier();
-    const state = this.generateState(companyId, userId, codeVerifier);
+    const state = this.generateState(companyId, userId, codeVerifier, host);
+    const redirectUri = this.getRedirectUri(host);
     
     console.log('🔍 [Drive OAuth] Generating auth URL for company:', companyId);
-    console.log('🔍 [Drive OAuth] Redirect URI:', this.getRedirectUri());
+    console.log('🔍 [Drive OAuth] Redirect URI:', redirectUri);
     
-    const authUrl = this.oauth2Client.generateAuthUrl({
+    const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
       state,
@@ -86,14 +89,15 @@ export class GoogleDriveService {
     return authUrl;
   }
   
-  private generateState(companyId: string, userId: string, codeVerifier: string): string {
+  private generateState(companyId: string, userId: string, codeVerifier: string, host: string): string {
     const nonce = randomBytes(16).toString('hex');
     const payload = JSON.stringify({ 
       companyId, 
       userId, 
       nonce, 
       timestamp: Date.now(), 
-      codeVerifier 
+      codeVerifier,
+      host
     });
     
     const signature = createHmac('sha256', getStateSecret())
@@ -112,7 +116,7 @@ export class GoogleDriveService {
     return createHash('sha256').update(verifier).digest('base64url');
   }
   
-  parseState(state: string): { companyId: string; userId: string; nonce: string; timestamp: number; codeVerifier: string } {
+  parseState(state: string): { companyId: string; userId: string; nonce: string; timestamp: number; codeVerifier: string; host: string } {
     try {
       const decoded = Buffer.from(state, 'base64').toString('utf8');
       const { payload, signature } = JSON.parse(decoded);
@@ -132,7 +136,7 @@ export class GoogleDriveService {
       
       const parsed = JSON.parse(payload);
       
-      if (!parsed.companyId || !parsed.userId || !parsed.nonce || !parsed.timestamp || !parsed.codeVerifier) {
+      if (!parsed.companyId || !parsed.userId || !parsed.nonce || !parsed.timestamp || !parsed.codeVerifier || !parsed.host) {
         throw new Error('Invalid state format');
       }
       
@@ -149,9 +153,11 @@ export class GoogleDriveService {
   }
   
   async handleCallback(code: string, state: string): Promise<Company> {
-    const { companyId, userId, codeVerifier } = this.parseState(state);
+    const { companyId, userId, codeVerifier, host } = this.parseState(state);
     
-    const { tokens } = await this.oauth2Client.getToken({
+    const oauth2Client = await this.getOAuthClient(companyId, host);
+    
+    const { tokens } = await oauth2Client.getToken({
       code,
       codeVerifier,
     });
@@ -160,8 +166,8 @@ export class GoogleDriveService {
       throw new Error('Missing tokens from Google OAuth response');
     }
     
-    this.oauth2Client.setCredentials(tokens);
-    const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
+    oauth2Client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const userInfo = await oauth2.userinfo.get();
     const email = userInfo.data.email;
     
@@ -201,10 +207,20 @@ export class GoogleDriveService {
       throw new Error('Google Drive not connected for this company');
     }
     
+    // Get per-company OAuth credentials
+    const clientId = company.googleDriveClientId;
+    const clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
+    
+    if (!clientId || !clientSecret) {
+      throw new Error('Google Drive OAuth credentials not configured for this company');
+    }
+    
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    
     const accessToken = decryptToken(company.googleDriveAccessToken);
     const refreshToken = decryptToken(company.googleDriveRefreshToken);
     
-    this.oauth2Client.setCredentials({
+    oauth2Client.setCredentials({
       access_token: accessToken,
       refresh_token: refreshToken,
       expiry_date: company.googleDriveTokenExpiry?.getTime(),
@@ -215,7 +231,7 @@ export class GoogleDriveService {
     
     if (shouldRefresh) {
       try {
-        const { credentials } = await this.oauth2Client.refreshAccessToken();
+        const { credentials } = await oauth2Client.refreshAccessToken();
         
         if (credentials.access_token) {
           const encryptedAccessToken = encryptToken(credentials.access_token);
@@ -228,7 +244,7 @@ export class GoogleDriveService {
             googleDriveTokenExpiry: expiryDate,
           });
           
-          this.oauth2Client.setCredentials(credentials);
+          oauth2Client.setCredentials(credentials);
         }
       } catch (error) {
         console.error('[Drive] Error refreshing token:', error);
@@ -236,7 +252,7 @@ export class GoogleDriveService {
       }
     }
     
-    return google.drive({ version: 'v3', auth: this.oauth2Client });
+    return google.drive({ version: 'v3', auth: oauth2Client });
   }
   
   async disconnectDrive(companyId: string): Promise<void> {
@@ -254,6 +270,7 @@ export class GoogleDriveService {
   
   async getConnectionStatus(companyId: string): Promise<{
     connected: boolean;
+    credentialsConfigured: boolean;
     email: string | null;
     tokenExpiry: Date | null;
     isExpired: boolean;
@@ -263,12 +280,14 @@ export class GoogleDriveService {
   }> {
     const company = await this.storage.getCompany(companyId);
     
+    const hasCredentials = !!(company?.googleDriveClientId && company?.googleDriveClientSecret);
     const hasTokens = !!(company?.googleDriveAccessToken && company?.googleDriveRefreshToken);
     const tokenExpiry = company?.googleDriveTokenExpiry || null;
     const isExpired = tokenExpiry ? tokenExpiry.getTime() < Date.now() : false;
     
     return {
       connected: hasTokens,
+      credentialsConfigured: hasCredentials,
       email: company?.googleDriveEmail || null,
       tokenExpiry,
       isExpired,
@@ -276,6 +295,17 @@ export class GoogleDriveService {
       connectedBy: company?.googleDriveConnectedBy || null,
       rootFolderId: company?.googleDriveRootFolderId || null,
     };
+  }
+  
+  async saveCredentials(companyId: string, clientId: string, clientSecret: string): Promise<void> {
+    const encryptedSecret = encryptToken(clientSecret);
+    
+    await this.storage.updateCompany(companyId, {
+      googleDriveClientId: clientId,
+      googleDriveClientSecret: encryptedSecret,
+    });
+    
+    console.log('✅ [Drive] Saved OAuth credentials for company:', companyId);
   }
   
   async listFiles(companyId: string, folderId?: string): Promise<DriveFile[]> {

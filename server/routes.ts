@@ -4136,12 +4136,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Save Google Drive OAuth credentials (admin only)
+  app.post('/api/google-drive/credentials', requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { clientId, clientSecret } = req.body;
+      
+      if (!clientId || !clientSecret) {
+        return res.status(400).json({ message: "Client ID and Client Secret are required" });
+      }
+      
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      await driveService.saveCredentials(req.user.companyId, clientId, clientSecret);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error saving Google Drive credentials:", error);
+      res.status(500).json({ message: "Failed to save credentials", error: error.message });
+    }
+  });
+
   // Get auth URL to connect Google Drive (admin only)
   app.get('/api/google-drive/auth-url', requireAuth, requireAdmin, async (req: any, res) => {
     try {
+      const host = req.get('host') || 'localhost:5000';
       const { GoogleDriveService } = await import('./services/googleDriveService');
       const driveService = new GoogleDriveService(storage);
-      const authUrl = driveService.generateAuthUrl(req.user.companyId, req.user.id);
+      const authUrl = await driveService.generateAuthUrl(req.user.companyId, req.user.id, host);
       res.json({ authUrl });
     } catch (error: any) {
       console.error("Error generating Google Drive auth URL:", error);
