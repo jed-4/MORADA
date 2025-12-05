@@ -4120,6 +4120,195 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
+  // GOOGLE DRIVE INTEGRATION (Company-level)
+  // ============================================================
+
+  // Get Google Drive connection status
+  app.get('/api/google-drive/status', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const status = await driveService.getConnectionStatus(req.user.companyId);
+      res.json(status);
+    } catch (error: any) {
+      console.error("Error getting Google Drive status:", error);
+      res.status(500).json({ message: "Failed to get Drive status", error: error.message });
+    }
+  });
+
+  // Get auth URL to connect Google Drive (admin only)
+  app.get('/api/google-drive/auth-url', requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const authUrl = driveService.generateAuthUrl(req.user.companyId, req.user.id);
+      res.json({ authUrl });
+    } catch (error: any) {
+      console.error("Error generating Google Drive auth URL:", error);
+      res.status(500).json({ message: "Failed to generate auth URL", error: error.message });
+    }
+  });
+
+  // OAuth callback for Google Drive
+  app.get('/api/google-drive/callback', async (req: any, res) => {
+    try {
+      const { code, state, error } = req.query;
+      
+      if (error) {
+        console.error("Google Drive OAuth error:", error);
+        return res.redirect(`/settings?google_drive_error=${encodeURIComponent(error)}`);
+      }
+
+      if (!code || !state) {
+        return res.redirect('/settings?google_drive_error=missing_params');
+      }
+      
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      
+      await driveService.handleCallback(code, state);
+      
+      res.redirect('/settings?tab=integrations&google_drive_success=true');
+    } catch (error: any) {
+      console.error("Error handling Google Drive OAuth callback:", error);
+      res.redirect(`/settings?tab=integrations&google_drive_error=${encodeURIComponent(error.message || 'callback_failed')}`);
+    }
+  });
+
+  // Disconnect Google Drive (admin only)
+  app.post('/api/google-drive/disconnect', requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      await driveService.disconnectDrive(req.user.companyId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error disconnecting Google Drive:", error);
+      res.status(500).json({ message: "Failed to disconnect Drive", error: error.message });
+    }
+  });
+
+  // List shared drives
+  app.get('/api/google-drive/shared-drives', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const sharedDrives = await driveService.listSharedDrives(req.user.companyId);
+      res.json(sharedDrives);
+    } catch (error: any) {
+      console.error("Error listing shared drives:", error);
+      res.status(500).json({ message: "Failed to list shared drives", error: error.message });
+    }
+  });
+
+  // Set root folder (admin only)
+  app.post('/api/google-drive/root-folder', requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { folderId } = req.body;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      await driveService.setRootFolder(req.user.companyId, folderId || null);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error setting root folder:", error);
+      res.status(500).json({ message: "Failed to set root folder", error: error.message });
+    }
+  });
+
+  // List files in a folder
+  app.get('/api/google-drive/files', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { folderId } = req.query;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const files = await driveService.listFiles(req.user.companyId, folderId as string | undefined);
+      res.json(files);
+    } catch (error: any) {
+      console.error("Error listing files:", error);
+      if (error.message?.includes('not connected')) {
+        return res.status(401).json({ error: 'not_connected', message: error.message });
+      }
+      res.status(500).json({ message: "Failed to list files", error: error.message });
+    }
+  });
+
+  // Get folder path for breadcrumbs
+  app.get('/api/google-drive/folder-path/:folderId', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { folderId } = req.params;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const path = await driveService.getFolderPath(req.user.companyId, folderId);
+      res.json(path);
+    } catch (error: any) {
+      console.error("Error getting folder path:", error);
+      res.status(500).json({ message: "Failed to get folder path", error: error.message });
+    }
+  });
+
+  // Get single file details
+  app.get('/api/google-drive/files/:fileId', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { fileId } = req.params;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const file = await driveService.getFile(req.user.companyId, fileId);
+      res.json(file);
+    } catch (error: any) {
+      console.error("Error getting file:", error);
+      res.status(500).json({ message: "Failed to get file", error: error.message });
+    }
+  });
+
+  // Create folder
+  app.post('/api/google-drive/folders', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { name, parentId } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "Folder name is required" });
+      }
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const folder = await driveService.createFolder(req.user.companyId, name, parentId);
+      res.json(folder);
+    } catch (error: any) {
+      console.error("Error creating folder:", error);
+      res.status(500).json({ message: "Failed to create folder", error: error.message });
+    }
+  });
+
+  // Download file
+  app.get('/api/google-drive/download/:fileId', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { fileId } = req.params;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const { data, mimeType, name } = await driveService.downloadFile(req.user.companyId, fileId);
+      
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(name)}"`);
+      res.send(data);
+    } catch (error: any) {
+      console.error("Error downloading file:", error);
+      res.status(500).json({ message: "Failed to download file", error: error.message });
+    }
+  });
+
+  // Delete file
+  app.delete('/api/google-drive/files/:fileId', requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { fileId } = req.params;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      await driveService.deleteFile(req.user.companyId, fileId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting file:", error);
+      res.status(500).json({ message: "Failed to delete file", error: error.message });
+    }
+  });
+
+  // ============================================================
   // COMPANY ROUTES
   // ============================================================
   
@@ -7977,6 +8166,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Email-to-Bill Webhook endpoint (accepts SendGrid multipart/form-data)
   const upload = multer({ storage: multer.memoryStorage() });
   
+  // Google Drive Upload (placed after multer is defined)
+  app.post('/api/google-drive/upload', requireAuth, requireTeamMember, upload.single('file'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file provided" });
+      }
+      const { parentId } = req.body;
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      const file = await driveService.uploadFile(
+        req.user.companyId,
+        req.file.originalname,
+        req.file.mimetype,
+        req.file.buffer,
+        parentId
+      );
+      res.json(file);
+    } catch (error: any) {
+      console.error("Error uploading file:", error);
+      res.status(500).json({ message: "Failed to upload file", error: error.message });
+    }
+  });
+
   app.post("/api/webhooks/email-invoice", upload.any(), async (req, res) => {
     try {
       console.log("Email webhook received:", {

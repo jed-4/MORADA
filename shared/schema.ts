@@ -28,6 +28,16 @@ export const companies = pgTable("companies", {
   logo: text("logo"),
   ownerId: varchar("owner_id"), // User who created/owns the company
   isActive: boolean("is_active").notNull().default(true),
+  
+  // Google Drive integration - company-level
+  googleDriveEmail: text("google_drive_email"),
+  googleDriveAccessToken: text("google_drive_access_token"),
+  googleDriveRefreshToken: text("google_drive_refresh_token"),
+  googleDriveTokenExpiry: timestamp("google_drive_token_expiry"),
+  googleDriveConnectedAt: timestamp("google_drive_connected_at"),
+  googleDriveConnectedBy: varchar("google_drive_connected_by"),
+  googleDriveRootFolderId: text("google_drive_root_folder_id"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
