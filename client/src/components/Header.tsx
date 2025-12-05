@@ -23,7 +23,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import type { Project, CompanySettings, Company } from "@shared/schema";
+import type { Project, Company } from "@shared/schema";
 
 // Project sections base configuration (from AppSidebar)
 const projectItemsBase = [
@@ -75,11 +75,6 @@ export default function Header() {
     enabled: !!user?.companyId,
   });
 
-  // Fetch company settings for company name override
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
-  });
-
   // Fetch projects for dropdown
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -88,8 +83,8 @@ export default function Header() {
   // Filter out archived projects
   const activeProjects = projects.filter(p => !p.isArchived);
 
-  // Prioritize: companySettings nickname > companySettings name > company nickname > company name > fallback
-  const companyName = companySettings?.nickname || companySettings?.companyName || company?.nickname || company?.name || "BuildPro";
+  // Prioritize: company nickname (Display Name) > company name > fallback
+  const companyDisplayName = company?.nickname || company?.name || "BuildPro";
 
   // Initialize dark mode state on mount
   useEffect(() => {
@@ -160,7 +155,7 @@ export default function Header() {
           className="h-7 px-3 rounded-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
           data-testid="business-name-link"
         >
-          {companyName}
+          {companyDisplayName}
         </button>
 
         {/* Projects Dropdown */}
