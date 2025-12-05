@@ -27,6 +27,7 @@ import EstimateDetail from "@/pages/EstimateDetail";
 import Selections from "@/pages/Selections";
 import SelectionDetail from "@/pages/SelectionDetail";
 import Suppliers from "@/pages/Suppliers";
+import Trades from "@/pages/Trades";
 import Bills from "@/pages/Bills";
 import BillDetail from "@/pages/BillDetail";
 import Variations from "@/pages/Variations";
@@ -264,6 +265,7 @@ function Router() {
       <Route path="/task-settings" component={TaskSettings} />
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/suppliers" component={Suppliers} />
+      <Route path="/trades" component={Trades} />
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/archived-projects" component={ArchivedProjects} />

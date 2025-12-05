@@ -40,11 +40,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, Building2 } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, Store } from "lucide-react";
 import { z } from "zod";
 
 const formSchema = insertSupplierSchema.extend({
   name: z.string().min(1, "Name is required"),
+  supplierType: z.literal("supplier").default("supplier"),
   email: z.string().optional(),
   phone: z.string().optional(),
   abn: z.string().optional(),
@@ -64,6 +65,7 @@ export default function Suppliers() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
+      supplierType: "supplier",
       email: "",
       phone: "",
       abn: "",
@@ -72,9 +74,12 @@ export default function Suppliers() {
     },
   });
 
-  const { data: suppliers = [], isLoading } = useQuery<Supplier[]>({
+  const { data: allSuppliers = [], isLoading } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
   });
+
+  // Filter to show only hardware suppliers (not trades)
+  const suppliers = allSuppliers.filter(s => s.supplierType === "supplier" || !s.supplierType);
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertSupplier) => {
@@ -150,6 +155,7 @@ export default function Suppliers() {
     setEditingSupplier(null);
     form.reset({
       name: "",
+      supplierType: "supplier",
       email: "",
       phone: "",
       abn: "",
@@ -163,6 +169,7 @@ export default function Suppliers() {
     setEditingSupplier(supplier);
     form.reset({
       name: supplier.name,
+      supplierType: "supplier",
       email: supplier.email ?? "",
       phone: supplier.phone ?? "",
       abn: supplier.abn ?? "",
@@ -189,7 +196,7 @@ export default function Suppliers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{pageTitle}</h1>
-          <p className="text-muted-foreground">Manage your suppliers and their contact information</p>
+          <p className="text-muted-foreground">Manage hardware stores and material suppliers</p>
         </div>
         <Button onClick={handleAddSupplier} data-testid="button-add-supplier">
           <Plus className="h-4 w-4 mr-2" />
@@ -199,16 +206,16 @@ export default function Suppliers() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Suppliers</CardTitle>
+          <CardTitle>Hardware Suppliers</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading suppliers...</div>
           ) : suppliers.length === 0 ? (
             <div className="text-center py-8">
-              <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+              <Store className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-muted-foreground">No suppliers yet</p>
-              <p className="text-sm text-muted-foreground">Add your first supplier to get started</p>
+              <p className="text-sm text-muted-foreground">Add hardware stores and material suppliers</p>
             </div>
           ) : (
             <Table>

@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Plus,
   Truck,
+  HardHat,
   Tag,
   Archive,
   AlertCircle,
@@ -107,6 +108,7 @@ const projectItemsBase = [
 const systemItems = [
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Suppliers", url: "/suppliers", icon: Truck },
+  { title: "Trades", url: "/trades", icon: HardHat },
   { title: "Cost Codes", url: "/cost-codes", icon: Tag },
   { title: "Archived Projects", url: "/archived-projects", icon: Archive },
   { title: "Emails", url: "/emails", icon: Mail },
