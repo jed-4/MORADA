@@ -77,7 +77,9 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   }
 
   const role = await storage.getUserRole(req.user.roleId);
-  if (!role || !role.name.toLowerCase().includes('admin')) {
+  const roleName = role?.name?.toLowerCase() || '';
+  const isAdmin = roleName.includes('admin') || roleName.includes('general manager') || roleName.includes('owner');
+  if (!role || !isAdmin) {
     res.status(403).json({ error: 'Admin role required' });
     return;
   }
