@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -47,7 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, HardHat, AlertTriangle } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, HardHat, AlertTriangle, Search, X } from "lucide-react";
 import { z } from "zod";
 import { format, isPast, addDays } from "date-fns";
 
@@ -97,8 +96,9 @@ type FormValues = z.infer<typeof formSchema>;
 export default function Trades() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Supplier | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
-  const pageTitle = usePageTitle({ pageName: "Trades" });
+  usePageTitle({ pageName: "Trades" });
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -121,8 +121,21 @@ export default function Trades() {
     queryKey: ["/api/suppliers"],
   });
 
-  // Filter to show only trades (subcontractors)
-  const trades = allSuppliers.filter(s => s.supplierType === "trade");
+  // Filter to show only trades (subcontractors) and apply search
+  const trades = useMemo(() => {
+    const tradeSuppliers = allSuppliers.filter(s => s.supplierType === "trade");
+    
+    if (!searchQuery.trim()) return tradeSuppliers;
+    
+    const query = searchQuery.toLowerCase();
+    return tradeSuppliers.filter(s => 
+      s.name.toLowerCase().includes(query) ||
+      s.tradeCategory?.toLowerCase().includes(query) ||
+      s.contactPerson?.toLowerCase().includes(query) ||
+      s.phone?.toLowerCase().includes(query) ||
+      s.email?.toLowerCase().includes(query)
+    );
+  }, [allSuppliers, searchQuery]);
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertSupplier) => {
@@ -262,119 +275,163 @@ export default function Trades() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{pageTitle}</h1>
-          <p className="text-muted-foreground">Manage subcontractors and trade partners</p>
+    <div className="flex h-full flex-col">
+      {/* Row 1 - Page Title + Action Button (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0 border-b">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            Trades
+          </h2>
+          <Badge variant="secondary" className="text-xs" data-testid="text-trade-count">
+            {trades.length} {trades.length === 1 ? 'trade' : 'trades'}
+          </Badge>
         </div>
-        <Button onClick={handleAddTrade} data-testid="button-add-trade">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Trade
-        </Button>
+
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
+            onClick={handleAddTrade}
+            data-testid="button-add-trade"
+          >
+            <Plus className="w-3 h-3 mr-0.5" />
+            Add Trade
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Subcontractors</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Loading trades...</div>
-          ) : trades.length === 0 ? (
-            <div className="text-center py-8">
-              <HardHat className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">No trades yet</p>
-              <p className="text-sm text-muted-foreground">Add subcontractors and trade partners</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Business Name</TableHead>
-                  <TableHead>Trade</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>License</TableHead>
-                  <TableHead>Insurance</TableHead>
-                  <TableHead className="w-[70px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {trades.map((trade) => {
-                  const insuranceStatus = getInsuranceStatus(trade.insuranceExpiry);
-                  return (
-                    <TableRow key={trade.id} data-testid={`row-trade-${trade.id}`}>
-                      <TableCell className="font-medium" data-testid={`text-trade-name-${trade.id}`}>
-                        {trade.name}
-                      </TableCell>
-                      <TableCell data-testid={`text-trade-category-${trade.id}`}>
-                        <Badge variant="secondary">{trade.tradeCategory || "-"}</Badge>
-                      </TableCell>
-                      <TableCell data-testid={`text-trade-contact-${trade.id}`}>
-                        {trade.contactPerson || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-trade-phone-${trade.id}`}>
-                        {trade.phone || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-trade-license-${trade.id}`}>
-                        {trade.licenseNumber || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-trade-insurance-${trade.id}`}>
-                        {insuranceStatus ? (
-                          <div className="flex items-center gap-2">
-                            {insuranceStatus.status === "expired" && (
-                              <AlertTriangle className="h-4 w-4 text-destructive" />
-                            )}
-                            <Badge variant={insuranceStatus.variant}>
-                              {insuranceStatus.label}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {format(new Date(trade.insuranceExpiry!), "dd/MM/yyyy")}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              data-testid={`button-actions-${trade.id}`}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleEditTrade(trade)}
-                              data-testid={`button-edit-${trade.id}`}
-                            >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteTrade(trade.id)}
-                              className="text-destructive"
-                              data-testid={`button-delete-${trade.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+      {/* Row 2 - Search (36px) */}
+      <div className="h-9 bg-background flex items-center px-3 gap-2 flex-shrink-0 border-b">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search trades..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-7 pl-7 pr-7 text-xs"
+            data-testid="input-search-trades"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-5 w-5"
+              data-testid="button-clear-search"
+            >
+              <X className="h-3 w-3" />
+            </Button>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="text-center py-12 text-muted-foreground">Loading trades...</div>
+        ) : trades.length === 0 ? (
+          <div className="text-center py-12">
+            <HardHat className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+            <p className="text-muted-foreground">
+              {searchQuery ? "No trades match your search" : "No trades yet"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {searchQuery ? "Try a different search term" : "Add subcontractors and trade partners"}
+            </p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-xs font-medium">Business Name</TableHead>
+                <TableHead className="text-xs font-medium">Trade</TableHead>
+                <TableHead className="text-xs font-medium">Contact</TableHead>
+                <TableHead className="text-xs font-medium">Phone</TableHead>
+                <TableHead className="text-xs font-medium">License</TableHead>
+                <TableHead className="text-xs font-medium">Insurance</TableHead>
+                <TableHead className="w-[50px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {trades.map((trade) => {
+                const insuranceStatus = getInsuranceStatus(trade.insuranceExpiry);
+                return (
+                  <TableRow 
+                    key={trade.id} 
+                    className="hover-elevate cursor-pointer"
+                    data-testid={`row-trade-${trade.id}`}
+                  >
+                    <TableCell className="text-sm font-medium py-2" data-testid={`text-trade-name-${trade.id}`}>
+                      {trade.name}
+                    </TableCell>
+                    <TableCell className="py-2" data-testid={`text-trade-category-${trade.id}`}>
+                      <Badge variant="secondary" className="text-xs">{trade.tradeCategory || "-"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm py-2" data-testid={`text-trade-contact-${trade.id}`}>
+                      {trade.contactPerson || <span className="text-muted-foreground">-</span>}
+                    </TableCell>
+                    <TableCell className="text-sm py-2" data-testid={`text-trade-phone-${trade.id}`}>
+                      {trade.phone || <span className="text-muted-foreground">-</span>}
+                    </TableCell>
+                    <TableCell className="text-sm py-2" data-testid={`text-trade-license-${trade.id}`}>
+                      {trade.licenseNumber || <span className="text-muted-foreground">-</span>}
+                    </TableCell>
+                    <TableCell className="py-2" data-testid={`text-trade-insurance-${trade.id}`}>
+                      {insuranceStatus ? (
+                        <div className="flex items-center gap-2">
+                          {insuranceStatus.status === "expired" && (
+                            <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                          )}
+                          <Badge variant={insuranceStatus.variant} className="text-xs">
+                            {insuranceStatus.label}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(trade.insuranceExpiry!), "dd/MM/yyyy")}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="h-7 w-7"
+                            data-testid={`button-actions-${trade.id}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => handleEditTrade(trade)}
+                            data-testid={`button-edit-${trade.id}`}
+                          >
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteTrade(trade.id)}
+                            className="text-destructive"
+                            data-testid={`button-delete-${trade.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </div>
 
       <Dialog open={isDialogOpen} onOpenChange={handleCloseDialog}>
         <DialogContent className="max-w-2xl" data-testid="dialog-trade-form">
