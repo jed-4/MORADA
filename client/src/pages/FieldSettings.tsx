@@ -9,11 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings as SettingsIcon, GripVertical, List, ArrowLeft, Tag } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { FieldOption, FieldCategory } from "@shared/schema";
+import { FieldOption, FieldCategory, SupplierLabel } from "@shared/schema";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 
@@ -137,6 +137,7 @@ export default function FieldSettings() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [showSupplierLabels, setShowSupplierLabels] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<FieldOption | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -145,10 +146,25 @@ export default function FieldSettings() {
     color: "#3b82f6",
     parentId: null as string | null,
   });
+  
+  // Supplier Labels state
+  const [isLabelDialogOpen, setIsLabelDialogOpen] = useState(false);
+  const [editingLabel, setEditingLabel] = useState<SupplierLabel | null>(null);
+  const [labelFormData, setLabelFormData] = useState({
+    name: "",
+    color: "#bba7db",
+    description: "",
+  });
 
   // Fetch field categories
   const { data: fieldCategories = [] } = useQuery<FieldCategory[]>({
     queryKey: ['/api/field-categories'],
+  });
+
+  // Fetch supplier labels
+  const { data: supplierLabels = [] } = useQuery<SupplierLabel[]>({
+    queryKey: ['/api/supplier-labels'],
+    enabled: showSupplierLabels,
   });
 
   // Auto-select first category if none selected
@@ -373,12 +389,126 @@ export default function FieldSettings() {
     },
   });
 
+  // Supplier Label mutations
+  const createLabelMutation = useMutation({
+    mutationFn: async (data: { name: string; color: string; description?: string }) => {
+      return await apiRequest('/api/supplier-labels', 'POST', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/supplier-labels'] });
+      toast({
+        title: "Label created",
+        description: "The supplier label has been created successfully.",
+      });
+      setIsLabelDialogOpen(false);
+      resetLabelForm();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create supplier label.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateLabelMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<SupplierLabel> }) => {
+      return await apiRequest(`/api/supplier-labels/${id}`, 'PATCH', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/supplier-labels'] });
+      toast({
+        title: "Label updated",
+        description: "The supplier label has been updated successfully.",
+      });
+      setIsLabelDialogOpen(false);
+      setEditingLabel(null);
+      resetLabelForm();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update supplier label.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteLabelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/supplier-labels/${id}`, 'DELETE');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/supplier-labels'] });
+      toast({
+        title: "Label deleted",
+        description: "The supplier label has been deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete supplier label.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       name: "",
       color: "#3b82f6",
       parentId: null,
     });
+  };
+
+  const resetLabelForm = () => {
+    setLabelFormData({
+      name: "",
+      color: "#bba7db",
+      description: "",
+    });
+  };
+
+  const handleEditLabel = (label: SupplierLabel) => {
+    setEditingLabel(label);
+    setLabelFormData({
+      name: label.name,
+      color: label.color || "#bba7db",
+      description: label.description || "",
+    });
+    setIsLabelDialogOpen(true);
+  };
+
+  const handleDeleteLabel = (id: string) => {
+    if (confirm("Are you sure you want to delete this supplier label?")) {
+      deleteLabelMutation.mutate(id);
+    }
+  };
+
+  const handleSubmitLabel = () => {
+    if (!labelFormData.name.trim()) {
+      toast({
+        title: "Validation error",
+        description: "Label name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editingLabel) {
+      updateLabelMutation.mutate({
+        id: editingLabel.id,
+        data: {
+          name: labelFormData.name,
+          color: labelFormData.color,
+          description: labelFormData.description || null,
+        },
+      });
+    } else {
+      createLabelMutation.mutate(labelFormData);
+    }
   };
 
   const handleEdit = (option: FieldOption) => {
@@ -468,12 +598,15 @@ export default function FieldSettings() {
           <h1 className="text-2xl font-bold tracking-tight mb-6">Field Settings</h1>
           <nav className="space-y-1">
             {fieldCategories.map((category) => {
-              const isActive = selectedCategoryId === category.id;
+              const isActive = selectedCategoryId === category.id && !showSupplierLabels;
               
               return (
                 <button
                   key={category.id}
-                  onClick={() => setSelectedCategoryId(category.id)}
+                  onClick={() => {
+                    setSelectedCategoryId(category.id);
+                    setShowSupplierLabels(false);
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
                     isActive 
                       ? "bg-primary text-primary-foreground" 
@@ -486,6 +619,28 @@ export default function FieldSettings() {
                 </button>
               );
             })}
+            
+            <div className="pt-4 pb-2">
+              <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Suppliers & Trades
+              </span>
+            </div>
+            
+            <button
+              onClick={() => {
+                setShowSupplierLabels(true);
+                setSelectedCategoryId("");
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
+                showSupplierLabels 
+                  ? "bg-[#bba7db] text-white" 
+                  : "text-muted-foreground hover-elevate"
+              }`}
+              data-testid="category-supplier-labels"
+            >
+              <Tag className="h-4 w-4 flex-shrink-0" />
+              <span className="text-sm font-medium">Supplier Labels</span>
+            </button>
           </nav>
         </div>
       </div>
@@ -494,7 +649,169 @@ export default function FieldSettings() {
       <div className="flex-1 overflow-hidden">
         <div className="h-full overflow-y-auto">
           <div className="p-8">
-            {selectedCategory ? (
+            {showSupplierLabels ? (
+              <div className="space-y-6">
+                {/* Supplier Labels Header */}
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight">Supplier Labels</h1>
+                  <p className="text-muted-foreground mt-2">
+                    Create custom labels to categorize and filter your suppliers and trades
+                  </p>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Labels</CardTitle>
+                      <Dialog open={isLabelDialogOpen} onOpenChange={(open) => {
+                        if (!open) {
+                          setEditingLabel(null);
+                          resetLabelForm();
+                        }
+                        setIsLabelDialogOpen(open);
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white" data-testid="button-add-label">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Label
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent data-testid="dialog-label-form">
+                          <DialogHeader>
+                            <DialogTitle>
+                              {editingLabel ? "Edit Label" : "Create New Label"}
+                            </DialogTitle>
+                            <DialogDescription>
+                              {editingLabel
+                                ? "Update the label details below."
+                                : "Add a new label for categorizing suppliers and trades."}
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="label-name">Label Name</Label>
+                              <Input
+                                id="label-name"
+                                value={labelFormData.name}
+                                onChange={(e) => setLabelFormData({ ...labelFormData, name: e.target.value })}
+                                placeholder="e.g., Preferred, Local, Licensed"
+                                data-testid="input-label-name"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="label-color">Color</Label>
+                              <Select
+                                value={labelFormData.color}
+                                onValueChange={(value) => setLabelFormData({ ...labelFormData, color: value })}
+                              >
+                                <SelectTrigger id="label-color" data-testid="select-label-color">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {STATUS_COLORS.map((color) => (
+                                    <SelectItem key={color.value} value={color.value}>
+                                      <div className="flex items-center gap-2">
+                                        <div
+                                          className="w-4 h-4 rounded"
+                                          style={{ backgroundColor: color.value }}
+                                        />
+                                        {color.label}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="label-description">Description (Optional)</Label>
+                              <Input
+                                id="label-description"
+                                value={labelFormData.description}
+                                onChange={(e) => setLabelFormData({ ...labelFormData, description: e.target.value })}
+                                placeholder="Brief description of this label"
+                                data-testid="input-label-description"
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button
+                              variant="outline"
+                              onClick={() => setIsLabelDialogOpen(false)}
+                              data-testid="button-cancel-label"
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              onClick={handleSubmitLabel}
+                              disabled={createLabelMutation.isPending || updateLabelMutation.isPending}
+                              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                              data-testid="button-save-label"
+                            >
+                              {editingLabel ? "Update" : "Create"}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Preview</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {supplierLabels.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                              No labels configured. Click "Add Label" to create one.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          supplierLabels.map((label) => (
+                            <TableRow key={label.id} data-testid={`row-label-${label.id}`}>
+                              <TableCell className="font-medium">{label.name}</TableCell>
+                              <TableCell>
+                                <Badge style={{ backgroundColor: label.color || "#bba7db", color: "white" }}>
+                                  {label.name}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {label.description || "-"}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => handleEditLabel(label)}
+                                    data-testid={`button-edit-label-${label.id}`}
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => handleDeleteLabel(label.id)}
+                                    data-testid={`button-delete-label-${label.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : selectedCategory ? (
               <div className="space-y-6">
                 {/* Page Header */}
                 <div>
