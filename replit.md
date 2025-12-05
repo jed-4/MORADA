@@ -127,20 +127,36 @@ Preferred communication style: Simple, everyday language.
 - **date-fns**: Date utility library.
 - **nanoid**: Unique string ID generator.
 
-## Future Integrations
-
-### Google Drive Integration (Deferred)
-- **Status**: User deferred setup - can be connected later via Replit connector
-- **Integration ID**: `connector:ccfg_google-drive_0F6D7EF5E22543468DB221F94F`
-- **Planned Features**:
-  - Company-wide folder as source of truth for document management
-  - Role-based access control for files
-  - Recommended folder structure: Company (Templates/Policies/Resources) and Projects folders with standardized subfolders (Plans/Contracts/Photos/Variations/Handover)
-  - File browser UI with folder navigation
-  - File upload through BuildPro that saves to Google Drive
-  - File preview/download for common file types
-- **To Enable**: User can set up the Google Drive connector through Replit when ready
+### Google Drive Integration (Company-Level)
+- **Architecture**: Company-level OAuth connection (not per-user), tokens stored encrypted in companies table
+- **Security**:
+  - HMAC-signed state parameter for OAuth flow with timestamp and nonce
+  - Admin-only access for connect/disconnect/root-folder configuration
+  - Team member access for file browsing and operations
+  - Requires GOOGLE_OAUTH_ENCRYPTION_KEY or SESSION_SECRET env var
+- **Service**: `server/services/googleDriveService.ts` - follows Google Calendar OAuth pattern
+- **API Routes**:
+  - GET `/api/google-drive/status` - Connection status
+  - GET `/api/google-drive/auth-url` - OAuth URL (admin only)
+  - GET `/api/google-drive/callback` - OAuth callback
+  - POST `/api/google-drive/disconnect` - Disconnect (admin only)
+  - POST `/api/google-drive/root-folder` - Set root folder (admin only)
+  - GET `/api/google-drive/files` - List files in folder
+  - GET `/api/google-drive/shared-drives` - List shared drives
+  - POST `/api/google-drive/folders` - Create folder
+  - POST `/api/google-drive/upload` - Upload file
+  - GET `/api/google-drive/download/:fileId` - Download file
+  - DELETE `/api/google-drive/files/:fileId` - Delete file
+- **UI**: ProjectFiles page (`/projects/:projectId/files`) with 3-row compact header, file browser, folder navigation, upload/create folder dialogs
+- **Features**:
+  - Shared Drives support
+  - Folder breadcrumb navigation
+  - List/grid view toggle
+  - File icons based on MIME type
+  - File upload and download
+  - Create folder and delete file operations
 
 ## Recent Changes
+- **Google Drive Integration**: Implemented company-level Google Drive OAuth with HMAC-signed state, admin-only connection management, and ProjectFiles page for file browsing/upload/download
 - **Checklist Response Types**: Added support for checkbox (default), text, single_choice, and multiple_choice response types for checklist items
 - **Body Parser Limit**: Increased to 50mb for JSON/URL-encoded payloads (requires publishing for production)
