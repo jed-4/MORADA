@@ -8103,6 +8103,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/companies/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const user = req.user as Express.User;
+      // Verify the user belongs to this company
+      if (user.companyId !== req.params.id) {
+        return res.status(403).json({ error: "Cannot update another company" });
+      }
+      
+      const { nickname, name } = req.body;
+      const updateData: any = {};
+      
+      if (nickname !== undefined) updateData.nickname = nickname;
+      if (name !== undefined) updateData.name = name;
+      
+      const company = await storage.updateCompany(req.params.id, updateData);
+      if (!company) {
+        return res.status(404).json({ error: "Company not found" });
+      }
+      res.json(company);
+    } catch (error) {
+      console.error("Error updating company:", error);
+      res.status(500).json({ error: "Failed to update company" });
+    }
+  });
+
   // Company Settings routes (protected - admin access only)
   app.get("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
     try {

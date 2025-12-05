@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -187,6 +188,7 @@ export default function Settings() {
   const [activeSection, setActiveSection] = useState("branding");
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Company info form
   const companyForm = useForm<z.infer<typeof companyInfoSchema>>({
@@ -240,11 +242,24 @@ export default function Settings() {
   // Company info mutation 
   const updateCompanyMutation = useMutation({
     mutationFn: async (data: z.infer<typeof companyInfoSchema>) => {
+      // Save to company_settings for other settings (tax rate, work hours, etc.)
       const response = await apiRequest("/api/company-settings", "PATCH", data);
+      
+      // Also save nickname (Display Name) to the user's company record for header display
+      if (user?.companyId && data.nickname !== undefined) {
+        await apiRequest(`/api/companies/${user.companyId}`, "PATCH", { 
+          nickname: data.nickname 
+        });
+      }
+      
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      // Also invalidate company data so header updates
+      if (user?.companyId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/companies", user.companyId] });
+      }
       toast({ title: "Company settings updated successfully" });
       setIsEditing(false);
     },
