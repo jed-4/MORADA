@@ -5731,6 +5731,62 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getUsersByRole(companyId: string, roleId: string): Promise<schema.User[]> {
+    try {
+      const results = await db
+        .select()
+        .from(schema.users)
+        .where(
+          and(
+            eq(schema.users.companyId, companyId),
+            eq(schema.users.roleId, roleId),
+            eq(schema.users.isActive, true)
+          )
+        );
+      return results;
+    } catch (error) {
+      console.error("Database error in getUsersByRole:", error);
+      throw error;
+    }
+  }
+
+  async getAllCompanies(): Promise<schema.Company[]> {
+    try {
+      const results = await db
+        .select()
+        .from(schema.companies);
+      return results;
+    } catch (error) {
+      console.error("Database error in getAllCompanies:", error);
+      throw error;
+    }
+  }
+
+  async findTaskByReference(
+    companyId: string,
+    referenceType: string,
+    referenceId: string
+  ): Promise<schema.Note | undefined> {
+    try {
+      const [task] = await db
+        .select()
+        .from(schema.notes)
+        .where(
+          and(
+            eq(schema.notes.companyId, companyId),
+            eq(schema.notes.type, "task"),
+            eq(schema.notes.referenceType, referenceType),
+            eq(schema.notes.referenceId, referenceId)
+          )
+        )
+        .limit(1);
+      return task;
+    } catch (error) {
+      console.error("Database error in findTaskByReference:", error);
+      throw error;
+    }
+  }
+
   async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
     const [preference] = await db
       .select()

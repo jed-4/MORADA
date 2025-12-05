@@ -1,8 +1,9 @@
 import { storage } from "../storage";
 import { sendReminderEmail } from "./email";
-import { addDays, addWeeks, addMonths, differenceInMinutes } from "date-fns";
+import { addDays, addWeeks, addMonths, differenceInMinutes, startOfDay, format } from "date-fns";
 
 let isProcessorRunning = false;
+let lastInsuranceCheckDate: string | null = null;
 let processorInterval: NodeJS.Timeout | null = null;
 
 export async function processReminders() {
@@ -153,6 +154,8 @@ export async function processReminders() {
     }
     
     console.log("[ReminderProcessor] Reminder processing completed");
+    
+    await processInsuranceExpiryReminders();
   } catch (error) {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {
@@ -219,5 +222,117 @@ export function stopReminderProcessor() {
     clearInterval(processorInterval);
     processorInterval = null;
     console.log("[ReminderProcessor] Stopped");
+  }
+}
+
+export async function processInsuranceExpiryReminders() {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  
+  if (lastInsuranceCheckDate === today) {
+    return;
+  }
+  
+  console.log("[ReminderProcessor] Checking for expiring supplier insurances...");
+  
+  try {
+    const companies = await storage.getAllCompanies();
+    
+    for (const company of companies) {
+      try {
+        const expiringIn30Days = await storage.getExpiringInsurances(company.id, 30);
+        const expiringIn7Days = await storage.getExpiringInsurances(company.id, 7);
+        
+        const expiring30NotYet7 = expiringIn30Days.filter(
+          ins => !expiringIn7Days.some(i7 => i7.id === ins.id)
+        );
+        
+        const companySettings = await storage.getCompanySettings(company.id);
+        const reminderRoleId = (companySettings as any)?.insuranceReminderRoleId;
+        
+        let assigneeUserId: string | null = null;
+        if (reminderRoleId) {
+          const usersWithRole = await storage.getUsersByRole(company.id, reminderRoleId);
+          if (usersWithRole.length > 0) {
+            assigneeUserId = usersWithRole[0].id;
+          }
+        }
+        
+        if (!assigneeUserId) {
+          const allUsers = await storage.getUsersByCompany(company.id);
+          const adminUser = allUsers.find(u => {
+            const role = (u as any).role?.toLowerCase() || '';
+            return role.includes('admin') || role.includes('general manager') || role.includes('owner');
+          });
+          if (adminUser) {
+            assigneeUserId = adminUser.id;
+          } else if (allUsers.length > 0) {
+            assigneeUserId = allUsers[0].id;
+          }
+        }
+        
+        for (const insurance of expiring30NotYet7) {
+          const existingTask = await storage.findTaskByReference(
+            company.id,
+            'insurance_expiry_30',
+            insurance.id
+          );
+          
+          if (!existingTask) {
+            const supplier = await storage.getSupplierById(insurance.supplierId);
+            const supplierName = supplier?.name || 'Unknown Supplier';
+            const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
+            
+            await storage.createTask({
+              companyId: company.id,
+              title: `Insurance Expiry Warning: ${supplierName} - ${insurance.insuranceType}`,
+              description: `${insurance.insuranceType} insurance for ${supplierName} expires on ${expiryDate}. Please ensure the supplier provides updated insurance documentation.`,
+              status: 'To Do',
+              priority: 'Medium',
+              dueDate: new Date(insurance.expiryDate!),
+              assigneeId: assigneeUserId,
+              referenceType: 'insurance_expiry_30',
+              referenceId: insurance.id,
+            });
+            
+            console.log(`[ReminderProcessor] Created 30-day expiry task for ${supplierName} - ${insurance.insuranceType}`);
+          }
+        }
+        
+        for (const insurance of expiringIn7Days) {
+          const existingTask = await storage.findTaskByReference(
+            company.id,
+            'insurance_expiry_7',
+            insurance.id
+          );
+          
+          if (!existingTask) {
+            const supplier = await storage.getSupplierById(insurance.supplierId);
+            const supplierName = supplier?.name || 'Unknown Supplier';
+            const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
+            
+            await storage.createTask({
+              companyId: company.id,
+              title: `URGENT: Insurance Expiring Soon - ${supplierName} - ${insurance.insuranceType}`,
+              description: `${insurance.insuranceType} insurance for ${supplierName} expires on ${expiryDate}. Immediate action required to obtain updated documentation.`,
+              status: 'To Do',
+              priority: 'High',
+              dueDate: new Date(insurance.expiryDate!),
+              assigneeId: assigneeUserId,
+              referenceType: 'insurance_expiry_7',
+              referenceId: insurance.id,
+            });
+            
+            console.log(`[ReminderProcessor] Created 7-day URGENT expiry task for ${supplierName} - ${insurance.insuranceType}`);
+          }
+        }
+      } catch (companyError) {
+        console.error(`[ReminderProcessor] Error processing insurance expiry for company ${company.id}:`, companyError);
+      }
+    }
+    
+    lastInsuranceCheckDate = today;
+    console.log("[ReminderProcessor] Insurance expiry check completed");
+  } catch (error) {
+    console.error("[ReminderProcessor] Error in insurance expiry check:", error);
   }
 }

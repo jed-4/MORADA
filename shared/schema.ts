@@ -315,6 +315,10 @@ export const notes: any = pgTable("notes", {
   lastRecurringDate: timestamp("last_recurring_date"),
   templateId: varchar("template_id"), // Link to task template for recurring tasks
   
+  // Reference fields for system-generated tasks (e.g., insurance expiry reminders)
+  referenceType: text("reference_type"), // e.g., "insurance_expiry_30", "insurance_expiry_7"
+  referenceId: varchar("reference_id"), // ID of the referenced entity (e.g., insurance ID)
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -362,6 +366,9 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringEndDate: z.coerce.date().optional(),
   templateId: z.string().optional(),
   lastRecurringDate: z.coerce.date().optional(),
+  // Reference fields for system-generated tasks
+  referenceType: z.string().optional(),
+  referenceId: z.string().optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;
