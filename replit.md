@@ -129,14 +129,21 @@ Preferred communication style: Simple, everyday language.
 
 ### Google Drive Integration (Company-Level)
 - **Architecture**: Company-level OAuth connection (not per-user), tokens stored encrypted in companies table
+- **Per-Company OAuth Credentials**: 
+  - Companies can optionally configure their own Google OAuth credentials (Client ID/Secret)
+  - Schema fields: `googleDriveClientId`, `googleDriveClientSecret` (encrypted) in companies table
+  - Falls back to BuildPro's global credentials (GOOGLE_OAUTH_CLIENT_ID/SECRET) if not configured
+  - Redirect URI detection based on request host (supports dev/production automatically)
+  - Host included in OAuth state for proper callback handling
 - **Security**:
-  - HMAC-signed state parameter for OAuth flow with timestamp and nonce
-  - Admin-only access for connect/disconnect/root-folder configuration
+  - HMAC-signed state parameter for OAuth flow with timestamp, nonce, and host
+  - Admin-only access for connect/disconnect/root-folder/credentials configuration
   - Team member access for file browsing and operations
   - Requires GOOGLE_OAUTH_ENCRYPTION_KEY or SESSION_SECRET env var
 - **Service**: `server/services/googleDriveService.ts` - follows Google Calendar OAuth pattern
 - **API Routes**:
-  - GET `/api/google-drive/status` - Connection status
+  - GET `/api/google-drive/status` - Connection status (includes credentialsConfigured flag)
+  - POST `/api/google-drive/credentials` - Save OAuth credentials (admin only)
   - GET `/api/google-drive/auth-url` - OAuth URL (admin only)
   - GET `/api/google-drive/callback` - OAuth callback
   - POST `/api/google-drive/disconnect` - Disconnect (admin only)
@@ -147,8 +154,11 @@ Preferred communication style: Simple, everyday language.
   - POST `/api/google-drive/upload` - Upload file
   - GET `/api/google-drive/download/:fileId` - Download file
   - DELETE `/api/google-drive/files/:fileId` - Delete file
-- **UI**: ProjectFiles page (`/projects/:projectId/files`) with 3-row compact header, file browser, folder navigation, upload/create folder dialogs
+- **UI**: 
+  - ProjectFiles page (`/projects/:projectId/files`) with 3-row compact header, file browser, folder navigation, upload/create folder dialogs
+  - Settings page Integrations section with OAuth credential configuration UI
 - **Features**:
+  - Per-company OAuth credentials with fallback to shared credentials
   - Shared Drives support
   - Folder breadcrumb navigation
   - List/grid view toggle

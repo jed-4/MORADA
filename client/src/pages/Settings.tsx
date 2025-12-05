@@ -705,10 +705,14 @@ export default function Settings() {
               <div className="border rounded-lg p-4 bg-muted/30">
                 <h4 className="font-medium mb-2 flex items-center gap-2">
                   <Shield className="h-4 w-4" />
-                  Step 1: Configure OAuth Credentials
+                  {driveStatus?.credentialsConfigured ? "Custom OAuth Credentials (Optional)" : "Step 1: Configure OAuth Credentials (Optional)"}
                 </h4>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Enter your Google Cloud OAuth 2.0 credentials. You can create these in the{" "}
+                  {driveStatus?.credentialsConfigured 
+                    ? "Your custom credentials are configured. You can update them below or connect using these credentials."
+                    : "Optionally provide your own Google Cloud OAuth 2.0 credentials for complete control over your Drive integration. If not configured, BuildPro's shared credentials will be used."
+                  }
+                  {" "}
                   <a 
                     href="https://console.cloud.google.com/apis/credentials" 
                     target="_blank" 
@@ -788,14 +792,17 @@ export default function Settings() {
             )}
 
             {/* Connection Status and Actions */}
-            {driveStatus?.credentialsConfigured && !driveStatus?.connected && (
+            {!driveStatus?.connected && (
               <div className="border rounded-lg p-4 bg-muted/30">
                 <h4 className="font-medium mb-2 flex items-center gap-2">
                   <Plug className="h-4 w-4" />
-                  Step 2: Connect Google Drive
+                  {driveStatus?.credentialsConfigured ? "Step 2: Connect Google Drive" : "Connect Google Drive"}
                 </h4>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Your credentials are saved. Click below to authorize access to your Google Drive.
+                  {driveStatus?.credentialsConfigured 
+                    ? "Your custom credentials are saved. Click below to authorize access to your Google Drive."
+                    : "Click below to connect to Google Drive using BuildPro's shared credentials."
+                  }
                 </p>
                 <Button
                   onClick={() => connectDriveMutation.mutate()}

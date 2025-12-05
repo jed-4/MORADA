@@ -55,12 +55,22 @@ export class GoogleDriveService {
       throw new Error('Company not found');
     }
     
-    // Use per-company credentials if configured, otherwise throw
-    const clientId = company.googleDriveClientId;
-    const clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
+    // Use per-company credentials if configured, otherwise fall back to global BuildPro credentials
+    let clientId = company.googleDriveClientId;
+    let clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
     
+    // Fallback to global BuildPro credentials if company credentials not configured
     if (!clientId || !clientSecret) {
-      throw new Error('Google Drive OAuth credentials not configured for this company. Please add your Client ID and Secret in Settings.');
+      clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || null;
+      clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || null;
+      
+      if (!clientId || !clientSecret) {
+        throw new Error('Google Drive OAuth credentials not configured. Please add your Client ID and Secret in Settings, or contact support.');
+      }
+      
+      console.log('🔍 [Drive OAuth] Using fallback BuildPro credentials for company:', companyId);
+    } else {
+      console.log('🔍 [Drive OAuth] Using company-specific credentials for company:', companyId);
     }
     
     const redirectUri = this.getRedirectUri(host);
@@ -207,12 +217,18 @@ export class GoogleDriveService {
       throw new Error('Google Drive not connected for this company');
     }
     
-    // Get per-company OAuth credentials
-    const clientId = company.googleDriveClientId;
-    const clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
+    // Get per-company OAuth credentials with fallback to global credentials
+    let clientId = company.googleDriveClientId;
+    let clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
     
+    // Fallback to global BuildPro credentials if company credentials not configured
     if (!clientId || !clientSecret) {
-      throw new Error('Google Drive OAuth credentials not configured for this company');
+      clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || null;
+      clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || null;
+      
+      if (!clientId || !clientSecret) {
+        throw new Error('Google Drive OAuth credentials not configured');
+      }
     }
     
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
