@@ -29,7 +29,11 @@ export const companies = pgTable("companies", {
   ownerId: varchar("owner_id"), // User who created/owns the company
   isActive: boolean("is_active").notNull().default(true),
   
-  // Google Drive integration - company-level
+  // Google Drive integration - company-level OAuth credentials
+  googleDriveClientId: text("google_drive_client_id"), // Company's own OAuth Client ID
+  googleDriveClientSecret: text("google_drive_client_secret"), // Company's own OAuth Client Secret (encrypted)
+  
+  // Google Drive integration - connection tokens
   googleDriveEmail: text("google_drive_email"),
   googleDriveAccessToken: text("google_drive_access_token"),
   googleDriveRefreshToken: text("google_drive_refresh_token"),
