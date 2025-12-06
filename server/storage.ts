@@ -125,6 +125,7 @@ export interface IStorage {
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
   getUsers(category?: UserCategory): Promise<UserWithRole[]>;
+  getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]>;
 
   // User column preferences
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
@@ -168,6 +169,7 @@ export interface IStorage {
 
   // User Invitation operations
   getUserInvitations(status?: string): Promise<UserInvitation[]>;
+  getUserInvitationsByCompany(companyId: string, status?: string): Promise<UserInvitation[]>;
   getUserInvitation(id: string): Promise<UserInvitation | undefined>;
   getUserInvitationByToken(token: string): Promise<UserInvitation | undefined>;
   createUserInvitation(invitation: InsertUserInvitation): Promise<UserInvitation>;
@@ -1833,6 +1835,21 @@ export class MemStorage implements IStorage {
     }));
   }
 
+  async getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]> {
+    const allUsers = Array.from(this.users.values());
+    const filteredUsers = allUsers.filter(user => {
+      if (user.companyId !== companyId) return false;
+      if (!user.isActive) return false;
+      if (category && user.userCategory !== category) return false;
+      return true;
+    });
+    
+    return filteredUsers.map(user => ({
+      ...user,
+      role: user.roleId ? this.userRoles.get(user.roleId) : undefined,
+    }));
+  }
+
   async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
     return Array.from(this.userColumnPreferences.values()).find(
       (pref) => pref.userId === userId && pref.pageKey === pageKey
@@ -2276,6 +2293,15 @@ export class MemStorage implements IStorage {
     return allInvitations;
   }
 
+  async getUserInvitationsByCompany(companyId: string, status?: string): Promise<UserInvitation[]> {
+    const allInvitations = Array.from(this.userInvitations.values());
+    return allInvitations.filter(invitation => {
+      if (invitation.companyId !== companyId) return false;
+      if (status && invitation.status !== status) return false;
+      return true;
+    });
+  }
+
   async getUserInvitation(id: string): Promise<UserInvitation | undefined> {
     return this.userInvitations.get(id);
   }
@@ -2341,13 +2367,17 @@ export class MemStorage implements IStorage {
       throw new Error("Password is required to accept invitation");
     }
 
+    // Normalize firstName/lastName: prefer user input, fall back to invitation values
+    const normalizedFirstName = userData.firstName?.trim() || invitation.firstName || null;
+    const normalizedLastName = userData.lastName?.trim() || invitation.lastName || null;
+
     // Create the user account with secure password handling
     const newUser = await this.createUser({
       username: userData.username || invitation.email,
       password: userData.password, // Will be hashed in createUser method
       email: invitation.email,
-      firstName: invitation.firstName,
-      lastName: invitation.lastName,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
       phone: invitation.phone,
       company: invitation.company,
       userCategory: invitation.userCategory as UserCategory,
@@ -2356,7 +2386,6 @@ export class MemStorage implements IStorage {
       isInvitePending: false,
       invitedBy: invitation.invitedBy,
       invitedAt: invitation.createdAt,
-      ...userData,
     });
 
     // Grant project access
@@ -5726,6 +5755,31 @@ export class DbStorage implements IStorage {
     }));
   }
 
+  async getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]> {
+    const baseConditions = [
+      eq(schema.users.companyId, companyId),
+      eq(schema.users.isActive, true)
+    ];
+    
+    if (category) {
+      baseConditions.push(eq(schema.users.userCategory, category));
+    }
+
+    const results = await db
+      .select({
+        user: schema.users,
+        role: schema.userRoles,
+      })
+      .from(schema.users)
+      .leftJoin(schema.userRoles, eq(schema.users.roleId, schema.userRoles.id))
+      .where(and(...baseConditions));
+
+    return results.map(({ user, role }) => ({
+      ...user,
+      role: role || undefined,
+    }));
+  }
+
   async getUsersByCompany(companyId: string): Promise<schema.User[]> {
     try {
       const results = await db
@@ -6347,7 +6401,45 @@ export class DbStorage implements IStorage {
   async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
   async deleteUserProjectAccess(id: string): Promise<boolean> { return false; }
   async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
-  async getUserInvitations(status?: string): Promise<UserInvitation[]> { return []; }
+  async getUserInvitations(status?: string): Promise<UserInvitation[]> {
+    try {
+      const conditions = [];
+      if (status) {
+        conditions.push(eq(schema.userInvitations.status, status));
+      }
+      
+      const results = await db
+        .select()
+        .from(schema.userInvitations)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(schema.userInvitations.createdAt));
+      
+      return results;
+    } catch (error) {
+      console.error("Database error in getUserInvitations:", error);
+      throw error;
+    }
+  }
+
+  async getUserInvitationsByCompany(companyId: string, status?: string): Promise<UserInvitation[]> {
+    try {
+      const conditions = [eq(schema.userInvitations.companyId, companyId)];
+      if (status) {
+        conditions.push(eq(schema.userInvitations.status, status));
+      }
+      
+      const results = await db
+        .select()
+        .from(schema.userInvitations)
+        .where(and(...conditions))
+        .orderBy(desc(schema.userInvitations.createdAt));
+      
+      return results;
+    } catch (error) {
+      console.error("Database error in getUserInvitationsByCompany:", error);
+      throw error;
+    }
+  }
   async getUserInvitation(id: string): Promise<UserInvitation | undefined> { return undefined; }
   
   async getUserInvitationByToken(token: string): Promise<UserInvitation | undefined> {
@@ -6423,15 +6515,21 @@ export class DbStorage implements IStorage {
         throw new Error("Password is required to accept invitation");
       }
 
-      console.log(`[DbStorage.acceptInvitation] Creating user for email: ${invitation.email}`);
+      // Normalize firstName/lastName: prefer user input, fall back to invitation values
+      // Trim and convert empty strings to null to avoid overwriting valid data
+      const normalizedFirstName = userData.firstName?.trim() || invitation.firstName || null;
+      const normalizedLastName = userData.lastName?.trim() || invitation.lastName || null;
+      
+      console.log(`[DbStorage.acceptInvitation] Creating user for email: ${invitation.email}, firstName: ${normalizedFirstName}, lastName: ${normalizedLastName}`);
       
       // Create the user account with secure password handling
+      // Note: We explicitly set firstName/lastName to avoid spread operator issues
       const newUser = await this.createUser({
         username: userData.username || invitation.email,
         password: userData.password,
         email: invitation.email,
-        firstName: invitation.firstName || userData.firstName,
-        lastName: invitation.lastName || userData.lastName,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
         phone: invitation.phone,
         company: invitation.company,
         userCategory: invitation.userCategory as UserCategory,
@@ -6440,7 +6538,6 @@ export class DbStorage implements IStorage {
         isInvitePending: false,
         invitedBy: invitation.invitedBy,
         invitedAt: invitation.createdAt,
-        ...userData,
       });
 
       console.log(`[DbStorage.acceptInvitation] User created: ${newUser.id}`);

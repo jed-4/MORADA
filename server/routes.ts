@@ -4380,12 +4380,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User Management Routes
   app.get("/api/users", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const { category } = req.query;
-      const users = await storage.getUsers(category as any);
+      // SECURITY: Filter users by company to prevent cross-tenant data leak
+      const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId, category as any);
       // Use safe user helper to remove passwords
       const safeUsers = users.map(user => toSafeUser(user));
       res.json(safeUsers);
     } catch (error) {
+      console.error("Error fetching users:", error);
       res.status(500).json({ error: "Failed to fetch users" });
     }
   });
@@ -4887,10 +4894,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User Invitation Routes
   app.get("/api/invitations", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
       const { status } = req.query;
-      const invitations = await storage.getUserInvitations(status as string);
+      // SECURITY: Filter invitations by company to prevent cross-tenant data leak
+      const invitations = await storage.getUserInvitationsByCompany(currentUser.companyId, status as string);
       res.json(invitations);
     } catch (error) {
+      console.error("Error fetching invitations:", error);
       res.status(500).json({ error: "Failed to fetch invitations" });
     }
   });
@@ -4917,11 +4931,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Storage layer will auto-generate inviteToken and expiresAt
-      const invitation = await storage.createUserInvitation(validationResult.data as any);
+      // Get company name to store in invitation for display on accept page
+      const companyId = validationResult.data.companyId;
+      const company = await storage.getCompany(companyId);
+      const companyDisplayName = company?.nickname || company?.name || null;
       
-      // Get company and inviter information for the email
-      const company = await storage.getCompany(invitation.companyId);
+      // Storage layer will auto-generate inviteToken and expiresAt
+      // Include company name in the invitation record
+      const invitation = await storage.createUserInvitation({
+        ...validationResult.data,
+        company: companyDisplayName,
+      } as any);
+      
+      // Get inviter information for the email
       const inviter = await storage.getUser(invitation.invitedBy);
       
       const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
@@ -5040,6 +5062,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // SECURITY: Return generic error to client, log details server-side only
       res.status(500).json({ error: "Failed to accept invitation. Please try again or contact support." });
+    }
+  });
+
+  // Resend invitation email
+  app.post("/api/invitations/:id/resend", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const invitation = await storage.getUserInvitation(req.params.id);
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+
+      // SECURITY: Only allow resending invitations for same company
+      if (invitation.companyId !== currentUser.companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (invitation.status !== "pending") {
+        return res.status(400).json({ error: "Can only resend pending invitations" });
+      }
+
+      // Regenerate token and extend expiry
+      const newToken = PasswordUtils.generateSecureToken();
+      const newExpiry = PasswordUtils.generateInviteExpiry();
+      
+      await storage.updateUserInvitation(invitation.id, {
+        inviteToken: newToken,
+        expiresAt: newExpiry,
+      });
+
+      // Get company and inviter info for email
+      const company = await storage.getCompany(invitation.companyId);
+      const inviter = await storage.getUser(invitation.invitedBy);
+      
+      const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+      const host = req.get('host');
+      const inviteUrl = `${protocol}://${host}/accept-invite/${newToken}`;
+
+      try {
+        await sendInvitationEmail({
+          to: invitation.email,
+          inviterName: inviter?.firstName && inviter?.lastName 
+            ? `${inviter.firstName} ${inviter.lastName}` 
+            : inviter?.email || 'A team member',
+          companyName: company?.name || 'the team',
+          inviteUrl,
+          recipientName: invitation.firstName || undefined,
+          userId: currentUser.id,
+        });
+        
+        console.log(`Invitation resent to ${invitation.email}`);
+      } catch (emailError) {
+        console.error('Failed to resend invitation email:', emailError);
+      }
+
+      res.json({ success: true, inviteUrl, message: "Invitation resent successfully" });
+    } catch (error) {
+      console.error('Error resending invitation:', error);
+      res.status(500).json({ error: "Failed to resend invitation" });
+    }
+  });
+
+  // Cancel/delete invitation
+  app.delete("/api/invitations/:id", requireTeamMember, requirePermission("admin.users", "delete"), async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const invitation = await storage.getUserInvitation(req.params.id);
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+
+      // SECURITY: Only allow deleting invitations for same company
+      if (invitation.companyId !== currentUser.companyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (invitation.status !== "pending") {
+        return res.status(400).json({ error: "Can only cancel pending invitations" });
+      }
+
+      await storage.updateUserInvitation(invitation.id, {
+        status: "cancelled",
+      } as any);
+
+      res.json({ success: true, message: "Invitation cancelled" });
+    } catch (error) {
+      console.error('Error cancelling invitation:', error);
+      res.status(500).json({ error: "Failed to cancel invitation" });
     }
   });
 

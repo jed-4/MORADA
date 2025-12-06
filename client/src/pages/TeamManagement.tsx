@@ -23,12 +23,15 @@ import {
   Phone,
   Plus,
   Trash2,
-  Briefcase
+  Briefcase,
+  Clock,
+  Send,
+  XCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { insertSupplierSchema, type Supplier, type InsertSupplier } from "@shared/schema";
+import { insertSupplierSchema, type Supplier, type InsertSupplier, type UserInvitation } from "@shared/schema";
 import { z } from "zod";
 
 const supplierFormSchema = insertSupplierSchema.extend({
@@ -72,6 +75,41 @@ export default function TeamManagement() {
 
   const { data: suppliers = [], isLoading: suppliersLoading } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
+  });
+
+  const { data: pendingInvitations = [], isLoading: invitationsLoading } = useQuery<UserInvitation[]>({
+    queryKey: ["/api/invitations", "pending"],
+    queryFn: async () => {
+      const response = await fetch("/api/invitations?status=pending");
+      if (!response.ok) throw new Error("Failed to fetch invitations");
+      return response.json();
+    },
+  });
+
+  const resendInvitationMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      return await apiRequest(`/api/invitations/${invitationId}/resend`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invitations"] });
+      toast({ title: "Invitation resent successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to resend invitation", variant: "destructive" });
+    },
+  });
+
+  const cancelInvitationMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      return await apiRequest(`/api/invitations/${invitationId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invitations"] });
+      toast({ title: "Invitation cancelled" });
+    },
+    onError: () => {
+      toast({ title: "Failed to cancel invitation", variant: "destructive" });
+    },
   });
 
   const createSupplierMutation = useMutation({
@@ -277,11 +315,11 @@ export default function TeamManagement() {
       <div className="flex-1 overflow-auto p-3">
         {activeSection === "members" && (
           <>
-            {usersLoading ? (
+            {usersLoading || invitationsLoading ? (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 Loading...
               </div>
-            ) : filteredUsers.length === 0 ? (
+            ) : filteredUsers.length === 0 && pendingInvitations.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full">
                 <Users className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No team members found</h3>
@@ -290,14 +328,53 @@ export default function TeamManagement() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {filteredUsers.map((user: any) => (
-                  <TeamMemberCard
-                    key={user.id}
-                    user={user}
-                    onView={(id) => navigate(`/business-team/${id}`)}
-                  />
-                ))}
+              <div className="space-y-4">
+                {/* Pending Invitations Section */}
+                {pendingInvitations.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      Pending Invitations ({pendingInvitations.length})
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {pendingInvitations.map((invitation) => (
+                        <PendingInvitationCard
+                          key={invitation.id}
+                          invitation={invitation}
+                          onResend={() => resendInvitationMutation.mutate(invitation.id)}
+                          onCancel={() => {
+                            if (confirm("Are you sure you want to cancel this invitation?")) {
+                              cancelInvitationMutation.mutate(invitation.id);
+                            }
+                          }}
+                          isResending={resendInvitationMutation.isPending}
+                          isCancelling={cancelInvitationMutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Team Members Section */}
+                {filteredUsers.length > 0 && (
+                  <div className="space-y-2">
+                    {pendingInvitations.length > 0 && (
+                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" />
+                        Active Members ({filteredUsers.length})
+                      </h3>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {filteredUsers.map((user: any) => (
+                        <TeamMemberCard
+                          key={user.id}
+                          user={user}
+                          onView={(id) => navigate(`/business-team/${id}`)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -635,6 +712,120 @@ function SupplierCard({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PendingInvitationCard({ 
+  invitation,
+  onResend,
+  onCancel,
+  isResending,
+  isCancelling
+}: {
+  invitation: UserInvitation;
+  onResend: () => void;
+  onCancel: () => void;
+  isResending: boolean;
+  isCancelling: boolean;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  const getInitials = (firstName: string | null, lastName: string | null, email: string) => {
+    if (firstName && lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    }
+    return email.slice(0, 2).toUpperCase();
+  };
+
+  const getDisplayName = () => {
+    if (invitation.firstName && invitation.lastName) {
+      return `${invitation.firstName} ${invitation.lastName}`;
+    }
+    return invitation.email;
+  };
+
+  const isExpired = invitation.expiresAt && new Date(invitation.expiresAt) < new Date();
+
+  return (
+    <Card
+      className="h-20 border-2 transition-all duration-200 hover-elevate"
+      style={{
+        borderColor: isExpired ? '#ef444430' : '#f59e0b30',
+        backgroundColor: isExpired ? '#ef444408' : '#f59e0b08'
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      data-testid={`pending-invitation-card-${invitation.id}`}
+    >
+      <CardContent className="p-3 h-full flex items-center gap-3">
+        <Avatar className="h-12 w-12 shrink-0">
+          <AvatarFallback 
+            className="font-semibold"
+            style={{
+              backgroundColor: isExpired ? '#ef444415' : '#f59e0b15',
+              color: isExpired ? '#ef4444' : '#f59e0b'
+            }}
+          >
+            {getInitials(invitation.firstName, invitation.lastName, invitation.email)}
+          </AvatarFallback>
+        </Avatar>
+
+        <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5">
+          <div className="flex items-start gap-1.5">
+            <h3 className="text-sm leading-5 truncate flex-1 text-foreground font-medium" data-testid={`invitation-name-${invitation.id}`}>
+              {getDisplayName()}
+            </h3>
+            
+            <Badge 
+              className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+              style={{
+                backgroundColor: isExpired ? '#ef444415' : '#f59e0b15',
+                color: isExpired ? '#ef4444' : '#f59e0b',
+                borderColor: isExpired ? '#ef444430' : '#f59e0b30'
+              }}
+            >
+              {isExpired ? "Expired" : "Pending"}
+            </Badge>
+          </div>
+
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <Mail className="h-2.5 w-2.5 shrink-0" />
+            <span className="truncate flex-1">{invitation.email}</span>
+            
+            {invitation.expiresAt && (
+              <span className="shrink-0 text-muted-foreground">
+                {isExpired ? "Expired" : `Expires ${new Date(invitation.expiresAt).toLocaleDateString()}`}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className={`flex items-center gap-1 shrink-0 ${isHovered ? 'visible' : 'invisible'}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => { e.stopPropagation(); onResend(); }}
+            disabled={isResending}
+            title="Resend Invitation"
+            data-testid={`button-resend-${invitation.id}`}
+          >
+            <Send className="h-3 w-3 text-[#f59e0b]" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => { e.stopPropagation(); onCancel(); }}
+            disabled={isCancelling}
+            title="Cancel Invitation"
+            data-testid={`button-cancel-${invitation.id}`}
+          >
+            <XCircle className="h-3 w-3 text-destructive" />
+          </Button>
         </div>
       </CardContent>
     </Card>
