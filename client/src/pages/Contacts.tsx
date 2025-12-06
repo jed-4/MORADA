@@ -28,6 +28,7 @@ import {
   Users,
   X,
   Upload,
+  Zap,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
@@ -36,6 +37,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import AddContactDialog from "@/components/AddContactDialog";
 import EditContactDialog from "@/components/EditContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
+import QuickReviewPanel from "@/components/contacts/QuickReviewPanel";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -46,6 +48,7 @@ export default function Contacts() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isQuickReviewOpen, setIsQuickReviewOpen] = useState(false);
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -118,6 +121,10 @@ export default function Contacts() {
     };
   }, [contacts]);
 
+  const unreviewedCount = useMemo(() => {
+    return contacts.filter(c => !c.isArchived && c.reviewStatus !== "reviewed").length;
+  }, [contacts]);
+
   const getInitials = (contact: Contact) => {
     if (contact.firstName && contact.lastName) {
       return (contact.firstName[0] + contact.lastName[0]).toUpperCase();
@@ -177,6 +184,21 @@ export default function Contacts() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {unreviewedCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-xs border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+              onClick={() => setIsQuickReviewOpen(true)}
+              data-testid="button-quick-review"
+            >
+              <Zap className="w-3 h-3 mr-0.5" />
+              Quick Review
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px] bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                {unreviewedCount}
+              </Badge>
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -410,6 +432,13 @@ export default function Contacts() {
       <ImportContactsDialog
         open={isImportDialogOpen}
         onOpenChange={setIsImportDialogOpen}
+      />
+
+      <QuickReviewPanel
+        open={isQuickReviewOpen}
+        onClose={() => setIsQuickReviewOpen(false)}
+        contacts={contacts}
+        contactTypeFilter={selectedTab === "all" ? null : selectedTab as "team" | "supplier" | "client"}
       />
     </div>
   );
