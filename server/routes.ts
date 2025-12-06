@@ -8481,7 +8481,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const validationResult = insertCompanySettingsSchema.safeParse(req.body);
+      const partialSchema = insertCompanySettingsSchema.partial();
+      const validationResult = partialSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
