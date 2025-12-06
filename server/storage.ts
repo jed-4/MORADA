@@ -5595,8 +5595,21 @@ export class DbStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(schema.users).values(insertUser).returning();
-    return user;
+    try {
+      // CRITICAL SECURITY FIX: Hash password before storing (matches MemStorage)
+      const processedUser = { ...insertUser };
+      if (insertUser.password) {
+        console.log(`[DbStorage.createUser] Hashing password for user: ${insertUser.email || insertUser.username}`);
+        processedUser.password = await PasswordUtils.hashPassword(insertUser.password);
+      }
+      
+      const [user] = await db.insert(schema.users).values(processedUser).returning();
+      console.log(`[DbStorage.createUser] Created user: ${user.id} (${user.email})`);
+      return user;
+    } catch (error: any) {
+      console.error(`[DbStorage.createUser] Error creating user:`, error.message || error);
+      throw error;
+    }
   }
 
   // Required for Replit Auth - upsert user based on Replit ID or email
@@ -6388,12 +6401,20 @@ export class DbStorage implements IStorage {
   
   async acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined> {
     try {
+      console.log(`[DbStorage.acceptInvitation] Looking up invitation token: ${token?.substring(0, 8)}...`);
       const invitation = await this.getUserInvitationByToken(token);
       
       // SECURITY: Validate token, status, and expiry
-      if (!invitation || 
-          invitation.status !== "pending" || 
-          (invitation.expiresAt && invitation.expiresAt < new Date())) {
+      if (!invitation) {
+        console.log('[DbStorage.acceptInvitation] Invitation not found');
+        return undefined;
+      }
+      if (invitation.status !== "pending") {
+        console.log(`[DbStorage.acceptInvitation] Invalid status: ${invitation.status}`);
+        return undefined;
+      }
+      if (invitation.expiresAt && invitation.expiresAt < new Date()) {
+        console.log(`[DbStorage.acceptInvitation] Invitation expired: ${invitation.expiresAt}`);
         return undefined;
       }
 
@@ -6402,6 +6423,8 @@ export class DbStorage implements IStorage {
         throw new Error("Password is required to accept invitation");
       }
 
+      console.log(`[DbStorage.acceptInvitation] Creating user for email: ${invitation.email}`);
+      
       // Create the user account with secure password handling
       const newUser = await this.createUser({
         username: userData.username || invitation.email,
@@ -6420,6 +6443,8 @@ export class DbStorage implements IStorage {
         ...userData,
       });
 
+      console.log(`[DbStorage.acceptInvitation] User created: ${newUser.id}`);
+
       // SECURITY: Mark invitation as used (single-use tokens)
       const updatedInvitation = await this.updateUserInvitation(invitation.id, {
         status: "accepted",
@@ -6427,9 +6452,10 @@ export class DbStorage implements IStorage {
         createdUserId: newUser.id,
       });
 
+      console.log(`[DbStorage.acceptInvitation] Success! User ${newUser.id} joined company ${newUser.companyId}`);
       return { user: newUser, invitation: updatedInvitation! };
-    } catch (error) {
-      console.error("Database error in acceptInvitation:", error);
+    } catch (error: any) {
+      console.error("[DbStorage.acceptInvitation] Error:", error.message || error);
       throw error;
     }
   }

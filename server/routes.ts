@@ -4978,21 +4978,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/invitations/:token/accept", async (req, res) => {
     try {
+      console.log(`[AcceptInvitation] Processing token: ${req.params.token?.substring(0, 8)}...`);
       const { username, password, firstName, lastName } = req.body;
       
       if (!password) {
+        console.log('[AcceptInvitation] Failed: Password not provided');
         return res.status(400).json({ error: "Password is required" });
       }
 
       // Validate password strength
       const passwordValidation = PasswordUtils.validatePasswordStrength(password);
       if (!passwordValidation.isValid) {
+        console.log('[AcceptInvitation] Failed: Password validation failed', passwordValidation.errors);
         return res.status(400).json({ 
           error: "Password validation failed", 
           details: passwordValidation.errors 
         });
       }
 
+      console.log(`[AcceptInvitation] Creating user account for: ${username || 'email-based username'}`);
       const result = await storage.acceptInvitation(req.params.token, {
         username,
         password,
@@ -5001,6 +5005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (!result) {
+        console.log('[AcceptInvitation] Failed: Invalid or expired invitation');
         return res.status(400).json({ error: "Invalid or expired invitation" });
       }
 
@@ -5029,10 +5034,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
     } catch (error: any) {
+      console.error('[AcceptInvitation] Error:', error.message || error);
       if (error.message?.includes("Password validation failed")) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: "Password does not meet requirements" });
       }
-      res.status(500).json({ error: "Failed to accept invitation" });
+      // SECURITY: Return generic error to client, log details server-side only
+      res.status(500).json({ error: "Failed to accept invitation. Please try again or contact support." });
     }
   });
 
