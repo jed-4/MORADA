@@ -814,14 +814,14 @@ export default function Suppliers() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Default Cost Code</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <Select onValueChange={(val) => field.onChange(val === "none" ? null : val)} value={field.value || "none"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-default-cost-code">
                             <SelectValue placeholder="Select cost code" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">None</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
                           {costCodes.map((code) => (
                             <SelectItem key={code.id} value={code.id}>
                               {code.code} - {code.name}

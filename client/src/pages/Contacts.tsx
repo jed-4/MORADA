@@ -27,6 +27,7 @@ import {
   ArchiveRestore,
   Users,
   X,
+  Upload,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
@@ -34,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AddContactDialog from "@/components/AddContactDialog";
 import EditContactDialog from "@/components/EditContactDialog";
+import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -43,6 +45,7 @@ export default function Contacts() {
   const [selectedContactType, setSelectedContactType] = useState<"team" | "supplier" | "client" | undefined>();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -174,6 +177,16 @@ export default function Contacts() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs"
+            onClick={() => setIsImportDialogOpen(true)}
+            data-testid="button-import-contacts"
+          >
+            <Upload className="w-3 h-3 mr-0.5" />
+            Import
+          </Button>
           <Button
             size="sm"
             className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
@@ -393,6 +406,11 @@ export default function Contacts() {
           contact={contactToEdit}
         />
       )}
+
+      <ImportContactsDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+      />
     </div>
   );
 }
