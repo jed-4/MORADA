@@ -1261,6 +1261,9 @@ export const contactTypeEnum = pgEnum("contact_type", ["team", "supplier", "clie
 // Primary contact enum (for clients with spouse)
 export const primaryContactEnum = pgEnum("primary_contact", ["self", "spouse"]);
 
+// Contact review status enum (for Quick Review feature)
+export const contactReviewStatusEnum = pgEnum("contact_review_status", ["pending", "reviewed", "skipped"]);
+
 // Contacts (Team, Suppliers, Clients)
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1315,6 +1318,11 @@ export const contacts = pgTable("contacts", {
   portalEnabled: boolean("portal_enabled").notNull().default(false),
   
   isArchived: boolean("is_archived").notNull().default(false),
+  
+  // Quick Review feature - track review progress for new contacts
+  reviewStatus: contactReviewStatusEnum("review_status").default("pending"),
+  lastReviewedAt: timestamp("last_reviewed_at"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1335,6 +1343,8 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
   labels: z.array(z.string()).optional(),
   projectIds: z.array(z.string()).optional(),
   primaryContact: z.enum(["self", "spouse"]).optional(),
+  reviewStatus: z.enum(["pending", "reviewed", "skipped"]).optional(),
+  lastReviewedAt: z.coerce.date().optional(),
 });
 
 export type InsertContact = z.infer<typeof insertContactSchema>;
