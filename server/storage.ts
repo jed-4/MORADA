@@ -902,6 +902,22 @@ export interface IStorage {
   createFavoriteCostCode(costCode: InsertFavoriteCostCode): Promise<FavoriteCostCode>;
   deleteFavoriteCostCode(id: string): Promise<boolean>;
   reorderFavoriteCostCodes(updates: Array<{id: string, displayOrder: number}>): Promise<void>;
+
+  // Folder Templates CRUD
+  getFolderTemplates(companyId: string): Promise<import("@shared/schema").FolderTemplate[]>;
+  getFolderTemplate(id: string, companyId: string): Promise<import("@shared/schema").FolderTemplate | undefined>;
+  createFolderTemplate(template: import("@shared/schema").InsertFolderTemplate & { companyId: string }): Promise<import("@shared/schema").FolderTemplate>;
+  updateFolderTemplate(id: string, template: Partial<import("@shared/schema").InsertFolderTemplate>, companyId: string): Promise<import("@shared/schema").FolderTemplate | undefined>;
+  deleteFolderTemplate(id: string, companyId: string): Promise<boolean>;
+
+  // Drive File Attachments CRUD
+  getDriveFileAttachments(attachedToType: string, attachedToId: string, companyId: string): Promise<import("@shared/schema").DriveFileAttachment[]>;
+  createDriveFileAttachment(attachment: import("@shared/schema").InsertDriveFileAttachment & { companyId: string }): Promise<import("@shared/schema").DriveFileAttachment>;
+  deleteDriveFileAttachment(id: string, companyId: string): Promise<boolean>;
+
+  // Drive File Activity Logs
+  getDriveFileActivityLogs(companyId: string, projectId?: string, limit?: number): Promise<import("@shared/schema").DriveFileActivityLog[]>;
+  createDriveFileActivityLog(log: import("@shared/schema").InsertDriveFileActivityLog): Promise<import("@shared/schema").DriveFileActivityLog>;
 }
 
 export class MemStorage implements IStorage {
@@ -4862,6 +4878,42 @@ export class MemStorage implements IStorage {
     return allItems.sort((a, b) => 
       new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
     );
+  }
+
+  // Folder Templates - stub implementations for MemStorage
+  async getFolderTemplates(companyId: string): Promise<import("@shared/schema").FolderTemplate[]> {
+    return [];
+  }
+  async getFolderTemplate(id: string, companyId: string): Promise<import("@shared/schema").FolderTemplate | undefined> {
+    return undefined;
+  }
+  async createFolderTemplate(template: import("@shared/schema").InsertFolderTemplate & { companyId: string }): Promise<import("@shared/schema").FolderTemplate> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async updateFolderTemplate(id: string, template: Partial<import("@shared/schema").InsertFolderTemplate>, companyId: string): Promise<import("@shared/schema").FolderTemplate | undefined> {
+    return undefined;
+  }
+  async deleteFolderTemplate(id: string, companyId: string): Promise<boolean> {
+    return false;
+  }
+
+  // Drive File Attachments - stub implementations
+  async getDriveFileAttachments(attachedToType: string, attachedToId: string, companyId: string): Promise<import("@shared/schema").DriveFileAttachment[]> {
+    return [];
+  }
+  async createDriveFileAttachment(attachment: import("@shared/schema").InsertDriveFileAttachment & { companyId: string }): Promise<import("@shared/schema").DriveFileAttachment> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async deleteDriveFileAttachment(id: string, companyId: string): Promise<boolean> {
+    return false;
+  }
+
+  // Drive File Activity Logs - stub implementations
+  async getDriveFileActivityLogs(companyId: string, projectId?: string, limit?: number): Promise<import("@shared/schema").DriveFileActivityLog[]> {
+    return [];
+  }
+  async createDriveFileActivityLog(log: import("@shared/schema").InsertDriveFileActivityLog): Promise<import("@shared/schema").DriveFileActivityLog> {
+    throw new Error("Not implemented in MemStorage");
   }
 }
 
@@ -15271,6 +15323,147 @@ export class DbStorage implements IStorage {
       });
     } catch (error) {
       console.error("Database error in getActiveBusinessRemindersForTime:", error);
+      throw error;
+    }
+  }
+
+  // Folder Templates CRUD
+  async getFolderTemplates(companyId: string): Promise<schema.FolderTemplate[]> {
+    try {
+      return await db.select().from(schema.folderTemplates)
+        .where(eq(schema.folderTemplates.companyId, companyId))
+        .orderBy(desc(schema.folderTemplates.isDefault), schema.folderTemplates.name);
+    } catch (error) {
+      console.error("Database error in getFolderTemplates:", error);
+      throw error;
+    }
+  }
+
+  async getFolderTemplate(id: string, companyId: string): Promise<schema.FolderTemplate | undefined> {
+    try {
+      const result = await db.select().from(schema.folderTemplates)
+        .where(and(
+          eq(schema.folderTemplates.id, id),
+          eq(schema.folderTemplates.companyId, companyId)
+        ));
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getFolderTemplate:", error);
+      throw error;
+    }
+  }
+
+  async createFolderTemplate(template: schema.InsertFolderTemplate & { companyId: string }): Promise<schema.FolderTemplate> {
+    try {
+      const result = await db.insert(schema.folderTemplates).values(template).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createFolderTemplate:", error);
+      throw error;
+    }
+  }
+
+  async updateFolderTemplate(id: string, template: Partial<schema.InsertFolderTemplate>, companyId: string): Promise<schema.FolderTemplate | undefined> {
+    try {
+      const result = await db.update(schema.folderTemplates)
+        .set({ ...template, updatedAt: new Date() })
+        .where(and(
+          eq(schema.folderTemplates.id, id),
+          eq(schema.folderTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateFolderTemplate:", error);
+      throw error;
+    }
+  }
+
+  async deleteFolderTemplate(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.folderTemplates)
+        .where(and(
+          eq(schema.folderTemplates.id, id),
+          eq(schema.folderTemplates.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteFolderTemplate:", error);
+      throw error;
+    }
+  }
+
+  // Drive File Attachments CRUD
+  async getDriveFileAttachments(attachedToType: string, attachedToId: string, companyId: string): Promise<schema.DriveFileAttachment[]> {
+    try {
+      return await db.select().from(schema.driveFileAttachments)
+        .where(and(
+          eq(schema.driveFileAttachments.attachedToType, attachedToType),
+          eq(schema.driveFileAttachments.attachedToId, attachedToId),
+          eq(schema.driveFileAttachments.companyId, companyId)
+        ))
+        .orderBy(desc(schema.driveFileAttachments.createdAt));
+    } catch (error) {
+      console.error("Database error in getDriveFileAttachments:", error);
+      throw error;
+    }
+  }
+
+  async createDriveFileAttachment(attachment: schema.InsertDriveFileAttachment & { companyId: string }): Promise<schema.DriveFileAttachment> {
+    try {
+      const result = await db.insert(schema.driveFileAttachments).values(attachment).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createDriveFileAttachment:", error);
+      throw error;
+    }
+  }
+
+  async deleteDriveFileAttachment(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.driveFileAttachments)
+        .where(and(
+          eq(schema.driveFileAttachments.id, id),
+          eq(schema.driveFileAttachments.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteDriveFileAttachment:", error);
+      throw error;
+    }
+  }
+
+  // Drive File Activity Logs
+  async getDriveFileActivityLogs(companyId: string, projectId?: string, limit: number = 100): Promise<schema.DriveFileActivityLog[]> {
+    try {
+      let query = db.select().from(schema.driveFileActivityLogs)
+        .where(eq(schema.driveFileActivityLogs.companyId, companyId));
+      
+      if (projectId) {
+        query = db.select().from(schema.driveFileActivityLogs)
+          .where(and(
+            eq(schema.driveFileActivityLogs.companyId, companyId),
+            eq(schema.driveFileActivityLogs.projectId, projectId)
+          ));
+      }
+      
+      return await query
+        .orderBy(desc(schema.driveFileActivityLogs.createdAt))
+        .limit(limit);
+    } catch (error) {
+      console.error("Database error in getDriveFileActivityLogs:", error);
+      throw error;
+    }
+  }
+
+  async createDriveFileActivityLog(log: schema.InsertDriveFileActivityLog): Promise<schema.DriveFileActivityLog> {
+    try {
+      const result = await db.insert(schema.driveFileActivityLogs).values(log).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createDriveFileActivityLog:", error);
       throw error;
     }
   }

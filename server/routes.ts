@@ -4332,6 +4332,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
+  // FOLDER TEMPLATES ROUTES
+  // ============================================================
+  
+  // Get all folder templates for company
+  app.get("/api/folder-templates", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const templates = await storage.getFolderTemplates(req.user.companyId);
+      res.json(templates);
+    } catch (error: any) {
+      console.error("Error fetching folder templates:", error);
+      res.status(500).json({ error: "Failed to fetch folder templates" });
+    }
+  });
+
+  // Get single folder template
+  app.get("/api/folder-templates/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const template = await storage.getFolderTemplate(req.params.id, req.user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Folder template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error fetching folder template:", error);
+      res.status(500).json({ error: "Failed to fetch folder template" });
+    }
+  });
+
+  // Create folder template
+  app.post("/api/folder-templates", requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const template = await storage.createFolderTemplate({
+        ...req.body,
+        companyId: req.user.companyId,
+        createdBy: req.user.id,
+      });
+      res.status(201).json(template);
+    } catch (error: any) {
+      console.error("Error creating folder template:", error);
+      res.status(500).json({ error: "Failed to create folder template" });
+    }
+  });
+
+  // Update folder template
+  app.patch("/api/folder-templates/:id", requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const template = await storage.updateFolderTemplate(req.params.id, req.body, req.user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Folder template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error updating folder template:", error);
+      res.status(500).json({ error: "Failed to update folder template" });
+    }
+  });
+
+  // Delete folder template
+  app.delete("/api/folder-templates/:id", requireAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const deleted = await storage.deleteFolderTemplate(req.params.id, req.user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Folder template not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting folder template:", error);
+      res.status(500).json({ error: "Failed to delete folder template" });
+    }
+  });
+
+  // Apply folder template to create folders in Google Drive for a project
+  app.post("/api/folder-templates/:id/apply", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { projectId, parentFolderId } = req.body;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+
+      const template = await storage.getFolderTemplate(req.params.id, req.user.companyId);
+      if (!template) {
+        return res.status(404).json({ error: "Folder template not found" });
+      }
+
+      const { GoogleDriveService } = await import('./services/googleDriveService');
+      const driveService = new GoogleDriveService(storage);
+      
+      // Get the project to use its name for the root folder
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Create the folder structure recursively
+      const createFoldersRecursively = async (folders: any[], parentId: string | undefined): Promise<any[]> => {
+        const results = [];
+        for (const folder of folders) {
+          const created = await driveService.createFolder(req.user.companyId, folder.name, parentId);
+          const result: any = { name: folder.name, id: created.id };
+          if (folder.children && folder.children.length > 0) {
+            result.children = await createFoldersRecursively(folder.children, created.id);
+          }
+          results.push(result);
+
+          // Log the folder creation
+          await storage.createDriveFileActivityLog({
+            companyId: req.user.companyId,
+            projectId,
+            action: "create_folder",
+            driveFileId: created.id,
+            fileName: folder.name,
+            userId: req.user.id,
+            userName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || req.user.email,
+            details: { templateId: template.id, templateName: template.name },
+          });
+        }
+        return results;
+      };
+
+      const folderStructure = template.folderStructure as any[] || [];
+      const createdFolders = await createFoldersRecursively(folderStructure, parentFolderId);
+
+      res.json({ success: true, folders: createdFolders });
+    } catch (error: any) {
+      console.error("Error applying folder template:", error);
+      res.status(500).json({ error: "Failed to apply folder template", message: error.message });
+    }
+  });
+
+  // ============================================================
+  // DRIVE FILE ATTACHMENTS ROUTES
+  // ============================================================
+
+  // Get file attachments for an entity
+  app.get("/api/drive-attachments/:type/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const attachments = await storage.getDriveFileAttachments(
+        req.params.type,
+        req.params.id,
+        req.user.companyId
+      );
+      res.json(attachments);
+    } catch (error: any) {
+      console.error("Error fetching drive attachments:", error);
+      res.status(500).json({ error: "Failed to fetch attachments" });
+    }
+  });
+
+  // Create file attachment
+  app.post("/api/drive-attachments", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const attachment = await storage.createDriveFileAttachment({
+        ...req.body,
+        companyId: req.user.companyId,
+        attachedBy: req.user.id,
+      });
+      res.status(201).json(attachment);
+    } catch (error: any) {
+      console.error("Error creating drive attachment:", error);
+      res.status(500).json({ error: "Failed to create attachment" });
+    }
+  });
+
+  // Delete file attachment
+  app.delete("/api/drive-attachments/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const deleted = await storage.deleteDriveFileAttachment(req.params.id, req.user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting drive attachment:", error);
+      res.status(500).json({ error: "Failed to delete attachment" });
+    }
+  });
+
+  // ============================================================
+  // DRIVE FILE ACTIVITY LOGS ROUTES
+  // ============================================================
+
+  // Get activity logs for company or project
+  app.get("/api/drive-activity", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { projectId, limit } = req.query;
+      const logs = await storage.getDriveFileActivityLogs(
+        req.user.companyId,
+        projectId as string | undefined,
+        limit ? parseInt(limit as string) : undefined
+      );
+      res.json(logs);
+    } catch (error: any) {
+      console.error("Error fetching drive activity logs:", error);
+      res.status(500).json({ error: "Failed to fetch activity logs" });
+    }
+  });
+
+  // ============================================================
   // COMPANY ROUTES
   // ============================================================
   

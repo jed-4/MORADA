@@ -4593,3 +4593,37 @@ export const insertDriveFileActivityLogSchema = createInsertSchema(driveFileActi
 
 export type InsertDriveFileActivityLog = z.infer<typeof insertDriveFileActivityLogSchema>;
 export type DriveFileActivityLog = typeof driveFileActivityLogs.$inferSelect;
+
+// Folder Templates - define standard folder structures for projects
+export const folderTemplates = pgTable("folder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  name: text("name").notNull(), // Template name like "Standard Project", "Renovation", etc.
+  description: text("description"),
+  
+  // Structure as JSON array of folder objects with nesting
+  // e.g. [{ name: "Plans", children: [{ name: "Drawings" }, { name: "Specs" }] }]
+  folderStructure: json("folder_structure").notNull().default([]),
+  
+  // When to auto-apply this template
+  autoApply: boolean("auto_apply").default(false), // Auto-create when new project is made
+  projectPhase: text("project_phase"), // Apply when project reaches this phase
+  
+  isDefault: boolean("is_default").default(false), // Company default template
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("folder_templates_company_idx").on(table.companyId),
+}));
+
+export const insertFolderTemplateSchema = createInsertSchema(folderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFolderTemplate = z.infer<typeof insertFolderTemplateSchema>;
+export type FolderTemplate = typeof folderTemplates.$inferSelect;
