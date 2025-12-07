@@ -69,6 +69,7 @@ import {
   Check,
   FolderCheck,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { format } from "date-fns";
@@ -144,6 +145,7 @@ export default function ProjectFiles() {
   const [linkBrowseFiles, setLinkBrowseFiles] = useState<DriveFile[]>([]);
   const [isLoadingLinkFiles, setIsLoadingLinkFiles] = useState(false);
   const [selectedLinkFolder, setSelectedLinkFolder] = useState<DriveFile | null>(null);
+  const [driveConnectionError, setDriveConnectionError] = useState<string | null>(null);
 
   const { data: driveStatus, isLoading: statusLoading } = useQuery<DriveStatus>({
     queryKey: ["/api/google-drive/status"],
@@ -157,7 +159,7 @@ export default function ProjectFiles() {
     }
   }, [currentProject?.googleDriveFolderId, currentProject?.googleDriveFolderName, driveStatus?.connected]);
 
-  const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<DriveFile[]>({
+  const { data: files = [], isLoading: filesLoading, refetch: refetchFiles, error: filesError } = useQuery<DriveFile[]>({
     queryKey: ["/api/google-drive/files", currentFolderId],
     queryFn: async () => {
       const url = currentFolderId 
@@ -166,14 +168,19 @@ export default function ProjectFiles() {
       const response = await fetch(url, { credentials: "include" });
       if (!response.ok) {
         const error = await response.json();
-        if (error.error === "not_connected") {
-          return [];
+        if (error.error === "not_connected" || error.error === "session_expired") {
+          // Refetch status to update connection state
+          queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
+          const err = new Error(error.message || "Google Drive session expired");
+          (err as any).needsReconnect = true;
+          throw err;
         }
         throw new Error(error.message || "Failed to fetch files");
       }
       return response.json();
     },
     enabled: driveStatus?.connected === true,
+    retry: false,
   });
 
   const { data: sharedDrives = [] } = useQuery<{ id: string; name: string }[]>({
@@ -397,6 +404,7 @@ export default function ProjectFiles() {
   // Link folder dialog navigation
   const loadLinkFolderFiles = async (folderId: string | null) => {
     setIsLoadingLinkFiles(true);
+    setDriveConnectionError(null);
     try {
       const url = folderId 
         ? `/api/google-drive/files?folderId=${folderId}`
@@ -405,9 +413,19 @@ export default function ProjectFiles() {
       if (response.ok) {
         const data = await response.json();
         setLinkBrowseFiles(data.filter((f: DriveFile) => f.isFolder));
+      } else if (response.status === 401) {
+        const error = await response.json();
+        setDriveConnectionError(error.message || "Google Drive session expired. Please reconnect.");
+        setLinkBrowseFiles([]);
+      } else {
+        const error = await response.json();
+        setDriveConnectionError(error.message || "Failed to load folders");
+        setLinkBrowseFiles([]);
       }
     } catch (error) {
       console.error("Failed to load folders:", error);
+      setDriveConnectionError("Failed to connect to Google Drive. Please check your connection.");
+      setLinkBrowseFiles([]);
     } finally {
       setIsLoadingLinkFiles(false);
     }
@@ -694,6 +712,24 @@ export default function ProjectFiles() {
           <div className="flex items-center justify-center h-full">
             <Loader2 className="w-8 h-8 animate-spin text-[#bba7db]" />
           </div>
+        ) : filesError ? (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+            <AlertCircle className="w-16 h-16 mb-4 text-amber-500" />
+            <p className="text-sm mb-2">{(filesError as any).message || "Failed to load files"}</p>
+            <p className="text-xs mb-4 text-muted-foreground">Your Google Drive session may have expired</p>
+            <Button
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+            >
+              {connectMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Reconnect Google Drive
+            </Button>
+          </div>
         ) : sortedFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <FolderOpen className="w-16 h-16 mb-4" />
@@ -854,6 +890,23 @@ export default function ProjectFiles() {
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="w-6 h-6 animate-spin text-[#bba7db]" />
               </div>
+            ) : driveConnectionError ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+                <AlertCircle className="w-10 h-10 mb-2 text-amber-500" />
+                <p className="text-sm text-center mb-3">{driveConnectionError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowLinkFolderDialog(false);
+                    connectMutation.mutate();
+                  }}
+                  className="gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reconnect Google Drive
+                </Button>
+              </div>
             ) : linkBrowseFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
                 <FolderOpen className="w-10 h-10 mb-2" />
@@ -909,7 +962,7 @@ export default function ProjectFiles() {
             </Button>
             <Button
               onClick={confirmLinkFolder}
-              disabled={!selectedLinkFolder && linkFolderPath.length === 0 || linkFolderMutation.isPending}
+              disabled={driveConnectionError !== null || (!selectedLinkFolder && linkFolderPath.length === 0) || linkFolderMutation.isPending}
               className="bg-[#bba7db] hover:bg-[#bba7db]/90"
             >
               {linkFolderMutation.isPending ? (

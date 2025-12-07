@@ -24,6 +24,8 @@ import {
   Check,
   X,
   CloudOff,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 interface DriveFile {
@@ -76,7 +78,7 @@ export function DriveFilePicker({
 
   const startFolderId = project?.googleDriveFolderId || undefined;
 
-  const { data: files = [], isLoading } = useQuery<DriveFile[]>({
+  const { data: files = [], isLoading, error: filesError } = useQuery<DriveFile[]>({
     queryKey: ["/api/google-drive/files", currentFolderId || startFolderId || "root"],
     queryFn: async () => {
       const folderId = currentFolderId || startFolderId;
@@ -84,10 +86,19 @@ export function DriveFilePicker({
         ? `/api/google-drive/files?folderId=${folderId}`
         : "/api/google-drive/files";
       const response = await fetch(url, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to load files");
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        if (response.status === 401 || error.error === "session_expired") {
+          const err = new Error(error.message || "Google Drive session expired. Please reconnect in Company Settings.");
+          (err as any).needsReconnect = true;
+          throw err;
+        }
+        throw new Error(error.message || "Failed to load files");
+      }
       return response.json();
     },
     enabled: open && driveStatus?.connected === true,
+    retry: false,
   });
 
   const navigateToFolder = (folderId: string, folderName: string) => {
@@ -223,6 +234,24 @@ export function DriveFilePicker({
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : filesError ? (
+            <div className="flex flex-col items-center justify-center h-full text-center p-4">
+              <AlertCircle className="h-12 w-12 text-amber-500 mb-4" />
+              <p className="text-sm text-muted-foreground mb-4">
+                {(filesError as any).message || "Failed to load files from Google Drive"}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                Please reconnect Google Drive in Company Settings to continue.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                className="gap-2"
+              >
+                Close
+              </Button>
             </div>
           ) : files.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">

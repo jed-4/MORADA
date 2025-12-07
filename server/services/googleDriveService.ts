@@ -262,9 +262,17 @@ export class GoogleDriveService {
           
           oauth2Client.setCredentials(credentials);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('[Drive] Error refreshing token:', error);
-        throw new Error('Failed to refresh Google Drive token. Please reconnect.');
+        // Clear invalid tokens so status shows as disconnected
+        await this.storage.updateCompany(companyId, {
+          googleDriveAccessToken: null,
+          googleDriveRefreshToken: null,
+          googleDriveTokenExpiry: null,
+        });
+        const refreshError = new Error('Google Drive session expired. Please reconnect in Company Settings.');
+        (refreshError as any).code = 'TOKEN_REFRESH_FAILED';
+        throw refreshError;
       }
     }
     
@@ -325,32 +333,47 @@ export class GoogleDriveService {
   }
   
   async listFiles(companyId: string, folderId?: string): Promise<DriveFile[]> {
-    const drive = await this.getDriveClient(companyId);
-    const company = await this.storage.getCompany(companyId);
-    
-    const parentId = folderId || company?.googleDriveRootFolderId || 'root';
-    
-    const response = await drive.files.list({
-      q: `'${parentId}' in parents and trashed = false`,
-      fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, parents, webViewLink, webContentLink, thumbnailLink, iconLink)',
-      orderBy: 'folder,name',
-      pageSize: 100,
-    });
-    
-    return (response.data.files || []).map((file: any) => ({
-      id: file.id,
-      name: file.name,
-      mimeType: file.mimeType,
-      size: file.size,
-      createdTime: file.createdTime,
-      modifiedTime: file.modifiedTime,
-      parents: file.parents,
-      webViewLink: file.webViewLink,
-      webContentLink: file.webContentLink,
-      thumbnailLink: file.thumbnailLink,
-      iconLink: file.iconLink,
-      isFolder: file.mimeType === 'application/vnd.google-apps.folder',
-    }));
+    try {
+      const drive = await this.getDriveClient(companyId);
+      const company = await this.storage.getCompany(companyId);
+      
+      const parentId = folderId || company?.googleDriveRootFolderId || 'root';
+      
+      const response = await drive.files.list({
+        q: `'${parentId}' in parents and trashed = false`,
+        fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, parents, webViewLink, webContentLink, thumbnailLink, iconLink)',
+        orderBy: 'folder,name',
+        pageSize: 100,
+      });
+      
+      return (response.data.files || []).map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+        createdTime: file.createdTime,
+        modifiedTime: file.modifiedTime,
+        parents: file.parents,
+        webViewLink: file.webViewLink,
+        webContentLink: file.webContentLink,
+        thumbnailLink: file.thumbnailLink,
+        iconLink: file.iconLink,
+        isFolder: file.mimeType === 'application/vnd.google-apps.folder',
+      }));
+    } catch (error: any) {
+      console.error('[Drive] Error listing files:', error.message);
+      // Re-throw with code preserved for proper error handling
+      if (error.code === 'TOKEN_REFRESH_FAILED') {
+        throw error;
+      }
+      // Handle Google API errors
+      if (error.code === 401 || error.message?.includes('invalid_grant')) {
+        const authError = new Error('Google Drive session expired. Please reconnect in Company Settings.');
+        (authError as any).code = 'TOKEN_REFRESH_FAILED';
+        throw authError;
+      }
+      throw error;
+    }
   }
   
   async listSharedDrives(companyId: string): Promise<{ id: string; name: string }[]> {

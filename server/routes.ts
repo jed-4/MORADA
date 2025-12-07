@@ -4374,9 +4374,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const files = await driveService.listFiles(req.user.companyId, folderId as string | undefined);
       res.json(files);
     } catch (error: any) {
-      console.error("Error listing files:", error);
-      if (error.message?.includes('not connected')) {
-        return res.status(401).json({ error: 'not_connected', message: error.message });
+      console.error("Error listing files:", error.message);
+      if (error.message?.includes('not connected') || error.code === 'TOKEN_REFRESH_FAILED') {
+        return res.status(401).json({ 
+          error: 'session_expired', 
+          message: error.message || 'Google Drive session expired. Please reconnect in Company Settings.',
+          needsReconnect: true
+        });
       }
       res.status(500).json({ message: "Failed to list files", error: error.message });
     }
