@@ -1586,6 +1586,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error creating project channel:", channelError);
       }
       
+      // Auto-create Google Drive folder structure from default template
+      try {
+        const company = await storage.getCompany(user.companyId);
+        
+        // Check if Google Drive is connected
+        if (company?.googleDriveAccessToken) {
+          const { GoogleDriveService } = await import('./services/googleDriveService');
+          const driveService = new GoogleDriveService(storage);
+          
+          // Check if there's a default folder template
+          const templates = await storage.getFolderTemplates(user.companyId);
+          const defaultTemplate = templates.find(t => t.isDefault);
+          
+          // Determine parent folder (company root or Drive root)
+          const parentFolderId = company.googleDriveRootFolderId || undefined;
+          
+          // Create main project folder
+          const projectFolder = await driveService.createFolder(
+            user.companyId,
+            project.name,
+            parentFolderId
+          );
+          
+          // Link the folder to the project
+          await storage.updateProject(project.id, {
+            googleDriveFolderId: projectFolder.id,
+            googleDriveFolderName: project.name,
+          });
+          
+          // Log the folder creation
+          await storage.createDriveFileActivityLog({
+            companyId: user.companyId,
+            projectId: project.id,
+            action: "create_folder",
+            driveFileId: projectFolder.id,
+            fileName: project.name,
+            userId: userId,
+            userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+            details: { autoCreated: true, isProjectRoot: true },
+          });
+          
+          // If there's a default template, create subfolders
+          if (defaultTemplate && defaultTemplate.folderStructure) {
+            const folderStructure = defaultTemplate.folderStructure as any[];
+            
+            const createFoldersRecursively = async (folders: any[], parentId: string): Promise<void> => {
+              for (const folder of folders) {
+                const created = await driveService.createFolder(user.companyId, folder.name, parentId);
+                
+                await storage.createDriveFileActivityLog({
+                  companyId: user.companyId,
+                  projectId: project.id,
+                  action: "create_folder",
+                  driveFileId: created.id,
+                  fileName: folder.name,
+                  userId: userId,
+                  userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+                  details: { templateId: defaultTemplate.id, templateName: defaultTemplate.name },
+                });
+                
+                if (folder.children && folder.children.length > 0) {
+                  await createFoldersRecursively(folder.children, created.id);
+                }
+              }
+            };
+            
+            await createFoldersRecursively(folderStructure, projectFolder.id);
+            console.log(`Auto-created folder structure from template "${defaultTemplate.name}" for project ${project.name}`);
+          } else {
+            console.log(`Auto-created Drive folder for project ${project.name}`);
+          }
+        }
+      } catch (driveError) {
+        // Log error but don't fail project creation
+        console.error("Error creating project Drive folder:", driveError);
+      }
+      
       res.status(201).json(project);
     } catch (error) {
       console.error("Error creating project:", error);
@@ -1722,6 +1799,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ];
       
       const updatedProject = await storage.updateProject(req.params.id, updateData);
+      
+      // Create phase-specific folder in Google Drive if connected
+      try {
+        const company = await storage.getCompany(user.companyId);
+        
+        if (company?.googleDriveAccessToken && project.googleDriveFolderId) {
+          const { GoogleDriveService } = await import('./services/googleDriveService');
+          const driveService = new GoogleDriveService(storage);
+          
+          // Define phase-specific folder names
+          const phaseFolderNames: Record<string, string> = {
+            lead: "01 - Lead",
+            pre_construction: "02 - Pre-Construction",
+            construction: "03 - Construction",
+          };
+          
+          const folderName = phaseFolderNames[toPhase];
+          if (folderName) {
+            // Check if folder already exists by listing project folder contents
+            const existingFiles = await driveService.listFiles(user.companyId, project.googleDriveFolderId);
+            const folderExists = existingFiles.some(
+              f => f.name === folderName && f.mimeType === 'application/vnd.google-apps.folder'
+            );
+            
+            if (!folderExists) {
+              const phaseFolder = await driveService.createFolder(
+                user.companyId,
+                folderName,
+                project.googleDriveFolderId
+              );
+              
+              await storage.createDriveFileActivityLog({
+                companyId: user.companyId,
+                projectId: project.id,
+                action: "create_folder",
+                driveFileId: phaseFolder.id,
+                fileName: folderName,
+                userId: user.id,
+                userName: user.name || user.email,
+                details: { phase: toPhase, autoCreated: true, phaseTransition: true },
+              });
+              
+              console.log(`Created phase folder "${folderName}" for project ${project.name}`);
+            }
+          }
+        }
+      } catch (driveError) {
+        // Log error but don't fail phase transition
+        console.error("Error creating phase folder:", driveError);
+      }
       
       res.json(updatedProject);
     } catch (error: any) {

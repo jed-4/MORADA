@@ -44,8 +44,12 @@ import {
   GripVertical,
   Pencil,
   Bell,
+  FileText,
+  ExternalLink,
+  Trash2,
 } from "lucide-react";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
+import { DriveFilePicker } from "@/components/DriveFilePicker";
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -81,6 +85,7 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   const [subtaskInput, setSubtaskInput] = useState("");
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
+  const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -99,6 +104,59 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     queryKey: ["/api/tasks", task?.id, "subtasks"],
     enabled: !!task?.id,
   });
+
+  // Fetch Drive file attachments
+  const { data: attachments = [] } = useQuery<any[]>({
+    queryKey: ["/api/drive-attachments", "task", task?.id],
+    queryFn: async () => {
+      if (!task?.id) return [];
+      const response = await fetch(`/api/drive-attachments/task/${task.id}`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!task?.id,
+  });
+
+  // Mutation to add attachment
+  const addAttachmentMutation = useMutation({
+    mutationFn: async (file: { id: string; name: string; mimeType: string; webViewLink?: string }) => {
+      return await apiRequest("/api/drive-attachments", "POST", {
+        driveFileId: file.id,
+        fileName: file.name,
+        mimeType: file.mimeType,
+        webViewLink: file.webViewLink,
+        attachedToType: "task",
+        attachedToId: task?.id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drive-attachments", "task", task?.id] });
+      toast({ title: "File attached successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to attach file", variant: "destructive" });
+    },
+  });
+
+  // Mutation to remove attachment
+  const removeAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: string) => {
+      return await apiRequest(`/api/drive-attachments/${attachmentId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drive-attachments", "task", task?.id] });
+      toast({ title: "Attachment removed" });
+    },
+    onError: () => {
+      toast({ title: "Failed to remove attachment", variant: "destructive" });
+    },
+  });
+
+  const handleFilesSelected = (files: any[]) => {
+    files.forEach(file => {
+      addAttachmentMutation.mutate(file);
+    });
+  };
 
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = statusCategory?.options || [];
@@ -332,6 +390,8 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
               variant="ghost"
               size="icon"
               className="h-8 w-8 hover:bg-gray-100 text-gray-600"
+              onClick={() => task && setShowDriveFilePicker(true)}
+              disabled={!task}
               data-testid="button-attach-file"
             >
               <Paperclip className="h-4 w-4" />
@@ -414,6 +474,61 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                   <Plus className="h-3 w-3 mr-2" />
                   Add subtask
                 </Button>
+              )}
+
+              {/* Attachments Section */}
+              {task && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">Attachments</h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-gray-600 hover:text-gray-900"
+                      onClick={() => setShowDriveFilePicker(true)}
+                      data-testid="button-add-attachment"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                  {attachments.length === 0 ? (
+                    <p className="text-xs text-gray-500 italic">No files attached</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {attachments.map((attachment: any) => (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center gap-2 p-2 rounded hover:bg-background group"
+                          data-testid={`attachment-${attachment.id}`}
+                        >
+                          <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                          <span className="text-sm text-gray-900 flex-1 truncate">{attachment.fileName}</span>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                            {attachment.webViewLink && (
+                              <a
+                                href={attachment.webViewLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 hover:bg-gray-200 rounded"
+                                data-testid={`button-open-attachment-${attachment.id}`}
+                              >
+                                <ExternalLink className="h-3 w-3 text-gray-600" />
+                              </a>
+                            )}
+                            <button
+                              onClick={() => removeAttachmentMutation.mutate(attachment.id)}
+                              className="p-1 hover:bg-red-100 rounded"
+                              data-testid={`button-remove-attachment-${attachment.id}`}
+                            >
+                              <Trash2 className="h-3 w-3 text-red-500" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -689,6 +804,16 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         linkedItemId={task?.id}
         linkedItemTitle={task?.title}
         projectId={projectId || task?.projectId}
+      />
+
+      {/* Drive File Picker */}
+      <DriveFilePicker
+        open={showDriveFilePicker}
+        onOpenChange={setShowDriveFilePicker}
+        onSelect={handleFilesSelected}
+        projectId={projectId || task?.projectId}
+        multiple={true}
+        title="Attach File from Google Drive"
       />
     </Dialog>
   );
