@@ -142,6 +142,7 @@ function Router() {
       <Route path="/business/projects" component={Business} />
       <Route path="/business/tasks" component={Business} />
       <Route path="/business/calendar" component={Business} />
+      <Route path="/business/files" component={Business} />
       <Route path="/business/expenses" component={Business} />
       <Route path="/business/timesheets" component={Business} />
       <Route path="/business/minutes" component={Business} />

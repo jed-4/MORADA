@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
-import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, Settings as SettingsIcon, FileText } from "lucide-react";
+import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, Settings as SettingsIcon, FileText, HardDrive } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
 import BusinessProjects from "./BusinessProjects";
 import BusinessTasks from "./BusinessTasks";
 import BusinessCalendar from "./BusinessCalendar";
+import BusinessFiles from "./BusinessFiles";
 import Timesheets from "./Timesheets";
 import Minutes from "./Minutes";
 import TeamManagement from "./TeamManagement";
@@ -18,6 +19,7 @@ const BUSINESS_TABS = [
   { id: "projects", label: "Projects", icon: FolderOpen, path: "/business/projects" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/business/tasks" },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "/business/calendar" },
+  { id: "files", label: "Files", icon: HardDrive, path: "/business/files" },
   { id: "expenses", label: "Expenses", icon: CreditCard, path: "/business/expenses" },
   { id: "timesheets", label: "Timesheets", icon: Timer, path: "/business/timesheets" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "/business/messages" },
@@ -53,6 +55,8 @@ export default function Business() {
         return <BusinessTasks />;
       case "calendar":
         return <BusinessCalendar />;
+      case "files":
+        return <BusinessFiles />;
       case "expenses":
         return <ComingSoonPage section="business-expenses" />;
       case "timesheets":
