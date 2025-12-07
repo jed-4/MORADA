@@ -7,7 +7,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import Header from "@/components/Header";
-import { ResizableSidebar } from "@/components/ResizableSidebar";
+import { SidebarNav } from "@/components/SidebarNav";
 import Dashboard from "@/pages/Dashboard";
 import Tasks from "@/pages/Tasks";
 import Calendar from "@/pages/Calendar";
@@ -299,15 +299,6 @@ function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const [location, navigate] = useLocation();
   
-  // Sidebar width state - must be declared before any conditional returns
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem('sidebar-width');
-    return saved || "20rem";
-  });
-
-  useEffect(() => {
-    localStorage.setItem('sidebar-width', sidebarWidth);
-  }, [sidebarWidth]);
 
   // Show loading while checking auth
   if (isLoading) {
@@ -365,8 +356,8 @@ function AuthWrapper() {
 
   // Show main app if authenticated and has company
   const style = {
-    "--sidebar-width": sidebarWidth,
-    "--sidebar-width-icon": "4rem",
+    "--sidebar-width": "3.5rem",
+    "--sidebar-width-icon": "3.5rem",
   };
 
   return (
@@ -397,10 +388,7 @@ function AuthWrapper() {
               
               {/* Sidebar and main content below header */}
               <div className="flex flex-1 overflow-hidden">
-                <ResizableSidebar 
-                  onWidthChange={setSidebarWidth}
-                  initialWidth={sidebarWidth}
-                />
+                <SidebarNav />
                 <main className="flex-1 overflow-auto">
                   <Router />
                 </main>

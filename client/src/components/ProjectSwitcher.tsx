@@ -26,7 +26,11 @@ import { Project } from "@shared/schema";
 const RECENT_PROJECTS_KEY = "recentProjectIds";
 const MAX_RECENT = 5;
 
-export function ProjectSwitcher() {
+interface ProjectSwitcherProps {
+  compact?: boolean;
+}
+
+export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const [location, navigate] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
   const [isOpen, setIsOpen] = useState(false);
@@ -110,7 +114,9 @@ export function ProjectSwitcher() {
         <PopoverTrigger asChild>
           <Button 
             variant="ghost" 
-            className="w-full justify-between h-auto py-2 px-3 hover-elevate"
+            className={`w-full justify-between h-auto hover-elevate ${
+              compact ? "py-1.5 px-2" : "py-2 px-3"
+            }`}
             data-testid="button-project-switcher"
             disabled={isLoading}
           >
@@ -120,21 +126,25 @@ export function ProjectSwitcher() {
                   <ProjectIcon 
                     icon={currentProject.icon} 
                     color={currentProject.color} 
-                    className="w-5 h-5 flex-shrink-0" 
+                    className={compact ? "w-4 h-4 flex-shrink-0" : "w-5 h-5 flex-shrink-0"} 
                   />
                   <div className="flex flex-col items-start min-w-0">
-                    <span className="font-semibold text-sm truncate max-w-[140px]">
+                    <span className={`font-semibold truncate ${
+                      compact ? "text-xs max-w-[120px]" : "text-sm max-w-[140px]"
+                    }`}>
                       {currentProject.name}
                     </span>
-                    {currentProject.isBusiness && (
+                    {!compact && currentProject.isBusiness && (
                       <span className="text-xs text-muted-foreground">Business</span>
                     )}
                   </div>
                 </>
               ) : (
                 <>
-                  <FolderOpen className="w-5 h-5 flex-shrink-0 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
+                  <FolderOpen className={`flex-shrink-0 text-muted-foreground ${
+                    compact ? "w-4 h-4" : "w-5 h-5"
+                  }`} />
+                  <span className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}>
                     {isLoading ? "Loading..." : "Select Project"}
                   </span>
                 </>
