@@ -980,7 +980,7 @@ export class MemStorage implements IStorage {
     // Initialize built-in permissions based on Buildern screenshots
     const builtInPermissions: Array<Omit<Permission, 'id' | 'createdAt'>> = [
       // Files category
-      { key: "files.view", name: "Files", description: "View files", category: "files", actions: ["view"], isBuiltIn: true },
+      { key: "files.manage", name: "Files", description: "Manage files and folders", category: "files", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       
       // Admin category
       { key: "admin.users", name: "User (team)", description: "Manage team users", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -4903,7 +4903,7 @@ export class DbStorage implements IStorage {
     
     const builtInPermissions = [
       // Files category
-      { key: "files.view", name: "Files", description: "View files", category: "files", actions: ["view"], isBuiltIn: true },
+      { key: "files.manage", name: "Files", description: "Manage files and folders", category: "files", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       
       // Admin category
       { key: "admin.users", name: "User (team)", description: "Manage team users", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },

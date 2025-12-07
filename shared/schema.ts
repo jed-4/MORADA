@@ -563,6 +563,11 @@ export const projects = pgTable("projects", {
   isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
+  
+  // Google Drive integration
+  googleDriveFolderId: text("google_drive_folder_id"), // Linked Google Drive folder ID
+  googleDriveFolderName: text("google_drive_folder_name"), // Display name of linked folder
+  
   companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
   ownerId: varchar("owner_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -4494,3 +4499,97 @@ export const insertReminderNotificationSchema = createInsertSchema(reminderNotif
 
 export type InsertReminderNotification = z.infer<typeof insertReminderNotificationSchema>;
 export type ReminderNotification = typeof reminderNotifications.$inferSelect;
+
+// Google Drive Folder Templates
+export const driveFolderTemplates = pgTable("drive_folder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // Template name e.g., "New Project Folders"
+  description: text("description"),
+  folders: json("folders").notNull().default([]), // Array of { name, subfolders: [] } for nested structure
+  isDefault: boolean("is_default").notNull().default(false), // Auto-apply to new projects
+  applyOnPhase: text("apply_on_phase"), // Optional: apply when project enters this phase
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDriveFolderTemplateSchema = createInsertSchema(driveFolderTemplates).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDriveFolderTemplate = z.infer<typeof insertDriveFolderTemplateSchema>;
+export type DriveFolderTemplate = typeof driveFolderTemplates.$inferSelect;
+
+// Drive File Attachments (linking Drive files to tasks, notes, etc.)
+export const driveFileAttachments = pgTable("drive_file_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Google Drive file info
+  driveFileId: text("drive_file_id").notNull(), // Google Drive file ID
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type"),
+  webViewLink: text("web_view_link"), // Link to view in Google
+  thumbnailLink: text("thumbnail_link"),
+  fileSize: integer("file_size"), // Size in bytes
+  
+  // What this file is attached to
+  attachedToType: text("attached_to_type").notNull(), // "task" | "note" | "project" | "contact" | "bill" | "siteDiary"
+  attachedToId: varchar("attached_to_id").notNull(),
+  
+  // Metadata
+  attachedBy: varchar("attached_by").references(() => users.id),
+  attachedByName: text("attached_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  attachedToIdx: index("drive_file_attachments_attached_to_idx").on(table.attachedToType, table.attachedToId),
+  driveFileIdx: index("drive_file_attachments_drive_file_idx").on(table.driveFileId),
+}));
+
+export const insertDriveFileAttachmentSchema = createInsertSchema(driveFileAttachments).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+});
+
+export type InsertDriveFileAttachment = z.infer<typeof insertDriveFileAttachmentSchema>;
+export type DriveFileAttachment = typeof driveFileAttachments.$inferSelect;
+
+// Drive File Activity Log (track file operations)
+export const driveFileActivityLogs = pgTable("drive_file_activity_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  
+  // Action details
+  action: text("action").notNull(), // "upload" | "download" | "delete" | "create_folder" | "move" | "rename"
+  driveFileId: text("drive_file_id"), // Google Drive file ID (if applicable)
+  fileName: text("file_name"),
+  folderPath: text("folder_path"), // Human-readable path
+  
+  // Who did it
+  userId: varchar("user_id").references(() => users.id),
+  userName: text("user_name"),
+  
+  // Additional context
+  details: json("details").default({}), // Extra info like destination folder, old name, etc.
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("drive_file_activity_logs_company_idx").on(table.companyId),
+  projectIdx: index("drive_file_activity_logs_project_idx").on(table.projectId),
+  userIdx: index("drive_file_activity_logs_user_idx").on(table.userId),
+  createdAtIdx: index("drive_file_activity_logs_created_at_idx").on(table.createdAt),
+}));
+
+export const insertDriveFileActivityLogSchema = createInsertSchema(driveFileActivityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDriveFileActivityLog = z.infer<typeof insertDriveFileActivityLogSchema>;
+export type DriveFileActivityLog = typeof driveFileActivityLogs.$inferSelect;
