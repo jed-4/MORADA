@@ -154,7 +154,7 @@ export default function TeamManagement() {
   });
 
   const users = allUsers
-    .filter((user: any) => user.firstName && user.lastName)
+    .filter((user: any) => user.firstName || user.lastName || user.email)
     .sort((a: any, b: any) => {
       const roleAIndex = roles.findIndex((r: any) => r.id === a.roleId);
       const roleBIndex = roles.findIndex((r: any) => r.id === b.roleId);
@@ -524,8 +524,23 @@ function TeamMemberCard({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+  const getInitials = (firstName?: string | null, lastName?: string | null, email?: string | null) => {
+    if (firstName && lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    }
+    if (firstName) return firstName.charAt(0).toUpperCase();
+    if (lastName) return lastName.charAt(0).toUpperCase();
+    if (email) return email.charAt(0).toUpperCase();
+    return "?";
+  };
+
+  const getDisplayName = (user: any) => {
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    if (user.firstName) return user.firstName;
+    if (user.lastName) return user.lastName;
+    return user.email || "Unknown";
   };
 
   const getStatusColor = (user: any) => {
@@ -547,14 +562,14 @@ function TeamMemberCard({
       <CardContent className="p-3 h-full flex items-center gap-3">
         <Avatar className="h-12 w-12 shrink-0">
           <AvatarFallback className="bg-[#bba7db]/10 text-[#bba7db] font-semibold">
-            {getInitials(user.firstName, user.lastName)}
+            {getInitials(user.firstName, user.lastName, user.email)}
           </AvatarFallback>
         </Avatar>
 
         <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5">
           <div className="flex items-start gap-1.5">
             <h3 className="text-sm leading-5 truncate flex-1 text-foreground font-medium" data-testid={`team-member-name-${user.id}`}>
-              {user.firstName} {user.lastName}
+              {getDisplayName(user)}
             </h3>
             
             <Badge 

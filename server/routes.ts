@@ -5128,8 +5128,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cancel/delete invitation
-  app.delete("/api/invitations/:id", requireTeamMember, requirePermission("admin.users", "delete"), async (req, res) => {
+  // Cancel invitation (uses "edit" permission since it just changes status, not actual deletion)
+  app.delete("/api/invitations/:id", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       const currentUser = req.user as any;
       if (!currentUser?.companyId) {
