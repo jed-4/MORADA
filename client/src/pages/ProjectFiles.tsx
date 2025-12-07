@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
@@ -8,6 +8,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -61,9 +62,17 @@ import {
   Loader2,
   HardDrive,
   FolderOpen,
+  Eye,
+  X,
+  ZoomIn,
+  ZoomOut,
+  Check,
+  FolderCheck,
+  ArrowLeft,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { format } from "date-fns";
+import { SiGoogledrive } from "react-icons/si";
 
 interface FilesParams {
   projectId: string;
@@ -99,8 +108,15 @@ interface FolderPath {
   name: string;
 }
 
+interface Project {
+  id: string;
+  name: string;
+  googleDriveFolderId?: string | null;
+  googleDriveFolderName?: string | null;
+}
+
 export default function ProjectFiles() {
-  const { currentProject } = useProject();
+  const { currentProject, refetchProject } = useProject();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Files" });
   const params = useParams<FilesParams>();
@@ -113,14 +129,33 @@ export default function ProjectFiles() {
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showLinkFolderDialog, setShowLinkFolderDialog] = useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
+  const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(100);
+  
+  // Link folder dialog state
+  const [linkFolderId, setLinkFolderId] = useState<string | null>(null);
+  const [linkFolderPath, setLinkFolderPath] = useState<FolderPath[]>([]);
+  const [linkBrowseFiles, setLinkBrowseFiles] = useState<DriveFile[]>([]);
+  const [isLoadingLinkFiles, setIsLoadingLinkFiles] = useState(false);
+  const [selectedLinkFolder, setSelectedLinkFolder] = useState<DriveFile | null>(null);
 
   const { data: driveStatus, isLoading: statusLoading } = useQuery<DriveStatus>({
     queryKey: ["/api/google-drive/status"],
   });
+
+  // Navigate to project's linked folder on mount
+  useEffect(() => {
+    if (currentProject?.googleDriveFolderId && currentProject?.googleDriveFolderName && driveStatus?.connected) {
+      setCurrentFolderId(currentProject.googleDriveFolderId);
+      setFolderPath([{ id: currentProject.googleDriveFolderId, name: currentProject.googleDriveFolderName }]);
+    }
+  }, [currentProject?.googleDriveFolderId, currentProject?.googleDriveFolderName, driveStatus?.connected]);
 
   const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<DriveFile[]>({
     queryKey: ["/api/google-drive/files", currentFolderId],
@@ -195,7 +230,7 @@ export default function ProjectFiles() {
       setNewFolderName("");
       toast({
         title: "Folder created",
-        description: "New folder has been created.",
+        description: "New folder has been created in Google Drive.",
       });
     },
     onError: (error: Error) => {
@@ -217,12 +252,50 @@ export default function ProjectFiles() {
       setSelectedFile(null);
       toast({
         title: "Deleted",
-        description: "File has been deleted.",
+        description: "File has been deleted from Google Drive.",
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Failed to delete",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const linkFolderMutation = useMutation({
+    mutationFn: async (folder: { id: string; name: string } | null) => {
+      if (!projectId) throw new Error("No project selected");
+      return apiRequest(`/api/projects/${projectId}`, "PATCH", {
+        googleDriveFolderId: folder?.id || null,
+        googleDriveFolderName: folder?.name || null,
+      });
+    },
+    onSuccess: (_, folder) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
+      if (refetchProject) refetchProject();
+      setShowLinkFolderDialog(false);
+      
+      if (folder) {
+        setCurrentFolderId(folder.id);
+        setFolderPath([{ id: folder.id, name: folder.name }]);
+        toast({
+          title: "Folder linked",
+          description: `Project now linked to "${folder.name}" in Google Drive.`,
+        });
+      } else {
+        setCurrentFolderId(null);
+        setFolderPath([]);
+        toast({
+          title: "Folder unlinked",
+          description: "Project folder link removed.",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to link folder",
         description: error.message,
         variant: "destructive",
       });
@@ -256,7 +329,7 @@ export default function ProjectFiles() {
       setUploadFile(null);
       toast({
         title: "Uploaded",
-        description: `${uploadFile.name} has been uploaded.`,
+        description: `${uploadFile.name} has been uploaded to Google Drive.`,
       });
     } catch (error: any) {
       toast({
@@ -273,6 +346,32 @@ export default function ProjectFiles() {
     window.open(`/api/google-drive/download/${file.id}`, "_blank");
   };
 
+  const handleFileClick = (file: DriveFile) => {
+    if (file.isFolder) {
+      navigateToFolder(file.id, file.name);
+    } else {
+      // Check if it's a Google Doc/Sheet/Slide - open in new tab
+      const googleMimeTypes = [
+        "application/vnd.google-apps.document",
+        "application/vnd.google-apps.spreadsheet",
+        "application/vnd.google-apps.presentation",
+        "application/vnd.google-apps.form",
+        "application/vnd.google-apps.drawing",
+      ];
+      
+      if (googleMimeTypes.includes(file.mimeType)) {
+        window.open(file.webViewLink, "_blank");
+      } else if (file.mimeType?.startsWith("image/") || file.mimeType === "application/pdf") {
+        // Show preview for images and PDFs
+        setPreviewFile(file);
+        setPreviewZoom(100);
+        setShowPreviewDialog(true);
+      } else if (file.webViewLink) {
+        window.open(file.webViewLink, "_blank");
+      }
+    }
+  };
+
   const navigateToFolder = (folderId: string, folderName: string) => {
     setFolderPath([...folderPath, { id: folderId, name: folderName }]);
     setCurrentFolderId(folderId);
@@ -280,12 +379,76 @@ export default function ProjectFiles() {
 
   const navigateToBreadcrumb = (index: number) => {
     if (index === -1) {
-      setFolderPath([]);
-      setCurrentFolderId(null);
+      // If project has linked folder, go to that. Otherwise go to root.
+      if (currentProject?.googleDriveFolderId && currentProject?.googleDriveFolderName) {
+        setFolderPath([{ id: currentProject.googleDriveFolderId, name: currentProject.googleDriveFolderName }]);
+        setCurrentFolderId(currentProject.googleDriveFolderId);
+      } else {
+        setFolderPath([]);
+        setCurrentFolderId(null);
+      }
     } else {
       const newPath = folderPath.slice(0, index + 1);
       setFolderPath(newPath);
       setCurrentFolderId(newPath[newPath.length - 1].id);
+    }
+  };
+
+  // Link folder dialog navigation
+  const loadLinkFolderFiles = async (folderId: string | null) => {
+    setIsLoadingLinkFiles(true);
+    try {
+      const url = folderId 
+        ? `/api/google-drive/files?folderId=${folderId}`
+        : "/api/google-drive/files";
+      const response = await fetch(url, { credentials: "include" });
+      if (response.ok) {
+        const data = await response.json();
+        setLinkBrowseFiles(data.filter((f: DriveFile) => f.isFolder));
+      }
+    } catch (error) {
+      console.error("Failed to load folders:", error);
+    } finally {
+      setIsLoadingLinkFiles(false);
+    }
+  };
+
+  const openLinkFolderDialog = () => {
+    setLinkFolderId(null);
+    setLinkFolderPath([]);
+    setSelectedLinkFolder(null);
+    setShowLinkFolderDialog(true);
+    loadLinkFolderFiles(null);
+  };
+
+  const navigateLinkFolder = (folder: DriveFile) => {
+    setLinkFolderPath([...linkFolderPath, { id: folder.id, name: folder.name }]);
+    setLinkFolderId(folder.id);
+    setSelectedLinkFolder(null);
+    loadLinkFolderFiles(folder.id);
+  };
+
+  const navigateLinkBreadcrumb = (index: number) => {
+    if (index === -1) {
+      setLinkFolderPath([]);
+      setLinkFolderId(null);
+      loadLinkFolderFiles(null);
+    } else {
+      const newPath = linkFolderPath.slice(0, index + 1);
+      setLinkFolderPath(newPath);
+      setLinkFolderId(newPath[newPath.length - 1].id);
+      loadLinkFolderFiles(newPath[newPath.length - 1].id);
+    }
+    setSelectedLinkFolder(null);
+  };
+
+  const confirmLinkFolder = () => {
+    if (selectedLinkFolder) {
+      linkFolderMutation.mutate({ id: selectedLinkFolder.id, name: selectedLinkFolder.name });
+    } else if (linkFolderId && linkFolderPath.length > 0) {
+      // Use current browsed folder
+      const currentFolder = linkFolderPath[linkFolderPath.length - 1];
+      linkFolderMutation.mutate({ id: currentFolder.id, name: currentFolder.name });
     }
   };
 
@@ -330,10 +493,10 @@ export default function ProjectFiles() {
         
         <div className="flex-1 flex items-center justify-center">
           <Card className="p-8 max-w-md text-center">
-            <HardDrive className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+            <SiGoogledrive className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">Connect Google Drive</h3>
             <p className="text-sm text-muted-foreground mb-6">
-              Connect your company's Google Drive to browse, upload, and manage files directly from BuildPro.
+              Connect your company's Google Drive to browse, upload, and manage project files directly from BuildPro.
             </p>
             <Button
               onClick={() => connectMutation.mutate()}
@@ -344,7 +507,7 @@ export default function ProjectFiles() {
               {connectMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <Link2 className="w-4 h-4 mr-2" />
+                <SiGoogledrive className="w-4 h-4 mr-2" />
               )}
               Connect Google Drive
             </Button>
@@ -359,16 +522,33 @@ export default function ProjectFiles() {
       {/* Row 1 - Page Title & Actions (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold">{pageTitle}</h2>
+          <div className="flex items-center gap-1.5">
+            <SiGoogledrive className="w-4 h-4 text-[#4285F4]" />
+            <h2 className="text-sm font-semibold">{pageTitle}</h2>
+          </div>
           {driveStatus?.email && (
-            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+            <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800">
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5" />
-              {driveStatus.email}
+              Connected
+            </Badge>
+          )}
+          {currentProject?.googleDriveFolderName && (
+            <Badge variant="outline" className="text-xs">
+              <FolderCheck className="w-3 h-3 mr-1" />
+              {currentProject.googleDriveFolderName}
             </Badge>
           )}
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+            onClick={openLinkFolderDialog}
+            data-testid="button-link-folder"
+          >
+            <Link2 className="w-3 h-3 inline mr-0.5" />
+            {currentProject?.googleDriveFolderId ? "Change Folder" : "Link Folder"}
+          </button>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
             onClick={() => setShowUploadDialog(true)}
@@ -402,6 +582,17 @@ export default function ProjectFiles() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {currentProject?.googleDriveFolderId && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => linkFolderMutation.mutate(null)}
+                  >
+                    <Link2Off className="w-4 h-4 mr-2" />
+                    Unlink Folder
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onClick={() => disconnectMutation.mutate()}
                 className="text-red-600"
@@ -467,14 +658,14 @@ export default function ProjectFiles() {
               className="hover:text-foreground transition-colors flex items-center gap-0.5"
               data-testid="breadcrumb-root"
             >
-              <Home className="w-3 h-3" />
-              <span>Drive</span>
+              <SiGoogledrive className="w-3 h-3" />
+              <span>{currentProject?.googleDriveFolderName || "Drive"}</span>
             </button>
-            {folderPath.map((folder, index) => (
+            {folderPath.slice(currentProject?.googleDriveFolderId ? 1 : 0).map((folder, index) => (
               <span key={folder.id} className="flex items-center gap-1">
                 <ChevronRight className="w-3 h-3" />
                 <button
-                  onClick={() => navigateToBreadcrumb(index)}
+                  onClick={() => navigateToBreadcrumb(index + (currentProject?.googleDriveFolderId ? 1 : 0))}
                   className="hover:text-foreground transition-colors"
                   data-testid={`breadcrumb-${index}`}
                 >
@@ -513,7 +704,7 @@ export default function ProjectFiles() {
               onClick={() => setShowUploadDialog(true)}
               className="mt-4 text-sm text-[#bba7db] hover:underline"
             >
-              Upload a file
+              Upload a file to Google Drive
             </button>
           </div>
         ) : viewMode === "list" ? (
@@ -528,13 +719,7 @@ export default function ProjectFiles() {
               <div
                 key={file.id}
                 className="grid grid-cols-[1fr_100px_120px_40px] gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer items-center"
-                onClick={() => {
-                  if (file.isFolder) {
-                    navigateToFolder(file.id, file.name);
-                  } else if (file.webViewLink) {
-                    window.open(file.webViewLink, "_blank");
-                  }
-                }}
+                onClick={() => handleFileClick(file)}
                 data-testid={`file-${file.id}`}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -556,6 +741,17 @@ export default function ProjectFiles() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {!file.isFolder && (file.mimeType?.startsWith("image/") || file.mimeType === "application/pdf") && (
+                      <DropdownMenuItem onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewFile(file);
+                        setPreviewZoom(100);
+                        setShowPreviewDialog(true);
+                      }}>
+                        <Eye className="w-4 h-4 mr-2" />
+                        Preview
+                      </DropdownMenuItem>
+                    )}
                     {file.webViewLink && (
                       <DropdownMenuItem onClick={() => window.open(file.webViewLink, "_blank")}>
                         <ExternalLink className="w-4 h-4 mr-2" />
@@ -590,13 +786,7 @@ export default function ProjectFiles() {
               <div
                 key={file.id}
                 className="p-3 rounded-lg border hover-elevate cursor-pointer flex flex-col items-center gap-2"
-                onClick={() => {
-                  if (file.isFolder) {
-                    navigateToFolder(file.id, file.name);
-                  } else if (file.webViewLink) {
-                    window.open(file.webViewLink, "_blank");
-                  }
-                }}
+                onClick={() => handleFileClick(file)}
                 data-testid={`file-grid-${file.id}`}
               >
                 {file.thumbnailLink && !file.isFolder ? (
@@ -623,13 +813,204 @@ export default function ProjectFiles() {
         )}
       </div>
 
+      {/* Link Folder Dialog */}
+      <Dialog open={showLinkFolderDialog} onOpenChange={setShowLinkFolderDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <SiGoogledrive className="w-5 h-5 text-[#4285F4]" />
+              Link Google Drive Folder
+            </DialogTitle>
+            <DialogDescription>
+              Select a folder from Google Drive to link to this project. All files in this folder will be accessible from the Files tab.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Breadcrumbs */}
+          <div className="flex items-center gap-1 text-xs text-muted-foreground border-b pb-2">
+            <button
+              onClick={() => navigateLinkBreadcrumb(-1)}
+              className="hover:text-foreground transition-colors flex items-center gap-0.5"
+            >
+              <SiGoogledrive className="w-3 h-3" />
+              <span>Drive</span>
+            </button>
+            {linkFolderPath.map((folder, index) => (
+              <span key={folder.id} className="flex items-center gap-1">
+                <ChevronRight className="w-3 h-3" />
+                <button
+                  onClick={() => navigateLinkBreadcrumb(index)}
+                  className="hover:text-foreground transition-colors"
+                >
+                  {folder.name}
+                </button>
+              </span>
+            ))}
+          </div>
+          
+          {/* Folder List */}
+          <ScrollArea className="h-64 border rounded-md">
+            {isLoadingLinkFiles ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-[#bba7db]" />
+              </div>
+            ) : linkBrowseFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+                <FolderOpen className="w-10 h-10 mb-2" />
+                <p className="text-sm">No subfolders</p>
+                {linkFolderPath.length > 0 && (
+                  <p className="text-xs mt-1">You can select this folder</p>
+                )}
+              </div>
+            ) : (
+              <div className="p-1">
+                {linkBrowseFiles.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
+                      selectedLinkFolder?.id === folder.id 
+                        ? 'bg-[#bba7db]/20 border border-[#bba7db]' 
+                        : 'hover-elevate'
+                    }`}
+                    onClick={() => setSelectedLinkFolder(folder)}
+                    onDoubleClick={() => navigateLinkFolder(folder)}
+                  >
+                    <Folder className="w-5 h-5 text-[#bba7db]" />
+                    <span className="text-sm flex-1">{folder.name}</span>
+                    {selectedLinkFolder?.id === folder.id && (
+                      <Check className="w-4 h-4 text-[#bba7db]" />
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateLinkFolder(folder);
+                      }}
+                      className="p-1 hover:bg-muted rounded"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          
+          {(selectedLinkFolder || linkFolderPath.length > 0) && (
+            <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">
+              Selected: <span className="font-medium text-foreground">
+                {selectedLinkFolder?.name || linkFolderPath[linkFolderPath.length - 1]?.name}
+              </span>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLinkFolderDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmLinkFolder}
+              disabled={!selectedLinkFolder && linkFolderPath.length === 0 || linkFolderMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+            >
+              {linkFolderMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="w-4 h-4 mr-2" />
+              )}
+              Link Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* File Preview Dialog */}
+      <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <div className="flex items-center justify-between p-3 border-b">
+            <div className="flex items-center gap-2">
+              {previewFile && getFileIcon(previewFile)}
+              <span className="font-medium">{previewFile?.name}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {previewFile?.mimeType?.startsWith("image/") && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPreviewZoom(Math.max(25, previewZoom - 25))}
+                    disabled={previewZoom <= 25}
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm w-12 text-center">{previewZoom}%</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPreviewZoom(Math.min(200, previewZoom + 25))}
+                    disabled={previewZoom >= 200}
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
+              {previewFile?.webViewLink && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(previewFile.webViewLink, "_blank")}
+                >
+                  <ExternalLink className="w-4 h-4 mr-1" />
+                  Open in Drive
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => previewFile && handleDownload(previewFile)}
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download
+              </Button>
+            </div>
+          </div>
+          <div className="overflow-auto p-4 flex items-center justify-center min-h-[400px] max-h-[calc(90vh-80px)]">
+            {previewFile?.mimeType?.startsWith("image/") ? (
+              <img
+                src={`/api/google-drive/download/${previewFile.id}`}
+                alt={previewFile.name}
+                style={{ transform: `scale(${previewZoom / 100})` }}
+                className="max-w-full transition-transform"
+              />
+            ) : previewFile?.mimeType === "application/pdf" ? (
+              <iframe
+                src={`/api/google-drive/download/${previewFile.id}#toolbar=1`}
+                className="w-full h-[70vh]"
+                title={previewFile.name}
+              />
+            ) : (
+              <div className="text-center text-muted-foreground">
+                <File className="w-16 h-16 mx-auto mb-4" />
+                <p>Preview not available for this file type</p>
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => previewFile?.webViewLink && window.open(previewFile.webViewLink, "_blank")}
+                >
+                  Open in Google Drive
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Folder Dialog */}
       <Dialog open={showCreateFolderDialog} onOpenChange={setShowCreateFolderDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Folder</DialogTitle>
             <DialogDescription>
-              Enter a name for the new folder.
+              Enter a name for the new folder in Google Drive.
             </DialogDescription>
           </DialogHeader>
           <Input
@@ -660,9 +1041,9 @@ export default function ProjectFiles() {
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Upload File</DialogTitle>
+            <DialogTitle>Upload to Google Drive</DialogTitle>
             <DialogDescription>
-              Select a file to upload to {folderPath.length > 0 ? folderPath[folderPath.length - 1].name : "your Drive"}.
+              Select a file to upload to {folderPath.length > 0 ? folderPath[folderPath.length - 1].name : "Google Drive"}.
             </DialogDescription>
           </DialogHeader>
           <div className="border-2 border-dashed rounded-lg p-8 text-center">
@@ -709,7 +1090,7 @@ export default function ProjectFiles() {
               ) : (
                 <Upload className="w-4 h-4 mr-2" />
               )}
-              Upload
+              Upload to Drive
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -721,7 +1102,7 @@ export default function ProjectFiles() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {selectedFile?.isFolder ? "Folder" : "File"}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{selectedFile?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedFile?.name}" from Google Drive? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
