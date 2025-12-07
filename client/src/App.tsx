@@ -133,8 +133,9 @@ function Router() {
       <Route path="/users/:userId" component={UserWorkspace} />
       <Route path="/users/:userId/:tab" component={UserWorkspace} />
       
-      {/* User Profile */}
+      {/* User Profile / Settings */}
       <Route path="/profile" component={UserProfile} />
+      <Route path="/user-settings" component={UserProfile} />
       
       {/* Business Pages - All handled by Business component with tabs */}
       <Route path="/business" component={Business} />

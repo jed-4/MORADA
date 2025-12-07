@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Calendar as CalendarIcon, Check, X, User as UserIcon, Mail, Phone, Building2, Send } from "lucide-react";
+import { Calendar as CalendarIcon, Check, X, User as UserIcon, Mail, Phone, Building2, Send, Shield } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
 import type { User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -63,6 +63,15 @@ export default function UserProfile() {
   const { data: calendarStatus } = useQuery({
     queryKey: ["/api/google-calendar/status"],
   });
+
+  // Fetch user roles to display the user's role name
+  const { data: roles = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/user-roles"],
+    enabled: !!user?.roleId,
+  });
+
+  // Get user's role name
+  const userRole = roles.find((r) => r.id === user?.roleId);
 
   // Update user profile mutation
   const updateProfileMutation = useMutation({
@@ -275,11 +284,27 @@ export default function UserProfile() {
                   Company
                 </Label>
                 <Input
-                  value={user?.companyId || ""}
+                  value={(user as any)?.companyNickname || ""}
                   disabled
+                  data-testid="input-company"
                 />
                 <p className="text-xs text-muted-foreground">
                   Company membership is managed by your administrator
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Role
+                </Label>
+                <Input
+                  value={userRole?.name || "Loading..."}
+                  disabled
+                  data-testid="input-role"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Your role determines which features you can access
                 </p>
               </div>
 
