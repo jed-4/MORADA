@@ -1,5 +1,4 @@
 import {
-  Calendar,
   Home,
   MessageSquare,
   FileText,
@@ -12,7 +11,6 @@ import {
   DollarSign,
   FileBarChart,
   Receipt,
-  CreditCard,
   BookOpen,
   Timer,
   PiggyBank,
@@ -26,7 +24,6 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
-  Plus,
   Truck,
   HardHat,
   Tag,
@@ -34,7 +31,6 @@ import {
   AlertCircle,
   ClipboardList,
   ListTree,
-  GanttChart,
   User,
   ListChecks,
 } from "lucide-react";
@@ -50,30 +46,19 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
-import { Project, CompanySettings } from "@shared/schema";
+import { Project } from "@shared/schema";
 import { useState, useEffect } from "react";
-import CreateProjectDialog from "./CreateProjectDialog";
-import { ProjectIcon } from "./ProjectIcon";
-import { useAuth } from "@/hooks/use-auth";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 // Project sections base configuration
 const projectItemsBase = [
@@ -122,18 +107,10 @@ const settingsItems = [
 ];
 
 export function AppSidebar() {
-  const [location, navigate] = useLocation();
-  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [location] = useLocation();
   const { currentProject, setCurrentProject } = useProject();
-  const { user } = useAuth();
-  const isBusinessContext = location.startsWith('/business');
   
   // Collapsible states with localStorage persistence
-  const [isProjectsOpen, setIsProjectsOpen] = useState(() => {
-    const saved = localStorage.getItem("sidebar-projects-open");
-    return saved !== null ? JSON.parse(saved) : true;
-  });
-
   const [isSystemOpen, setIsSystemOpen] = useState(() => {
     const saved = localStorage.getItem("sidebar-system-open");
     return saved !== null ? JSON.parse(saved) : true;
@@ -144,16 +121,7 @@ export function AppSidebar() {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
-  // Fetch company settings
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
-  });
-
   // Save collapsible states to localStorage
-  useEffect(() => {
-    localStorage.setItem("sidebar-projects-open", JSON.stringify(isProjectsOpen));
-  }, [isProjectsOpen]);
-
   useEffect(() => {
     localStorage.setItem("sidebar-system-open", JSON.stringify(isSystemOpen));
   }, [isSystemOpen]);
@@ -226,34 +194,20 @@ export function AppSidebar() {
       }
     }
   }, [activeProjects, currentProject, setCurrentProject, location]);
-
-  const handleProjectSelect = (project: Project) => {
-    setCurrentProject(project);
-    
-    // Navigate to appropriate page based on project type
-    if (project.isBusiness) {
-      navigate('/business');
-    } else {
-      navigate(`/projects/${project.id}`);
-    }
-    console.log(`Selected project: ${project.name} (${project.id})`);
-  };
-
-  const handleCreateProject = () => {
-    setIsCreateProjectOpen(true);
-  };
-
-  const companyName = companySettings?.companyName || "Business";
+  
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
   
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4 border-b">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-6 w-6 text-primary" />
-          <div>
-            <h2 className="font-semibold text-lg">BuildPro</h2>
+      <SidebarHeader className="p-2 border-b">
+        {isCollapsed ? (
+          <div className="flex items-center justify-center py-1">
+            <Building2 className="h-5 w-5 text-primary" />
           </div>
-        </div>
+        ) : (
+          <ProjectSwitcher />
+        )}
       </SidebarHeader>
       
       <SidebarContent>
@@ -283,122 +237,31 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Projects Section - Collapsible */}
-        <Collapsible
-          open={isProjectsOpen}
-          onOpenChange={setIsProjectsOpen}
-          className="group/collapsible"
-        >
-          <SidebarGroup className={!isProjectsOpen ? "pb-0" : ""}>
-            <SidebarGroupLabel asChild>
-              <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
-                <span className="font-medium">Projects</span>
-                {isProjectsOpen ? (
-                  <ChevronDown className="h-4 w-4 transition-transform" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 transition-transform" />
-                )}
-              </CollapsibleTrigger>
-            </SidebarGroupLabel>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <div className="px-2 pb-2">
-                  {/* Projects Dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between" data-testid="button-projects-dropdown" disabled={projectsLoading}>
-                        <div className="flex items-center gap-2">
-                          {currentProject && (
-                            <ProjectIcon 
-                              icon={currentProject.icon} 
-                              color={currentProject.color} 
-                              className="w-4 h-4 flex-shrink-0" 
-                            />
-                          )}
-                          <span className="text-sm font-medium truncate">
-                            {currentProject ? currentProject.name : (projectsLoading ? "Loading..." : "Select Project")}
-                          </span>
-                        </div>
-                        <ChevronDown className="h-4 w-4 flex-shrink-0" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-64 z-[60] shadow-lg border-2 bg-background/95 backdrop-blur-sm mt-2">
-                      <DropdownMenuLabel>Projects</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {projectsLoading ? (
-                        <DropdownMenuItem disabled>
-                          <span className="text-muted-foreground">Loading projects...</span>
-                        </DropdownMenuItem>
-                      ) : activeProjects.length === 0 ? (
-                        <DropdownMenuItem disabled>
-                          <span className="text-muted-foreground">No active projects found</span>
-                        </DropdownMenuItem>
-                      ) : (
-                        activeProjects.map((project) => (
-                          <DropdownMenuItem 
-                            key={project.id} 
-                            data-testid={`project-${project.id}`}
-                            onClick={() => handleProjectSelect(project)}
-                            className={currentProject?.id === project.id ? "bg-accent" : ""}
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <ProjectIcon 
-                                icon={project.icon} 
-                                color={project.color} 
-                                className="w-4 h-4 flex-shrink-0" 
-                              />
-                              <div className="flex flex-col flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium truncate">{project.name}</span>
-                                  {project.isBusiness && (
-                                    <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0">
-                                      Business
-                                    </Badge>
-                                  )}
-                                  {currentProject?.id === project.id && (
-                                    <Badge variant="outline" className="text-xs ml-auto flex-shrink-0">
-                                      Current
-                                    </Badge>
-                                  )}
-                                </div>
-                                {project.description && (
-                                  <span className="text-sm text-muted-foreground truncate">{project.description}</span>
-                                )}
-                              </div>
-                            </div>
-                          </DropdownMenuItem>
-                        ))
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem data-testid="button-new-project" onClick={handleCreateProject}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create New Project
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                
-                <SidebarMenu>
-                  {projectItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton 
-                        asChild 
-                        tooltip={item.title}
-                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                        data-active={location === item.url}
-                      >
-                        <Link href={item.url}>
-                          <item.icon className="h-4 w-4" />
-                          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </SidebarGroup>
-        </Collapsible>
+        {/* Project Navigation - shows current project's pages */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-xs font-medium text-muted-foreground group-data-[collapsible=icon]:hidden">
+            {currentProject?.name || "Project"}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {projectItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton 
+                    asChild 
+                    tooltip={item.title}
+                    data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    data-active={location === item.url}
+                  >
+                    <Link href={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
         {/* System Section - Collapsible */}
         <Collapsible
@@ -484,12 +347,6 @@ export function AppSidebar() {
           </SidebarGroup>
         </Collapsible>
       </SidebarFooter>
-      
-      {/* Create Project Dialog */}
-      <CreateProjectDialog 
-        open={isCreateProjectOpen} 
-        onOpenChange={setIsCreateProjectOpen} 
-      />
     </Sidebar>
   );
 }

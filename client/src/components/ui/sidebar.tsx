@@ -40,6 +40,8 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  isHoveredOpen: boolean
+  setIsHoveredOpen: (open: boolean) => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -68,6 +70,7 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
+  const [isHoveredOpen, setIsHoveredOpen] = React.useState(false)
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -122,8 +125,10 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      isHoveredOpen,
+      setIsHoveredOpen,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, isHoveredOpen]
   )
 
   return (
@@ -163,7 +168,21 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const { isMobile, state, openMobile, setOpenMobile, isHoveredOpen, setIsHoveredOpen } = useSidebar()
+  
+  // Handle mouse enter/leave for hover-to-expand (Notion-style)
+  const handleMouseEnter = React.useCallback(() => {
+    if (state === "collapsed" && collapsible === "icon") {
+      setIsHoveredOpen(true)
+    }
+  }, [state, collapsible, setIsHoveredOpen])
+  
+  const handleMouseLeave = React.useCallback(() => {
+    setIsHoveredOpen(false)
+  }, [setIsHoveredOpen])
+  
+  // Determine visual state: expanded if open OR hovered while collapsed
+  const visualState = (state === "collapsed" && isHoveredOpen) ? "hovered" : state
 
   if (collapsible === "none") {
     return (
@@ -209,16 +228,19 @@ function Sidebar({
     <div
       className="group peer text-sidebar-foreground hidden md:block"
       data-state={state}
-      data-collapsible={state === "collapsed" ? collapsible : ""}
+      data-hovered={isHoveredOpen ? "true" : "false"}
+      data-collapsible={state === "collapsed" && !isHoveredOpen ? collapsible : ""}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
-      {/* This is what handles the sidebar gap on desktop */}
+      {/* This is what handles the sidebar gap on desktop - stays collapsed even on hover */}
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-[var(--sidebar-width)] bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-[var(--sidebar-width)] bg-transparent transition-[width] duration-300 ease-in-out",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -226,17 +248,26 @@ function Sidebar({
             : "group-data-[collapsible=icon]:w-[var(--sidebar-width-icon)]"
         )}
       />
+      {/* The actual sidebar container - expands on hover when collapsed */}
       <div
         data-slot="sidebar-container"
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-[var(--sidebar-width)] transition-[left,right,width] duration-200 ease-linear md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh transition-[left,right,width] duration-300 ease-in-out md:flex",
+          // Base width - full when expanded, icon when collapsed, full when hovered
+          state === "expanded" || isHoveredOpen
+            ? "w-[var(--sidebar-width)]"
+            : "w-[var(--sidebar-width-icon)]",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
-          // Adjust the padding for floating and inset variants.
+          // Border and shadow - add shadow when hovering over collapsed sidebar
+          isHoveredOpen && state === "collapsed"
+            ? "shadow-lg group-data-[side=left]:border-r group-data-[side=right]:border-l"
+            : "group-data-[side=left]:border-r group-data-[side=right]:border-l",
+          // Adjust the padding for floating and inset variants
           variant === "floating" || variant === "inset"
-            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+var(--spacing-4)+2px)]"
-            : "group-data-[collapsible=icon]:w-[var(--sidebar-width-icon)] group-data-[side=left]:border-r group-data-[side=right]:border-l",
+            ? "p-2"
+            : "",
           className
         )}
         {...props}
