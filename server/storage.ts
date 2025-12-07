@@ -6520,27 +6520,59 @@ export class DbStorage implements IStorage {
       const normalizedFirstName = userData.firstName?.trim() || invitation.firstName || null;
       const normalizedLastName = userData.lastName?.trim() || invitation.lastName || null;
       
-      console.log(`[DbStorage.acceptInvitation] Creating user for email: ${invitation.email}, firstName: ${normalizedFirstName}, lastName: ${normalizedLastName}`);
+      console.log(`[DbStorage.acceptInvitation] Processing for email: ${invitation.email}, firstName: ${normalizedFirstName}, lastName: ${normalizedLastName}`);
       
-      // Create the user account with secure password handling
-      // Note: We explicitly set firstName/lastName to avoid spread operator issues
-      const newUser = await this.createUser({
-        username: userData.username || invitation.email,
-        password: userData.password,
-        email: invitation.email,
-        firstName: normalizedFirstName,
-        lastName: normalizedLastName,
-        phone: invitation.phone,
-        company: invitation.company,
-        userCategory: invitation.userCategory as UserCategory,
-        roleId: invitation.roleId,
-        companyId: invitation.companyId,
-        isInvitePending: false,
-        invitedBy: invitation.invitedBy,
-        invitedAt: invitation.createdAt,
-      });
-
-      console.log(`[DbStorage.acceptInvitation] User created: ${newUser.id}`);
+      // Check if a user already exists with this email (e.g., from Replit Auth)
+      const existingUser = await this.getUserByEmail(invitation.email);
+      
+      let newUser: User;
+      
+      if (existingUser) {
+        // User exists - update them with invitation data and activate
+        console.log(`[DbStorage.acceptInvitation] Found existing user ${existingUser.id}, updating with invitation data`);
+        const hashedPassword = await PasswordUtils.hashPassword(userData.password);
+        
+        const [updated] = await db.update(schema.users)
+          .set({
+            password: hashedPassword,
+            firstName: normalizedFirstName,
+            lastName: normalizedLastName,
+            phone: invitation.phone || existingUser.phone,
+            company: invitation.company || existingUser.company,
+            userCategory: (invitation.userCategory as UserCategory) || existingUser.userCategory,
+            roleId: invitation.roleId,
+            companyId: invitation.companyId,
+            isActive: true,
+            isInvitePending: false,
+            invitedBy: invitation.invitedBy,
+            invitedAt: invitation.createdAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.users.id, existingUser.id))
+          .returning();
+        
+        newUser = updated;
+        console.log(`[DbStorage.acceptInvitation] Updated existing user: ${newUser.id}`);
+      } else {
+        // Create new user account with secure password handling
+        newUser = await this.createUser({
+          username: userData.username || invitation.email,
+          password: userData.password,
+          email: invitation.email,
+          firstName: normalizedFirstName,
+          lastName: normalizedLastName,
+          phone: invitation.phone,
+          company: invitation.company,
+          userCategory: invitation.userCategory as UserCategory,
+          roleId: invitation.roleId,
+          companyId: invitation.companyId,
+          isActive: true,
+          isInvitePending: false,
+          invitedBy: invitation.invitedBy,
+          invitedAt: invitation.createdAt,
+        });
+        console.log(`[DbStorage.acceptInvitation] Created new user: ${newUser.id}`);
+      }
 
       // SECURITY: Mark invitation as used (single-use tokens)
       const updatedInvitation = await this.updateUserInvitation(invitation.id, {
