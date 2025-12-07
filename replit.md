@@ -1,7 +1,7 @@
 # Replit Configuration
 
 ## Overview
-BuildPro is a project management software designed for Australian residential builders. Its primary purpose is to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking, through a dashboard-centric interface. Key capabilities include customizable widget-based dashboards, comprehensive task management with Kanban boards and calendar integration, and a system for managing construction projects, tasks, schedules, and teams. The business vision is to simplify complex construction project management, thereby improving efficiency and profitability for builders.
+BuildPro is a project management software for Australian residential builders. Its purpose is to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking, through a dashboard-centric interface. Key capabilities include customizable widget-based dashboards, comprehensive task management with Kanban boards and calendar integration, and a system for managing construction projects, tasks, schedules, and teams. The business vision is to simplify complex construction project management, thereby improving efficiency and profitability for builders.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -22,7 +22,7 @@ Preferred communication style: Simple, everyday language.
 - **API Design**: RESTful API (`/api` prefix).
 - **Session Management**: Express sessions with PostgreSQL session store.
 - **Error Handling**: Centralized middleware.
-- **Email Service**: Resend for transactional emails (user invitations). Configured with RESEND_API_KEY environment secret.
+- **Email Service**: Resend for transactional emails (user invitations).
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect.
@@ -46,49 +46,22 @@ Preferred communication style: Simple, everyday language.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with CRUD operations.
 - **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items, integrating with financial modules.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
-- **User View Preferences**: Database-backed persistence for user-specific view settings across all pages:
-  - API: `/api/user-view-preferences` with GET by viewKey and POST to save
-  - Stores column order, visibility, width, filters, and other view-specific settings
-  - Persists across sessions, devices, and environments (dev/production have separate databases per user)
-  - Pages using database-backed preferences: EstimateDetail, Tasks, BusinessTasks, BusinessProjects, Gantt
-  - Pattern: Load on mount with useQuery, apply with useEffect, auto-save with debounced useMutation
-  - Console logging with `[PageName]` prefix for debugging preference load/save operations
+- **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters) across all pages, using `/api/user-view-preferences` with GET and POST.
 - **Optimistic UI Updates**: Implemented for improved responsiveness.
-- **Estimate Enhancements**: Cost code dropdowns, loading states, cascading group selection, and improved bulk delete.
-- **Searchable Select Components**: Reusable typeahead components for dropdowns with many items:
-  - `SearchableSelect.tsx`: Base component with search filtering and keyboard navigation.
-  - `CostCodeSelect.tsx`: Searchable dropdown for 100+ cost codes, used in Estimates, Bills, Timesheets.
-  - `ProjectSelect.tsx`: Searchable project dropdown used in Tasks, Timesheets, FolderTree.
-  - `ContactSelect.tsx`: Searchable contact dropdown used in Schedule.
-  - `UserSelect.tsx`: Searchable user/assignee dropdown used in Tasks, Timesheets, TaskLibrary, FolderTree.
-  - `TaskTemplateSelect.tsx`: Searchable task template dropdown for task creation.
-- **Estimate Status Badges**: Consistent status display.
+- **Searchable Select Components**: Reusable typeahead components for dropdowns with many items (e.g., Cost Codes, Projects, Contacts, Users, Task Templates).
 - **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
-- **Google Calendar Integration**: Per-user OAuth for displaying read-only Google Calendar events.
 - **Roles & Permissions**: Company-isolated user roles with granular control over 25 Buildern permissions.
-- **Business Page Reorganization**: Unified navigation with a 2-row header and tab system for various business sections.
+- **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
 - **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes.
-- **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos, with distinct UX.
+- **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 
 ### Mobile App (Capacitor-based)
 - **Framework**: React with Capacitor for native mobile features.
 - **Location**: `/mobile` directory with separate build configuration.
-- **Features Implemented**:
-  - **ProjectTasksTab**: Task list with search, status filters, swipe-to-complete/delete, detail sheet.
-  - **ProjectScopeTab**: Scope stages with collapsible sections, items list, swipe actions, add/view sheets.
-  - **ProjectNotesTab**: Notes list with search, pin/unpin swipe, delete swipe, category filtering.
-  - **ProjectMinutesTab**: Meeting minutes with attendee display, AI summary preview, add/view sheets.
-  - **ProjectDefectsTab**: Defects with priority/status filtering, resolve/delete swipe actions.
-  - **ProjectTimesheetsTab**: Clock in/out functionality, week navigation, time entry management.
-  - **ProjectSiteDiaryTab**: Date navigation with quick date buttons, weather display, entry management.
-- **Shared Components**:
-  - `SwipeableCard`: Touch swipe gestures for left/right actions.
-  - `BottomSheet`: Slide-up sheets for add/edit/detail views.
-  - `PullToRefresh`: Pull-to-refresh for data reloading.
-  - `MobileInput/MobileTextarea/MobileButton`: Mobile-optimized form components.
+- **Features Implemented**: ProjectTasks, ProjectScope, ProjectNotes, ProjectMinutes, ProjectDefects, ProjectTimesheets, ProjectSiteDiary.
+- **Shared Components**: `SwipeableCard`, `BottomSheet`, `PullToRefresh`, mobile-optimized form components.
 - **UX Patterns**: Pull-to-refresh, haptic feedback, FAB for adding items, search/filter chips.
-- **API Pattern**: Uses `/api/projects/:projectId/...` for project-scoped resources.
 
 ## External Dependencies
 
@@ -127,46 +100,7 @@ Preferred communication style: Simple, everyday language.
 - **date-fns**: Date utility library.
 - **nanoid**: Unique string ID generator.
 
-### Google Drive Integration (Company-Level)
-- **Architecture**: Company-level OAuth connection (not per-user), tokens stored encrypted in companies table
-- **Per-Company OAuth Credentials**: 
-  - Companies can optionally configure their own Google OAuth credentials (Client ID/Secret)
-  - Schema fields: `googleDriveClientId`, `googleDriveClientSecret` (encrypted) in companies table
-  - Falls back to BuildPro's global credentials (GOOGLE_OAUTH_CLIENT_ID/SECRET) if not configured
-  - Redirect URI detection based on request host (supports dev/production automatically)
-  - Host included in OAuth state for proper callback handling
-- **Security**:
-  - HMAC-signed state parameter for OAuth flow with timestamp, nonce, and host
-  - Admin-only access for connect/disconnect/root-folder/credentials configuration
-  - Team member access for file browsing and operations
-  - Requires GOOGLE_OAUTH_ENCRYPTION_KEY or SESSION_SECRET env var
-- **Service**: `server/services/googleDriveService.ts` - follows Google Calendar OAuth pattern
-- **API Routes**:
-  - GET `/api/google-drive/status` - Connection status (includes credentialsConfigured flag)
-  - POST `/api/google-drive/credentials` - Save OAuth credentials (admin only)
-  - GET `/api/google-drive/auth-url` - OAuth URL (admin only)
-  - GET `/api/google-drive/callback` - OAuth callback
-  - POST `/api/google-drive/disconnect` - Disconnect (admin only)
-  - POST `/api/google-drive/root-folder` - Set root folder (admin only)
-  - GET `/api/google-drive/files` - List files in folder
-  - GET `/api/google-drive/shared-drives` - List shared drives
-  - POST `/api/google-drive/folders` - Create folder
-  - POST `/api/google-drive/upload` - Upload file
-  - GET `/api/google-drive/download/:fileId` - Download file
-  - DELETE `/api/google-drive/files/:fileId` - Delete file
-- **UI**: 
-  - ProjectFiles page (`/projects/:projectId/files`) with 3-row compact header, file browser, folder navigation, upload/create folder dialogs
-  - Settings page Integrations section with OAuth credential configuration UI
-- **Features**:
-  - Per-company OAuth credentials with fallback to shared credentials
-  - Shared Drives support
-  - Folder breadcrumb navigation
-  - List/grid view toggle
-  - File icons based on MIME type
-  - File upload and download
-  - Create folder and delete file operations
-
-## Recent Changes
-- **Google Drive Integration**: Implemented company-level Google Drive OAuth with HMAC-signed state, admin-only connection management, and ProjectFiles page for file browsing/upload/download
-- **Checklist Response Types**: Added support for checkbox (default), text, single_choice, and multiple_choice response types for checklist items
-- **Body Parser Limit**: Increased to 50mb for JSON/URL-encoded payloads (requires publishing for production)
+### Integrations
+- **Google Calendar Integration**: Per-user OAuth for displaying read-only Google Calendar events.
+- **Google Drive Integration**: Company-level OAuth connection with tokens stored encrypted. Enables a live Google Drive browser, per-project folder linking, company-wide file management, folder templates, and file attachments to BuildPro entities. Features include file upload/download, folder creation, file preview, and activity logging.
+- **Resend**: Transactional email service.
