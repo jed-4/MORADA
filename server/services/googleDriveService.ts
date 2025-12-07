@@ -219,7 +219,17 @@ export class GoogleDriveService {
     
     // Get per-company OAuth credentials with fallback to global credentials
     let clientId = company.googleDriveClientId;
-    let clientSecret = company.googleDriveClientSecret ? decryptToken(company.googleDriveClientSecret) : null;
+    let clientSecret: string | null = null;
+    
+    // Try to decrypt company-specific client secret if it exists
+    if (company.googleDriveClientSecret) {
+      try {
+        clientSecret = decryptToken(company.googleDriveClientSecret);
+      } catch (decryptError: any) {
+        console.error('[Drive] Failed to decrypt company client secret:', decryptError.message);
+        // Fall through to use global credentials
+      }
+    }
     
     // Fallback to global BuildPro credentials if company credentials not configured
     if (!clientId || !clientSecret) {
@@ -233,8 +243,29 @@ export class GoogleDriveService {
     
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
     
-    const accessToken = decryptToken(company.googleDriveAccessToken);
-    const refreshToken = decryptToken(company.googleDriveRefreshToken);
+    // Try to decrypt the stored tokens - if this fails, tokens are corrupted/key mismatch
+    let accessToken: string;
+    let refreshToken: string;
+    
+    try {
+      accessToken = decryptToken(company.googleDriveAccessToken);
+      refreshToken = decryptToken(company.googleDriveRefreshToken);
+    } catch (decryptError: any) {
+      console.error('[Drive] Failed to decrypt tokens - encryption key mismatch or corrupted tokens:', decryptError.message);
+      console.error('[Drive] Clearing invalid tokens to allow fresh reconnection');
+      
+      // Clear the corrupted tokens so user can reconnect
+      await this.storage.updateCompany(companyId, {
+        googleDriveAccessToken: null,
+        googleDriveRefreshToken: null,
+        googleDriveTokenExpiry: null,
+        googleDriveEmail: null,
+      });
+      
+      const tokenError = new Error('Google Drive tokens are invalid. Please reconnect in Company Settings.');
+      (tokenError as any).code = 'TOKEN_DECRYPT_FAILED';
+      throw tokenError;
+    }
     
     oauth2Client.setCredentials({
       access_token: accessToken,
