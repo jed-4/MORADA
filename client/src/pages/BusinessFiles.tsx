@@ -47,6 +47,7 @@ import {
   Trash2,
   ExternalLink,
   ChevronRight,
+  ChevronLeft,
   RefreshCw,
   Grid3X3,
   List,
@@ -59,6 +60,9 @@ import {
   Eye,
   ZoomIn,
   ZoomOut,
+  Check,
+  FolderCheck,
+  AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { format } from "date-fns";
@@ -105,12 +109,18 @@ export default function BusinessFiles() {
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [showLinkFolderDialog, setShowLinkFolderDialog] = useState(false);
   const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(100);
+  const [linkFolderPath, setLinkFolderPath] = useState<FolderPath[]>([]);
+  const [linkBrowseFiles, setLinkBrowseFiles] = useState<DriveFile[]>([]);
+  const [linkBrowseLoading, setLinkBrowseLoading] = useState(false);
+  const [selectedLinkFolder, setSelectedLinkFolder] = useState<DriveFile | null>(null);
+  const [driveConnectionError, setDriveConnectionError] = useState<string | null>(null);
 
   const { data: driveStatus, isLoading: statusLoading } = useQuery<DriveStatus>({
     queryKey: ["/api/google-drive/status"],
@@ -222,6 +232,88 @@ export default function BusinessFiles() {
       });
     },
   });
+
+  const rootFolderMutation = useMutation({
+    mutationFn: async (folderId: string | null) => {
+      await apiRequest("/api/google-drive/root-folder", "POST", { folderId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/google-drive/files"] });
+      setShowLinkFolderDialog(false);
+      setSelectedLinkFolder(null);
+      setLinkFolderPath([]);
+      toast({
+        title: "Root folder updated",
+        description: "Business files root folder has been updated.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update root folder",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const openLinkFolderDialog = () => {
+    setShowLinkFolderDialog(true);
+    setLinkFolderPath([]);
+    setSelectedLinkFolder(null);
+    setDriveConnectionError(null);
+    loadLinkFolderFiles(null);
+  };
+
+  const loadLinkFolderFiles = async (folderId: string | null) => {
+    setLinkBrowseLoading(true);
+    setDriveConnectionError(null);
+    try {
+      const url = folderId 
+        ? `/api/google-drive/files?folderId=${folderId}&foldersOnly=true`
+        : `/api/google-drive/files?foldersOnly=true`;
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        const error = await response.json();
+        if (response.status === 401 || error.error === "session_expired") {
+          setDriveConnectionError("Google Drive session expired. Please reconnect.");
+          queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
+          return;
+        }
+        throw new Error(error.message || "Failed to load folders");
+      }
+      const data = await response.json();
+      const folders = data.filter((f: DriveFile) => f.isFolder);
+      setLinkBrowseFiles(folders);
+    } catch (error: any) {
+      setDriveConnectionError(error.message);
+    } finally {
+      setLinkBrowseLoading(false);
+    }
+  };
+
+  const navigateLinkFolder = (folder: DriveFile) => {
+    setLinkFolderPath([...linkFolderPath, { id: folder.id, name: folder.name }]);
+    setSelectedLinkFolder(null);
+    loadLinkFolderFiles(folder.id);
+  };
+
+  const navigateLinkBreadcrumb = (index: number) => {
+    if (index === -1) {
+      setLinkFolderPath([]);
+      loadLinkFolderFiles(null);
+    } else {
+      const newPath = linkFolderPath.slice(0, index + 1);
+      setLinkFolderPath(newPath);
+      loadLinkFolderFiles(newPath[newPath.length - 1].id);
+    }
+    setSelectedLinkFolder(null);
+  };
+
+  const confirmLinkFolder = () => {
+    const folderId = selectedLinkFolder?.id || (linkFolderPath.length > 0 ? linkFolderPath[linkFolderPath.length - 1].id : null);
+    rootFolderMutation.mutate(folderId);
+  };
 
   const handleUpload = async () => {
     if (!uploadFile) return;
@@ -387,6 +479,14 @@ export default function BusinessFiles() {
 
         <div className="flex items-center gap-1.5">
           <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+            onClick={openLinkFolderDialog}
+            data-testid="button-link-folder"
+          >
+            <Link2 className="w-3 h-3 inline mr-0.5" />
+            {driveStatus?.rootFolderId ? "Change Root" : "Set Root Folder"}
+          </button>
+          <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
             onClick={() => setShowUploadDialog(true)}
             data-testid="button-upload-file"
@@ -419,6 +519,17 @@ export default function BusinessFiles() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {driveStatus?.rootFolderId && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => rootFolderMutation.mutate(null)}
+                  >
+                    <Link2Off className="w-4 h-4 mr-2" />
+                    Unlink Root Folder
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onClick={() => disconnectMutation.mutate()}
                 className="text-red-600"
@@ -835,6 +946,132 @@ export default function BusinessFiles() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Link Root Folder Dialog */}
+      <Dialog open={showLinkFolderDialog} onOpenChange={setShowLinkFolderDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Set Root Folder</DialogTitle>
+            <DialogDescription>
+              Choose a folder to use as the root for Business Files. This folder and its contents will be shown when browsing.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex items-center gap-1 text-xs text-muted-foreground p-2 bg-muted/50 rounded overflow-x-auto">
+            <button
+              onClick={() => navigateLinkBreadcrumb(-1)}
+              className="hover:text-foreground transition-colors flex items-center gap-0.5 flex-shrink-0"
+            >
+              <SiGoogledrive className="w-3 h-3" />
+              <span>My Drive</span>
+            </button>
+            {linkFolderPath.map((folder, index) => (
+              <span key={folder.id} className="flex items-center gap-1 flex-shrink-0">
+                <ChevronRight className="w-3 h-3" />
+                <button
+                  onClick={() => navigateLinkBreadcrumb(index)}
+                  className="hover:text-foreground transition-colors"
+                >
+                  {folder.name}
+                </button>
+              </span>
+            ))}
+          </div>
+
+          <ScrollArea className="h-[280px] border rounded-md">
+            {linkBrowseLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-[#bba7db]" />
+              </div>
+            ) : driveConnectionError ? (
+              <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                <AlertCircle className="w-10 h-10 text-amber-500 mb-2" />
+                <p className="text-sm text-muted-foreground mb-3">{driveConnectionError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowLinkFolderDialog(false);
+                    connectMutation.mutate();
+                  }}
+                  className="gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reconnect Google Drive
+                </Button>
+              </div>
+            ) : linkFolderPath.length === 0 && linkBrowseFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+                <FolderOpen className="w-10 h-10 mb-2" />
+                <p className="text-sm">No folders found</p>
+                <p className="text-xs mt-1">Your Drive root is empty or has no folders</p>
+              </div>
+            ) : linkFolderPath.length > 0 && linkBrowseFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+                <FolderCheck className="w-10 h-10 mb-2 text-[#bba7db]" />
+                <p className="text-sm font-medium">"{linkFolderPath[linkFolderPath.length - 1].name}"</p>
+                <p className="text-xs mt-1">You can select this folder</p>
+              </div>
+            ) : (
+              <div className="p-1">
+                {linkBrowseFiles.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
+                      selectedLinkFolder?.id === folder.id 
+                        ? 'bg-[#bba7db]/20 border border-[#bba7db]' 
+                        : 'hover-elevate'
+                    }`}
+                    onClick={() => setSelectedLinkFolder(folder)}
+                    onDoubleClick={() => navigateLinkFolder(folder)}
+                  >
+                    <Folder className="w-5 h-5 text-[#bba7db]" />
+                    <span className="text-sm flex-1">{folder.name}</span>
+                    {selectedLinkFolder?.id === folder.id && (
+                      <Check className="w-4 h-4 text-[#bba7db]" />
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateLinkFolder(folder);
+                      }}
+                      className="p-1 hover:bg-muted rounded"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          
+          {(selectedLinkFolder || linkFolderPath.length > 0) && (
+            <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">
+              Selected: <span className="font-medium text-foreground">
+                {selectedLinkFolder?.name || linkFolderPath[linkFolderPath.length - 1]?.name}
+              </span>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLinkFolderDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmLinkFolder}
+              disabled={driveConnectionError !== null || (!selectedLinkFolder && linkFolderPath.length === 0) || rootFolderMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+            >
+              {rootFolderMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="w-4 h-4 mr-2" />
+              )}
+              Set Root Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

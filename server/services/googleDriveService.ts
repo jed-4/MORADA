@@ -247,7 +247,9 @@ export class GoogleDriveService {
     
     if (shouldRefresh) {
       try {
+        console.log('[Drive] Token expired or expiring soon, refreshing...');
         const { credentials } = await oauth2Client.refreshAccessToken();
+        console.log('[Drive] Token refreshed successfully');
         
         if (credentials.access_token) {
           const encryptedAccessToken = encryptToken(credentials.access_token);
@@ -263,13 +265,19 @@ export class GoogleDriveService {
           oauth2Client.setCredentials(credentials);
         }
       } catch (error: any) {
-        console.error('[Drive] Error refreshing token:', error);
-        // Clear invalid tokens so status shows as disconnected
+        console.error('[Drive] Error refreshing token:', error.message);
+        console.error('[Drive] Full error details:', error.response?.data || error.code || 'No additional details');
+        
+        // Always clear tokens on refresh failure - this allows users to reconnect cleanly
+        // Common reasons: invalid_grant, token revoked, refresh token expired
+        console.error('[Drive] Clearing tokens to allow fresh reconnection');
         await this.storage.updateCompany(companyId, {
           googleDriveAccessToken: null,
           googleDriveRefreshToken: null,
           googleDriveTokenExpiry: null,
+          googleDriveEmail: null,
         });
+        
         const refreshError = new Error('Google Drive session expired. Please reconnect in Company Settings.');
         (refreshError as any).code = 'TOKEN_REFRESH_FAILED';
         throw refreshError;

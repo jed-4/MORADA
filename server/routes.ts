@@ -4368,10 +4368,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List files in a folder
   app.get('/api/google-drive/files', requireAuth, requireTeamMember, async (req: any, res) => {
     try {
-      const { folderId } = req.query;
+      const { folderId, foldersOnly } = req.query;
       const { GoogleDriveService } = await import('./services/googleDriveService');
       const driveService = new GoogleDriveService(storage);
-      const files = await driveService.listFiles(req.user.companyId, folderId as string | undefined);
+      let files = await driveService.listFiles(req.user.companyId, folderId as string | undefined);
+      
+      if (foldersOnly === 'true') {
+        files = files.filter(f => f.isFolder);
+      }
+      
       res.json(files);
     } catch (error: any) {
       console.error("Error listing files:", error.message);
