@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { 
@@ -9,6 +9,7 @@ import {
   FolderOpen,
   ChevronLeft,
   ChevronRight,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,9 +27,15 @@ import { Project } from "@shared/schema";
 
 const RECENT_PROJECTS_KEY = "recentProjectIds";
 const SELECTED_PHASE_KEY = "selectedProjectPhase";
+const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
 const MAX_RECENT = 5;
 
 type ProjectPhase = "lead" | "pre_construction" | "construction" | "post_construction";
+
+interface FavoriteProject {
+  id: string;
+  order: number;
+}
 
 const phases: { id: ProjectPhase; label: string }[] = [
   { id: "lead", label: "Lead" },
@@ -64,6 +71,14 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
       return [];
     }
   });
+  const [favoriteProjects, setFavoriteProjects] = useState<FavoriteProject[]>(() => {
+    try {
+      const saved = localStorage.getItem(FAVORITE_PROJECTS_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -85,6 +100,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
 
   const handlePrevPhase = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     const newIndex = selectedPhaseIndex > 0 ? selectedPhaseIndex - 1 : phases.length - 1;
     setSelectedPhaseIndex(newIndex);
     localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
@@ -92,12 +108,55 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
 
   const handleNextPhase = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     const newIndex = selectedPhaseIndex < phases.length - 1 ? selectedPhaseIndex + 1 : 0;
     setSelectedPhaseIndex(newIndex);
     localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
   };
 
-  // Sync phase with current project
+  // Track if we triggered the update to prevent feedback loop
+  const isLocalUpdateRef = useRef(false);
+
+  // Sync favorite projects to localStorage
+  useEffect(() => {
+    const newValue = JSON.stringify(favoriteProjects);
+    const currentValue = localStorage.getItem(FAVORITE_PROJECTS_KEY);
+    
+    // Only update if value changed
+    if (newValue !== currentValue) {
+      isLocalUpdateRef.current = true;
+      localStorage.setItem(FAVORITE_PROJECTS_KEY, newValue);
+      // Dispatch storage event to notify SidebarNav
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: FAVORITE_PROJECTS_KEY,
+        newValue
+      }));
+      // Reset flag after event loop
+      setTimeout(() => { isLocalUpdateRef.current = false; }, 0);
+    }
+  }, [favoriteProjects]);
+
+  // Listen for changes from SidebarNav
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Skip if we triggered this update
+      if (isLocalUpdateRef.current) return;
+      
+      if (e.key === FAVORITE_PROJECTS_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          // Only update if actually different
+          if (JSON.stringify(parsed) !== JSON.stringify(favoriteProjects)) {
+            setFavoriteProjects(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [favoriteProjects]);
+
+  // Sync phase with current project when it changes
   useEffect(() => {
     if (currentProject) {
       const projectPhase = currentProject.currentSystemPhase || "construction";
@@ -123,15 +182,25 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
     }
   }, [currentProject?.id]);
 
+  const toggleFavoriteProject = useCallback((projectId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setFavoriteProjects(prev => {
+      const existingIndex = prev.findIndex(p => p.id === projectId);
+      if (existingIndex >= 0) {
+        return prev.filter(p => p.id !== projectId);
+      }
+      return [...prev, { id: projectId, order: prev.length }];
+    });
+  }, []);
+
+  const isProjectFavorite = useCallback((projectId: string) => {
+    return favoriteProjects.some(p => p.id === projectId);
+  }, [favoriteProjects]);
+
+  // Only show projects in their actual phase - no pinning current project
   const filteredProjects = useMemo(() => {
     if (!searchQuery.trim()) {
-      // Always include current project in the list, even if it's in a different phase
-      if (currentProject && !phaseProjects.some(p => p.id === currentProject.id)) {
-        const currentFromActive = activeProjects.find(p => p.id === currentProject.id);
-        if (currentFromActive) {
-          return [currentFromActive, ...phaseProjects];
-        }
-      }
       return phaseProjects;
     }
     const query = searchQuery.toLowerCase();
@@ -139,7 +208,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
       p.name.toLowerCase().includes(query) ||
       p.description?.toLowerCase().includes(query)
     );
-  }, [searchQuery, phaseProjects, activeProjects, currentProject]);
+  }, [searchQuery, phaseProjects, activeProjects]);
 
   const handleProjectSelect = (project: Project) => {
     setCurrentProject(project);
@@ -166,147 +235,165 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
 
   return (
     <>
-      <div className="flex flex-col gap-0.5 w-full">
-        <div className="text-[10px] text-muted-foreground text-center font-medium">
-          {selectedPhase.label}
-        </div>
-        
-        <div className="flex items-center gap-0.5">
+      <div className="flex flex-col gap-1 w-full">
+        {/* Phase selector row: [<] Phase [>] */}
+        <div className="flex items-center justify-center gap-1">
           <Button
             variant="ghost"
             size="icon"
             onClick={handlePrevPhase}
-            className="h-7 w-7 flex-shrink-0"
+            className="h-5 w-5 flex-shrink-0"
             data-testid="button-prev-phase"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-3 w-3" />
           </Button>
-
-          <Popover open={isOpen} onOpenChange={setIsOpen}>
-            <PopoverTrigger asChild>
-              <Button 
-                variant="ghost" 
-                className={`flex-1 justify-between h-auto hover-elevate min-w-0 ${
-                  compact ? "py-1 px-2" : "py-1.5 px-2"
-                }`}
-                data-testid="button-project-switcher"
-                disabled={isLoading}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  {currentProject ? (
-                    <>
-                      <ProjectIcon 
-                        icon={currentProject.icon} 
-                        color={currentProject.color} 
-                        className="w-4 h-4 flex-shrink-0" 
-                      />
-                      <span className="text-xs font-medium truncate max-w-[100px]">
-                        {currentProject.name}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <FolderOpen className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">
-                        {isLoading ? "..." : "Select"}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-              </Button>
-            </PopoverTrigger>
-            
-            <PopoverContent 
-              className="w-60 p-0" 
-              align="center" 
-              side="bottom"
-              sideOffset={4}
-            >
-              <div className="p-2 border-b">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search projects..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-7 h-7 text-xs"
-                    data-testid="input-project-search"
-                  />
-                </div>
-              </div>
-
-              <ScrollArea className="max-h-[200px]">
-                <div className="p-1">
-                  {filteredProjects.length === 0 && (
-                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                      {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
-                    </div>
-                  )}
-
-                  {filteredProjects.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => handleProjectSelect(project)}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
-                        currentProject?.id === project.id 
-                          ? "bg-primary/10 text-primary" 
-                          : ""
-                      }`}
-                      data-testid={`project-option-${project.id}`}
-                    >
-                      <ProjectIcon 
-                        icon={project.icon} 
-                        color={project.color} 
-                        className="w-3.5 h-3.5 flex-shrink-0" 
-                      />
-                      <span className={`text-xs truncate flex-1 ${
-                        currentProject?.id === project.id ? "font-medium" : ""
-                      }`}>
-                        {project.name}
-                      </span>
-                      {project.isBusiness && (
-                        <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
-                          Biz
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
-
-              <div className="border-t p-1 flex gap-1">
-                <button
-                  onClick={handleViewAllProjects}
-                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover-elevate"
-                  data-testid="button-all-projects"
-                >
-                  <span>All</span>
-                  <ArrowRight className="h-3 w-3" />
-                </button>
-                
-                <button
-                  onClick={handleCreateProject}
-                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-primary hover-elevate"
-                  data-testid="button-new-project-switcher"
-                >
-                  <Plus className="h-3 w-3" />
-                  <span>New</span>
-                </button>
-              </div>
-            </PopoverContent>
-          </Popover>
-
+          <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
+            {selectedPhase.label}
+          </span>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleNextPhase}
-            className="h-7 w-7 flex-shrink-0"
+            className="h-5 w-5 flex-shrink-0"
             data-testid="button-next-phase"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3 w-3" />
           </Button>
         </div>
+
+        {/* Project dropdown - full width */}
+        <Popover open={isOpen} onOpenChange={setIsOpen}>
+          <PopoverTrigger asChild>
+            <Button 
+              variant="ghost" 
+              className={`w-full justify-between h-auto hover-elevate ${
+                compact ? "py-1 px-2" : "py-1.5 px-2"
+              }`}
+              data-testid="button-project-switcher"
+              disabled={isLoading}
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {currentProject ? (
+                  <>
+                    <ProjectIcon 
+                      icon={currentProject.icon} 
+                      color={currentProject.color} 
+                      className="w-4 h-4 flex-shrink-0" 
+                    />
+                    <span className="text-xs font-medium truncate">
+                      {currentProject.name}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      {isLoading ? "..." : "Select Project"}
+                    </span>
+                  </>
+                )}
+              </div>
+              <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground ml-1" />
+            </Button>
+          </PopoverTrigger>
+          
+          <PopoverContent 
+            className="w-64 p-0" 
+            align="start" 
+            side="bottom"
+            sideOffset={4}
+          >
+            <div className="p-2 border-b">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search all projects..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-7 h-7 text-xs"
+                  data-testid="input-project-search"
+                />
+              </div>
+            </div>
+
+            <ScrollArea className="max-h-[220px]">
+              <div className="p-1">
+                {filteredProjects.length === 0 && (
+                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                    {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
+                  </div>
+                )}
+
+                {filteredProjects.map((project) => {
+                  const isFavorite = isProjectFavorite(project.id);
+                  return (
+                    <div 
+                      key={project.id}
+                      className="group flex items-center"
+                    >
+                      <button
+                        onClick={() => handleProjectSelect(project)}
+                        className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
+                          currentProject?.id === project.id 
+                            ? "bg-primary/10 text-primary" 
+                            : ""
+                        }`}
+                        data-testid={`project-option-${project.id}`}
+                      >
+                        <ProjectIcon 
+                          icon={project.icon} 
+                          color={project.color} 
+                          className="w-3.5 h-3.5 flex-shrink-0" 
+                        />
+                        <span className={`text-xs truncate flex-1 ${
+                          currentProject?.id === project.id ? "font-medium" : ""
+                        }`}>
+                          {project.name}
+                        </span>
+                        {project.isBusiness && (
+                          <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
+                            Biz
+                          </Badge>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => toggleFavoriteProject(project.id, e)}
+                        className={`p-1 rounded transition-opacity ${
+                          isFavorite 
+                            ? "text-yellow-500 opacity-100" 
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                        }`}
+                        data-testid={`button-favorite-project-${project.id}`}
+                      >
+                        <Star className={`h-3 w-3 ${isFavorite ? "fill-current" : ""}`} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+
+            <div className="border-t p-1 flex gap-1">
+              <button
+                onClick={handleViewAllProjects}
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover-elevate"
+                data-testid="button-all-projects"
+              >
+                <span>All</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+              
+              <button
+                onClick={handleCreateProject}
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-primary hover-elevate"
+                data-testid="button-new-project-switcher"
+              >
+                <Plus className="h-3 w-3" />
+                <span>New</span>
+              </button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <CreateProjectDialog 

@@ -212,8 +212,45 @@ function useFavorites() {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
   }, [favorites]);
   
+  // Track if we triggered the update to prevent feedback loop
+  const isLocalFavProjUpdateRef = useRef(false);
+
   useEffect(() => {
-    localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(favoriteProjects));
+    const newValue = JSON.stringify(favoriteProjects);
+    const currentValue = localStorage.getItem(FAVORITE_PROJECTS_KEY);
+    
+    // Only update if value changed
+    if (newValue !== currentValue) {
+      isLocalFavProjUpdateRef.current = true;
+      localStorage.setItem(FAVORITE_PROJECTS_KEY, newValue);
+      // Dispatch storage event to notify ProjectSwitcher
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: FAVORITE_PROJECTS_KEY,
+        newValue
+      }));
+      // Reset flag after event loop
+      setTimeout(() => { isLocalFavProjUpdateRef.current = false; }, 0);
+    }
+  }, [favoriteProjects]);
+
+  // Listen for changes from other components (e.g., ProjectSwitcher)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Skip if we triggered this update
+      if (isLocalFavProjUpdateRef.current) return;
+      
+      if (e.key === FAVORITE_PROJECTS_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          // Only update if actually different
+          if (JSON.stringify(parsed) !== JSON.stringify(favoriteProjects)) {
+            setFavoriteProjects(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [favoriteProjects]);
   
   const toggleFavorite = useCallback((
