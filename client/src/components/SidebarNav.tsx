@@ -515,8 +515,11 @@ export function SidebarNav() {
   const getItemUrl = (sectionId: SectionId, item: NavItem): string => {
     if (sectionId === "user") {
       // For User Dashboard, always route to user workspace when user is available
-      if (item.title === "Dashboard" && currentUser?.id) {
-        return `/users/${currentUser.id}`;
+      if (item.title === "Dashboard") {
+        console.log("[getItemUrl] User Dashboard - currentUser:", currentUser?.id, "returning:", currentUser?.id ? `/users/${currentUser.id}` : item.url);
+        if (currentUser?.id) {
+          return `/users/${currentUser.id}`;
+        }
       }
       return item.url;
     }

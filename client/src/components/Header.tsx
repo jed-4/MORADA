@@ -124,16 +124,6 @@ export default function Header() {
           {companyDisplayName}
         </button>
 
-        {/* My Workspace Button */}
-        <button
-          onClick={() => user?.id && navigate(`/users/${user.id}`)}
-          className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-          data-testid="button-my-workspace"
-          title="My Workspace"
-        >
-          <Home className="h-3.5 w-3.5" />
-        </button>
-
         {/* Projects Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
