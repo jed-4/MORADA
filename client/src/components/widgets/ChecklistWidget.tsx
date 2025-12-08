@@ -1,5 +1,8 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ListChecks, Plus } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
@@ -7,8 +10,15 @@ import { type ChecklistTemplate } from "@shared/schema";
 import { useProject } from "@/contexts/ProjectContext";
 import { useLocation } from "wouter";
 
-export default function ChecklistWidget({ widget }: WidgetProps) {
+export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const maxChecklists = widget.config?.maxChecklists || 5;
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [configMaxChecklists, setConfigMaxChecklists] = useState(maxChecklists);
+  
+  useEffect(() => {
+    setEditingTitle(widget.title);
+    setConfigMaxChecklists(widget.config?.maxChecklists || 5);
+  }, [widget.title, widget.config]);
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
   
@@ -58,6 +68,63 @@ export default function ChecklistWidget({ widget }: WidgetProps) {
     return (
       <div className="text-center py-4 text-sm text-muted-foreground">
         Select a project to view checklists
+      </div>
+    );
+  }
+  
+  // Configuration mode
+  if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ 
+          ...widget, 
+          title: editingTitle,
+          config: { ...widget.config, maxChecklists: configMaxChecklists }
+        });
+      }
+      onCloseConfig?.();
+    };
+    
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      setConfigMaxChecklists(widget.config?.maxChecklists || 5);
+      onCloseConfig?.();
+    };
+    
+    return (
+      <div className="space-y-3 p-2">
+        <h4 className="text-sm font-medium">Configure Checklists</h4>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Name</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Max Items to Show</Label>
+          <Input 
+            type="number"
+            min={1}
+            max={20}
+            value={configMaxChecklists}
+            onChange={(e) => setConfigMaxChecklists(parseInt(e.target.value) || 5)}
+            className="h-7 text-xs w-20"
+          />
+        </div>
+        
+        <div className="flex justify-end gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+            Save
+          </Button>
+        </div>
       </div>
     );
   }

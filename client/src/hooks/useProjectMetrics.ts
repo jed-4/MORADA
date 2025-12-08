@@ -431,37 +431,62 @@ export function useProjectMetrics() {
 
 // Metric definitions for widget configuration
 export const metricDefinitions = [
-  { id: "contractPrice", name: "Contract Price", category: "financial", type: "currency" },
-  { id: "approvedChangeOrders", name: "Approved Variations", category: "financial", type: "currency" },
-  { id: "revisedContractPrice", name: "Revised Contract", category: "financial", type: "currency" },
-  { id: "totalProjectCosts", name: "Total Project Costs", category: "costs", type: "currency" },
-  { id: "actualCosts", name: "Actual Costs", category: "costs", type: "currency" },
-  { id: "costToComplete", name: "Cost to Complete", category: "costs", type: "currency" },
-  { id: "grossProfit", name: "Gross Profit", category: "financial", type: "currency" },
-  { id: "grossMargin", name: "Gross Margin", category: "financial", type: "percentage" },
-  { id: "actualGrossProfit", name: "Actual Gross Profit", category: "financial", type: "currency" },
-  { id: "actualGrossMargin", name: "Actual Gross Margin", category: "financial", type: "percentage" },
-  { id: "completionPercentage", name: "Completion %", category: "progress", type: "percentage" },
-  { id: "earnedRevenue", name: "Earned Revenue", category: "progress", type: "currency" },
-  { id: "wip", name: "Work in Progress (WIP)", category: "progress", type: "currency" },
-  { id: "invoicedAmount", name: "Invoiced Amount", category: "billing", type: "currency" },
-  { id: "invoicedPercentage", name: "Invoiced %", category: "billing", type: "percentage" },
-  { id: "paidInvoices", name: "Paid Invoices", category: "billing", type: "currency" },
-  { id: "paidInvoicesPercentage", name: "Paid %", category: "billing", type: "percentage" },
-  { id: "remainingBalance", name: "Remaining Balance", category: "billing", type: "currency" },
-  { id: "remainingToInvoice", name: "Remaining to Invoice", category: "billing", type: "currency" },
-  // Summary counts
-  { id: "totalBills", name: "Total Bills", category: "summary", type: "count" },
-  { id: "paidBills", name: "Paid Bills", category: "summary", type: "count" },
-  { id: "pendingBills", name: "Pending Bills", category: "summary", type: "count" },
-  { id: "overdueBills", name: "Overdue Bills", category: "summary", type: "count" },
-  { id: "totalVariations", name: "Total Variations", category: "summary", type: "count" },
-  { id: "approvedVariations", name: "Approved Variations", category: "summary", type: "count" },
-  { id: "pendingVariations", name: "Pending Variations", category: "summary", type: "count" },
-  { id: "totalInvoices", name: "Total Invoices", category: "summary", type: "count" },
-  { id: "paidInvoicesCount", name: "Paid Invoices Count", category: "summary", type: "count" },
-  { id: "unpaidInvoices", name: "Unpaid Invoices", category: "summary", type: "count" },
-  { id: "overdueInvoices", name: "Overdue Invoices", category: "summary", type: "count" },
+  // Contract & Revenue
+  { id: "contractPrice", name: "Contract Price", category: "contract", type: "currency", group: "Contract & Revenue" },
+  { id: "approvedChangeOrders", name: "Approved Variations", category: "contract", type: "currency", group: "Contract & Revenue" },
+  { id: "revisedContractPrice", name: "Revised Contract", category: "contract", type: "currency", group: "Contract & Revenue" },
+  { id: "earnedRevenue", name: "Earned Revenue", category: "contract", type: "currency", group: "Contract & Revenue" },
+  
+  // Costs & Budget
+  { id: "totalProjectCosts", name: "Total Project Costs", category: "costs", type: "currency", group: "Costs & Budget" },
+  { id: "actualCosts", name: "Actual Costs", category: "costs", type: "currency", group: "Costs & Budget" },
+  { id: "costToComplete", name: "Cost to Complete", category: "costs", type: "currency", group: "Costs & Budget" },
+  
+  // Profit & Margins
+  { id: "grossProfit", name: "Gross Profit", category: "margins", type: "currency", group: "Profit & Margins" },
+  { id: "grossMargin", name: "Gross Margin", category: "margins", type: "percentage", group: "Profit & Margins" },
+  { id: "actualGrossProfit", name: "Actual Gross Profit", category: "margins", type: "currency", group: "Profit & Margins" },
+  { id: "actualGrossMargin", name: "Actual Gross Margin", category: "margins", type: "percentage", group: "Profit & Margins" },
+  
+  // Progress
+  { id: "completionPercentage", name: "Completion %", category: "progress", type: "percentage", group: "Progress" },
+  { id: "wip", name: "Work in Progress (WIP)", category: "progress", type: "currency", group: "Progress" },
+  
+  // Invoicing & Billing
+  { id: "invoicedAmount", name: "Invoiced Amount", category: "billing", type: "currency", group: "Invoicing & Billing" },
+  { id: "invoicedPercentage", name: "Invoiced %", category: "billing", type: "percentage", group: "Invoicing & Billing" },
+  { id: "paidInvoices", name: "Paid Invoices", category: "billing", type: "currency", group: "Invoicing & Billing" },
+  { id: "paidInvoicesPercentage", name: "Paid %", category: "billing", type: "percentage", group: "Invoicing & Billing" },
+  { id: "remainingBalance", name: "Remaining Balance", category: "billing", type: "currency", group: "Invoicing & Billing" },
+  { id: "remainingToInvoice", name: "Remaining to Invoice", category: "billing", type: "currency", group: "Invoicing & Billing" },
+  
+  // Counts - Bills
+  { id: "totalBills", name: "Total Bills", category: "counts", type: "count", group: "Bills Summary" },
+  { id: "paidBills", name: "Paid Bills", category: "counts", type: "count", group: "Bills Summary" },
+  { id: "pendingBills", name: "Pending Bills", category: "counts", type: "count", group: "Bills Summary" },
+  { id: "overdueBills", name: "Overdue Bills", category: "counts", type: "count", group: "Bills Summary" },
+  
+  // Counts - Variations
+  { id: "totalVariations", name: "Total Variations", category: "counts", type: "count", group: "Variations Summary" },
+  { id: "approvedVariations", name: "Approved Variations", category: "counts", type: "count", group: "Variations Summary" },
+  { id: "pendingVariations", name: "Pending Variations", category: "counts", type: "count", group: "Variations Summary" },
+  
+  // Counts - Invoices
+  { id: "totalInvoices", name: "Total Invoices", category: "counts", type: "count", group: "Invoices Summary" },
+  { id: "paidInvoicesCount", name: "Paid Invoices Count", category: "counts", type: "count", group: "Invoices Summary" },
+  { id: "unpaidInvoices", name: "Unpaid Invoices", category: "counts", type: "count", group: "Invoices Summary" },
+  { id: "overdueInvoices", name: "Overdue Invoices", category: "counts", type: "count", group: "Invoices Summary" },
+] as const;
+
+export const metricGroups = [
+  "Contract & Revenue",
+  "Costs & Budget", 
+  "Profit & Margins",
+  "Progress",
+  "Invoicing & Billing",
+  "Bills Summary",
+  "Variations Summary",
+  "Invoices Summary",
 ] as const;
 
 export type MetricId = typeof metricDefinitions[number]["id"];

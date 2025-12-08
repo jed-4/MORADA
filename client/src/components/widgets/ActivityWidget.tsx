@@ -1,7 +1,11 @@
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type Activity } from "@shared/schema";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   FileText,
   DollarSign,
@@ -12,8 +16,15 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-export default function ActivityWidget({ widget }: WidgetProps) {
+export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [configMaxItems, setConfigMaxItems] = useState(widget.config?.maxItems || 20);
+  
+  useEffect(() => {
+    setEditingTitle(widget.title);
+    setConfigMaxItems(widget.config?.maxItems || 20);
+  }, [widget.title, widget.config]);
 
   const { data: activities = [], isLoading } = useQuery<Activity[]>({
     queryKey: ["/api/activities", currentProject?.id],
@@ -66,6 +77,63 @@ export default function ActivityWidget({ widget }: WidgetProps) {
         return "text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-950";
     }
   };
+
+  // Configuration mode
+  if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ 
+          ...widget, 
+          title: editingTitle,
+          config: { ...widget.config, maxItems: configMaxItems }
+        });
+      }
+      onCloseConfig?.();
+    };
+    
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      setConfigMaxItems(widget.config?.maxItems || 20);
+      onCloseConfig?.();
+    };
+    
+    return (
+      <div className="space-y-3 p-2">
+        <h4 className="text-sm font-medium">Configure Activity Feed</h4>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Name</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Max Items to Show</Label>
+          <Input 
+            type="number"
+            min={5}
+            max={50}
+            value={configMaxItems}
+            onChange={(e) => setConfigMaxItems(parseInt(e.target.value) || 20)}
+            className="h-7 text-xs w-20"
+          />
+        </div>
+        
+        <div className="flex justify-end gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+            Save
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -111,6 +111,7 @@ export default function CustomizableProjectOverview() {
   const [activeViewId, setActiveViewId] = useState("overview");
   const [backgroundId, setBackgroundId] = useState("default");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isCreatingView, setIsCreatingView] = useState(false);
   const [, navigate] = useLocation();
   
   // Fetch field categories for phase colors
@@ -289,8 +290,11 @@ export default function CustomizableProjectOverview() {
     }
   };
   
-  // Create a new view with current widgets
+  // Create a new view with current widgets (with debounce to prevent double-click)
   const createNewView = () => {
+    if (isCreatingView) return;
+    setIsCreatingView(true);
+    
     const newViewId = `view-${Date.now()}`;
     const newView: DashboardView = {
       id: newViewId,
@@ -303,6 +307,26 @@ export default function CustomizableProjectOverview() {
     setActiveViewId(newViewId);
     if (currentProject) {
       localStorage.setItem(`dashboard-active-view-${currentProject.id}`, newViewId);
+    }
+    
+    setTimeout(() => setIsCreatingView(false), 500);
+  };
+  
+  // Delete a view (cannot delete default Overview view)
+  const deleteView = (viewId: string) => {
+    if (savedViews.length <= 1) return;
+    if (viewId === "overview") return;
+    const updatedViews = savedViews.filter(v => v.id !== viewId);
+    setSavedViews(updatedViews);
+    saveViews(updatedViews);
+    
+    if (activeViewId === viewId) {
+      const newActiveView = updatedViews[0];
+      setActiveViewId(newActiveView.id);
+      setWidgets(newActiveView.widgets);
+      if (currentProject) {
+        localStorage.setItem(`dashboard-active-view-${currentProject.id}`, newActiveView.id);
+      }
     }
   };
 
@@ -465,18 +489,35 @@ export default function CustomizableProjectOverview() {
                 <ChevronDown className="w-3 h-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
+            <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {savedViews.map((view) => (
                 <DropdownMenuItem 
                   key={view.id}
-                  onClick={() => switchToView(view.id)}
-                  className="text-xs flex items-center justify-between"
+                  className="text-xs flex items-center justify-between gap-2 group"
+                  onSelect={(e) => e.preventDefault()}
                 >
-                  <span>{view.name}</span>
-                  {view.id === activeViewId && (
-                    <Check className="w-3 h-3 text-[#bba7db]" />
+                  <button
+                    className="flex-1 text-left flex items-center gap-2"
+                    onClick={() => switchToView(view.id)}
+                  >
+                    <span className="flex-1 truncate">{view.name}</span>
+                    {view.id === activeViewId && (
+                      <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                    )}
+                  </button>
+                  {savedViews.length > 1 && view.id !== "overview" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteView(view.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                      data-testid={`button-delete-view-${view.id}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   )}
                 </DropdownMenuItem>
               ))}
@@ -487,12 +528,17 @@ export default function CustomizableProjectOverview() {
         {/* Right: New View button */}
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${
+              isCreatingView 
+                ? 'opacity-50 cursor-not-allowed' 
+                : 'hover-elevate active-elevate-2'
+            }`}
             onClick={createNewView}
+            disabled={isCreatingView}
             data-testid="button-new-view"
           >
             <PlusCircle className="w-3 h-3" />
-            <span>New View</span>
+            <span>{isCreatingView ? 'Creating...' : 'New View'}</span>
           </button>
         </div>
       </div>

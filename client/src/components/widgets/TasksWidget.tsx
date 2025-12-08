@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -50,6 +51,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [configFilterPriority, setConfigFilterPriority] = useState<FilterPriority>(defaultFilterPriority);
   const [configSortBy, setConfigSortBy] = useState<SortBy>(defaultSortBy);
   const [configSortOrder, setConfigSortOrder] = useState<SortOrder>(defaultSortOrder);
+  const [editingTitle, setEditingTitle] = useState(widget.title);
   
   // Sync config state when widget config changes
   useEffect(() => {
@@ -66,12 +68,14 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
     setConfigFilterPriority(newFilterPriority);
     setConfigSortBy(newSortBy);
     setConfigSortOrder(newSortOrder);
-  }, [widget.config]);
+    setEditingTitle(widget.title);
+  }, [widget.config, widget.title]);
   
   const handleSaveConfig = () => {
     if (onUpdate) {
       onUpdate({
         ...widget,
+        title: editingTitle,
         config: {
           ...widget.config,
           defaultFilterStatus: configFilterStatus,
@@ -81,6 +85,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
         },
       });
     }
+    onCloseConfig?.();
   };
   
   // Fetch all tasks from the API filtered by current project
@@ -275,6 +280,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label>Widget Name</Label>
+              <Input 
+                value={editingTitle}
+                onChange={(e) => setEditingTitle(e.target.value)}
+                placeholder="Widget title"
+                data-testid="config-input-title"
+              />
+            </div>
+            
+            <div className="space-y-2">
               <Label>Default Status Filter</Label>
               <Select value={configFilterStatus} onValueChange={(value) => setConfigFilterStatus(value as FilterStatus)}>
                 <SelectTrigger data-testid="config-select-filter-status">
@@ -341,6 +356,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 setConfigFilterPriority(defaultFilterPriority);
                 setConfigSortBy(defaultSortBy);
                 setConfigSortOrder(defaultSortOrder);
+                setEditingTitle(widget.title);
                 onCloseConfig?.();
               }}
               data-testid="button-cancel-config"
@@ -351,7 +367,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
               onClick={handleSaveConfig}
               data-testid="button-save-config"
             >
-              Save Changes
+              Save
             </Button>
           </div>
         </DialogContent>

@@ -13,8 +13,10 @@ import {
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface QuickAction {
   id: string;
@@ -41,21 +43,24 @@ const defaultActions: QuickAction[] = [
 export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const [, navigate] = useLocation();
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [configEnabledActions, setConfigEnabledActions] = useState<string[]>([]);
   
   const enabledActions: string[] = widget.config?.enabledActions || 
     defaultActions.slice(0, 6).map(a => a.id);
   
   const visibleActions = defaultActions.filter(a => enabledActions.includes(a.id));
 
+  useEffect(() => {
+    setEditingTitle(widget.title);
+    setConfigEnabledActions(widget.config?.enabledActions || defaultActions.slice(0, 6).map(a => a.id));
+  }, [widget.title, widget.config]);
+
   const toggleAction = (actionId: string) => {
-    if (!onUpdate) return;
-    const newEnabled = enabledActions.includes(actionId)
-      ? enabledActions.filter(id => id !== actionId)
-      : [...enabledActions, actionId];
-    onUpdate({
-      ...widget,
-      config: { ...widget.config, enabledActions: newEnabled },
-    });
+    const newEnabled = configEnabledActions.includes(actionId)
+      ? configEnabledActions.filter(id => id !== actionId)
+      : [...configEnabledActions, actionId];
+    setConfigEnabledActions(newEnabled);
   };
 
   if (!currentProject) {
@@ -68,31 +73,65 @@ export default function QuickActionsWidget({ widget, onUpdate, isConfiguring, on
 
   // Configuration mode
   if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ 
+          ...widget, 
+          title: editingTitle,
+          config: { ...widget.config, enabledActions: configEnabledActions }
+        });
+      }
+      onCloseConfig?.();
+    };
+    
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      setConfigEnabledActions(widget.config?.enabledActions || defaultActions.slice(0, 6).map(a => a.id));
+      onCloseConfig?.();
+    };
+    
     return (
       <div className="space-y-3 p-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium">Configure Actions</h4>
-          <Button size="sm" variant="ghost" onClick={onCloseConfig} className="h-6 px-2 text-xs">
-            Done
-          </Button>
+        <h4 className="text-sm font-medium">Configure Quick Actions</h4>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Name</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
         </div>
         
-        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-          {defaultActions.map(action => (
-            <button
-              key={action.id}
-              onClick={() => toggleAction(action.id)}
-              className={`flex items-center gap-2 p-2 border rounded-md text-xs transition-colors ${
-                enabledActions.includes(action.id)
-                  ? 'bg-[#bba7db]/20 border-[#bba7db]'
-                  : 'hover-elevate'
-              }`}
-              data-testid={`toggle-action-${action.id}`}
-            >
-              <action.icon className={`h-3.5 w-3.5 ${action.color || ''}`} />
-              <span>{action.label}</span>
-            </button>
-          ))}
+        <div className="space-y-2">
+          <Label className="text-xs">Select Actions</Label>
+          <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+            {defaultActions.map(action => (
+              <button
+                key={action.id}
+                onClick={() => toggleAction(action.id)}
+                className={`flex items-center gap-2 p-2 border rounded-md text-xs transition-colors ${
+                  configEnabledActions.includes(action.id)
+                    ? 'bg-[#bba7db]/20 border-[#bba7db]'
+                    : 'hover-elevate'
+                }`}
+                data-testid={`toggle-action-${action.id}`}
+              >
+                <action.icon className={`h-3.5 w-3.5 ${action.color || ''}`} />
+                <span>{action.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+            Save
+          </Button>
         </div>
       </div>
     );

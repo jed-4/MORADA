@@ -1,6 +1,9 @@
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Calendar, Clock, Plus, AlertTriangle, Flag, CheckCircle2, ArrowRight } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
@@ -24,6 +27,11 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   const showOverdue = widget.config?.showOverdue !== false;
   const showMilestones = widget.config?.showMilestones !== false;
   const showCompleted = widget.config?.showCompleted || false;
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  
+  useEffect(() => {
+    setEditingTitle(widget.title);
+  }, [widget.title]);
 
   // Fetch project tasks
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
@@ -160,13 +168,30 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
 
   // Configuration mode
   if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ ...widget, title: editingTitle });
+      }
+      onCloseConfig?.();
+    };
+    
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      onCloseConfig?.();
+    };
+    
     return (
       <div className="space-y-3 p-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium">Configure Schedule</h4>
-          <Button size="sm" variant="ghost" onClick={onCloseConfig} className="h-6 px-2 text-xs">
-            Done
-          </Button>
+        <h4 className="text-sm font-medium">Configure Schedule</h4>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Name</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
         </div>
         
         <div className="space-y-2">
@@ -208,6 +233,15 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               className="w-16 h-6 px-2 border rounded text-xs"
             />
           </div>
+        </div>
+        
+        <div className="flex justify-end gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+            Save
+          </Button>
         </div>
       </div>
     );

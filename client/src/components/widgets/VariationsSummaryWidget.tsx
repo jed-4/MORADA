@@ -1,15 +1,23 @@
+import { useState, useEffect } from "react";
 import { FileEdit, Clock, CheckCircle, AlertCircle, ArrowRight, TrendingUp, TrendingDown } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics } from "@/hooks/useProjectMetrics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useLocation } from "wouter";
 
-export default function VariationsSummaryWidget({ widget }: WidgetProps) {
+export default function VariationsSummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const { metrics, isLoading, formatCurrency } = useProjectMetrics();
   const [, navigate] = useLocation();
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  
+  useEffect(() => {
+    setEditingTitle(widget.title);
+  }, [widget.title]);
 
   if (!currentProject) {
     return (
@@ -24,6 +32,44 @@ export default function VariationsSummaryWidget({ widget }: WidgetProps) {
       <div className="space-y-3 animate-pulse">
         <div className="h-6 bg-muted rounded w-1/2"></div>
         <div className="h-16 bg-muted rounded"></div>
+      </div>
+    );
+  }
+
+  // Configuration mode
+  if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ ...widget, title: editingTitle });
+      }
+      onCloseConfig?.();
+    };
+    
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      onCloseConfig?.();
+    };
+    
+    return (
+      <div className="space-y-3 p-2">
+        <h4 className="text-sm font-medium">Configure Variations Summary</h4>
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Name</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+            Save
+          </Button>
+        </div>
       </div>
     );
   }

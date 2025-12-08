@@ -2,8 +2,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { FileText, Plus, Edit3, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Note } from "@shared/schema";
@@ -11,8 +12,15 @@ import { useProject } from "@/contexts/ProjectContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-export default function NotesWidget({ widget }: WidgetProps) {
+export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const [isCreating, setIsCreating] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [configMaxNotes, setConfigMaxNotes] = useState(widget.config?.maxNotes || 3);
+  
+  useEffect(() => {
+    setEditingTitle(widget.title);
+    setConfigMaxNotes(widget.config?.maxNotes || 3);
+  }, [widget.title, widget.config]);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
   const [newNoteVisibility, setNewNoteVisibility] = useState<"team_only" | "everyone" | "project_team" | "private">("team_only");
@@ -151,6 +159,63 @@ export default function NotesWidget({ widget }: WidgetProps) {
         return "Team only";
     }
   };
+
+  // Configuration mode
+  if (isConfiguring) {
+    const handleSaveConfig = () => {
+      if (onUpdate) {
+        onUpdate({ 
+          ...widget, 
+          title: editingTitle,
+          config: { ...widget.config, maxNotes: configMaxNotes }
+        });
+      }
+      onCloseConfig?.();
+    };
+    
+    const handleCancelConfig = () => {
+      setEditingTitle(widget.title);
+      setConfigMaxNotes(widget.config?.maxNotes || 3);
+      onCloseConfig?.();
+    };
+    
+    return (
+      <div className="space-y-3 p-2">
+        <h4 className="text-sm font-medium">Configure Notes</h4>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Name</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Max Notes to Show</Label>
+          <Input 
+            type="number"
+            min={1}
+            max={10}
+            value={configMaxNotes}
+            onChange={(e) => setConfigMaxNotes(parseInt(e.target.value) || 3)}
+            className="h-7 text-xs w-20"
+          />
+        </div>
+        
+        <div className="flex justify-end gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSaveConfig} className="h-6 px-2 text-xs">
+            Save
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
