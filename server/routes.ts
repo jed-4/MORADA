@@ -1548,6 +1548,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Check for duplicate project name within the company (case-insensitive) using database query
+      const normalizedName = validationResult.data.name.trim().toLowerCase();
+      const { rows: existingProjects } = await pool.query(
+        `SELECT id FROM projects WHERE company_id = $1 AND LOWER(TRIM(name)) = $2 LIMIT 1`,
+        [user.companyId, normalizedName]
+      );
+      if (existingProjects.length > 0) {
+        return res.status(409).json({ 
+          error: "A project with this name already exists",
+          details: "Project names must be unique within your company",
+          code: "DUPLICATE_NAME"
+        });
+      }
+
       // Automatically set companyId and ownerId for multi-tenant isolation
       const projectData = {
         ...validationResult.data,
@@ -1686,6 +1700,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log("[PATCH /api/projects/:id] Validated data:", JSON.stringify(validationResult.data, null, 2));
+
+      // Check for duplicate project name within the company (case-insensitive) when renaming
+      if (validationResult.data.name) {
+        const user = req.user as any;
+        if (!user?.companyId) {
+          return res.status(401).json({ error: "Unauthorized - no company context" });
+        }
+        
+        const currentProject = await storage.getProject(req.params.id);
+        if (!currentProject) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+        if (currentProject.companyId !== user.companyId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        
+        const normalizedName = validationResult.data.name.trim().toLowerCase();
+        const { rows: existingProjects } = await pool.query(
+          `SELECT id FROM projects WHERE company_id = $1 AND LOWER(TRIM(name)) = $2 AND id != $3 LIMIT 1`,
+          [currentProject.companyId, normalizedName, req.params.id]
+        );
+        if (existingProjects.length > 0) {
+          return res.status(409).json({ 
+            error: "A project with this name already exists",
+            details: "Project names must be unique within your company",
+            code: "DUPLICATE_NAME"
+          });
+        }
+      }
 
       const project = await storage.updateProject(req.params.id, validationResult.data);
       if (!project) {

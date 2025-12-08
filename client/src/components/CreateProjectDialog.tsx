@@ -79,10 +79,13 @@ export default function CreateProjectDialog({ open, onOpenChange }: CreateProjec
         description: `${newProject.name} has been added to your projects.`,
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      const isDuplicate = error.message?.startsWith("409:");
       toast({
-        title: "Failed to create project",
-        description: error.message || "An error occurred while creating the project.",
+        title: isDuplicate ? "Duplicate project name" : "Failed to create project",
+        description: isDuplicate 
+          ? "A project with this name already exists. Please choose a different name."
+          : (error.message || "An error occurred while creating the project."),
         variant: "destructive",
       });
     },
