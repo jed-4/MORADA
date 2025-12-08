@@ -761,6 +761,11 @@ export const companySettings = pgTable("company_settings", {
   // Insurance expiry reminder settings
   insuranceReminderRoleId: varchar("insurance_reminder_role_id").references(() => userRoles.id), // Which role receives insurance expiry reminders (defaults to General Manager)
   
+  // Activity feed visibility settings - which activity types appear in the feed
+  // JSON object with activity type keys and boolean visibility values
+  // e.g., { "task": true, "estimate": true, "bill": false, ... }
+  activityTypesVisible: json("activity_types_visible").$type<Record<string, boolean>>(),
+  
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
