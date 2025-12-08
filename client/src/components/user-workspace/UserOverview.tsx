@@ -45,7 +45,7 @@ import {
   rectSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import WidgetContainer from "@/components/widgets/WidgetContainer";
+import PersonalWidgetContainer from "./widgets/PersonalWidgetContainer";
 
 interface UserOverviewProps {
   user: User;
@@ -119,7 +119,7 @@ function SortableWidget({
       style={style}
       className={sizeClasses[widget.size]}
     >
-      <WidgetContainer
+      <PersonalWidgetContainer
         title={widget.title}
         icon={<definition.icon className="h-3.5 w-3.5" />}
         onRemove={() => onRemove(widget.id)}
@@ -133,7 +133,7 @@ function SortableWidget({
           isConfiguring={isConfiguring}
           onCloseConfig={() => onConfigure(null)}
         />
-      </WidgetContainer>
+      </PersonalWidgetContainer>
     </div>
   );
 }
