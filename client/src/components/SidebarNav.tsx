@@ -41,6 +41,9 @@ import {
   ChevronsLeft,
   Clipboard,
   Search,
+  Star,
+  ChevronDown,
+  GripVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -140,10 +143,176 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
 };
 
 const sectionOrder: SectionId[] = ["user", "project", "management", "finance", "allitems", "system"];
+const favoriteSections: SectionId[] = ["user", "project", "management", "finance"];
 
 const HOVER_DELAY_MS = 300;
 const LAST_SECTION_KEY = "sidebar_last_section";
+const FAVORITES_KEY = "sidebar_favorites";
+const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
 const MOBILE_BREAKPOINT = 1024;
+
+interface FavoriteItem {
+  id: string;
+  section: SectionId;
+  title: string;
+  url: string;
+  fullUrl: string;
+  iconName: string;
+  channelId?: string;
+  projectId?: string;
+  order: number;
+}
+
+interface FavoriteProject {
+  id: string;
+  order: number;
+}
+
+function useFavorites() {
+  const [favorites, setFavorites] = useState<FavoriteItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(FAVORITES_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  
+  const [favoriteProjects, setFavoriteProjects] = useState<FavoriteProject[]>(() => {
+    try {
+      const saved = localStorage.getItem(FAVORITE_PROJECTS_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  
+  const [expandedGroups, setExpandedGroups] = useState<Record<SectionId, boolean>>({
+    user: true,
+    project: true,
+    management: true,
+    finance: true,
+    allitems: false,
+    system: false,
+  });
+  
+  useEffect(() => {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+  }, [favorites]);
+  
+  useEffect(() => {
+    localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(favoriteProjects));
+  }, [favoriteProjects]);
+  
+  const toggleFavorite = useCallback((
+    section: SectionId, 
+    item: NavItem, 
+    iconName: string, 
+    fullUrl: string,
+    projectId?: string,
+    channelId?: string
+  ) => {
+    setFavorites(prev => {
+      const existingIndex = prev.findIndex(f => f.fullUrl === fullUrl && f.section === section);
+      if (existingIndex >= 0) {
+        return prev.filter((_, i) => i !== existingIndex);
+      } else {
+        const sectionFavorites = prev.filter(f => f.section === section);
+        const newFavorite: FavoriteItem = {
+          id: `${section}-${item.title}-${Date.now()}`,
+          section,
+          title: item.title,
+          url: item.url,
+          fullUrl,
+          iconName,
+          projectId,
+          channelId,
+          order: sectionFavorites.length,
+        };
+        return [...prev, newFavorite];
+      }
+    });
+  }, []);
+  
+  const isFavorite = useCallback((section: SectionId, fullUrl: string) => {
+    return favorites.some(f => f.fullUrl === fullUrl && f.section === section);
+  }, [favorites]);
+  
+  const toggleFavoriteProject = useCallback((projectId: string) => {
+    setFavoriteProjects(prev => {
+      const existingIndex = prev.findIndex(p => p.id === projectId);
+      if (existingIndex >= 0) {
+        return prev.filter((_, i) => i !== existingIndex);
+      } else {
+        return [...prev, { id: projectId, order: prev.length }];
+      }
+    });
+  }, []);
+  
+  const isProjectFavorite = useCallback((projectId: string) => {
+    return favoriteProjects.some(p => p.id === projectId);
+  }, [favoriteProjects]);
+  
+  const toggleGroup = useCallback((section: SectionId) => {
+    setExpandedGroups(prev => ({ ...prev, [section]: !prev[section] }));
+  }, []);
+  
+  const reorderFavorites = useCallback((section: SectionId, fromIndex: number, toIndex: number) => {
+    setFavorites(prev => {
+      const sectionItems = prev.filter(f => f.section === section);
+      const otherItems = prev.filter(f => f.section !== section);
+      const [moved] = sectionItems.splice(fromIndex, 1);
+      sectionItems.splice(toIndex, 0, moved);
+      return [...otherItems, ...sectionItems.map((item, i) => ({ ...item, order: i }))];
+    });
+  }, []);
+  
+  return {
+    favorites,
+    favoriteProjects,
+    expandedGroups,
+    toggleFavorite,
+    isFavorite,
+    toggleFavoriteProject,
+    isProjectFavorite,
+    toggleGroup,
+    reorderFavorites,
+  };
+}
+
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  LayoutDashboard,
+  Inbox,
+  CheckSquare,
+  Home,
+  MessageSquare,
+  ClipboardList,
+  FileText,
+  Calculator,
+  FileBarChart,
+  File,
+  ListTree,
+  Clock,
+  ListChecks,
+  FileSearch,
+  HelpCircle,
+  CheckCircle,
+  DollarSign,
+  Receipt,
+  AlertCircle,
+  BookOpen,
+  Timer,
+  FolderOpen,
+  Users,
+  PiggyBank,
+  LayoutTemplate,
+  Truck,
+  HardHat,
+  Archive,
+  Mail,
+  UserPlus,
+  Settings,
+};
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -166,12 +335,23 @@ export function SidebarNav() {
     return (saved && sectionOrder.includes(saved as SectionId)) ? saved as SectionId : null;
   });
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [focusedItemIndex, setFocusedItemIndex] = useState<number>(-1);
   const drawerRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { currentProject, setCurrentProject } = useProject();
+  const {
+    favorites,
+    favoriteProjects,
+    expandedGroups,
+    toggleFavorite,
+    isFavorite,
+    toggleFavoriteProject,
+    isProjectFavorite,
+    toggleGroup,
+  } = useFavorites();
   
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -315,8 +495,34 @@ export function SidebarNav() {
 
   const closeDrawer = useCallback(() => {
     setIsDrawerOpen(false);
+    setIsFavoritesOpen(false);
     setActiveSection(null);
   }, []);
+
+  const handleFavoritesClick = useCallback(() => {
+    if (isFavoritesOpen) {
+      setIsFavoritesOpen(false);
+      setIsDrawerOpen(false);
+    } else {
+      setActiveSection(null);
+      setIsFavoritesOpen(true);
+      setIsDrawerOpen(true);
+    }
+  }, [isFavoritesOpen]);
+
+  const handleFavoriteNavClick = useCallback((url: string) => {
+    navigate(url);
+    setIsDrawerOpen(false);
+    setIsFavoritesOpen(false);
+  }, [navigate]);
+
+  const getIconName = (item: NavItem): string => {
+    const iconStr = item.icon.toString();
+    for (const [name, component] of Object.entries(iconMap)) {
+      if (component === item.icon) return name;
+    }
+    return "FileText";
+  };
 
   return (
     <div className="relative flex h-full">
@@ -329,6 +535,30 @@ export function SidebarNav() {
         {/* Logo / Company */}
         <div className="flex items-center justify-center h-10 border-b border-sidebar-border">
           <Building2 className="h-5 w-5 text-primary" />
+        </div>
+        
+        {/* Favorites Section */}
+        <div className="py-1 border-b border-sidebar-border">
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleFavoritesClick}
+                className={cn(
+                  "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
+                  "hover-elevate active-elevate-2",
+                  isFavoritesOpen
+                    ? "bg-primary text-primary-foreground"
+                    : "text-yellow-500 hover:text-yellow-400"
+                )}
+                data-testid="rail-favorites"
+              >
+                <Star className={cn("h-4 w-4", favorites.length > 0 && "fill-current")} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Favorites
+            </TooltipContent>
+          </Tooltip>
         </div>
         
         {/* Section Icons */}
@@ -452,37 +682,191 @@ export function SidebarNav() {
                   const isActive = location === url || 
                     (url !== "/" && location.startsWith(url));
                   const isFocused = focusedItemIndex === index;
-                  
                   const showBadge = (item.title === "Inbox" || item.title === "Messages") && totalUnreadMessages > 0;
+                  const itemIsFavorite = favoriteSections.includes(activeSection) && isFavorite(activeSection, url);
+                  const projectIdForFav = (activeSection !== "user" && currentProject && !currentProject.isBusiness) 
+                    ? currentProject.id 
+                    : undefined;
                   
                   return (
-                    <button
+                    <div
                       key={item.title}
-                      onClick={() => handleNavClick(url)}
-                      className={cn(
-                        "flex items-center w-full rounded-md transition-colors",
-                        "hover-elevate active-elevate-2",
-                        isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
-                        isActive
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-muted-foreground hover:text-foreground",
-                        isFocused && "ring-2 ring-primary/50 bg-muted/50"
-                      )}
-                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                      className="group flex items-center"
                     >
-                      <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
-                      <span className="flex-1 text-left">{item.title}</span>
-                      {showBadge && (
-                        <Badge 
-                          variant="destructive" 
-                          className={isMobile ? "h-5 min-w-5 px-1.5 text-xs" : "h-4 min-w-4 px-1 text-[10px]"}
+                      <button
+                        onClick={() => handleNavClick(url)}
+                        className={cn(
+                          "flex items-center flex-1 rounded-md transition-colors",
+                          "hover-elevate active-elevate-2",
+                          isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
+                          isActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-muted-foreground hover:text-foreground",
+                          isFocused && "ring-2 ring-primary/50 bg-muted/50"
+                        )}
+                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
+                        <span className="flex-1 text-left">{item.title}</span>
+                        {showBadge && (
+                          <Badge 
+                            variant="destructive" 
+                            className={isMobile ? "h-5 min-w-5 px-1.5 text-xs" : "h-4 min-w-4 px-1 text-[10px]"}
+                          >
+                            {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
+                          </Badge>
+                        )}
+                      </button>
+                      {favoriteSections.includes(activeSection) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(activeSection, item, getIconName(item), url, projectIdForFav);
+                          }}
+                          className={cn(
+                            "p-1 rounded transition-opacity",
+                            itemIsFavorite 
+                              ? "text-yellow-500 opacity-100" 
+                              : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                          )}
+                          data-testid={`favorite-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                         >
-                          {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
-                        </Badge>
+                          <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
+                        </button>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
+        
+        {/* Favorites Drawer Content */}
+        {isFavoritesOpen && (
+          <div className="flex flex-col h-full">
+            {/* Favorites Header */}
+            <div className={cn(
+              "flex items-center justify-between px-3 border-b border-sidebar-border",
+              isMobile ? "h-12" : "h-10"
+            )}>
+              {isMobile && (
+                <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mx-auto absolute top-2 left-1/2 -translate-x-1/2" />
+              )}
+              <span className={cn("font-semibold flex items-center gap-1.5", isMobile ? "text-sm" : "text-xs")}>
+                <Star className="h-3.5 w-3.5 text-yellow-500 fill-current" />
+                Favorites
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={closeDrawer}
+                className={isMobile ? "h-8 w-8" : "h-6 w-6"}
+              >
+                <ChevronsLeft className={isMobile ? "h-4 w-4" : "h-3.5 w-3.5"} />
+              </Button>
+            </div>
+            
+            {/* Favorite Projects at top */}
+            {favoriteProjects.length > 0 && (
+              <div className="px-2 py-1.5 border-b border-sidebar-border">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 px-1">
+                  Projects
+                </div>
+                {favoriteProjects.map((fp) => {
+                  const project = activeProjects.find(p => p.id === fp.id);
+                  if (!project) return null;
+                  return (
+                    <button
+                      key={fp.id}
+                      onClick={() => {
+                        setCurrentProject(project);
+                        handleFavoriteNavClick(`/projects/${project.id}`);
+                      }}
+                      className={cn(
+                        "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors",
+                        "hover-elevate active-elevate-2",
+                        currentProject?.id === project.id
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Home className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{project.name}</span>
                     </button>
                   );
                 })}
+              </div>
+            )}
+            
+            <ScrollArea className="flex-1">
+              <div className="p-1.5">
+                {favoriteSections.map((sectionId) => {
+                  const sectionFavorites = favorites
+                    .filter(f => f.section === sectionId)
+                    .sort((a, b) => a.order - b.order);
+                  
+                  if (sectionFavorites.length === 0) return null;
+                  
+                  return (
+                    <div key={sectionId} className="mb-2">
+                      <button
+                        onClick={() => toggleGroup(sectionId)}
+                        className="flex items-center gap-1 w-full px-1 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+                      >
+                        <ChevronDown 
+                          className={cn(
+                            "h-3 w-3 transition-transform",
+                            !expandedGroups[sectionId] && "-rotate-90"
+                          )} 
+                        />
+                        {sections[sectionId].label}
+                      </button>
+                      
+                      {expandedGroups[sectionId] && (
+                        <div className="space-y-0.5">
+                          {sectionFavorites.map((fav) => {
+                            const IconComponent = iconMap[fav.iconName] || FileText;
+                            const url = fav.fullUrl || fav.url;
+                            const isActive = location === url || (url !== "/" && location.startsWith(url));
+                            
+                            return (
+                              <div key={fav.id} className="group flex items-center">
+                                <button
+                                  onClick={() => handleFavoriteNavClick(url)}
+                                  className={cn(
+                                    "flex items-center gap-2 flex-1 px-2 py-1.5 rounded-md text-xs transition-colors",
+                                    "hover-elevate active-elevate-2",
+                                    isActive
+                                      ? "bg-primary/10 text-primary font-medium"
+                                      : "text-muted-foreground hover:text-foreground"
+                                  )}
+                                >
+                                  <IconComponent className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="flex-1 text-left truncate">{fav.title}</span>
+                                </button>
+                                <button
+                                  onClick={() => toggleFavorite(sectionId, { title: fav.title, url: fav.url, icon: IconComponent }, fav.iconName, fav.fullUrl, fav.projectId)}
+                                  className="p-1 rounded text-yellow-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                                >
+                                  <Star className="h-3 w-3 fill-current" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                
+                {favorites.length === 0 && (
+                  <div className="text-center py-6 text-xs text-muted-foreground">
+                    <Star className="h-6 w-6 mx-auto mb-2 opacity-30" />
+                    <p>No favorites yet</p>
+                    <p className="mt-1 text-[10px]">Click the star icon on any menu item to add it here</p>
+                  </div>
+                )}
               </div>
             </ScrollArea>
           </div>

@@ -7,7 +7,9 @@ import {
   Plus, 
   ArrowRight,
   Building2,
-  FolderOpen
+  FolderOpen,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +26,17 @@ import CreateProjectDialog from "./CreateProjectDialog";
 import { Project } from "@shared/schema";
 
 const RECENT_PROJECTS_KEY = "recentProjectIds";
+const SELECTED_PHASE_KEY = "selectedProjectPhase";
 const MAX_RECENT = 5;
+
+type ProjectPhase = "lead" | "pre_construction" | "construction" | "post_construction";
+
+const phases: { id: ProjectPhase; label: string; shortLabel: string }[] = [
+  { id: "lead", label: "Lead", shortLabel: "Lead" },
+  { id: "pre_construction", label: "Pre-Construction", shortLabel: "Precon" },
+  { id: "construction", label: "Construction", shortLabel: "Const" },
+  { id: "post_construction", label: "Post Construction", shortLabel: "Post" },
+];
 
 interface ProjectSwitcherProps {
   compact?: boolean;
@@ -36,6 +48,15 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(SELECTED_PHASE_KEY);
+      const index = saved ? parseInt(saved, 10) : 2;
+      return index >= 0 && index < phases.length ? index : 2;
+    } catch {
+      return 2;
+    }
+  });
   const [recentProjectIds, setRecentProjectIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(RECENT_PROJECTS_KEY);
@@ -53,6 +74,27 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
     projects.filter(p => !p.isArchived), 
     [projects]
   );
+
+  const selectedPhase = phases[selectedPhaseIndex];
+
+  const phaseProjects = useMemo(() => {
+    return activeProjects.filter(p => 
+      p.currentSystemPhase === selectedPhase.id || 
+      (!p.currentSystemPhase && selectedPhase.id === "construction")
+    );
+  }, [activeProjects, selectedPhase.id]);
+
+  const handlePrevPhase = () => {
+    const newIndex = selectedPhaseIndex > 0 ? selectedPhaseIndex - 1 : phases.length - 1;
+    setSelectedPhaseIndex(newIndex);
+    localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
+  };
+
+  const handleNextPhase = () => {
+    const newIndex = selectedPhaseIndex < phases.length - 1 ? selectedPhaseIndex + 1 : 0;
+    setSelectedPhaseIndex(newIndex);
+    localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
+  };
 
   useEffect(() => {
     if (currentProject && !recentProjectIds.includes(currentProject.id)) {
@@ -106,7 +148,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
     setIsCreateProjectOpen(true);
   };
 
-  const displayProjects = searchQuery.trim() ? filteredProjects : recentProjects;
+  const displayProjects = searchQuery.trim() ? filteredProjects : phaseProjects;
 
   return (
     <>
@@ -160,25 +202,52 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
           side="bottom"
           sideOffset={4}
         >
+          {/* Phase Navigation */}
+          <div className="flex items-center justify-between px-2 py-1.5 border-b bg-muted/30">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handlePrevPhase}
+              className="h-6 w-6"
+              data-testid="button-prev-phase"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex-1 text-center">
+              <span className="text-xs font-medium">{selectedPhase.label}</span>
+              <span className="text-[10px] text-muted-foreground ml-1.5">
+                ({phaseProjects.length})
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleNextPhase}
+              className="h-6 w-6"
+              data-testid="button-next-phase"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
           <div className="p-2 border-b">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search projects..."
+                placeholder="Search all projects..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-9"
+                className="pl-8 h-8 text-sm"
                 data-testid="input-project-search"
-                autoFocus
               />
             </div>
           </div>
 
-          <ScrollArea className="max-h-[280px]">
+          <ScrollArea className="max-h-[240px]">
             <div className="p-1">
-              {!searchQuery.trim() && recentProjects.length > 0 && (
-                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                  Recent
+              {!searchQuery.trim() && phaseProjects.length === 0 && (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No {selectedPhase.label.toLowerCase()} projects
                 </div>
               )}
               
