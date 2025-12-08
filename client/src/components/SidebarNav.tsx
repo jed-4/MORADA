@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
+import { useAuth } from "@/hooks/use-auth";
 import { Project, User } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import {
@@ -408,9 +409,8 @@ export function SidebarNav() {
     queryKey: ["/api/projects"],
   });
   
-  const { data: currentUser } = useQuery<User>({
-    queryKey: ["/api/user"],
-  });
+  // Use the cached auth user for reliable user ID availability
+  const { user: currentUser } = useAuth();
   
   const { data: unreadCounts = {} } = useQuery<Record<string, number>>({
     queryKey: ["/api/channels/unread/counts"],
@@ -515,11 +515,8 @@ export function SidebarNav() {
   const getItemUrl = (sectionId: SectionId, item: NavItem): string => {
     if (sectionId === "user") {
       // For User Dashboard, always route to user workspace when user is available
-      if (item.title === "Dashboard") {
-        console.log("[getItemUrl] User Dashboard - currentUser:", currentUser?.id, "returning:", currentUser?.id ? `/users/${currentUser.id}` : item.url);
-        if (currentUser?.id) {
-          return `/users/${currentUser.id}`;
-        }
+      if (item.title === "Dashboard" && currentUser?.id) {
+        return `/users/${currentUser.id}`;
       }
       return item.url;
     }
