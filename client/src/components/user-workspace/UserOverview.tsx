@@ -1,52 +1,293 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { CheckSquare, Calendar, Clock, AlertCircle, TrendingUp } from "lucide-react";
-import type { User, Task } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { 
+  Plus, 
+  Settings, 
+  ChevronDown, 
+  Check, 
+  PlusCircle,
+  Trash2,
+  GripVertical,
+  X
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { User } from "@shared/schema";
+import type { Widget } from "@/types/widgets";
+import { personalWidgetRegistry, getPersonalWidgetDefinition } from "./widgets/PersonalWidgetRegistry";
+import { 
+  DndContext, 
+  closestCenter, 
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors,
+  DragEndEvent
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  rectSortingStrategy
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import WidgetContainer from "@/components/widgets/WidgetContainer";
 
 interface UserOverviewProps {
   user: User;
   isOwnPage: boolean;
 }
 
+interface DashboardView {
+  id: string;
+  name: string;
+  widgets: Widget[];
+}
+
+const DEFAULT_WIDGETS: Widget[] = [
+  { id: "1", type: "personalQuickActions", title: "Quick Actions", size: "sm" },
+  { id: "2", type: "personalMetrics", title: "My Metrics", size: "md" },
+  { id: "3", type: "personalTasks", title: "My Tasks", size: "md" },
+  { id: "4", type: "crossProjectDeadlines", title: "Upcoming Deadlines", size: "md" },
+  { id: "5", type: "personalCalendar", title: "My Calendar", size: "md" },
+  { id: "6", type: "personalMemos", title: "My Memos", size: "md" },
+];
+
+const DEFAULT_VIEW: DashboardView = {
+  id: "overview",
+  name: "Overview",
+  widgets: DEFAULT_WIDGETS,
+};
+
+function SortableWidget({ 
+  widget, 
+  onUpdate, 
+  onRemove, 
+  isConfiguring, 
+  onConfigure 
+}: { 
+  widget: Widget; 
+  onUpdate: (widget: Widget) => void;
+  onRemove: (id: string) => void;
+  isConfiguring: boolean;
+  onConfigure: (id: string | null) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: widget.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const definition = getPersonalWidgetDefinition(widget.type);
+  if (!definition) return null;
+
+  const WidgetComponent = definition.component;
+
+  const sizeClasses = {
+    sm: "col-span-2",
+    md: "col-span-4",
+    lg: "col-span-6",
+    xl: "col-span-8",
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={sizeClasses[widget.size]}
+    >
+      <WidgetContainer
+        title={widget.title}
+        icon={<definition.icon className="h-3.5 w-3.5" />}
+        onRemove={() => onRemove(widget.id)}
+        onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
+        dragHandleProps={{ ...attributes, ...listeners }}
+      >
+        <WidgetComponent
+          widget={widget}
+          onUpdate={onUpdate}
+          onRemove={onRemove}
+          isConfiguring={isConfiguring}
+          onCloseConfig={() => onConfigure(null)}
+        />
+      </WidgetContainer>
+    </div>
+  );
+}
+
 export default function UserOverview({ user, isOwnPage }: UserOverviewProps) {
-  // Fetch user's tasks
-  const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", { assigneeId: user.id }],
-    queryFn: async () => {
-      const response = await fetch(`/api/tasks?assigneeId=${user.id}`, {
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to fetch tasks');
-      return response.json();
-    },
-  });
+  const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
+  const [savedViews, setSavedViews] = useState<DashboardView[]>([DEFAULT_VIEW]);
+  const [activeViewId, setActiveViewId] = useState("overview");
+  const [isAddingWidget, setIsAddingWidget] = useState(false);
+  const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
+  const [isCreatingView, setIsCreatingView] = useState(false);
 
-  // Calculate stats
-  const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'complete');
-  const overdueTasks = tasks.filter(t => {
-    if (!t.dueDate) return false;
-    const dueDate = new Date(t.dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return dueDate < today && t.status !== 'done' && t.status !== 'complete';
-  });
-  const dueTodayTasks = tasks.filter(t => {
-    if (!t.dueDate) return false;
-    const dueDate = new Date(t.dueDate);
-    const today = new Date();
-    return dueDate.toDateString() === today.toDateString() && t.status !== 'done' && t.status !== 'complete';
-  });
-  const dueTomorrowTasks = tasks.filter(t => {
-    if (!t.dueDate) return false;
-    const dueDate = new Date(t.dueDate);
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return dueDate.toDateString() === tomorrow.toDateString() && t.status !== 'done' && t.status !== 'complete';
-  });
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
-  // Get unique projects
-  const projectIds = new Set(tasks.filter(t => t.projectId).map(t => t.projectId));
+  const storageKey = `user-workspace-widgets-${user.id}`;
+  const viewsStorageKey = `user-workspace-views-${user.id}`;
+  const activeViewKey = `user-workspace-active-view-${user.id}`;
+
+  useEffect(() => {
+    const savedViewsJson = localStorage.getItem(viewsStorageKey);
+    if (savedViewsJson) {
+      try {
+        const parsedViews = JSON.parse(savedViewsJson);
+        setSavedViews(parsedViews);
+        
+        const savedActiveView = localStorage.getItem(activeViewKey);
+        if (savedActiveView && parsedViews.find((v: DashboardView) => v.id === savedActiveView)) {
+          setActiveViewId(savedActiveView);
+          const view = parsedViews.find((v: DashboardView) => v.id === savedActiveView);
+          if (view) setWidgets(view.widgets);
+        } else {
+          setWidgets(parsedViews[0]?.widgets || DEFAULT_WIDGETS);
+        }
+      } catch (e) {
+        console.error("Failed to load views", e);
+      }
+    } else {
+      const savedWidgetsJson = localStorage.getItem(storageKey);
+      if (savedWidgetsJson) {
+        try {
+          setWidgets(JSON.parse(savedWidgetsJson));
+        } catch (e) {
+          console.error("Failed to load widgets", e);
+        }
+      }
+    }
+  }, [user.id]);
+
+  const saveWidgets = (newWidgets: Widget[]) => {
+    localStorage.setItem(storageKey, JSON.stringify(newWidgets));
+    const updatedViews = savedViews.map(v => 
+      v.id === activeViewId ? { ...v, widgets: newWidgets } : v
+    );
+    setSavedViews(updatedViews);
+    localStorage.setItem(viewsStorageKey, JSON.stringify(updatedViews));
+  };
+
+  const saveViews = (views: DashboardView[]) => {
+    localStorage.setItem(viewsStorageKey, JSON.stringify(views));
+  };
+
+  const activeView = savedViews.find(v => v.id === activeViewId);
+
+  const switchToView = (viewId: string) => {
+    const view = savedViews.find(v => v.id === viewId);
+    if (view) {
+      setActiveViewId(viewId);
+      setWidgets(view.widgets);
+      localStorage.setItem(activeViewKey, viewId);
+    }
+  };
+
+  const createNewView = () => {
+    if (isCreatingView) return;
+    setIsCreatingView(true);
+    
+    const newViewId = `view-${Date.now()}`;
+    const newView: DashboardView = {
+      id: newViewId,
+      name: `View ${savedViews.length + 1}`,
+      widgets: [...widgets],
+    };
+    const updatedViews = [...savedViews, newView];
+    setSavedViews(updatedViews);
+    saveViews(updatedViews);
+    setActiveViewId(newViewId);
+    localStorage.setItem(activeViewKey, newViewId);
+    
+    setTimeout(() => setIsCreatingView(false), 500);
+  };
+
+  const deleteView = (viewId: string) => {
+    if (savedViews.length <= 1) return;
+    if (viewId === "overview") return;
+    const updatedViews = savedViews.filter(v => v.id !== viewId);
+    setSavedViews(updatedViews);
+    saveViews(updatedViews);
+    
+    if (activeViewId === viewId) {
+      const newActiveView = updatedViews[0];
+      setActiveViewId(newActiveView.id);
+      setWidgets(newActiveView.widgets);
+      localStorage.setItem(activeViewKey, newActiveView.id);
+    }
+  };
+
+  const addWidget = (type: string) => {
+    const definition = getPersonalWidgetDefinition(type);
+    if (!definition) return;
+
+    const newWidget: Widget = {
+      id: Date.now().toString(),
+      type,
+      title: definition.name,
+      size: definition.defaultSize,
+      config: {},
+    };
+
+    const updatedWidgets = [...widgets, newWidget];
+    setWidgets(updatedWidgets);
+    saveWidgets(updatedWidgets);
+    setIsAddingWidget(false);
+  };
+
+  const removeWidget = (widgetId: string) => {
+    const updatedWidgets = widgets.filter(w => w.id !== widgetId);
+    setWidgets(updatedWidgets);
+    saveWidgets(updatedWidgets);
+  };
+
+  const updateWidget = (updatedWidget: Widget) => {
+    const updatedWidgets = widgets.map(w => w.id === updatedWidget.id ? updatedWidget : w);
+    setWidgets(updatedWidgets);
+    saveWidgets(updatedWidgets);
+    if (configuringWidget === updatedWidget.id) {
+      setConfiguringWidget(null);
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setWidgets((widgets) => {
+      const oldIndex = widgets.findIndex((widget) => widget.id === active.id);
+      const newIndex = widgets.findIndex((widget) => widget.id === over.id);
+      const newWidgets = arrayMove(widgets, oldIndex, newIndex);
+      saveWidgets(newWidgets);
+      return newWidgets;
+    });
+  };
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -55,150 +296,166 @@ export default function UserOverview({ user, isOwnPage }: UserOverviewProps) {
     return "Good evening";
   };
 
-  const getAISummary = () => {
-    const parts: string[] = [];
-    
-    if (isOwnPage) {
-      parts.push(`${getGreeting()}, ${user.firstName || 'there'}`);
-    }
-
-    if (dueTodayTasks.length > 0) {
-      parts.push(`you have ${dueTodayTasks.length} task${dueTodayTasks.length === 1 ? '' : 's'} due today`);
-    } else if (dueTomorrowTasks.length > 0) {
-      parts.push(`you have ${dueTomorrowTasks.length} task${dueTomorrowTasks.length === 1 ? '' : 's'} due tomorrow`);
-    } else if (activeTasks.length > 0) {
-      parts.push(`you have ${activeTasks.length} active task${activeTasks.length === 1 ? '' : 's'}`);
-    } else {
-      parts.push("you're all caught up!");
-    }
-
-    if (overdueTasks.length > 0) {
-      parts.push(`${overdueTasks.length} overdue`);
-    }
-
-    return parts.join(", ");
-  };
-
   return (
-    <div className="p-4 space-y-4" data-testid="user-overview">
-      {/* AI Summary Card */}
-      <Card className="bg-gradient-to-br from-[#bba7db]/10 to-transparent border-[#bba7db]/20">
-        <CardContent className="p-4">
-          <p className="text-sm" data-testid="text-ai-summary">
-            {getAISummary()}
-          </p>
-        </CardContent>
-      </Card>
+    <div className="flex flex-col h-full" data-testid="user-overview">
+      {/* Header with view switcher */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
+                data-testid="button-view-switcher"
+              >
+                <span>{activeView?.name || 'Overview'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {savedViews.map((view) => (
+                <DropdownMenuItem 
+                  key={view.id}
+                  className="text-xs flex items-center justify-between gap-2 group"
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  <button
+                    className="flex-1 text-left flex items-center gap-2"
+                    onClick={() => switchToView(view.id)}
+                  >
+                    <span className="flex-1 truncate">{view.name}</span>
+                    {view.id === activeViewId && (
+                      <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                    )}
+                  </button>
+                  {savedViews.length > 1 && view.id !== "overview" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteView(view.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                      data-testid={`button-delete-view-${view.id}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <span className="text-xs text-muted-foreground">
+            {isOwnPage ? `${getGreeting()}, ${user.firstName || 'there'}` : `${user.firstName}'s workspace`}
+          </span>
+        </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="hover-elevate">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              Active Tasks
-            </CardTitle>
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="stat-active-tasks">
-              {activeTasks.length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="hover-elevate">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              Due Today
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600" data-testid="stat-due-today">
-              {dueTodayTasks.length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="hover-elevate">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              Overdue
-            </CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600" data-testid="stat-overdue">
-              {overdueTasks.length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="hover-elevate">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              Projects
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="stat-projects">
-              {projectIds.size}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-1.5">
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${
+              isCreatingView 
+                ? 'opacity-50 cursor-not-allowed' 
+                : 'hover-elevate active-elevate-2'
+            }`}
+            onClick={createNewView}
+            disabled={isCreatingView}
+            data-testid="button-new-view"
+          >
+            <PlusCircle className="w-3 h-3" />
+            <span>{isCreatingView ? 'Creating...' : 'New View'}</span>
+          </button>
+          
+          {isOwnPage && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+              onClick={() => setIsAddingWidget(true)}
+              data-testid="button-add-widget"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Widget</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Quick Actions / Upcoming */}
-      {dueTodayTasks.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Due Today</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {dueTodayTasks.slice(0, 5).map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-2 p-2 rounded-md hover:bg-accent cursor-pointer"
-                data-testid={`task-due-today-${task.id}`}
-              >
-                <CheckSquare className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm flex-1">{task.title}</span>
-                {task.priority && (
-                  <Badge variant="outline" className="text-xs">
-                    {task.priority}
-                  </Badge>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      {/* Widgets Area */}
+      <div className="flex-1 overflow-auto p-4">
+        <DndContext 
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext 
+            items={widgets.map(w => w.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+              {widgets.map((widget) => (
+                <SortableWidget
+                  key={widget.id}
+                  widget={widget}
+                  onUpdate={updateWidget}
+                  onRemove={removeWidget}
+                  isConfiguring={configuringWidget === widget.id}
+                  onConfigure={setConfiguringWidget}
+                />
+              ))}
+              
+              {widgets.length === 0 && (
+                <div className="col-span-full">
+                  <Card className="border-dashed border-2 border-primary/20 bg-card/80">
+                    <CardContent className="p-8 text-center">
+                      <div className="space-y-3">
+                        <div className="text-muted-foreground">
+                          <p className="text-sm">Your workspace is empty</p>
+                          <p className="text-xs">Add widgets to customize your dashboard</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsAddingWidget(true)}
+                          data-testid="button-add-first-widget"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Widget
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
 
-      {overdueTasks.length > 0 && (
-        <Card className="border-red-200">
-          <CardHeader>
-            <CardTitle className="text-sm text-red-600">Overdue Tasks</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {overdueTasks.slice(0, 5).map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-2 p-2 rounded-md hover:bg-accent cursor-pointer"
-                data-testid={`task-overdue-${task.id}`}
+      {/* Add Widget Dialog */}
+      <Dialog open={isAddingWidget} onOpenChange={setIsAddingWidget}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Add Widget</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-4">
+            {Object.values(personalWidgetRegistry).map((definition) => (
+              <button
+                key={definition.type}
+                onClick={() => addWidget(definition.type)}
+                className="p-3 border rounded-md hover-elevate text-left"
+                data-testid={`add-widget-${definition.type}`}
               >
-                <AlertCircle className="w-4 h-4 text-red-600" />
-                <span className="text-sm flex-1">{task.title}</span>
-                {task.dueDate && (
-                  <span className="text-xs text-red-600">
-                    {new Date(task.dueDate).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <definition.icon className="h-4 w-4 text-[#bba7db]" />
+                  <span className="text-xs font-medium">{definition.name}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground line-clamp-2">
+                  {definition.description}
+                </p>
+              </button>
             ))}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

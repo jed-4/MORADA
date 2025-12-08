@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ListChecks, Plus } from "lucide-react";
+import { ListChecks, Plus, AlertCircle, Clock } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { type ChecklistTemplate } from "@shared/schema";
@@ -14,11 +14,34 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const maxChecklists = widget.config?.maxChecklists || 5;
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxChecklists, setConfigMaxChecklists] = useState(maxChecklists);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [columnCount, setColumnCount] = useState(1);
   
   useEffect(() => {
     setEditingTitle(widget.title);
     setConfigMaxChecklists(widget.config?.maxChecklists || 5);
   }, [widget.title, widget.config]);
+  
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        if (width >= 720) {
+          setColumnCount(3);
+        } else if (width >= 480) {
+          setColumnCount(2);
+        } else {
+          setColumnCount(1);
+        }
+      }
+    });
+    
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+  
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
   
@@ -129,15 +152,44 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     );
   }
 
+  const getStatusIndicator = (checklist: ChecklistTemplate) => {
+    const hasIncomplete = checklist.groups?.some(group => 
+      group.items?.some(item => !(item as any).completed)
+    );
+    const isActionable = hasIncomplete && checklist.status !== 'completed';
+    const isPriority = checklist.type === 'safety' || checklist.type === 'quality';
+    
+    if (isPriority && isActionable) {
+      return { 
+        color: 'border-l-amber-500 bg-amber-50/50 dark:bg-amber-900/10', 
+        icon: <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400" /> 
+      };
+    }
+    if (isActionable) {
+      return { 
+        color: 'border-l-green-500 bg-green-50/50 dark:bg-green-900/10', 
+        icon: <Clock className="h-3 w-3 text-green-600 dark:text-green-400" /> 
+      };
+    }
+    return { color: '', icon: null };
+  };
+
+  const gridClass = columnCount === 3 
+    ? 'grid grid-cols-3 gap-2' 
+    : columnCount === 2 
+      ? 'grid grid-cols-2 gap-2' 
+      : 'grid grid-cols-1 gap-2';
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2" ref={containerRef}>
       <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           {checklists.length} checklist{checklists.length !== 1 ? 's' : ''}
         </div>
         <Button 
           size="sm" 
           variant="ghost"
+          className="h-6 px-2 text-xs"
           onClick={() => setLocation('/checklist-templates')}
           data-testid="checklist-widget-view-all"
         >
@@ -146,54 +198,53 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         </Button>
       </div>
       
-      <div className="space-y-2">
+      <div className={gridClass}>
         {isLoading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].slice(0, maxChecklists).map((i) => (
+          <>
+            {[1, 2, 3].slice(0, Math.min(maxChecklists, columnCount * 2)).map((i) => (
               <div key={i} className="animate-pulse">
-                <div className="flex items-start gap-2 p-3 border rounded">
-                  <div className="h-4 w-4 bg-muted rounded"></div>
+                <div className="flex items-start gap-2 p-2 border rounded-md">
+                  <div className="h-3 w-3 bg-muted rounded"></div>
                   <div className="flex-1 min-w-0">
-                    <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-muted rounded w-1/2"></div>
+                    <div className="h-3 bg-muted rounded w-3/4 mb-1"></div>
+                    <div className="h-2 bg-muted rounded w-1/2"></div>
                   </div>
                 </div>
               </div>
             ))}
-          </div>
+          </>
         ) : (
-          displayChecklists.map((checklist) => (
-            <div 
-              key={checklist.id} 
-              className="p-3 border rounded hover-elevate cursor-pointer"
-              onClick={() => setLocation(`/checklist-templates/${checklist.id}`)}
-              data-testid={`checklist-widget-item-${checklist.id}`}
-            >
-              <div className="flex items-start gap-2">
-                <ListChecks className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-medium truncate">{checklist.name}</p>
+          displayChecklists.map((checklist) => {
+            const status = getStatusIndicator(checklist);
+            return (
+              <div 
+                key={checklist.id} 
+                className={`p-2 border rounded-md hover-elevate cursor-pointer border-l-2 ${status.color}`}
+                onClick={() => setLocation(`/checklist-templates/${checklist.id}`)}
+                data-testid={`checklist-widget-item-${checklist.id}`}
+              >
+                <div className="flex items-start gap-1.5">
+                  <ListChecks className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <p className="text-xs font-medium truncate leading-tight">{checklist.name}</p>
+                      {status.icon}
+                    </div>
                     <Badge 
-                      className={`${getTypeBadgeColor(checklist.type)} text-xs px-2 py-0 no-default-hover-elevate no-default-active-elevate`}
+                      className={`${getTypeBadgeColor(checklist.type)} text-[10px] px-1.5 py-0 h-4 no-default-hover-elevate no-default-active-elevate`}
                     >
                       {getTypeLabel(checklist.type)}
                     </Badge>
                   </div>
-                  {checklist.description && (
-                    <p className="text-xs text-muted-foreground truncate">
-                      {checklist.description}
-                    </p>
-                  )}
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
       
       {displayChecklists.length === 0 && !isLoading && (
-        <div className="text-center py-4 text-sm text-muted-foreground">
+        <div className="text-center py-3 text-xs text-muted-foreground">
           No checklists yet
         </div>
       )}

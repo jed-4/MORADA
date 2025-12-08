@@ -40,7 +40,7 @@ Preferred communication style: Simple, everyday language.
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments.
-- **Checklist System**: Templates with group functionality and dashboard widget integration.
+- **Checklist System**: Templates with group functionality and dashboard widget integration. Dashboard widget features responsive multi-column layout (1/2/3 columns based on width), compact headers, and color-coded status indicators (amber for priority+actionable, green for actionable items).
 - **Cost Code Management**: Merge functionality with company isolation.
 - **Import System**: Flexible CSV/Excel import with column mapping and intelligent cost code matching.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with CRUD operations.
@@ -52,7 +52,13 @@ Preferred communication style: Simple, everyday language.
 - **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
 - **Roles & Permissions**: Company-isolated user roles with granular control over 25 Buildern permissions.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
-- **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes.
+- **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes. The Overview tab features a fully customizable widget-based dashboard with:
+  - Personal widgets: My Tasks, My Calendar (task-based), Cross-Project Deadlines, Personal Metrics, Quick Actions (clock in/out, log time), My Memos
+  - Drag-and-drop widget reordering via @dnd-kit
+  - Add/remove widgets with configuration dialogs
+  - Saved views with create/delete/switch functionality
+  - Default "Overview" view protected from deletion
+  - localStorage persistence per user
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 
