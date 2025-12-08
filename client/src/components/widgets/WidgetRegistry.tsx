@@ -1,4 +1,15 @@
-import { CheckSquare, BarChart3, FileText, Calendar, Activity, ListChecks } from "lucide-react";
+import { 
+  CheckSquare, 
+  BarChart3, 
+  FileText, 
+  Calendar, 
+  Activity, 
+  ListChecks,
+  Receipt,
+  FileEdit,
+  Zap,
+  AlertTriangle
+} from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import TasksWidget from "./TasksWidget";
 import MetricsWidget from "./MetricsWidget";
@@ -6,6 +17,11 @@ import NotesWidget from "./NotesWidget";
 import ScheduleWidget from "./ScheduleWidget";
 import ActivityWidget from "./ActivityWidget";
 import ChecklistWidget from "./ChecklistWidget";
+import BillsSummaryWidget from "./BillsSummaryWidget";
+import VariationsSummaryWidget from "./VariationsSummaryWidget";
+import InvoicesSummaryWidget from "./InvoicesSummaryWidget";
+import QuickActionsWidget from "./QuickActionsWidget";
+import AlertsWidget from "./AlertsWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
   tasks: {
@@ -61,6 +77,51 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     component: ChecklistWidget,
     defaultSize: "md",
     configurable: true,
+  },
+  bills: {
+    type: "bills",
+    name: "Bills Summary",
+    description: "Overview of project bills with status breakdown and totals",
+    icon: Receipt,
+    component: BillsSummaryWidget,
+    defaultSize: "md",
+    configurable: false,
+  },
+  variations: {
+    type: "variations",
+    name: "Variations Summary",
+    description: "Track change orders and their impact on project value",
+    icon: FileEdit,
+    component: VariationsSummaryWidget,
+    defaultSize: "md",
+    configurable: false,
+  },
+  invoices: {
+    type: "invoices",
+    name: "Invoices Summary",
+    description: "Client invoicing status and collection tracking",
+    icon: FileText,
+    component: InvoicesSummaryWidget,
+    defaultSize: "md",
+    configurable: false,
+  },
+  quickActions: {
+    type: "quickActions",
+    name: "Quick Actions",
+    description: "One-click buttons for common project tasks",
+    icon: Zap,
+    component: QuickActionsWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  alerts: {
+    type: "alerts",
+    name: "Alerts & Warnings",
+    description: "Overdue items, budget warnings, and action items",
+    icon: AlertTriangle,
+    component: AlertsWidget,
+    defaultSize: "md",
+    configurable: false,
   },
 };
 

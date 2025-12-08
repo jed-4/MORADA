@@ -1,0 +1,205 @@
+                    📊 The following metrics are visible in the Dashboards
+Contract Price
+What it is: The original agreed project price based on estimates.
+Formula: Sum of all estimate items (including taxes, overheads, and insurance).
+Purpose: Establishes the project's initial revenue baseline.
+
+Approved Change Orders
+What it is: Cost of scope modifications approved by the client.
+Formula: Sum of all approved change order items (including tax).
+Purpose: Tracks changes that affect the contract and updates overall project value.
+
+Revised Contract Price
+What it is: Updated project value after adding change orders to the original contract.
+Formula: Contract Price + Approved Change Orders
+Purpose: Reflects the current total revenue expectation.
+
+Contract Costs
+What it is: Estimated base costs (without markup) to complete the original contract.
+Formula: Estimate Item Value ÷ (1 + Markup %)
+Purpose: Establishes baseline for expected project expenses.
+
+Total Project Costs
+What it is: Combined estimated costs for original scope and change orders.
+Formula: Contract Costs + Change Order Costs
+Purpose: Shows total estimated expenditure for the project.
+
+Actual Costs
+What it is: Real-time cost incurred to date.
+Components: Paid Bills + Approved Time Logs + Allowance Costs
+Purpose: Tracks actual spending to compare with projected/budgeted costs.
+
+Gross Profit
+What it is: Expected profit before indirect expenses.
+Formula: Revised Contract Price - Total Project Costs
+Purpose: Forecasts potential profitability.
+
+Gross Margin
+What it is: Gross profit as a percentage of revenue.
+Formula: (Gross Profit ÷ Revised Contract Price) × 100
+Purpose: Measures profitability ratio.
+
+Actual Gross Profit
+What it is: Realized profit to date based on invoices and actual costs.
+Formula: Invoiced Amount - Actual Costs
+Purpose: Measures current profitability.
+
+Actual Gross Margin
+What it is: Actual margin on billed revenue.
+Formula: (Actual Gross Profit ÷ Invoiced Amount) × 100
+Purpose: Tracks margin performance against projections.
+
+Completion Percentage
+What it is: Project progress based on cost consumption.
+Formula: (Actual Costs ÷ Total Project Costs) × 100
+Purpose: Assesses how much of the project is completed.
+
+Earned Revenue
+What it is: Revenue recognized based on completion.
+Formula: Completion % × Revised Contract Price
+Purpose: Aligns revenue recognition with progress.
+
+Work-in-Progress (WIP)
+What it is: Revenue earned vs revenue billed.
+Formula: Earned Revenue - Invoiced Amount
+Purpose: Detects underbilling (positive) or overbilling (negative).
+
+WIP AA (Actual vs Allocated)
+What it is: Actual costs compared to costs proportionate to invoicing.
+Formula: Actual Costs - (Total Project Costs × Invoiced %)
+Purpose: Reveals whether costs are aligned with revenue recognition.
+
+Invoiced Amount
+What it is: Total client billing (paid + unpaid).
+Formula: Sum of all client invoices
+Purpose: Tracks billing progress.
+
+Invoiced Percentage
+What it is: Proportion of total contract billed.
+Formula: (Invoiced Amount ÷ Revised Contract Price) × 100
+Purpose: Measures how much revenue has been billed.
+
+Paid Invoices
+What it is: Revenue collected from the client.
+Formula: Sum of all received payments
+Purpose: Assesses cash flow and receivables.
+
+Paid Invoices Percentage
+What it is: Share of the project value collected.
+Formula: (Paid Amount ÷ Revised Contract Price) × 100
+Purpose: Measures collection efficiency.
+
+Remaining Balance
+What it is: Unpaid part of the contract.
+Formula: Revised Contract Price - Paid Amount
+Purpose: Identifies outstanding receivables.
+
+Remaining to Invoice
+What it is: Value yet to be billed.
+Formula: Revised Contract Price - Invoiced Amount
+Purpose: Shows potential future billing.
+
+Remaining to Invoice Percentage
+What it is: Unbilled portion of the contract.
+Formula: (Remaining to Invoice ÷ Revised Contract Price) × 100
+Purpose: Highlights pending billing opportunities.
+
+Cost to Complete
+What it is: Cost needed to finish the project.
+Formula: Max(0, Total Project Costs - Actual Costs)
+Purpose: Forecasts future expenditure.
+
+Price Per Area
+What it is: Contract value per square meter/foot.
+Formula: Revised Contract Price ÷ Project Area
+Purpose: Enables benchmarking against industry norms.
+
+Cost Per Area
+What it is: Project cost per square meter/foot.
+Formula: Total Project Costs ÷ Project Area
+Purpose: Assesses cost-efficiency.
+
+Tax Handling
+Most metrics are calculated in both tax-excluded and tax-included versions
+The system automatically handles tax calculations based on income tax rates and expense tax rates
+Use tax-included values for general management reporting unless specific tax analysis is needed
+
+Allowances
+Allowances can be calculated using different methods (selections-based or other methods)
+The system tracks both budgeted allowance amounts and actual costs
+Allowance differences are calculated and included in change order totals
+
+Change Orders vs. Selections
+Change Orders: Formal contract modifications that change scope or price
+Selections: Client choices within allowance items that may affect final costs
+Both are tracked separately but contribute to overall project financials
+
+Project Health Indicators
+Positive Gross Margin: Project is profitable
+Completion % vs Invoiced %: Shows if billing is keeping pace with work
+WIP Balance: Indicates billing timing issues
+Actual vs Budgeted Costs: Reveals cost control effectiveness
+
+Cash Flow Management
+Monitor Remaining Balance for collection priorities
+Track Remaining to Invoice for upcoming billing opportunities
+Use Cost to Complete for cash outflow planning
+
+Performance Analysis
+Compare Actual Gross Margin to Planned Gross Margin
+Analyze Cost Per Area against historical projects
+Review Completion Percentage for project status updates
+
+                    📈 The Following metrics visible in the Budget Tab
+Estimates (Original Budget)
+Initial project cost estimates broken down by cost codes
+
+Forms the baseline "original" budget amounts
+
+Calculated with taxes and markup included
+
+Bills (Actual Spending)
+Real invoices/bills received from vendors
+
+Tracked by payment status: Paid, Partially Paid, Approved, Draft
+
+Includes tax calculations and credit tracking
+
+Change Orders
+Approved/released modifications to original scope
+
+Can increase or decrease project costs
+
+Added to original estimates for "revised" budget
+
+Purchase Orders
+Committed future spending
+
+Status: RELEASED (approved) vs PENDING (draft)
+
+Used for projected cost calculations
+
+Time Logs (timesheet entries)
+Labor hours tracked by cost code
+
+Approved hours count as actual costs
+
+Submitted hours count as pending costs
+
+                                    Key Calculated Metrics
+                                    Original vs Actual vs Projected
+Original = Initial estimated + approved change orders
+
+Actual = Paid Bills + approved time logs
+
+Projected = Purchase orders + bills not tied to POs + time logs
+
+Variance Analysis
+Difference = Original - Actual
+
+Difference % = (Difference / Original) x 100
+
+Cost Completion Tracking
+Cost to Complete = Projected Cost - Actual Cost
+
+Left to Complete = Revised Budget - (Paid + Time Logs)
