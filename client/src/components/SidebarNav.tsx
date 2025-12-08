@@ -513,7 +513,15 @@ export function SidebarNav() {
   }, [isDrawerOpen, activeSection]);
 
   const getItemUrl = (sectionId: SectionId, item: NavItem): string => {
-    if (sectionId === "user" || sectionId === "system" || sectionId === "allitems") {
+    if (sectionId === "user") {
+      // For User Dashboard, always route to user workspace when user is available
+      if (item.title === "Dashboard" && currentUser?.id) {
+        return `/users/${currentUser.id}`;
+      }
+      return item.url;
+    }
+    
+    if (sectionId === "system" || sectionId === "allitems") {
       return item.url;
     }
     

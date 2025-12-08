@@ -4,7 +4,6 @@ import { useLocation } from "wouter";
 import { 
   ChevronDown, 
   Search, 
-  Plus, 
   ArrowRight,
   FolderOpen,
   ChevronLeft,
@@ -22,7 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useProject } from "@/contexts/ProjectContext";
 import { ProjectIcon } from "./ProjectIcon";
-import CreateProjectDialog from "./CreateProjectDialog";
 import { Project } from "@shared/schema";
 
 const RECENT_PROJECTS_KEY = "recentProjectIds";
@@ -53,7 +51,6 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const { currentProject, setCurrentProject } = useProject();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PHASE_KEY);
@@ -228,39 +225,10 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
     navigate('/business/projects');
   };
 
-  const handleCreateProject = () => {
-    setIsOpen(false);
-    setIsCreateProjectOpen(true);
-  };
 
   return (
     <>
       <div className="flex flex-col gap-1 w-full">
-        {/* Phase selector row: [<] Phase [>] */}
-        <div className="flex items-center justify-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handlePrevPhase}
-            className="h-5 w-5 flex-shrink-0"
-            data-testid="button-prev-phase"
-          >
-            <ChevronLeft className="h-3 w-3" />
-          </Button>
-          <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
-            {selectedPhase.label}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleNextPhase}
-            className="h-5 w-5 flex-shrink-0"
-            data-testid="button-next-phase"
-          >
-            <ChevronRight className="h-3 w-3" />
-          </Button>
-        </div>
-
         {/* Project dropdown - full width */}
         <Popover open={isOpen} onOpenChange={setIsOpen}>
           <PopoverTrigger asChild>
@@ -303,6 +271,31 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
             side="bottom"
             sideOffset={4}
           >
+            {/* Phase selector row inside dropdown: [<] Phase [>] */}
+            <div className="flex items-center justify-center gap-1 px-2 py-1.5 border-b">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handlePrevPhase}
+                className="h-5 w-5 flex-shrink-0"
+                data-testid="button-prev-phase"
+              >
+                <ChevronLeft className="h-3 w-3" />
+              </Button>
+              <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
+                {selectedPhase.label}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleNextPhase}
+                className="h-5 w-5 flex-shrink-0"
+                data-testid="button-next-phase"
+              >
+                <ChevronRight className="h-3 w-3" />
+              </Button>
+            </div>
+
             <div className="p-2 border-b">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -373,33 +366,19 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
               </div>
             </ScrollArea>
 
-            <div className="border-t p-1 flex gap-1">
+            <div className="border-t p-1">
               <button
                 onClick={handleViewAllProjects}
-                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover-elevate"
+                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover-elevate"
                 data-testid="button-all-projects"
               >
-                <span>All</span>
+                <span>All Projects</span>
                 <ArrowRight className="h-3 w-3" />
-              </button>
-              
-              <button
-                onClick={handleCreateProject}
-                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-primary hover-elevate"
-                data-testid="button-new-project-switcher"
-              >
-                <Plus className="h-3 w-3" />
-                <span>New</span>
               </button>
             </div>
           </PopoverContent>
         </Popover>
       </div>
-
-      <CreateProjectDialog 
-        open={isCreateProjectOpen} 
-        onOpenChange={setIsCreateProjectOpen} 
-      />
     </>
   );
 }
