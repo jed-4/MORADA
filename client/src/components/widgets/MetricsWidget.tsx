@@ -1,4 +1,5 @@
-import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, ArrowRight, Settings } from "lucide-react";
+import { useState, useEffect } from "react";
+import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, ArrowRight, Settings, ExternalLink } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { useProjectMetrics, metricDefinitions, type MetricId } from "@/hooks/useProjectMetrics";
@@ -10,9 +11,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 type DisplayStyle = "number" | "comparison" | "progress" | "compact";
 
@@ -32,6 +41,14 @@ const defaultMetricConfigs: MetricConfig[] = [
 export default function MetricsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const { metrics, isLoading, formatCurrency, formatPercentage } = useProjectMetrics();
+  const [showAllMetrics, setShowAllMetrics] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(widget.title);
+  
+  useEffect(() => {
+    if (isConfiguring) {
+      setEditingTitle(widget.title);
+    }
+  }, [isConfiguring, widget.title]);
   
   const metricConfigs: MetricConfig[] = widget.config?.metricConfigs || defaultMetricConfigs;
 
@@ -108,18 +125,32 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
     );
   }
 
+  // Save configuration changes including title
+  const saveConfig = () => {
+    if (onUpdate && editingTitle !== widget.title) {
+      onUpdate({
+        ...widget,
+        title: editingTitle,
+      });
+    }
+    onCloseConfig?.();
+  };
+
   // Configuration mode
   if (isConfiguring) {
     return (
       <div className="space-y-4 p-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium">Configure Metrics</h4>
-          <Button size="sm" variant="ghost" onClick={onCloseConfig} className="h-6 px-2 text-xs">
-            Done
-          </Button>
+        <div className="space-y-2">
+          <Label className="text-xs">Widget Title</Label>
+          <Input 
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            className="h-7 text-xs"
+            placeholder="Widget title"
+          />
         </div>
         
-        <div className="space-y-3 max-h-64 overflow-y-auto">
+        <div className="space-y-3 max-h-48 overflow-y-auto">
           {metricConfigs.map((config, index) => (
             <div key={index} className="p-2 border rounded space-y-2">
               <div className="flex items-center justify-between">
@@ -189,6 +220,15 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
         <Button size="sm" variant="outline" onClick={addMetric} className="w-full h-7 text-xs">
           + Add Metric
         </Button>
+        
+        <div className="flex items-center justify-end gap-2 pt-2 border-t">
+          <Button size="sm" variant="ghost" onClick={onCloseConfig} className="h-7 px-3 text-xs">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={saveConfig} className="h-7 px-3 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white">
+            Save
+          </Button>
+        </div>
       </div>
     );
   }
@@ -282,24 +322,98 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
   const otherMetrics = metricConfigs.filter(c => c.displayStyle !== "compact");
 
   return (
-    <div className="space-y-3">
-      {/* Non-compact metrics */}
-      {otherMetrics.map((config, index) => renderMetric(config, index))}
+    <>
+      <div className="space-y-3">
+        {/* Non-compact metrics */}
+        {otherMetrics.map((config, index) => renderMetric(config, index))}
+        
+        {/* Compact metrics grouped together */}
+        {compactMetrics.length > 0 && (
+          <div className="p-2 border rounded-md">
+            {compactMetrics.map((config, index) => renderMetric(config, otherMetrics.length + index))}
+          </div>
+        )}
+        
+        {metricConfigs.length === 0 && (
+          <div className="text-center py-4 text-sm text-muted-foreground">
+            <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>No metrics configured</p>
+            <p className="text-xs">Click the gear icon to add metrics</p>
+          </div>
+        )}
+        
+        {/* View All Metrics link */}
+        <button
+          onClick={() => setShowAllMetrics(true)}
+          className="w-full text-xs text-[#bba7db] hover:text-[#bba7db]/80 flex items-center justify-center gap-1 py-1"
+          data-testid="button-view-all-metrics"
+        >
+          <ExternalLink className="h-3 w-3" />
+          View All Metrics
+        </button>
+      </div>
       
-      {/* Compact metrics grouped together */}
-      {compactMetrics.length > 0 && (
-        <div className="p-2 border rounded-md">
-          {compactMetrics.map((config, index) => renderMetric(config, otherMetrics.length + index))}
-        </div>
-      )}
-      
-      {metricConfigs.length === 0 && (
-        <div className="text-center py-4 text-sm text-muted-foreground">
-          <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>No metrics configured</p>
-          <p className="text-xs">Click the gear icon to add metrics</p>
-        </div>
-      )}
-    </div>
+      {/* View All Metrics Modal */}
+      <Dialog open={showAllMetrics} onOpenChange={setShowAllMetrics}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>All Project Metrics</DialogTitle>
+            <DialogDescription>
+              Complete overview of all available metrics for {currentProject.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Group by category */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground">Contract & Revenue</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {metricDefinitions.filter(d => ["contractPrice", "revisedContractPrice", "variations", "totalApprovedVariations"].includes(d.id)).map(def => (
+                  <div key={def.id} className="p-2 border rounded-md">
+                    <div className="text-xs text-muted-foreground">{def.name}</div>
+                    <div className="text-sm font-medium">{formatValue(def.id, getMetricValue(def.id))}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground">Costs & Budgets</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {metricDefinitions.filter(d => ["totalProjectCosts", "actualCosts", "committedCosts", "forecastCosts", "budgetVariance"].includes(d.id)).map(def => (
+                  <div key={def.id} className="p-2 border rounded-md">
+                    <div className="text-xs text-muted-foreground">{def.name}</div>
+                    <div className="text-sm font-medium">{formatValue(def.id, getMetricValue(def.id))}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground">Profit & Margins</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {metricDefinitions.filter(d => ["grossProfit", "grossMargin", "forecastGrossProfit", "forecastGrossMargin"].includes(d.id)).map(def => (
+                  <div key={def.id} className="p-2 border rounded-md">
+                    <div className="text-xs text-muted-foreground">{def.name}</div>
+                    <div className="text-sm font-medium">{formatValue(def.id, getMetricValue(def.id))}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground">Invoicing & WIP</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {metricDefinitions.filter(d => ["invoicedAmount", "invoicedPercentage", "completionPercentage", "wip", "cashPosition"].includes(d.id)).map(def => (
+                  <div key={def.id} className="p-2 border rounded-md">
+                    <div className="text-xs text-muted-foreground">{def.name}</div>
+                    <div className="text-sm font-medium">{formatValue(def.id, getMetricValue(def.id))}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

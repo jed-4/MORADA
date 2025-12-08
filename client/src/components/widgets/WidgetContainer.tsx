@@ -249,31 +249,29 @@ export default function WidgetContainer({
       } ${isResizing ? 'select-none z-50' : ''}`}
       data-testid={`widget-${widget.type}-${widget.id}`}
     >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-11 w-11 cursor-grab active:cursor-grabbing"
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 py-2 px-3 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <div
+            className="flex-shrink-0 cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-muted"
             aria-label="Reorder widget"
             data-testid={`button-drag-handle-${widget.id}`}
             {...attributes}
             {...listeners}
           >
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </Button>
-          <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+            <GripVertical className="h-3 w-3 text-muted-foreground" />
+          </div>
+          <CardTitle className="text-xs font-medium truncate">{widget.title}</CardTitle>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-6 w-6">
+            <Button variant="ghost" size="icon" className="h-5 w-5 flex-shrink-0">
               <MoreVertical className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {onConfigure && (
               <DropdownMenuItem onClick={() => onConfigure(widget.id)}>
-                <Settings className="h-4 w-4 mr-2" />
+                <Settings className="h-3.5 w-3.5 mr-2" />
                 Configure
               </DropdownMenuItem>
             )}
@@ -283,7 +281,7 @@ export default function WidgetContainer({
                 onClick={() => onRemove(widget.id)}
                 className="text-destructive"
               >
-                <X className="h-4 w-4 mr-2" />
+                <X className="h-3.5 w-3.5 mr-2" />
                 Remove
               </DropdownMenuItem>
             )}

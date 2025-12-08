@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, LayoutGrid, Palette, Search, RotateCcw } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check } from "lucide-react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import { Widget } from "@/types/widgets";
 import { widgetRegistry, getWidgetDefinition } from "./widgets/WidgetRegistry";
 import WidgetContainer from "./widgets/WidgetContainer";
 import { useProject } from "@/contexts/ProjectContext";
+import type { FieldCategoryWithOptions } from "@shared/schema";
 import {
   DndContext,
   closestCenter,
@@ -81,13 +83,21 @@ const presetWidgets: Record<string, Widget[]> = {
   ],
 };
 
-// Dashboard presets
-const dashboardPresets = [
-  { id: "overview", name: "Overview", description: "General project overview" },
-  { id: "financial", name: "Financial", description: "Budget & cost focused" },
-  { id: "schedule", name: "Schedule", description: "Timeline focused" },
-  { id: "custom", name: "Custom", description: "Your saved layout" },
-];
+// Dashboard view type
+interface DashboardView {
+  id: string;
+  name: string;
+  widgets: Widget[];
+  isDefault?: boolean;
+}
+
+// Default view setup
+const defaultView: DashboardView = {
+  id: "overview",
+  name: "Overview",
+  widgets: presetWidgets.overview,
+  isDefault: true,
+};
 
 // Default template setup (same as overview preset)
 const defaultWidgets: Widget[] = presetWidgets.overview;
@@ -97,10 +107,32 @@ export default function CustomizableProjectOverview() {
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
-  const [activePreset, setActivePreset] = useState("custom");
+  const [savedViews, setSavedViews] = useState<DashboardView[]>([defaultView]);
+  const [activeViewId, setActiveViewId] = useState("overview");
   const [backgroundId, setBackgroundId] = useState("default");
   const [searchQuery, setSearchQuery] = useState("");
   const [, navigate] = useLocation();
+  
+  // Fetch field categories for phase colors
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+  
+  // Get project status category and find the current phase color
+  const projectStatusCategory = fieldCategories.find(cat => cat.key === "project.status");
+  const allPhaseOptions = projectStatusCategory?.options || [];
+  
+  // Get current phase option with color
+  const currentPhaseOption = useMemo(() => {
+    if (!currentProject?.currentSystemPhase) return null;
+    return allPhaseOptions.find(opt => 
+      opt.systemPhase === currentProject.currentSystemPhase || 
+      opt.key === currentProject.currentSystemPhase
+    );
+  }, [currentProject?.currentSystemPhase, allPhaseOptions]);
+  
+  // Get the active view
+  const activeView = savedViews.find(v => v.id === activeViewId) || savedViews[0];
 
   // Setup drag and drop sensors
   const sensors = useSensors(
@@ -150,7 +182,7 @@ export default function CustomizableProjectOverview() {
     });
   };
 
-  // Load widgets and background from localStorage on component mount and project change
+  // Load widgets, views, and background from localStorage on component mount and project change
   useEffect(() => {
     if (!currentProject) {
       setWidgets([]);
@@ -165,15 +197,28 @@ export default function CustomizableProjectOverview() {
       setBackgroundId("default");
     }
     
-    // Load saved preset
-    const savedPreset = localStorage.getItem(`dashboard-preset-${currentProject.id}`);
-    if (savedPreset && dashboardPresets.find(p => p.id === savedPreset)) {
-      setActivePreset(savedPreset);
-    } else {
-      setActivePreset("custom");
+    // Load saved views
+    const savedViewsStr = localStorage.getItem(`dashboard-views-${currentProject.id}`);
+    if (savedViewsStr) {
+      try {
+        const parsedViews = JSON.parse(savedViewsStr) as DashboardView[];
+        if (parsedViews.length > 0) {
+          setSavedViews(parsedViews);
+        }
+      } catch (error) {
+        console.error('Failed to parse saved views:', error);
+      }
     }
     
-    // Load widgets
+    // Load active view ID
+    const savedActiveViewId = localStorage.getItem(`dashboard-active-view-${currentProject.id}`);
+    if (savedActiveViewId) {
+      setActiveViewId(savedActiveViewId);
+    } else {
+      setActiveViewId("overview");
+    }
+    
+    // Load widgets for active view
     const savedWidgets = localStorage.getItem(`widgets-${currentProject.id}`);
     console.log(`Looking for saved widgets for project ${currentProject.id}:`, savedWidgets ? 'found' : 'not found');
     
@@ -221,13 +266,43 @@ export default function CustomizableProjectOverview() {
     );
   }
 
-  // Mark layout as custom when user makes changes
-  const markAsCustom = () => {
-    if (activePreset !== "custom") {
-      setActivePreset("custom");
+  // Save views to localStorage
+  const saveViews = (views: DashboardView[]) => {
+    if (!currentProject) return;
+    try {
+      localStorage.setItem(`dashboard-views-${currentProject.id}`, JSON.stringify(views));
+    } catch (error) {
+      console.error('Failed to save views:', error);
+    }
+  };
+  
+  // Switch to a different view
+  const switchToView = (viewId: string) => {
+    const view = savedViews.find(v => v.id === viewId);
+    if (view) {
+      setActiveViewId(viewId);
+      setWidgets(view.widgets);
+      saveWidgets(view.widgets);
       if (currentProject) {
-        localStorage.setItem(`dashboard-preset-${currentProject.id}`, "custom");
+        localStorage.setItem(`dashboard-active-view-${currentProject.id}`, viewId);
       }
+    }
+  };
+  
+  // Create a new view with current widgets
+  const createNewView = () => {
+    const newViewId = `view-${Date.now()}`;
+    const newView: DashboardView = {
+      id: newViewId,
+      name: `View ${savedViews.length + 1}`,
+      widgets: [...widgets],
+    };
+    const updatedViews = [...savedViews, newView];
+    setSavedViews(updatedViews);
+    saveViews(updatedViews);
+    setActiveViewId(newViewId);
+    if (currentProject) {
+      localStorage.setItem(`dashboard-active-view-${currentProject.id}`, newViewId);
     }
   };
 
@@ -246,7 +321,6 @@ export default function CustomizableProjectOverview() {
     const updatedWidgets = [...widgets, newWidget];
     setWidgets(updatedWidgets);
     saveWidgets(updatedWidgets);
-    markAsCustom();
     setIsAddingWidget(false);
   };
 
@@ -254,52 +328,14 @@ export default function CustomizableProjectOverview() {
     const updatedWidgets = widgets.filter(w => w.id !== widgetId);
     setWidgets(updatedWidgets);
     saveWidgets(updatedWidgets);
-    markAsCustom();
   };
 
   const updateWidget = (updatedWidget: Widget) => {
     const updatedWidgets = widgets.map(w => w.id === updatedWidget.id ? updatedWidget : w);
     setWidgets(updatedWidgets);
     saveWidgets(updatedWidgets);
-    markAsCustom();
     if (configuringWidget === updatedWidget.id) {
       setConfiguringWidget(null);
-    }
-  };
-
-  const resetToDefaults = () => {
-    setWidgets(defaultWidgets);
-    saveWidgets(defaultWidgets);
-    setActivePreset("overview");
-    setBackgroundId("default");
-    if (currentProject) {
-      localStorage.setItem(`dashboard-bg-${currentProject.id}`, "default");
-      localStorage.setItem(`dashboard-preset-${currentProject.id}`, "overview");
-    }
-  };
-
-  // Switch to a preset configuration
-  const switchToPreset = (presetId: string) => {
-    if (presetId === "custom") {
-      setActivePreset("custom");
-      if (currentProject) {
-        localStorage.setItem(`dashboard-preset-${currentProject.id}`, "custom");
-      }
-      return;
-    }
-    
-    const presetConfig = presetWidgets[presetId];
-    if (presetConfig) {
-      const newWidgets = presetConfig.map((w, i) => ({
-        ...w,
-        id: `${presetId}-${Date.now()}-${i}`,
-      }));
-      setWidgets(newWidgets);
-      saveWidgets(newWidgets);
-      setActivePreset(presetId);
-      if (currentProject) {
-        localStorage.setItem(`dashboard-preset-${currentProject.id}`, presetId);
-      }
     }
   };
 
@@ -321,7 +357,6 @@ export default function CustomizableProjectOverview() {
 
       const reorderedWidgets = arrayMove(widgets, oldIndex, newIndex);
       saveWidgets(reorderedWidgets);
-      markAsCustom();
       return reorderedWidgets;
     });
   };
@@ -358,22 +393,44 @@ export default function CustomizableProjectOverview() {
     );
   };
 
+  // Get phase display name and color
+  const phaseDisplayName = currentPhaseOption?.name || 
+    currentProject.currentSystemPhase?.replace(/_/g, ' ') || 
+    'Lead';
+  const phaseColor = currentPhaseOption?.color || '#6b7280';
+
   return (
     <div className="flex flex-col h-full" data-testid="customizable-project-overview">
       {/* Row 1 - Title & Actions (36px / h-9) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Dashboard Title + Widget Count */}
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Dashboard
+        {/* Left: Project Name · Dashboard breadcrumb + Active chip */}
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
+            <span className="truncate max-w-[180px]">{currentProject.name}</span>
+            <span className="text-muted-foreground">·</span>
+            <span>Dashboard</span>
           </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-widget-count">
-            {widgets.length} widgets
+          <Badge 
+            variant="secondary" 
+            className={`text-xs ${
+              currentProject.status === 'active' 
+                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+            }`}
+          >
+            {currentProject.status === 'active' ? 'Active' : 'Inactive'}
           </Badge>
         </div>
 
-        {/* Right: Action Buttons */}
+        {/* Right: Phase chip + Add Widget + Settings gear */}
         <div className="flex items-center gap-1.5">
+          <Badge 
+            className="text-xs text-white capitalize"
+            style={{ backgroundColor: phaseColor }}
+            data-testid="badge-project-phase"
+          >
+            {phaseDisplayName}
+          </Badge>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
             onClick={() => setIsAddingWidget(true)}
@@ -394,116 +451,49 @@ export default function CustomizableProjectOverview() {
         </div>
       </div>
 
-      {/* Row 2 - Presets & Background (36px / h-9) */}
+      {/* Row 2 - View Switcher (36px / h-9) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: Preset Tabs */}
-        <div className="flex items-center gap-0.5" data-testid="tabs-dashboard-presets">
-          {dashboardPresets.map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => switchToPreset(preset.id)}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                activePreset === preset.id 
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                  : 'hover-elevate'
-              } active-elevate-2 flex items-center gap-1`}
-              data-testid={`preset-${preset.id}`}
-            >
-              {preset.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Right: Background & Reset */}
-        <div className="flex items-center gap-1.5">
-          {/* Background Picker */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button 
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-background-picker"
-              >
-                <Palette className="w-3 h-3" />
-                <span>Background</span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-3" align="end">
-              <div className="space-y-3">
-                <div className="text-sm font-medium">Dashboard Background</div>
-                <div className="grid grid-cols-4 gap-2">
-                  {backgroundOptions.map((bg) => (
-                    <button
-                      key={bg.id}
-                      onClick={() => saveBackground(bg.id)}
-                      className={`w-12 h-12 rounded-md border-2 ${bg.preview} ${
-                        backgroundId === bg.id 
-                          ? 'border-[#bba7db] ring-2 ring-[#bba7db]/30' 
-                          : 'border-border hover:border-muted-foreground'
-                      } transition-all`}
-                      title={bg.name}
-                      data-testid={`bg-option-${bg.id}`}
-                    />
-                  ))}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {backgroundOptions.find(b => b.id === backgroundId)?.name}
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {/* Reset Button */}
+        {/* Left: View split-button selector */}
+        <div className="flex items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-dashboard-options"
+                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
+                data-testid="button-view-switcher"
               >
-                <LayoutGrid className="w-3 h-3" />
+                <span>{activeView?.name || 'Overview'}</span>
+                <ChevronDown className="w-3 h-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel className="text-xs">Dashboard Options</DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={resetToDefaults} className="text-xs">
-                <RotateCcw className="w-3 h-3 mr-2" />
-                Reset to Defaults
-              </DropdownMenuItem>
+              {savedViews.map((view) => (
+                <DropdownMenuItem 
+                  key={view.id}
+                  onClick={() => switchToView(view.id)}
+                  className="text-xs flex items-center justify-between"
+                >
+                  <span>{view.name}</span>
+                  {view.id === activeViewId && (
+                    <Check className="w-3 h-3 text-[#bba7db]" />
+                  )}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
 
-      {/* Row 3 - Project Info (36px / h-9) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Project Name & Details */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate max-w-[200px]" data-testid="text-project-name">
-            {currentProject.name}
-          </span>
-          {currentProject.jobNumber && (
-            <Badge variant="outline" className="text-xs">
-              {currentProject.jobNumber}
-            </Badge>
-          )}
-          <Badge 
-            variant="secondary" 
-            className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+        {/* Right: New View button */}
+        <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+            onClick={createNewView}
+            data-testid="button-new-view"
           >
-            {currentProject.status === 'active' ? 'Active' : currentProject.status}
-          </Badge>
-        </div>
-
-        {/* Right: Phase Info */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {currentProject.projectType && (
-            <span>{currentProject.projectType}</span>
-          )}
-          {currentProject.currentSystemPhase && (
-            <Badge variant="outline" className="text-xs capitalize">
-              {currentProject.currentSystemPhase.replace(/_/g, ' ')}
-            </Badge>
-          )}
+            <PlusCircle className="w-3 h-3" />
+            <span>New View</span>
+          </button>
         </div>
       </div>
 
