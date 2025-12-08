@@ -34,20 +34,29 @@ export default function UserWorkspace() {
   const { userId } = useParams<{ userId: string }>();
   const [location, navigate] = useLocation();
 
-  // Fetch current user to check if viewing own page
-  const { data: currentUser } = useQuery<User>({
+  // Fetch current user - always needed to check ownership
+  const { data: currentUser, isLoading: isCurrentUserLoading } = useQuery<User>({
     queryKey: ["/api/user"],
   });
 
-  // Handle "me" route - treat as current user's page
-  const resolvedUserId = userId === "me" ? currentUser?.id : userId;
-  const isOwnPage = userId === "me" || currentUser?.id === userId;
-
-  // Fetch user data (use resolved ID)
-  const { data: user } = useQuery<User>({
+  // For "me" route, use currentUser directly; for other routes, fetch specific user
+  const isMeRoute = userId === "me";
+  const resolvedUserId = isMeRoute ? currentUser?.id : userId;
+  
+  // Fetch user data for non-"me" routes
+  const { data: fetchedUser } = useQuery<User>({
     queryKey: [`/api/users/${resolvedUserId}`],
-    enabled: !!resolvedUserId,
+    enabled: !isMeRoute && !!resolvedUserId,
   });
+  
+  // Use currentUser for "me" route, fetchedUser for other routes
+  const user = isMeRoute ? currentUser : fetchedUser;
+  
+  // isOwnPage: true when viewing own profile
+  const isOwnPage = isMeRoute || (currentUser?.id === userId);
+  
+  // For settings tab: only show "not available" when we're certain it's NOT own page
+  const isDefinitelyNotOwnPage = !isCurrentUserLoading && currentUser && currentUser.id !== userId && !isMeRoute;
 
   // Determine active tab based on URL
   const activeTab = useMemo(() => {
@@ -88,7 +97,11 @@ export default function UserWorkspace() {
       case "notes":
         return <Memos user={user} isOwnPage={isOwnPage} />;
       case "settings":
-        return isOwnPage ? <UserSettings /> : <ComingSoonPage />;
+        // Show UserSettings for own page, ComingSoon only when definitely not own page
+        if (isDefinitelyNotOwnPage) {
+          return <ComingSoonPage />;
+        }
+        return <UserSettings />;
       default:
         return <UserOverview user={user} isOwnPage={isOwnPage} />;
     }
