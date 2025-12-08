@@ -159,11 +159,17 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
       const projectPhase = currentProject.currentSystemPhase || "construction";
       const phaseIndex = phases.findIndex(p => p.id === projectPhase);
       if (phaseIndex !== -1 && phaseIndex !== selectedPhaseIndex) {
+        console.log('[ProjectSwitcher] Syncing phase:', { 
+          projectName: currentProject.name,
+          projectPhase, 
+          phaseIndex, 
+          selectedPhaseIndex 
+        });
         setSelectedPhaseIndex(phaseIndex);
         localStorage.setItem(SELECTED_PHASE_KEY, String(phaseIndex));
       }
     }
-  }, [currentProject?.id, currentProject?.currentSystemPhase]);
+  }, [currentProject?.id, currentProject?.currentSystemPhase, currentProject?.name]);
 
   // Track recent projects
   useEffect(() => {
