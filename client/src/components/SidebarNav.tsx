@@ -541,6 +541,7 @@ export function SidebarNav() {
     } else {
       setActiveSection(sectionId);
       setIsDrawerOpen(true);
+      setIsFavoritesOpen(false); // Close favorites when opening a section
     }
   };
 
