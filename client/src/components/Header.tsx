@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, LayoutDashboard, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, Clipboard, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban, Search } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -25,40 +25,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { Project, Company } from "@shared/schema";
 
-// Project sections base configuration (from AppSidebar)
-const projectItemsBase = [
-  { title: "Overview", baseUrl: "", icon: Home },
-  { title: "Messages", baseUrl: "/messages", icon: MessageSquare },
-  { title: "Notes", baseUrl: "/notes", icon: FileText },
-  { title: "Minutes", baseUrl: "/minutes", icon: ClipboardList },
-  { title: "Schedule", baseUrl: "/schedule", icon: Clock },
-  { title: "Tasks", baseUrl: "/tasks", icon: CheckSquare },
-  { title: "Take off", baseUrl: "/takeoff", icon: Calculator },
-  { title: "Estimates", baseUrl: "/estimates", icon: FileBarChart },
-  { title: "Request For Quotes", baseUrl: "/rfqs", icon: FileSearch },
-  { title: "Request For Information", baseUrl: "/rfis", icon: HelpCircle },
-  { title: "Proposals", baseUrl: "/proposals", icon: File },
-  { title: "Selections", baseUrl: "/selections", icon: CheckSquare },
-  { title: "Allowances", baseUrl: "/allowances", icon: DollarSign },
-  { title: "Purchase Orders", baseUrl: "/purchase-orders", icon: Receipt },
-  { title: "Variations", baseUrl: "/variations", icon: FileText },
-  { title: "Bills", baseUrl: "/bills", icon: CreditCard },
-  { title: "Client Invoices", baseUrl: "/invoices", icon: Receipt },
-  { title: "Site Diary", baseUrl: "/site-diary", icon: BookOpen },
-  { title: "Timesheets", baseUrl: "/timesheets", icon: Timer },
-  { title: "Budget", baseUrl: "/budget", icon: PiggyBank },
-  { title: "Files", baseUrl: "/files", icon: FolderOpen },
-  { title: "Team", baseUrl: "/team", icon: Users },
-];
-
-// Items to exclude from All Items menu
-const excludedItems = new Set([
-  "Overview", "Messages", "Schedule", "Take off", 
-  "Selections", "Allowances", "Budget", "Files", "Team"
-]);
-
-// Filter items for All Items dropdown
-const allItemsMenuItems = projectItemsBase.filter(item => !excludedItems.has(item.title));
 
 export default function Header() {
   const [location, navigate] = useLocation();
@@ -224,38 +190,21 @@ export default function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {/* Dashboard Button */}
-        <Button variant="ghost" size="sm" data-testid="button-dashboard" disabled className="h-7 text-xs">
-          <LayoutDashboard className="h-3.5 w-3.5 mr-1.5" />
-          Dashboard
-        </Button>
-
-        {/* All Items Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" data-testid="button-all-items" className="h-7 text-xs">
-              <Clipboard className="h-3.5 w-3.5 mr-1.5" />
-              All Items
-              <ChevronDown className="h-3.5 w-3.5 ml-1.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {allItemsMenuItems.map((item) => {
-              const IconComponent = item.icon;
-              return (
-                <DropdownMenuItem 
-                  key={item.title}
-                  onClick={() => navigate(item.baseUrl)} 
-                  data-testid={`menu-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                >
-                  <IconComponent className="h-4 w-4 mr-2" />
-                  {item.title}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      </div>
+      
+      {/* Global Search Bar - Centered */}
+      <div className="flex-1 flex justify-center px-4">
+        <button 
+          onClick={() => {
+            // TODO: Open global search modal
+          }}
+          className="flex items-center gap-2 h-7 px-3 w-full max-w-md rounded-md bg-muted/60 hover-elevate active-elevate-2 text-muted-foreground text-xs"
+          data-testid="button-global-search"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>Search...</span>
+          <kbd className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
+        </button>
       </div>
 
       <div className="flex items-center gap-1">
