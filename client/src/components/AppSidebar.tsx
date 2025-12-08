@@ -33,6 +33,7 @@ import {
   ListTree,
   User,
   ListChecks,
+  Star,
 } from "lucide-react";
 
 import {
@@ -59,6 +60,14 @@ import { useProject } from "@/contexts/ProjectContext";
 import { Project } from "@shared/schema";
 import { useState, useEffect } from "react";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { ProjectIcon } from "./ProjectIcon";
+
+const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
+
+interface FavoriteProject {
+  id: string;
+  order: number;
+}
 
 // Project sections base configuration
 const projectItemsBase = [
@@ -121,6 +130,33 @@ export function AppSidebar() {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const [isFavoritesOpen, setIsFavoritesOpen] = useState(() => {
+    const saved = localStorage.getItem("sidebar-favorites-open");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  const [favoriteProjects, setFavoriteProjects] = useState<FavoriteProject[]>(() => {
+    try {
+      const saved = localStorage.getItem(FAVORITE_PROJECTS_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Listen for changes from other components
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === FAVORITE_PROJECTS_KEY && e.newValue) {
+        try {
+          setFavoriteProjects(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Save collapsible states to localStorage
   useEffect(() => {
     localStorage.setItem("sidebar-system-open", JSON.stringify(isSystemOpen));
@@ -129,6 +165,10 @@ export function AppSidebar() {
   useEffect(() => {
     localStorage.setItem("sidebar-settings-open", JSON.stringify(isSettingsOpen));
   }, [isSettingsOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-favorites-open", JSON.stringify(isFavoritesOpen));
+  }, [isFavoritesOpen]);
 
   // Generate project-scoped URLs
   const getProjectItems = () => {
@@ -237,6 +277,60 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Favorites Section - Collapsible */}
+        {favoriteProjects.length > 0 && (
+          <Collapsible
+            open={isFavoritesOpen}
+            onOpenChange={setIsFavoritesOpen}
+            className="group/collapsible"
+          >
+            <SidebarGroup className={!isFavoritesOpen ? "pb-0" : ""}>
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
+                  <span className="font-medium flex items-center gap-1.5">
+                    <Star className="h-3.5 w-3.5 text-primary fill-current" />
+                    Favorites
+                  </span>
+                  {isFavoritesOpen ? (
+                    <ChevronDown className="h-4 w-4 transition-transform" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 transition-transform" />
+                  )}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {favoriteProjects.map((fp) => {
+                      const project = activeProjects.find(p => p.id === fp.id);
+                      if (!project) return null;
+                      return (
+                        <SidebarMenuItem key={fp.id}>
+                          <SidebarMenuButton 
+                            asChild
+                            tooltip={project.name}
+                            data-testid={`nav-favorite-${fp.id}`}
+                            data-active={location.startsWith(`/projects/${fp.id}`)}
+                          >
+                            <Link href={`/projects/${fp.id}`}>
+                              <ProjectIcon 
+                                iconName={project.iconName} 
+                                iconColor={project.iconColor} 
+                                className="h-4 w-4" 
+                              />
+                              <span className="group-data-[collapsible=icon]:hidden truncate">{project.name}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
+        )}
+
         {/* Project Navigation - shows current project's pages */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-medium text-muted-foreground group-data-[collapsible=icon]:hidden">
@@ -269,7 +363,7 @@ export function AppSidebar() {
           onOpenChange={setIsSystemOpen}
           className="group/collapsible"
         >
-          <SidebarGroup className={!isSystemOpen && !isProjectsOpen ? "pt-0 pb-0" : !isSystemOpen ? "pb-0" : ""}>
+          <SidebarGroup className={!isSystemOpen ? "pb-0" : ""}>
             <SidebarGroupLabel asChild>
               <CollapsibleTrigger className="flex w-full items-center justify-between hover-elevate active-elevate-2 p-2 rounded-md">
                 <span className="font-medium">System</span>

@@ -359,8 +359,8 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
                         onClick={(e) => toggleFavoriteProject(project.id, e)}
                         className={`p-1 rounded transition-opacity ${
                           isFavorite 
-                            ? "text-yellow-500 opacity-100" 
-                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                            ? "text-primary opacity-100" 
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
                         }`}
                         data-testid={`button-favorite-project-${project.id}`}
                       >

@@ -829,7 +829,7 @@ export function SidebarNav() {
                 <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mx-auto absolute top-2 left-1/2 -translate-x-1/2" />
               )}
               <span className={cn("font-semibold flex items-center gap-1.5", isMobile ? "text-sm" : "text-xs")}>
-                <Star className="h-3.5 w-3.5 text-yellow-500 fill-current" />
+                <Star className="h-3.5 w-3.5 text-primary fill-current" />
                 Favorites
               </span>
               <Button

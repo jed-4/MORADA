@@ -32,18 +32,20 @@ export default function UserWorkspace() {
   const { userId } = useParams<{ userId: string }>();
   const [location, navigate] = useLocation();
 
-  // Fetch user data
-  const { data: user } = useQuery<User>({
-    queryKey: [`/api/users/${userId}`],
-    enabled: !!userId,
-  });
-
   // Fetch current user to check if viewing own page
   const { data: currentUser } = useQuery<User>({
     queryKey: ["/api/user"],
   });
 
-  const isOwnPage = currentUser?.id === userId;
+  // Handle "me" route - treat as current user's page
+  const resolvedUserId = userId === "me" ? currentUser?.id : userId;
+  const isOwnPage = userId === "me" || currentUser?.id === userId;
+
+  // Fetch user data (use resolved ID)
+  const { data: user } = useQuery<User>({
+    queryKey: [`/api/users/${resolvedUserId}`],
+    enabled: !!resolvedUserId,
+  });
 
   // Determine active tab based on URL
   const activeTab = useMemo(() => {
