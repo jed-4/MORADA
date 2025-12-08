@@ -901,7 +901,11 @@ export function SidebarNav() {
                         <div className="space-y-0.5">
                           {sectionFavorites.map((fav) => {
                             const IconComponent = iconMap[fav.iconName] || FileText;
-                            const url = fav.fullUrl || fav.url;
+                            // Fix User Dashboard favorite URL to use current user ID
+                            let url = fav.fullUrl || fav.url;
+                            if (sectionId === "user" && fav.title === "Dashboard" && currentUser?.id) {
+                              url = `/users/${currentUser.id}`;
+                            }
                             const isActive = location === url || (url !== "/" && location.startsWith(url));
                             
                             return (
