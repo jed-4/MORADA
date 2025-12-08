@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/contexts/ProjectContext";
-import { Project } from "@shared/schema";
+import { Project, User } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -44,6 +44,8 @@ import {
   Star,
   ChevronDown,
   GripVertical,
+  Calendar,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,15 +61,25 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+const getBaseUserItems = (): NavItem[] => [
+  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Inbox", url: "/messages", icon: Inbox },
+  { title: "My Tasks", url: "/tasks", icon: CheckSquare },
+];
+
+const getUserWorkspaceItems = (userId: string): NavItem[] => [
+  { title: "My Calendar", url: `/users/${userId}/calendar`, icon: Calendar },
+  { title: "My Schedule", url: `/users/${userId}/schedule`, icon: Clock },
+  { title: "My Time", url: `/users/${userId}/time`, icon: Timer },
+  { title: "My Reminders", url: `/users/${userId}/reminders`, icon: Bell },
+  { title: "My Memos", url: `/users/${userId}/notes`, icon: FileText },
+];
+
 const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ className?: string }>; items: NavItem[] }> = {
   user: {
     label: "User",
     icon: LayoutDashboard,
-    items: [
-      { title: "Dashboard", url: "/", icon: LayoutDashboard },
-      { title: "Inbox", url: "/messages", icon: Inbox },
-      { title: "My Tasks", url: "/tasks", icon: CheckSquare },
-    ],
+    items: getBaseUserItems(),
   },
   project: {
     label: "Project",
@@ -312,6 +324,8 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Mail,
   UserPlus,
   Settings,
+  Calendar,
+  Bell,
 };
 
 function useIsMobile() {
@@ -357,6 +371,10 @@ export function SidebarNav() {
     queryKey: ["/api/projects"],
   });
   
+  const { data: currentUser } = useQuery<User>({
+    queryKey: ["/api/user"],
+  });
+  
   const { data: unreadCounts = {} } = useQuery<Record<string, number>>({
     queryKey: ["/api/channels/unread/counts"],
     refetchInterval: 30000,
@@ -365,6 +383,17 @@ export function SidebarNav() {
   const totalUnreadMessages = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
   
   const activeProjects = projects.filter(p => !p.isArchived);
+  
+  const dynamicSections = useMemo(() => {
+    const result = { ...sections };
+    if (currentUser?.id) {
+      result.user = {
+        ...sections.user,
+        items: [...getBaseUserItems(), ...getUserWorkspaceItems(currentUser.id)],
+      };
+    }
+    return result;
+  }, [currentUser?.id]);
   
   useEffect(() => {
     if (activeProjects.length === 0) return;
@@ -406,7 +435,7 @@ export function SidebarNav() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isDrawerOpen || !activeSection) return;
       
-      const items = sections[activeSection].items;
+      const items = dynamicSections[activeSection].items;
       
       switch (e.key) {
         case "Escape":
@@ -564,7 +593,7 @@ export function SidebarNav() {
         {/* Section Icons */}
         <div className="flex-1 flex flex-col py-1 gap-0.5">
           {sectionOrder.map((sectionId) => {
-            const section = sections[sectionId];
+            const section = dynamicSections[sectionId];
             const isActive = activeSection === sectionId;
             
             return (
@@ -640,7 +669,7 @@ export function SidebarNav() {
                 <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mx-auto absolute top-2 left-1/2 -translate-x-1/2" />
               )}
               <span className={cn("font-semibold", isMobile ? "text-sm" : "text-xs")}>
-                {sections[activeSection].label}
+                {dynamicSections[activeSection].label}
               </span>
               <div className="flex items-center gap-1">
                 <Tooltip delayDuration={0}>
@@ -677,7 +706,7 @@ export function SidebarNav() {
             {/* Nav Items */}
             <ScrollArea className="flex-1">
               <div className={isMobile ? "p-2" : "p-1.5"}>
-                {sections[activeSection].items.map((item, index) => {
+                {dynamicSections[activeSection].items.map((item, index) => {
                   const url = getItemUrl(activeSection, item);
                   const isActive = location === url || 
                     (url !== "/" && location.startsWith(url));
@@ -820,7 +849,7 @@ export function SidebarNav() {
                             !expandedGroups[sectionId] && "-rotate-90"
                           )} 
                         />
-                        {sections[sectionId].label}
+                        {dynamicSections[sectionId].label}
                       </button>
                       
                       {expandedGroups[sectionId] && (
