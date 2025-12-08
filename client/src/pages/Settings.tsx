@@ -76,91 +76,94 @@ import { z } from "zod";
 import type { CompanySettings, CustomFieldDef, InsertCustomFieldDef, FieldCategoryWithOptions, FieldOption } from "@shared/schema";
 import { insertCustomFieldDefSchema } from "@shared/schema";
 
-// Company Settings categories matching Buildern structure
+// Company Settings categories - organized to match sidebar and BuildPro workflow
 const SETTINGS_CATEGORIES = [
+  // General section
   {
     id: "branding",
-    label: "Branding",
+    label: "General",
     icon: Building2,
-    description: "Company information, logo, and branding"
+    description: "Company information, logo, and branding",
+    group: "general"
   },
   {
     id: "system-configuration", 
-    label: "System configuration",
+    label: "System Configuration",
     icon: SettingsIcon,
-    description: "Date formats, language, and system preferences"
+    description: "Date formats, language, and system preferences",
+    group: "general",
+    navigateTo: "/system-configuration"
   },
   {
     id: "roles-permissions",
     label: "Roles & Permissions", 
     icon: Shield,
-    description: "User roles and permission management"
+    description: "User roles and permission management",
+    group: "general",
+    navigateTo: "/roles-permissions"
   },
-  {
-    id: "license-insurance",
-    label: "License and Insurance",
-    icon: FileText,
-    description: "Upload and manage business documents"
-  },
-  {
-    id: "terms-conditions",
-    label: "Terms and Conditions",
-    icon: FileText,
-    description: "Contract templates and legal documents"
-  },
-  {
-    id: "accounting-integration",
-    label: "Accounting integration",
-    icon: Plug,
-    description: "Connect with Xero and other accounting software"
-  },
-  {
-    id: "schedule-settings",
-    label: "Schedule settings",
-    icon: Calendar,
-    description: "Working hours, holidays, and calendar configuration"
-  },
-  {
-    id: "default-values",
-    label: "Default values",
-    icon: Database,
-    description: "Units, project types, statuses, and system defaults"
-  },
-  {
-    id: "email-messages",
-    label: "Email messages",
-    icon: Mail,
-    description: "Customize email templates and messaging"
-  },
-  {
-    id: "layout-templates",
-    label: "Layout Template",
-    icon: Layout,
-    description: "Proposal and document layout templates"
-  },
+  // Field Settings section - matches sidebar order
   {
     id: "field-settings",
     label: "Field Settings",
     icon: Sliders,
-    description: "Manage project statuses and custom field options"
+    description: "Manage project statuses, task options, and custom fields",
+    group: "fields",
+    navigateTo: "/field-settings"
+  },
+  // Schedule section
+  {
+    id: "schedule-settings",
+    label: "Schedule Settings",
+    icon: Calendar,
+    description: "Working days, hours, holidays, and calendar defaults",
+    group: "schedule"
+  },
+  // Default Values section
+  {
+    id: "default-values",
+    label: "Default Values",
+    icon: Database,
+    description: "Markup percentages, payment terms, tax rates, and units",
+    group: "defaults"
+  },
+  // Templates section
+  {
+    id: "terms-conditions",
+    label: "Terms & Conditions",
+    icon: FileText,
+    description: "Contract templates for invoices, quotes, and documents",
+    group: "templates"
   },
   {
-    id: "task-settings",
-    label: "Task Management",
-    icon: CheckSquare,
-    description: "Manage task tags and template statuses"
+    id: "layout-templates",
+    label: "Layout Templates",
+    icon: Layout,
+    description: "PDF and email templates for proposals and reports",
+    group: "templates"
   },
   {
-    id: "notifications",
-    label: "Notifications",
-    icon: Bell,
-    description: "Control what notifications you receive"
+    id: "email-messages",
+    label: "Email Templates",
+    icon: Mail,
+    description: "Customize email templates and messaging",
+    group: "templates"
   },
+  // Integrations section
   {
     id: "integrations",
     label: "Integrations",
     icon: Plug,
-    description: "Connect Google Drive and other services"
+    description: "Connect Google Drive, Xero, and other services",
+    group: "integrations"
+  },
+  // Documents section
+  {
+    id: "license-insurance",
+    label: "License & Insurance",
+    icon: FileText,
+    description: "Upload and manage business documents",
+    group: "documents"
   }
 ];
 
@@ -293,302 +296,6 @@ export default function Settings() {
   };
 
   const activeCategory = SETTINGS_CATEGORIES.find(cat => cat.id === activeSection);
-
-  // Notifications Section Component
-  const NotificationsSection = () => {
-    const [notifications, setNotifications] = useState(() => {
-      const saved = localStorage.getItem('notificationPreferences');
-      return saved ? JSON.parse(saved) : {
-        // Project notifications
-        projectCreated: true,
-        projectUpdated: true,
-        projectCompleted: true,
-        
-        // Task notifications
-        taskAssigned: true,
-        taskDueDate: true,
-        taskCompleted: true,
-        taskComments: true,
-        
-        // Team notifications
-        teamMemberAdded: true,
-        teamMemberRemoved: false,
-        
-        // Site Diary notifications
-        siteDiaryCreated: true,
-        siteDiaryUpdated: false,
-        
-        // Estimate & Invoice notifications
-        estimateCreated: true,
-        estimateApproved: true,
-        invoiceCreated: true,
-        invoicePaid: true,
-        
-        // Email notifications
-        emailNotifications: true,
-        emailDigest: false,
-      };
-    });
-
-    const handleToggle = (key: string) => {
-      const updated = { ...notifications, [key]: !notifications[key] };
-      setNotifications(updated);
-      localStorage.setItem('notificationPreferences', JSON.stringify(updated));
-      toast({ title: "Notification preferences updated" });
-    };
-
-    return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-semibold">Notification Preferences</h2>
-          <p className="text-muted-foreground">
-            Choose what notifications you want to receive
-          </p>
-        </div>
-
-        {/* Project Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Project Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Project Created</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a new project is created</p>
-              </div>
-              <Checkbox
-                checked={notifications.projectCreated}
-                onCheckedChange={() => handleToggle('projectCreated')}
-                data-testid="notification-project-created"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Project Updated</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a project is updated</p>
-              </div>
-              <Checkbox
-                checked={notifications.projectUpdated}
-                onCheckedChange={() => handleToggle('projectUpdated')}
-                data-testid="notification-project-updated"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Project Completed</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a project is completed</p>
-              </div>
-              <Checkbox
-                checked={notifications.projectCompleted}
-                onCheckedChange={() => handleToggle('projectCompleted')}
-                data-testid="notification-project-completed"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Task Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Task Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Task Assigned</Label>
-                <p className="text-sm text-muted-foreground">Get notified when you're assigned to a task</p>
-              </div>
-              <Checkbox
-                checked={notifications.taskAssigned}
-                onCheckedChange={() => handleToggle('taskAssigned')}
-                data-testid="notification-task-assigned"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Task Due Date</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a task is due soon</p>
-              </div>
-              <Checkbox
-                checked={notifications.taskDueDate}
-                onCheckedChange={() => handleToggle('taskDueDate')}
-                data-testid="notification-task-due"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Task Completed</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a task is completed</p>
-              </div>
-              <Checkbox
-                checked={notifications.taskCompleted}
-                onCheckedChange={() => handleToggle('taskCompleted')}
-                data-testid="notification-task-completed"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Task Comments</Label>
-                <p className="text-sm text-muted-foreground">Get notified when someone comments on your tasks</p>
-              </div>
-              <Checkbox
-                checked={notifications.taskComments}
-                onCheckedChange={() => handleToggle('taskComments')}
-                data-testid="notification-task-comments"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Team Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Team Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Team Member Added</Label>
-                <p className="text-sm text-muted-foreground">Get notified when someone joins your team</p>
-              </div>
-              <Checkbox
-                checked={notifications.teamMemberAdded}
-                onCheckedChange={() => handleToggle('teamMemberAdded')}
-                data-testid="notification-team-added"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Team Member Removed</Label>
-                <p className="text-sm text-muted-foreground">Get notified when someone leaves your team</p>
-              </div>
-              <Checkbox
-                checked={notifications.teamMemberRemoved}
-                onCheckedChange={() => handleToggle('teamMemberRemoved')}
-                data-testid="notification-team-removed"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Site Diary Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Site Diary Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Site Diary Created</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a new site diary entry is created</p>
-              </div>
-              <Checkbox
-                checked={notifications.siteDiaryCreated}
-                onCheckedChange={() => handleToggle('siteDiaryCreated')}
-                data-testid="notification-diary-created"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Site Diary Updated</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a site diary entry is updated</p>
-              </div>
-              <Checkbox
-                checked={notifications.siteDiaryUpdated}
-                onCheckedChange={() => handleToggle('siteDiaryUpdated')}
-                data-testid="notification-diary-updated"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Financial Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Financial Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Estimate Created</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a new estimate is created</p>
-              </div>
-              <Checkbox
-                checked={notifications.estimateCreated}
-                onCheckedChange={() => handleToggle('estimateCreated')}
-                data-testid="notification-estimate-created"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Estimate Approved</Label>
-                <p className="text-sm text-muted-foreground">Get notified when an estimate is approved</p>
-              </div>
-              <Checkbox
-                checked={notifications.estimateApproved}
-                onCheckedChange={() => handleToggle('estimateApproved')}
-                data-testid="notification-estimate-approved"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Invoice Created</Label>
-                <p className="text-sm text-muted-foreground">Get notified when a new invoice is created</p>
-              </div>
-              <Checkbox
-                checked={notifications.invoiceCreated}
-                onCheckedChange={() => handleToggle('invoiceCreated')}
-                data-testid="notification-invoice-created"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Invoice Paid</Label>
-                <p className="text-sm text-muted-foreground">Get notified when an invoice is paid</p>
-              </div>
-              <Checkbox
-                checked={notifications.invoicePaid}
-                onCheckedChange={() => handleToggle('invoicePaid')}
-                data-testid="notification-invoice-paid"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Email Preferences */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Email Preferences</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Email Notifications</Label>
-                <p className="text-sm text-muted-foreground">Receive notifications via email</p>
-              </div>
-              <Checkbox
-                checked={notifications.emailNotifications}
-                onCheckedChange={() => handleToggle('emailNotifications')}
-                data-testid="notification-email"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Daily Digest</Label>
-                <p className="text-sm text-muted-foreground">Receive a daily summary of all notifications</p>
-              </div>
-              <Checkbox
-                checked={notifications.emailDigest}
-                onCheckedChange={() => handleToggle('emailDigest')}
-                data-testid="notification-digest"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  };
 
   // Integrations Section Component
   const IntegrationsSection = () => {
@@ -896,40 +603,15 @@ export default function Settings() {
   // Company Info Section Component
   const CompanyInfoSection = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Company information</h2>
-          <p className="text-muted-foreground">
-            Manage your business details and branding
-          </p>
-        </div>
-        {!isEditing ? (
-          <Button onClick={handleEditCompanyInfo} data-testid="edit-company-info">
-            Edit Company Info
-          </Button>
-        ) : (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleCancelEdit}>
-              <X className="h-4 w-4 mr-2" />
-              Discard Changes
-            </Button>
-            <Button 
-              onClick={companyForm.handleSubmit(onSubmitCompanyInfo)}
-              disabled={updateCompanyMutation.isPending}
-              data-testid="save-company-info"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {updateCompanyMutation.isPending ? "Saving..." : "Save changes"}
-            </Button>
-          </div>
-        )}
-      </div>
-
       <Form {...companyForm}>
         <form className="space-y-6">
           {/* Company Information */}
-          <Card>
-            <CardContent className="p-6 space-y-4">
+          <Card className="border-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Company Details</CardTitle>
+              <p className="text-sm text-muted-foreground">Your business name and contact information</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={companyForm.control}
@@ -1117,9 +799,9 @@ export default function Settings() {
           </Card>
 
           {/* Company Logo */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Company logo</CardTitle>
+          <Card className="border-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Company Logo</CardTitle>
               <p className="text-sm text-muted-foreground">
                 The logo will be shown in Web views, Client portal and Emails. Max file size: 100 MB, preferred square shape. 
                 Allowed formats: .jpg, .jpeg, .png, .gif, .webp, .svg, .avif, .bmp, .heic, .tiff
@@ -1146,9 +828,10 @@ export default function Settings() {
           </Card>
 
           {/* Social Media */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Social media</CardTitle>
+          <Card className="border-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Social Media</CardTitle>
+              <p className="text-sm text-muted-foreground">Your company's social media profiles</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1273,88 +956,628 @@ export default function Settings() {
     </div>
   );
 
+  // Group categories for sidebar
+  const categoryGroups = [
+    { key: "general", label: "General" },
+    { key: "fields", label: "Configuration" },
+    { key: "schedule", label: "Schedule" },
+    { key: "defaults", label: "Defaults" },
+    { key: "templates", label: "Templates" },
+    { key: "integrations", label: "Integrations" },
+    { key: "documents", label: "Documents" }
+  ];
+
   return (
     <div className="flex h-screen bg-background page-transition" data-testid="settings-page">
-      {/* Left Sidebar */}
-      <div className="w-64 border-r bg-card">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold tracking-tight mb-6">Company Settings</h1>
-          <nav className="space-y-1">
-            {SETTINGS_CATEGORIES.map((category) => {
-              const Icon = category.icon;
-              const isActive = activeSection === category.id;
-              
-              return (
-                <button
-                  key={category.id}
-                  onClick={() => {
-                    if (category.id === "system-configuration") {
-                      navigate("/system-configuration");
-                    } else if (category.id === "roles-permissions") {
-                      navigate("/roles-permissions");
-                    } else if (category.id === "field-settings") {
-                      navigate("/field-settings");
-                    } else if (category.id === "task-settings") {
-                      navigate("/task-settings");
-                    } else {
-                      setActiveSection(category.id);
-                    }
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left btn-enhanced focus-enhanced ${
-                    isActive 
-                      ? "bg-primary text-primary-foreground" 
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  }`}
-                  data-testid={`settings-nav-${category.id}`}
-                >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
-                  <span className="text-sm font-medium">{category.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+      {/* Left Sidebar - Minimalist styling */}
+      <div className="w-72 border-r border-border bg-background flex flex-col">
+        {/* Header */}
+        <div className="h-14 flex items-center px-6 border-b border-border flex-shrink-0">
+          <h1 className="text-sm font-semibold tracking-tight">Company Settings</h1>
         </div>
+        
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto p-3">
+          {categoryGroups.map((group) => {
+            const groupCategories = SETTINGS_CATEGORIES.filter(cat => cat.group === group.key);
+            if (groupCategories.length === 0) return null;
+            
+            return (
+              <div key={group.key} className="mb-4">
+                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  {group.label}
+                </div>
+                <div className="space-y-0.5">
+                  {groupCategories.map((category) => {
+                    const Icon = category.icon;
+                    const isActive = activeSection === category.id;
+                    
+                    return (
+                      <button
+                        key={category.id}
+                        onClick={() => {
+                          if (category.navigateTo) {
+                            navigate(category.navigateTo);
+                          } else {
+                            setActiveSection(category.id);
+                          }
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
+                          isActive 
+                            ? "bg-[#bba7db] text-white" 
+                            : "text-foreground hover-elevate"
+                        }`}
+                        data-testid={`settings-nav-${category.id}`}
+                      >
+                        <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-muted-foreground'}`} />
+                        <span className="text-sm font-medium">{category.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full overflow-y-auto">
-          <div className="p-8">
-            {/* Section Header */}
-            <div className="mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                {activeCategory && <activeCategory.icon className="h-6 w-6" />}
-                <h1 className="text-3xl font-bold capitalize">
-                  {activeCategory?.label || "Settings"}
-                </h1>
-              </div>
-              <p className="text-muted-foreground">
-                {activeCategory?.description || "Manage your company settings"}
-              </p>
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {/* Control Header - Row 1: Title & Actions */}
+        <div className="h-14 bg-background flex items-center justify-between px-6 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-3">
+            {activeCategory && <activeCategory.icon className="h-5 w-5 text-muted-foreground" />}
+            <h1 className="text-sm font-semibold">
+              {activeCategory?.label || "Settings"}
+            </h1>
+          </div>
+          {activeSection === "branding" && (
+            <div className="flex items-center gap-2">
+              {isEditing ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={handleCancelEdit} data-testid="button-cancel-edit">
+                    <X className="h-4 w-4 mr-1" />
+                    Cancel
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    onClick={companyForm.handleSubmit(onSubmitCompanyInfo)}
+                    disabled={updateCompanyMutation.isPending}
+                    className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+                    data-testid="button-save-settings"
+                  >
+                    <Save className="h-4 w-4 mr-1" />
+                    {updateCompanyMutation.isPending ? "Saving..." : "Save"}
+                  </Button>
+                </>
+              ) : (
+                <Button 
+                  size="sm" 
+                  onClick={handleEditCompanyInfo}
+                  className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+                  data-testid="button-edit-settings"
+                >
+                  <Edit className="h-4 w-4 mr-1" />
+                  Edit
+                </Button>
+              )}
             </div>
+          )}
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 max-w-5xl">
+            {/* Section Description */}
+            <p className="text-sm text-muted-foreground mb-6">
+              {activeCategory?.description || "Manage your company settings"}
+            </p>
 
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
             {activeSection === "field-settings" && <FieldCategoriesSection />}
-            {activeSection === "notifications" && <NotificationsSection />}
             {activeSection === "integrations" && <IntegrationsSection />}
+            {activeSection === "schedule-settings" && <ScheduleSettingsSection />}
+            {activeSection === "default-values" && <DefaultValuesSection />}
+            {activeSection === "terms-conditions" && <TermsConditionsSection />}
             
-            {activeSection !== "branding" && activeSection !== "field-settings" && activeSection !== "notifications" && activeSection !== "integrations" && (
-              <div className="text-center py-12">
-                <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                  {activeCategory && <activeCategory.icon className="h-8 w-8 text-muted-foreground" />}
-                </div>
-                <h3 className="text-lg font-medium mb-2">
-                  {activeCategory?.label} - Coming Soon
-                </h3>
-                <p className="text-muted-foreground">
-                  This settings section is under development and will be available soon.
-                </p>
-              </div>
+            {/* Coming Soon placeholder for unimplemented sections */}
+            {!["branding", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions"].includes(activeSection) && (
+              <Card className="border-2">
+                <CardContent className="text-center py-16">
+                  <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                    {activeCategory && <activeCategory.icon className="h-8 w-8 text-muted-foreground" />}
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">
+                    {activeCategory?.label}
+                  </h3>
+                  <p className="text-muted-foreground max-w-md mx-auto">
+                    This settings section is under development and will be available soon.
+                  </p>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Schedule Settings Section
+function ScheduleSettingsSection() {
+  const { toast } = useToast();
+  const [workDays, setWorkDays] = useState({
+    monday: true,
+    tuesday: true,
+    wednesday: true,
+    thursday: true,
+    friday: true,
+    saturday: false,
+    sunday: false
+  });
+  const [workHours, setWorkHours] = useState({
+    start: "07:00",
+    end: "15:30"
+  });
+  const [defaultTaskDuration, setDefaultTaskDuration] = useState("8");
+  const [bufferTime, setBufferTime] = useState("0");
+
+  const handleSave = () => {
+    localStorage.setItem('scheduleSettings', JSON.stringify({ workDays, workHours, defaultTaskDuration, bufferTime }));
+    toast({ title: "Schedule settings saved" });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Working Days</CardTitle>
+          <p className="text-sm text-muted-foreground">Select which days are working days for your company</p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(workDays).map(([day, isActive]) => (
+              <Button
+                key={day}
+                variant={isActive ? "default" : "outline"}
+                size="sm"
+                onClick={() => setWorkDays({ ...workDays, [day]: !isActive })}
+                className={isActive ? "bg-[#bba7db] hover:bg-[#bba7db]/90" : ""}
+                data-testid={`workday-${day}`}
+              >
+                {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Working Hours</CardTitle>
+          <p className="text-sm text-muted-foreground">Default start and end times for the work day</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 max-w-md">
+            <div>
+              <Label className="text-sm font-medium">Start Time</Label>
+              <Input
+                type="time"
+                value={workHours.start}
+                onChange={(e) => setWorkHours({ ...workHours, start: e.target.value })}
+                className="mt-1.5"
+                data-testid="input-work-start"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">End Time</Label>
+              <Input
+                type="time"
+                value={workHours.end}
+                onChange={(e) => setWorkHours({ ...workHours, end: e.target.value })}
+                className="mt-1.5"
+                data-testid="input-work-end"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Task Defaults</CardTitle>
+          <p className="text-sm text-muted-foreground">Default values for task scheduling</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 max-w-md">
+            <div>
+              <Label className="text-sm font-medium">Default Task Duration (hours)</Label>
+              <Input
+                type="number"
+                value={defaultTaskDuration}
+                onChange={(e) => setDefaultTaskDuration(e.target.value)}
+                min="1"
+                className="mt-1.5"
+                data-testid="input-task-duration"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Buffer Time (minutes)</Label>
+              <Input
+                type="number"
+                value={bufferTime}
+                onChange={(e) => setBufferTime(e.target.value)}
+                min="0"
+                className="mt-1.5"
+                data-testid="input-buffer-time"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSave} className="bg-[#bba7db] hover:bg-[#bba7db]/90" data-testid="button-save-schedule">
+          <Save className="h-4 w-4 mr-2" />
+          Save Schedule Settings
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Default Values Section
+function DefaultValuesSection() {
+  const { toast } = useToast();
+  const [defaults, setDefaults] = useState({
+    defaultMarkup: "15",
+    defaultPaymentTerms: "14",
+    defaultTaxRate: "10",
+    defaultUnit: "each",
+    currencySymbol: "$",
+    currencyPosition: "before"
+  });
+
+  const handleSave = () => {
+    localStorage.setItem('defaultValues', JSON.stringify(defaults));
+    toast({ title: "Default values saved" });
+  };
+
+  const unitOptions = ["each", "m", "m²", "m³", "kg", "L", "hours", "days", "lump sum"];
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Financial Defaults</CardTitle>
+          <p className="text-sm text-muted-foreground">Default values for estimates, invoices, and financial calculations</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label className="text-sm font-medium">Default Markup (%)</Label>
+              <Input
+                type="number"
+                value={defaults.defaultMarkup}
+                onChange={(e) => setDefaults({ ...defaults, defaultMarkup: e.target.value })}
+                min="0"
+                max="100"
+                className="mt-1.5"
+                data-testid="input-default-markup"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Payment Terms (days)</Label>
+              <Input
+                type="number"
+                value={defaults.defaultPaymentTerms}
+                onChange={(e) => setDefaults({ ...defaults, defaultPaymentTerms: e.target.value })}
+                min="0"
+                className="mt-1.5"
+                data-testid="input-payment-terms"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Default Tax Rate (%)</Label>
+              <Input
+                type="number"
+                value={defaults.defaultTaxRate}
+                onChange={(e) => setDefaults({ ...defaults, defaultTaxRate: e.target.value })}
+                min="0"
+                max="100"
+                step="0.1"
+                className="mt-1.5"
+                data-testid="input-tax-rate"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Units & Currency</CardTitle>
+          <p className="text-sm text-muted-foreground">Default units of measure and currency formatting</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label className="text-sm font-medium">Default Unit</Label>
+              <Select 
+                value={defaults.defaultUnit} 
+                onValueChange={(value) => setDefaults({ ...defaults, defaultUnit: value })}
+              >
+                <SelectTrigger className="mt-1.5" data-testid="select-default-unit">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {unitOptions.map(unit => (
+                    <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Currency Symbol</Label>
+              <Input
+                value={defaults.currencySymbol}
+                onChange={(e) => setDefaults({ ...defaults, currencySymbol: e.target.value })}
+                className="mt-1.5"
+                maxLength={3}
+                data-testid="input-currency-symbol"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Symbol Position</Label>
+              <Select 
+                value={defaults.currencyPosition} 
+                onValueChange={(value) => setDefaults({ ...defaults, currencyPosition: value })}
+              >
+                <SelectTrigger className="mt-1.5" data-testid="select-currency-position">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="before">Before amount ($100)</SelectItem>
+                  <SelectItem value="after">After amount (100$)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSave} className="bg-[#bba7db] hover:bg-[#bba7db]/90" data-testid="button-save-defaults">
+          <Save className="h-4 w-4 mr-2" />
+          Save Default Values
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Terms & Conditions Section (Buildern-style)
+function TermsConditionsSection() {
+  const { toast } = useToast();
+  const [templates, setTemplates] = useState<Array<{
+    id: string;
+    name: string;
+    content: string;
+    defaultFor: string[];
+  }>>([
+    {
+      id: "1",
+      name: "Client Invoices",
+      content: "This payment claim is in accordance with your building contract and considers any adjustments to the contract price by variations (as applicable) that have been agreed, signed and accepted.\n\n1. Invoices must be paid within the days stated within the building contract. Failure to pay by the due date may result in a notice of intention to suspend work and, if not resolved, may also result in termination of the contract.\n2. If any financial delays arise, the client must notify the builder immediately.\n3. This invoice is calculated from the contract amount.\n4. If you have any disputes about this invoice, notify the builder immediately.",
+      defaultFor: ["client_invoices"]
+    },
+    {
+      id: "2", 
+      name: "Purchase Orders",
+      content: "Standard purchase order terms and conditions apply. All goods must be delivered to the specified site address. Payment terms are net 30 days from invoice date.",
+      defaultFor: ["purchase_orders"]
+    },
+    {
+      id: "3",
+      name: "Quotes",
+      content: "This quote is valid for 30 days from the date of issue. Prices are subject to change based on material availability. GST is included in all prices unless otherwise stated.",
+      defaultFor: ["quotes"]
+    }
+  ]);
+  const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
+  const [isAddingTemplate, setIsAddingTemplate] = useState(false);
+
+  const documentTypes = [
+    { value: "client_invoices", label: "Client Invoices" },
+    { value: "purchase_orders", label: "Purchase Orders" },
+    { value: "quotes", label: "Quotes" },
+    { value: "contracts", label: "Contracts" },
+    { value: "variations", label: "Variations" }
+  ];
+
+  const handleSaveTemplate = (template: typeof templates[0]) => {
+    if (editingTemplate) {
+      setTemplates(templates.map(t => t.id === template.id ? template : t));
+    } else {
+      setTemplates([...templates, { ...template, id: Date.now().toString() }]);
+    }
+    setEditingTemplate(null);
+    setIsAddingTemplate(false);
+    toast({ title: "Template saved successfully" });
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    setTemplates(templates.filter(t => t.id !== id));
+    toast({ title: "Template deleted" });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Templates</h3>
+          <p className="text-sm text-muted-foreground">Manage terms and conditions templates for different document types</p>
+        </div>
+        <Button 
+          onClick={() => setIsAddingTemplate(true)} 
+          className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+          data-testid="button-add-template"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Create a Template
+        </Button>
+      </div>
+
+      {/* Template List */}
+      <div className="space-y-3">
+        {templates.map((template) => (
+          <Card key={template.id} className="border-2 hover-elevate">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-sm">{template.name}</h4>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+                    {template.content.substring(0, 150)}...
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {template.defaultFor.map(docType => {
+                      const docLabel = documentTypes.find(d => d.value === docType)?.label || docType;
+                      return (
+                        <Badge key={docType} variant="secondary" className="text-xs">
+                          {docLabel}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditingTemplate(template)}
+                    data-testid={`button-edit-template-${template.id}`}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteTemplate(template.id)}
+                    data-testid={`button-delete-template-${template.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Edit/Add Template Modal */}
+      {(editingTemplate || isAddingTemplate) && (
+        <TermsTemplateEditor
+          template={editingTemplate || { id: "", name: "", content: "", defaultFor: [] }}
+          documentTypes={documentTypes}
+          onSave={handleSaveTemplate}
+          onCancel={() => { setEditingTemplate(null); setIsAddingTemplate(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Terms Template Editor Component
+function TermsTemplateEditor({
+  template,
+  documentTypes,
+  onSave,
+  onCancel
+}: {
+  template: { id: string; name: string; content: string; defaultFor: string[] };
+  documentTypes: { value: string; label: string }[];
+  onSave: (template: { id: string; name: string; content: string; defaultFor: string[] }) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(template.name);
+  const [content, setContent] = useState(template.content);
+  const [defaultFor, setDefaultFor] = useState<string[]>(template.defaultFor);
+
+  const handleSubmit = () => {
+    onSave({ id: template.id, name, content, defaultFor });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="modal-template-editor">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <CardHeader className="pb-4 flex-shrink-0">
+          <CardTitle className="text-lg">
+            {template.id ? "Edit the Terms and Conditions Template" : "Create Terms and Conditions Template"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-y-auto space-y-4">
+          <div>
+            <Label className="text-sm font-medium">Template Name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Client Invoices"
+              className="mt-1.5"
+              data-testid="input-template-name"
+            />
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Create from scratch</Label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="mt-1.5 w-full min-h-[200px] p-3 border-2 rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[#bba7db] bg-background"
+              placeholder="Enter your terms and conditions..."
+              data-testid="textarea-template-content"
+            />
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Default for</Label>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {documentTypes.map(docType => (
+                <Button
+                  key={docType.value}
+                  variant={defaultFor.includes(docType.value) ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    if (defaultFor.includes(docType.value)) {
+                      setDefaultFor(defaultFor.filter(d => d !== docType.value));
+                    } else {
+                      setDefaultFor([...defaultFor, docType.value]);
+                    }
+                  }}
+                  className={defaultFor.includes(docType.value) ? "bg-[#bba7db] hover:bg-[#bba7db]/90" : ""}
+                  data-testid={`toggle-doctype-${docType.value}`}
+                >
+                  {docType.label}
+                  {defaultFor.includes(docType.value) && <X className="h-3 w-3 ml-1" />}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+        <div className="p-4 border-t flex justify-end gap-2 flex-shrink-0">
+          <Button variant="outline" onClick={onCancel} data-testid="button-cancel-template">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubmit} 
+            className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+            data-testid="button-save-template"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            Save
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

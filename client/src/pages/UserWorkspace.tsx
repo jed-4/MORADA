@@ -15,6 +15,7 @@ import UserSchedule from "@/components/user-workspace/UserSchedule";
 import UserTime from "@/components/user-workspace/UserTime";
 import Memos from "@/components/user-workspace/Memos";
 import UserReminders from "@/components/user-workspace/UserReminders";
+import UserSettings from "@/components/user-workspace/UserSettings";
 import Messages from "./Messages";
 
 const USER_TABS = [
@@ -26,6 +27,7 @@ const USER_TABS = [
   { id: "reminders", label: "Reminders", icon: Bell, path: "reminders" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
   { id: "notes", label: "Memos", icon: FileText, path: "notes" },
+  { id: "settings", label: "Settings", icon: SettingsIcon, path: "settings" },
 ] as const;
 
 export default function UserWorkspace() {
@@ -85,6 +87,8 @@ export default function UserWorkspace() {
         return <Messages channelTypeFilter="dm" />;
       case "notes":
         return <Memos user={user} isOwnPage={isOwnPage} />;
+      case "settings":
+        return isOwnPage ? <UserSettings /> : <ComingSoonPage />;
       default:
         return <UserOverview user={user} isOwnPage={isOwnPage} />;
     }
