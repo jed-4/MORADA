@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -51,7 +52,12 @@ import {
   AlertCircle,
   CheckCircle2,
   Eye,
-  EyeOff
+  EyeOff,
+  Receipt,
+  FileCheck,
+  ClipboardList,
+  Folder,
+  MoreHorizontal
 } from "lucide-react";
 import {
   DndContext,
@@ -164,6 +170,14 @@ const SETTINGS_CATEGORIES = [
     icon: FileText,
     description: "Upload and manage business documents",
     group: "documents"
+  },
+  // Activity section
+  {
+    id: "activity",
+    label: "Activity Feed",
+    icon: Bell,
+    description: "Control which items appear in the activity feed",
+    group: "activity"
   }
 ];
 
@@ -964,7 +978,8 @@ export default function Settings() {
     { key: "defaults", label: "Defaults" },
     { key: "templates", label: "Templates" },
     { key: "integrations", label: "Integrations" },
-    { key: "documents", label: "Documents" }
+    { key: "documents", label: "Documents" },
+    { key: "activity", label: "Activity" }
   ];
 
   return (
@@ -1080,9 +1095,10 @@ export default function Settings() {
             {activeSection === "schedule-settings" && <ScheduleSettingsSection />}
             {activeSection === "default-values" && <DefaultValuesSection />}
             {activeSection === "terms-conditions" && <TermsConditionsSection />}
+            {activeSection === "activity" && <ActivitySection />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions"].includes(activeSection) && (
+            {!["branding", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
@@ -1577,6 +1593,248 @@ function TermsTemplateEditor({
             Save
           </Button>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+// Activity Feed Section Component
+function ActivitySection() {
+  const { toast } = useToast();
+  
+  // Activity types with labels, descriptions, and icons
+  const ACTIVITY_TYPES = [
+    { 
+      key: "task", 
+      label: "Tasks", 
+      description: "Task creation, updates, and completion",
+      icon: CheckSquare
+    },
+    { 
+      key: "estimate", 
+      label: "Estimates", 
+      description: "Estimate creation and updates",
+      icon: ClipboardList
+    },
+    { 
+      key: "bill", 
+      label: "Bills", 
+      description: "Bill creation, updates, and payments",
+      icon: Receipt
+    },
+    { 
+      key: "variation", 
+      label: "Variations", 
+      description: "Variation creation, approval, and status changes",
+      icon: FileCheck
+    },
+    { 
+      key: "invoice", 
+      label: "Invoices", 
+      description: "Client invoice creation and payment tracking",
+      icon: FileText
+    },
+    { 
+      key: "proposal", 
+      label: "Proposals", 
+      description: "Proposal creation and status updates",
+      icon: FileText
+    },
+    { 
+      key: "project", 
+      label: "Projects", 
+      description: "Project creation and major updates",
+      icon: Folder
+    },
+    { 
+      key: "site_diary", 
+      label: "Site Diary", 
+      description: "Daily site diary entries",
+      icon: StickyNote
+    },
+    { 
+      key: "other", 
+      label: "Other", 
+      description: "Miscellaneous activity items",
+      icon: MoreHorizontal
+    }
+  ];
+
+  // Fetch company settings to get current activity visibility
+  const { data: companySettings, isLoading } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Local state for visibility toggles (default all visible)
+  const [visibilityState, setVisibilityState] = useState<Record<string, boolean>>(() => {
+    const defaults: Record<string, boolean> = {};
+    ACTIVITY_TYPES.forEach(type => {
+      defaults[type.key] = true; // Default all visible
+    });
+    return defaults;
+  });
+
+  // Update local state when settings are loaded
+  useEffect(() => {
+    if (companySettings?.activityTypesVisible) {
+      const savedVisibility = companySettings.activityTypesVisible as Record<string, boolean>;
+      setVisibilityState(prev => {
+        const merged = { ...prev };
+        Object.keys(savedVisibility).forEach(key => {
+          merged[key] = savedVisibility[key];
+        });
+        return merged;
+      });
+    }
+  }, [companySettings]);
+
+  // Mutation to save activity visibility settings
+  const updateVisibilityMutation = useMutation({
+    mutationFn: async (newVisibility: Record<string, boolean>) => {
+      const response = await apiRequest("/api/company-settings", "PATCH", {
+        activityTypesVisible: newVisibility
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Activity visibility settings saved" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to save settings",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggle = (key: string, value: boolean) => {
+    const newState = { ...visibilityState, [key]: value };
+    setVisibilityState(newState);
+    updateVisibilityMutation.mutate(newState);
+  };
+
+  const handleEnableAll = () => {
+    const allEnabled: Record<string, boolean> = {};
+    ACTIVITY_TYPES.forEach(type => {
+      allEnabled[type.key] = true;
+    });
+    setVisibilityState(allEnabled);
+    updateVisibilityMutation.mutate(allEnabled);
+  };
+
+  const handleDisableAll = () => {
+    const allDisabled: Record<string, boolean> = {};
+    ACTIVITY_TYPES.forEach(type => {
+      allDisabled[type.key] = false;
+    });
+    setVisibilityState(allDisabled);
+    updateVisibilityMutation.mutate(allDisabled);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
+
+  const enabledCount = Object.values(visibilityState).filter(Boolean).length;
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold">Activity Feed Items</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Select which types of activities appear in the activity feed. {enabledCount} of {ACTIVITY_TYPES.length} enabled.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleEnableAll}
+                disabled={updateVisibilityMutation.isPending}
+                data-testid="button-enable-all"
+              >
+                Enable All
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleDisableAll}
+                disabled={updateVisibilityMutation.isPending}
+                data-testid="button-disable-all"
+              >
+                Disable All
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            {ACTIVITY_TYPES.map((type) => {
+              const Icon = type.icon;
+              const isEnabled = visibilityState[type.key] ?? true;
+              
+              return (
+                <div 
+                  key={type.key}
+                  className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                    isEnabled ? "bg-background" : "bg-muted/30"
+                  }`}
+                  data-testid={`activity-type-${type.key}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-md flex items-center justify-center ${
+                      isEnabled ? "bg-[#bba7db]/15" : "bg-muted"
+                    }`}>
+                      <Icon className={`h-4 w-4 ${
+                        isEnabled ? "text-[#bba7db]" : "text-muted-foreground"
+                      }`} />
+                    </div>
+                    <div>
+                      <p className={`text-sm font-medium ${
+                        isEnabled ? "text-foreground" : "text-muted-foreground"
+                      }`}>
+                        {type.label}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {type.description}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={isEnabled}
+                    onCheckedChange={(checked) => handleToggle(type.key, checked)}
+                    disabled={updateVisibilityMutation.isPending}
+                    data-testid={`switch-activity-${type.key}`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 bg-muted/20">
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-sm font-medium">About Activity Visibility</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Changes take effect immediately. Disabled activity types will be hidden from the activity feed 
+                across all projects. This setting applies company-wide.
+              </p>
+            </div>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );

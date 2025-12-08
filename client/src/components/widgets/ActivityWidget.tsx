@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { type Activity } from "@shared/schema";
+import { type Activity, type CompanySettings } from "@shared/schema";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,29 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     },
     enabled: !!currentProject?.id,
   });
+
+  // Fetch company settings for activity visibility preferences
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  // Filter activities based on company visibility settings and apply maxItems limit
+  const filteredActivities = useMemo(() => {
+    let result = activities;
+    
+    // Apply visibility filter if settings exist
+    if (companySettings?.activityTypesVisible) {
+      const visibility = companySettings.activityTypesVisible as Record<string, boolean>;
+      result = activities.filter(activity => {
+        // If the activity type has a visibility setting, use it; otherwise default to visible
+        return visibility[activity.activityType] !== false;
+      });
+    }
+    
+    // Apply maxItems limit from widget config
+    const maxItems = widget.config?.maxItems || 20;
+    return result.slice(0, maxItems);
+  }, [activities, companySettings?.activityTypesVisible, widget.config?.maxItems]);
 
   const getActivityIcon = (type: string) => {
     switch (type) {
@@ -156,7 +179,7 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     );
   }
 
-  if (activities.length === 0) {
+  if (filteredActivities.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-8">
         <Clock className="h-8 w-8 text-muted-foreground mb-2" />
@@ -170,11 +193,11 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
   return (
     <div className="flex flex-col h-full">
       <div className="text-sm font-semibold mb-3">
-        {activities.length} recent activit{activities.length === 1 ? "y" : "ies"}
+        {filteredActivities.length} recent activit{filteredActivities.length === 1 ? "y" : "ies"}
       </div>
 
       <div className="space-y-3 flex-1 overflow-auto">
-        {activities.map((activity) => (
+        {filteredActivities.map((activity) => (
           <div
             key={activity.id}
             className="flex gap-3"

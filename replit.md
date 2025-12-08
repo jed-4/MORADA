@@ -61,6 +61,7 @@ Preferred communication style: Simple, everyday language.
   - localStorage persistence per user
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
+- **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.
 
 ### Mobile App (Capacitor-based)
 - **Framework**: React with Capacitor for native mobile features.
