@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Project } from "@shared/schema";
 
 type ProjectProviderProps = {
@@ -22,6 +23,29 @@ const ProjectProviderContext = createContext<ProjectProviderState>(initialState)
 export function ProjectProvider({ children }: ProjectProviderProps) {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isProjectLoading, setIsProjectLoading] = useState(true);
+
+  // Subscribe to projects query to sync currentProject with cache
+  const { data: projects } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // Sync currentProject with cache when projects data updates
+  useEffect(() => {
+    if (currentProject && projects) {
+      const updatedProject = projects.find(p => p.id === currentProject.id);
+      if (updatedProject) {
+        // Only update if data actually changed to avoid infinite loops
+        const hasChanged = 
+          updatedProject.currentSystemPhase !== currentProject.currentSystemPhase ||
+          updatedProject.status !== currentProject.status ||
+          updatedProject.name !== currentProject.name;
+        
+        if (hasChanged) {
+          setCurrentProject(updatedProject);
+        }
+      }
+    }
+  }, [projects, currentProject?.id]);
 
   // Load saved project from localStorage on mount
   useEffect(() => {
