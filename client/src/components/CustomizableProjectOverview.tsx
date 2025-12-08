@@ -449,8 +449,12 @@ export default function CustomizableProjectOverview() {
         {/* Right: Phase chip + Add Widget + Settings gear */}
         <div className="flex items-center gap-1.5">
           <Badge 
-            className="text-xs text-white capitalize"
-            style={{ backgroundColor: phaseColor }}
+            className="text-xs capitalize"
+            style={{ 
+              backgroundColor: `${phaseColor}20`,
+              color: phaseColor,
+              borderColor: `${phaseColor}40`
+            }}
             data-testid="badge-project-phase"
           >
             {phaseDisplayName}
