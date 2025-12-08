@@ -61,7 +61,7 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
     label: "User",
     icon: LayoutDashboard,
     items: [
-      { title: "Dashboard", url: "/user/dashboard", icon: LayoutDashboard },
+      { title: "Dashboard", url: "/", icon: LayoutDashboard },
       { title: "Inbox", url: "/messages", icon: Inbox },
       { title: "My Tasks", url: "/tasks", icon: CheckSquare },
     ],
@@ -412,14 +412,29 @@ export function SidebarNav() {
               <span className={cn("font-semibold", isMobile ? "text-sm" : "text-xs")}>
                 {sections[activeSection].label}
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={closeDrawer}
-                className={isMobile ? "h-8 w-8" : "h-6 w-6"}
-              >
-                <ChevronsLeft className={isMobile ? "h-4 w-4" : "h-3.5 w-3.5"} />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={isMobile ? "h-8 w-8" : "h-6 w-6"}
+                      data-testid="drawer-search"
+                    >
+                      <Search className={isMobile ? "h-4 w-4" : "h-3 w-3"} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Search</TooltipContent>
+                </Tooltip>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={closeDrawer}
+                  className={isMobile ? "h-8 w-8" : "h-6 w-6"}
+                >
+                  <ChevronsLeft className={isMobile ? "h-4 w-4" : "h-3.5 w-3.5"} />
+                </Button>
+              </div>
             </div>
             
             {/* Project Switcher for project-related sections */}
@@ -428,17 +443,6 @@ export function SidebarNav() {
                 <ProjectSwitcher compact />
               </div>
             )}
-            
-            {/* Quick Search in drawer */}
-            <div className={cn("px-2 border-b border-sidebar-border", isMobile ? "py-2" : "py-1.5")}>
-              <div className={cn(
-                "flex items-center gap-1.5 px-2 rounded-md bg-muted/50 text-muted-foreground",
-                isMobile ? "py-2 text-sm" : "py-1 text-xs"
-              )}>
-                <Search className={isMobile ? "h-4 w-4" : "h-3 w-3"} />
-                <span>Search...</span>
-              </div>
-            </div>
             
             {/* Nav Items */}
             <ScrollArea className="flex-1">
