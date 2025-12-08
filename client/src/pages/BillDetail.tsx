@@ -83,6 +83,15 @@ const billFormSchema = z.object({
 
 type BillFormData = z.infer<typeof billFormSchema>;
 
+const addSupplierSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email().optional().or(z.literal("")),
+  phone: z.string().optional(),
+  supplierType: z.enum(["trade", "supplier", "subcontractor"]).default("supplier"),
+});
+
+type AddSupplierFormData = z.infer<typeof addSupplierSchema>;
+
 type LineItem = {
   id?: string;
   lineType: "estimate" | "item" | "custom";
@@ -112,6 +121,7 @@ export default function BillDetail() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [ocrResults, setOcrResults] = useState<any>(null);
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
+  const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -160,6 +170,16 @@ export default function BillDetail() {
       reminders: "",
       paidAmount: 0,
       sendToXero: false,
+    },
+  });
+
+  const supplierForm = useForm<AddSupplierFormData>({
+    resolver: zodResolver(addSupplierSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      phone: "",
+      supplierType: "supplier",
     },
   });
 
@@ -380,6 +400,30 @@ export default function BillDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to create bill",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createSupplierMutation = useMutation({
+    mutationFn: async (data: AddSupplierFormData) => {
+      const res = await apiRequest("/api/suppliers", "POST", data);
+      return await res.json();
+    },
+    onSuccess: (newSupplier: Supplier) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      form.setValue("supplierId", newSupplier.id);
+      setAddSupplierDialogOpen(false);
+      supplierForm.reset();
+      toast({
+        title: "Success",
+        description: "Supplier added successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create supplier",
         variant: "destructive",
       });
     },
@@ -900,6 +944,21 @@ export default function BillDetail() {
                               {supplier.name}
                             </SelectItem>
                           ))}
+                          <div className="border-t mt-1 pt-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setAddSupplierDialogOpen(true);
+                              }}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-primary hover:bg-accent rounded-sm"
+                              data-testid="button-add-supplier"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add
+                            </button>
+                          </div>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1627,6 +1686,102 @@ export default function BillDetail() {
               {rejectMutation.isPending ? "Rejecting..." : "Reject Bill"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addSupplierDialogOpen} onOpenChange={setAddSupplierDialogOpen}>
+        <DialogContent data-testid="dialog-add-supplier">
+          <DialogHeader>
+            <DialogTitle>Add Supplier</DialogTitle>
+            <DialogDescription>
+              Create a new supplier to use in this bill.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...supplierForm}>
+            <form onSubmit={supplierForm.handleSubmit((data) => createSupplierMutation.mutate(data))} className="space-y-4">
+              <FormField
+                control={supplierForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name *</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Supplier name" data-testid="input-supplier-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={supplierForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="email" placeholder="supplier@example.com" data-testid="input-supplier-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={supplierForm.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Phone number" data-testid="input-supplier-phone" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={supplierForm.control}
+                name="supplierType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Type</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-supplier-type">
+                          <SelectValue placeholder="Select type..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="supplier">Supplier</SelectItem>
+                        <SelectItem value="trade">Trade</SelectItem>
+                        <SelectItem value="subcontractor">Subcontractor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setAddSupplierDialogOpen(false);
+                    supplierForm.reset();
+                  }}
+                  data-testid="button-cancel-add-supplier"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createSupplierMutation.isPending}
+                  data-testid="button-save-supplier"
+                >
+                  {createSupplierMutation.isPending ? "Adding..." : "Add Supplier"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
