@@ -29,9 +29,12 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     queryKey: ["/api/projects"],
   });
 
-  // Sync currentProject with cache when projects data updates
+  // Load saved project from localStorage when projects become available, and sync with cache
   useEffect(() => {
-    if (currentProject && projects) {
+    if (!projects) return;
+    
+    // If we have a current project, sync it with the latest data from cache
+    if (currentProject) {
       const updatedProject = projects.find(p => p.id === currentProject.id);
       if (updatedProject) {
         // Only update if data actually changed to avoid infinite loops
@@ -44,19 +47,19 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
           setCurrentProject(updatedProject);
         }
       }
-    }
-  }, [projects, currentProject?.id]);
-
-  // Load saved project from localStorage on mount
-  useEffect(() => {
-    const savedProjectId = localStorage.getItem("currentProjectId");
-    if (savedProjectId) {
-      // We'll fetch the project details when we have the projects list
-      setIsProjectLoading(false);
     } else {
-      setIsProjectLoading(false);
+      // No current project - try to load from localStorage
+      const savedProjectId = localStorage.getItem("currentProjectId");
+      if (savedProjectId) {
+        const savedProject = projects.find(p => p.id === savedProjectId);
+        if (savedProject) {
+          setCurrentProject(savedProject);
+        }
+      }
     }
-  }, []);
+    
+    setIsProjectLoading(false);
+  }, [projects, currentProject?.id]);
 
   // Save project to localStorage when it changes
   useEffect(() => {
