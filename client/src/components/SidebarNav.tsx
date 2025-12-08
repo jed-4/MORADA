@@ -61,8 +61,8 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const getBaseUserItems = (): NavItem[] => [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+const getBaseUserItems = (userId?: string): NavItem[] => [
+  { title: "Dashboard", url: userId ? `/users/${userId}` : "/", icon: LayoutDashboard },
   { title: "Inbox", url: "/messages", icon: Inbox },
   { title: "My Tasks", url: "/tasks", icon: CheckSquare },
 ];
@@ -426,7 +426,7 @@ export function SidebarNav() {
     if (currentUser?.id) {
       result.user = {
         ...sections.user,
-        items: [...getBaseUserItems(), ...getUserWorkspaceItems(currentUser.id)],
+        items: [...getBaseUserItems(currentUser.id), ...getUserWorkspaceItems(currentUser.id)],
       };
     }
     return result;
