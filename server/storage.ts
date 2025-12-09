@@ -109,6 +109,7 @@ import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared
 import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/schema";
 import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, InsertSupplierLabelAssignment } from "@shared/schema";
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
+import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -918,6 +919,27 @@ export interface IStorage {
   // Drive File Activity Logs
   getDriveFileActivityLogs(companyId: string, projectId?: string, limit?: number): Promise<import("@shared/schema").DriveFileActivityLog[]>;
   createDriveFileActivityLog(log: import("@shared/schema").InsertDriveFileActivityLog): Promise<import("@shared/schema").DriveFileActivityLog>;
+
+  // Price List Categories CRUD
+  getPriceListCategories(companyId: string): Promise<PriceListCategory[]>;
+  getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined>;
+  createPriceListCategory(category: InsertPriceListCategory & { companyId: string }): Promise<PriceListCategory>;
+  updatePriceListCategory(id: string, category: Partial<InsertPriceListCategory>, companyId: string): Promise<PriceListCategory | undefined>;
+  deletePriceListCategory(id: string, companyId: string): Promise<boolean>;
+
+  // Price List Items CRUD
+  getPriceListItems(companyId: string, filters?: { categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]>;
+  getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined>;
+  createPriceListItem(item: InsertPriceListItem & { companyId: string }): Promise<PriceListItem>;
+  updatePriceListItem(id: string, item: Partial<InsertPriceListItem>, companyId: string): Promise<PriceListItem | undefined>;
+  deletePriceListItem(id: string, companyId: string): Promise<boolean>;
+  bulkUpdatePriceListItems(updates: Array<{ id: string; data: Partial<InsertPriceListItem> }>, companyId: string): Promise<PriceListItem[]>;
+
+  // Bill Line Item Price Links (for AI Review)
+  getBillLineItemPriceLinks(companyId: string, status?: string): Promise<(BillLineItemPriceLink & { billLineItem?: import("@shared/schema").BillLineItem; bill?: import("@shared/schema").Bill })[]>;
+  createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink>;
+  updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined>;
+  getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Supplier }>>;
 }
 
 export class MemStorage implements IStorage {
@@ -15466,6 +15488,290 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createDriveFileActivityLog:", error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // PRICE LIST FEATURE
+  // ============================================
+
+  // Price List Categories CRUD
+  async getPriceListCategories(companyId: string): Promise<PriceListCategory[]> {
+    try {
+      return await db.select().from(schema.priceListCategories)
+        .where(eq(schema.priceListCategories.companyId, companyId))
+        .orderBy(asc(schema.priceListCategories.sortOrder), asc(schema.priceListCategories.name));
+    } catch (error) {
+      console.error("Database error in getPriceListCategories:", error);
+      throw error;
+    }
+  }
+
+  async getPriceListCategory(id: string, companyId: string): Promise<PriceListCategory | undefined> {
+    try {
+      const result = await db.select().from(schema.priceListCategories)
+        .where(and(
+          eq(schema.priceListCategories.id, id),
+          eq(schema.priceListCategories.companyId, companyId)
+        ));
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getPriceListCategory:", error);
+      throw error;
+    }
+  }
+
+  async createPriceListCategory(category: InsertPriceListCategory & { companyId: string }): Promise<PriceListCategory> {
+    try {
+      const result = await db.insert(schema.priceListCategories).values(category).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createPriceListCategory:", error);
+      throw error;
+    }
+  }
+
+  async updatePriceListCategory(id: string, category: Partial<InsertPriceListCategory>, companyId: string): Promise<PriceListCategory | undefined> {
+    try {
+      const result = await db.update(schema.priceListCategories)
+        .set({ ...category, updatedAt: new Date() })
+        .where(and(
+          eq(schema.priceListCategories.id, id),
+          eq(schema.priceListCategories.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updatePriceListCategory:", error);
+      throw error;
+    }
+  }
+
+  async deletePriceListCategory(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.priceListCategories)
+        .where(and(
+          eq(schema.priceListCategories.id, id),
+          eq(schema.priceListCategories.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deletePriceListCategory:", error);
+      throw error;
+    }
+  }
+
+  // Price List Items CRUD
+  async getPriceListItems(companyId: string, filters?: { categoryId?: string; supplierId?: string; isActive?: boolean; search?: string }): Promise<PriceListItem[]> {
+    try {
+      let conditions = [eq(schema.priceListItems.companyId, companyId)];
+      
+      if (filters?.categoryId) {
+        conditions.push(eq(schema.priceListItems.categoryId, filters.categoryId));
+      }
+      if (filters?.supplierId) {
+        conditions.push(eq(schema.priceListItems.supplierId, filters.supplierId));
+      }
+      if (filters?.isActive !== undefined) {
+        conditions.push(eq(schema.priceListItems.isActive, filters.isActive));
+      }
+      if (filters?.search) {
+        const searchTerm = `%${filters.search.toLowerCase()}%`;
+        conditions.push(or(
+          sql`LOWER(${schema.priceListItems.name}) LIKE ${searchTerm}`,
+          sql`LOWER(${schema.priceListItems.nickname}) LIKE ${searchTerm}`,
+          sql`LOWER(${schema.priceListItems.code}) LIKE ${searchTerm}`,
+          sql`LOWER(${schema.priceListItems.description}) LIKE ${searchTerm}`
+        )!);
+      }
+
+      return await db.select().from(schema.priceListItems)
+        .where(and(...conditions))
+        .orderBy(asc(schema.priceListItems.name));
+    } catch (error) {
+      console.error("Database error in getPriceListItems:", error);
+      throw error;
+    }
+  }
+
+  async getPriceListItem(id: string, companyId: string): Promise<PriceListItem | undefined> {
+    try {
+      const result = await db.select().from(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.id, id),
+          eq(schema.priceListItems.companyId, companyId)
+        ));
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getPriceListItem:", error);
+      throw error;
+    }
+  }
+
+  async createPriceListItem(item: InsertPriceListItem & { companyId: string }): Promise<PriceListItem> {
+    try {
+      const result = await db.insert(schema.priceListItems).values({
+        ...item,
+        lastPriceUpdate: new Date(),
+      }).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createPriceListItem:", error);
+      throw error;
+    }
+  }
+
+  async updatePriceListItem(id: string, item: Partial<InsertPriceListItem>, companyId: string): Promise<PriceListItem | undefined> {
+    try {
+      // Get current item to check for price changes
+      const current = await this.getPriceListItem(id, companyId);
+      
+      const updateData: any = { ...item, updatedAt: new Date() };
+      
+      // If price changed, update lastPriceUpdate and add to history
+      if (current && (item.costPrice !== undefined || item.sellPrice !== undefined)) {
+        const costChanged = item.costPrice !== undefined && item.costPrice !== current.costPrice;
+        const sellChanged = item.sellPrice !== undefined && item.sellPrice !== current.sellPrice;
+        
+        if (costChanged || sellChanged) {
+          updateData.lastPriceUpdate = new Date();
+          
+          // Add to price history
+          const currentHistory = (current.priceHistory as any[]) || [];
+          currentHistory.push({
+            date: new Date().toISOString(),
+            costPrice: item.costPrice ?? current.costPrice,
+            sellPrice: item.sellPrice ?? current.sellPrice,
+            source: "manual"
+          });
+          updateData.priceHistory = currentHistory;
+        }
+      }
+      
+      const result = await db.update(schema.priceListItems)
+        .set(updateData)
+        .where(and(
+          eq(schema.priceListItems.id, id),
+          eq(schema.priceListItems.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updatePriceListItem:", error);
+      throw error;
+    }
+  }
+
+  async deletePriceListItem(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.priceListItems)
+        .where(and(
+          eq(schema.priceListItems.id, id),
+          eq(schema.priceListItems.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deletePriceListItem:", error);
+      throw error;
+    }
+  }
+
+  async bulkUpdatePriceListItems(updates: Array<{ id: string; data: Partial<InsertPriceListItem> }>, companyId: string): Promise<PriceListItem[]> {
+    try {
+      const results: PriceListItem[] = [];
+      for (const update of updates) {
+        const result = await this.updatePriceListItem(update.id, update.data, companyId);
+        if (result) results.push(result);
+      }
+      return results;
+    } catch (error) {
+      console.error("Database error in bulkUpdatePriceListItems:", error);
+      throw error;
+    }
+  }
+
+  // Bill Line Item Price Links (for AI Review)
+  async getBillLineItemPriceLinks(companyId: string, status?: string): Promise<(BillLineItemPriceLink & { billLineItem?: schema.BillLineItem; bill?: schema.Bill })[]> {
+    try {
+      // Get links with joined data
+      const links = await db.select({
+        link: schema.billLineItemPriceLinks,
+        billLineItem: schema.billLineItems,
+        bill: schema.bills,
+      })
+        .from(schema.billLineItemPriceLinks)
+        .innerJoin(schema.billLineItems, eq(schema.billLineItemPriceLinks.billLineItemId, schema.billLineItems.id))
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .where(and(
+          eq(schema.projects.companyId, companyId),
+          status ? eq(schema.billLineItemPriceLinks.reviewStatus, status) : undefined
+        ))
+        .orderBy(desc(schema.billLineItemPriceLinks.createdAt));
+
+      return links.map(row => ({
+        ...row.link,
+        billLineItem: row.billLineItem,
+        bill: row.bill,
+      }));
+    } catch (error) {
+      console.error("Database error in getBillLineItemPriceLinks:", error);
+      throw error;
+    }
+  }
+
+  async createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink> {
+    try {
+      const result = await db.insert(schema.billLineItemPriceLinks).values(link).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createBillLineItemPriceLink:", error);
+      throw error;
+    }
+  }
+
+  async updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined> {
+    try {
+      const result = await db.update(schema.billLineItemPriceLinks)
+        .set(link)
+        .where(eq(schema.billLineItemPriceLinks.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateBillLineItemPriceLink:", error);
+      throw error;
+    }
+  }
+
+  async getUnlinkedBillLineItems(companyId: string): Promise<Array<schema.BillLineItem & { bill: schema.Bill; supplier: schema.Supplier }>> {
+    try {
+      // Get all bill line items that don't have a link yet
+      const results = await db.select({
+        billLineItem: schema.billLineItems,
+        bill: schema.bills,
+        supplier: schema.suppliers,
+      })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.suppliers, eq(schema.bills.supplierId, schema.suppliers.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .leftJoin(schema.billLineItemPriceLinks, eq(schema.billLineItems.id, schema.billLineItemPriceLinks.billLineItemId))
+        .where(and(
+          eq(schema.projects.companyId, companyId),
+          isNull(schema.billLineItemPriceLinks.id)
+        ))
+        .orderBy(desc(schema.bills.billDate), asc(schema.suppliers.name));
+
+      return results.map(row => ({
+        ...row.billLineItem,
+        bill: row.bill,
+        supplier: row.supplier,
+      }));
+    } catch (error) {
+      console.error("Database error in getUnlinkedBillLineItems:", error);
       throw error;
     }
   }
