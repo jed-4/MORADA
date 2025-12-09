@@ -100,6 +100,8 @@ export default function SelectionDetail() {
   const [activeTab, setActiveTab] = useState("options");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [optionsView, setOptionsView] = useState<"table" | "grid">("table");
+  const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
+  const [editingAllowance, setEditingAllowance] = useState<string>("");
   const { toast } = useToast();
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
 
@@ -505,33 +507,9 @@ export default function SelectionDetail() {
           {/* Selection Details Card */}
           <Card>
             <CardContent className="pt-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {/* Category */}
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Category</div>
-                  <div className="text-sm font-medium">{selection.category || "—"}</div>
-                </div>
-                
-                {/* Location */}
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Location</div>
-                  <div className="text-sm font-medium flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-muted-foreground" />
-                    {selection.room || "—"}
-                  </div>
-                </div>
-                
-                {/* Deadline */}
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
-                  <div className="text-sm font-medium flex items-center gap-1">
-                    <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-                    {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
-                  </div>
-                </div>
-                
-                {/* Status */}
-                <div>
+              <div className="flex items-start gap-4 flex-wrap">
+                {/* Status - Far Left */}
+                <div className="min-w-[100px]">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Status</div>
                   <Badge 
                     variant="outline" 
@@ -541,18 +519,134 @@ export default function SelectionDetail() {
                     {currentStatus.name}
                   </Badge>
                 </div>
-                
-                {/* Allowance */}
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Allowance</div>
-                  <div className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+
+                {/* Category */}
+                <div className="min-w-[100px]">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Category</div>
+                  <div className="text-sm font-medium">{selection.category || "—"}</div>
                 </div>
                 
-                {/* Selected Price */}
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Selected Price</div>
-                  <div className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                {/* Location */}
+                <div className="min-w-[100px]">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Location</div>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-muted-foreground" />
+                    {selection.room || "—"}
+                  </div>
                 </div>
+                
+                {/* Deadline */}
+                <div className="min-w-[100px]">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+                    {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
+                  </div>
+                </div>
+                
+                {/* Spacer to push pricing to right */}
+                <div className="flex-1" />
+                
+                {/* Pricing Section - Stacked with Popover */}
+                <Popover open={pricingPopoverOpen} onOpenChange={(open) => {
+                  setPricingPopoverOpen(open);
+                  if (open) {
+                    setEditingAllowance((allowanceAmount / 100).toFixed(2));
+                  }
+                }}>
+                  <PopoverTrigger asChild>
+                    <button 
+                      type="button"
+                      className="text-left hover-elevate rounded-md p-2 -m-2 transition-colors cursor-pointer"
+                      data-testid="button-edit-pricing"
+                    >
+                      <div className="flex flex-col gap-1 min-w-[120px]">
+                        {/* Allowance */}
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Allowance</div>
+                          <div className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        
+                        {/* Selected Price */}
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Selected</div>
+                          <div className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        
+                        {/* Difference */}
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Difference</div>
+                          {(() => {
+                            const difference = selectedPrice - allowanceAmount;
+                            const isOver = difference > 0;
+                            const isUnder = difference < 0;
+                            return (
+                              <div className={cn(
+                                "text-sm font-semibold",
+                                isOver && "text-red-600",
+                                isUnder && "text-green-600",
+                                !isOver && !isUnder && "text-muted-foreground"
+                              )}>
+                                {isOver && "+"}
+                                ${(Math.abs(difference) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                                {isOver && " over"}
+                                {isUnder && " under"}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64">
+                    <div className="space-y-4">
+                      <div className="text-sm font-semibold">Edit Allowance</div>
+                      <div>
+                        <label className="text-xs text-muted-foreground uppercase tracking-wide">Allowance Amount</label>
+                        <div className="relative mt-1">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                          <Input 
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="pl-7"
+                            value={editingAllowance}
+                            onChange={(e) => setEditingAllowance(e.target.value)}
+                            data-testid="input-edit-allowance"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => setPricingPopoverOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          size="sm"
+                          onClick={() => {
+                            const parsed = parseFloat(editingAllowance);
+                            const newAllowance = isNaN(parsed) ? allowanceAmount : Math.round(parsed * 100);
+                            selectionForm.setValue("allowance", newAllowance);
+                            setHasUnsavedChanges(true);
+                            setPricingPopoverOpen(false);
+                            handleSaveSelection();
+                            toast({
+                              title: "Allowance updated",
+                              description: "Changes saved successfully.",
+                            });
+                          }}
+                          disabled={updateSelectionMutation.isPending}
+                          data-testid="button-save-allowance"
+                        >
+                          {updateSelectionMutation.isPending ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               
               {/* Description */}
