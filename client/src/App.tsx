@@ -77,6 +77,7 @@ import BusinessTasks from "@/pages/BusinessTasks";
 import Systems from "@/pages/Systems";
 import PriceListPage from "@/pages/PriceListPage";
 import AIPriceReviewPage from "@/pages/AIPriceReviewPage";
+import CreateRFQ from "@/pages/CreateRFQ";
 import TeamManagement from "@/pages/TeamManagement";
 import UserProfileView from "@/pages/UserProfileView";
 import UserWorkspace from "@/pages/UserWorkspace";
@@ -175,6 +176,7 @@ function Router() {
       <Route path="/projects/:projectId/schedule" component={Schedule} />
       <Route path="/projects/:projectId/takeoff" component={Takeoff} />
       <Route path="/projects/:projectId/rfqs" component={RFQs} />
+      <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
       <Route path="/projects/:projectId/rfis" component={RFIs} />
       <Route path="/projects/:projectId/rfis/:id" component={RFIDetail} />
@@ -212,6 +214,7 @@ function Router() {
       <Route path="/estimates/new" component={EstimateDetail} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/rfqs" component={RFQs} />
+      <Route path="/rfqs/new" component={CreateRFQ} />
       <Route path="/rfqs/:id" component={RFQDetail} />
       <Route path="/rfis" component={RFIs} />
       <Route path="/rfis/:id" component={RFIDetail} />
