@@ -97,7 +97,6 @@ export default function SelectionDetail() {
   const [isAddingOption, setIsAddingOption] = useState(false);
   const [editingOption, setEditingOption] = useState<SelectionOption | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("options");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [optionsView, setOptionsView] = useState<"table" | "grid">("table");
   const [pricingPopoverOpen, setPricingPopoverOpen] = useState(false);
@@ -492,7 +491,9 @@ export default function SelectionDetail() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setActiveTab("details")}>
+              <DropdownMenuItem onClick={() => {
+                document.getElementById('selection-details-card')?.scrollIntoView({ behavior: 'smooth' });
+              }}>
                 <Settings className="w-4 h-4 mr-2" />
                 Edit Details
               </DropdownMenuItem>
@@ -504,12 +505,12 @@ export default function SelectionDetail() {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
-          {/* Selection Details Card */}
+          {/* Selection Details Card - Compact */}
           <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-start gap-4 flex-wrap">
+            <CardContent className="py-3">
+              <div className="flex items-center gap-6 flex-wrap">
                 {/* Status - Far Left */}
-                <div className="min-w-[100px]">
+                <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Status</div>
                   <Badge 
                     variant="outline" 
@@ -521,13 +522,13 @@ export default function SelectionDetail() {
                 </div>
 
                 {/* Category */}
-                <div className="min-w-[100px]">
+                <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Category</div>
                   <div className="text-sm font-medium">{selection.category || "—"}</div>
                 </div>
                 
                 {/* Location */}
-                <div className="min-w-[100px]">
+                <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Location</div>
                   <div className="text-sm font-medium flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-muted-foreground" />
@@ -536,7 +537,7 @@ export default function SelectionDetail() {
                 </div>
                 
                 {/* Deadline */}
-                <div className="min-w-[100px]">
+                <div>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
                   <div className="text-sm font-medium flex items-center gap-1">
                     <CalendarIcon className="w-3 h-3 text-muted-foreground" />
@@ -547,7 +548,7 @@ export default function SelectionDetail() {
                 {/* Spacer to push pricing to right */}
                 <div className="flex-1" />
                 
-                {/* Pricing Section - Stacked with Popover */}
+                {/* Pricing Section - Two Column Layout */}
                 <Popover open={pricingPopoverOpen} onOpenChange={(open) => {
                   setPricingPopoverOpen(open);
                   if (open) {
@@ -560,38 +561,35 @@ export default function SelectionDetail() {
                       className="text-left hover-elevate rounded-md p-2 -m-2 transition-colors cursor-pointer"
                       data-testid="button-edit-pricing"
                     >
-                      <div className="flex flex-col gap-1 min-w-[120px]">
-                        {/* Allowance */}
-                        <div>
-                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Allowance</div>
-                          <div className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                      <div className="flex items-start gap-6">
+                        {/* Left Column: Allowance & Selected stacked */}
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Allowance</span>
+                            <span className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wide w-16">Selected</span>
+                            <span className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+                          </div>
                         </div>
                         
-                        {/* Selected Price */}
-                        <div>
-                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Selected</div>
-                          <div className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
-                        </div>
-                        
-                        {/* Difference */}
-                        <div>
-                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Difference</div>
+                        {/* Right Column: Difference */}
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Difference</span>
                           {(() => {
                             const difference = selectedPrice - allowanceAmount;
                             const isOver = difference > 0;
                             const isUnder = difference < 0;
                             return (
-                              <div className={cn(
+                              <span className={cn(
                                 "text-sm font-semibold",
                                 isOver && "text-red-600",
                                 isUnder && "text-green-600",
                                 !isOver && !isUnder && "text-muted-foreground"
                               )}>
-                                {isOver && "+"}
-                                ${(Math.abs(difference) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
-                                {isOver && " over"}
-                                {isUnder && " under"}
-                              </div>
+                                {isOver && "+"}${(Math.abs(difference) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                              </span>
                             );
                           })()}
                         </div>
@@ -648,14 +646,6 @@ export default function SelectionDetail() {
                   </PopoverContent>
                 </Popover>
               </div>
-              
-              {/* Description */}
-              {selection.description && (
-                <div className="mt-4 pt-4 border-t">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Description</div>
-                  <p className="text-sm text-muted-foreground">{selection.description}</p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -891,34 +881,46 @@ export default function SelectionDetail() {
               </div>
             )}
           </div>
-        </div>
-      </div>
 
-      {/* Edit Details Slide-over Panel */}
-      {activeTab === "details" && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={() => setActiveTab("options")}>
-          <div 
-            className="fixed right-0 top-0 h-full w-full max-w-lg bg-background border-l shadow-lg overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b flex items-center justify-between sticky top-0 bg-background z-10">
-              <h2 className="text-lg font-semibold">Edit Selection Details</h2>
-              <Button variant="ghost" size="icon" onClick={() => setActiveTab("options")}>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="p-4">
-            <Form {...selectionForm}>
-              <form className="space-y-6 max-w-3xl">
-                {/* Basic Info Section - Buildern-style grid */}
-                <Card>
-                  <CardContent className="pt-6 space-y-5">
-                    {/* Name - Full width */}
+          {/* Selection Details Card - Below Options */}
+          <Card id="selection-details-card">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  Selection Details
+                </CardTitle>
+                {hasUnsavedChanges && (
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveSelection}
+                    disabled={updateSelectionMutation.isPending}
+                    className="h-7 px-3 text-xs"
+                    data-testid="button-save-details"
+                  >
+                    {updateSelectionMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <>
+                        <Save className="w-3 h-3 mr-1" />
+                        Save
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Form {...selectionForm}>
+                <form className="space-y-6">
+                  {/* Basic Info Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Name */}
                     <FormField
                       control={selectionForm.control}
                       name="name"
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="lg:col-span-2">
                           <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Name</FormLabel>
                           <FormControl>
                             <Input 
@@ -932,126 +934,111 @@ export default function SelectionDetail() {
                       )}
                     />
 
-                    {/* Grid: Link to | Deadline */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Link to</FormLabel>
-                        <Select disabled>
-                          <SelectTrigger data-testid="select-link-to">
-                            <SelectValue placeholder="Select task or schedule item" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No linked item</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">Link to a task or schedule item</p>
-                      </FormItem>
+                    {/* Category */}
+                    <FormField
+                      control={selectionForm.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Category</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-category">
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {selectionCategories?.options?.map((opt) => (
+                                <SelectItem key={opt.key} value={opt.name}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                      <FormField
-                        control={selectionForm.control}
-                        name="deadline"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <FormControl>
-                                  <Button
-                                    variant="outline"
-                                    className={cn(
-                                      "w-full pl-3 text-left font-normal",
-                                      !field.value && "text-muted-foreground"
-                                    )}
-                                    data-testid="button-deadline"
-                                  >
-                                    {field.value ? (
-                                      format(new Date(field.value), "dd/MM/yyyy")
-                                    ) : (
-                                      <span>Select date</span>
-                                    )}
-                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                  </Button>
-                                </FormControl>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value ? new Date(field.value) : undefined}
-                                  onSelect={field.onChange}
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                    {/* Location */}
+                    <FormField
+                      control={selectionForm.control}
+                      name="room"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Location</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-room">
+                                <SelectValue placeholder="Select location" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {locationCategories?.options?.map((opt) => (
+                                <SelectItem key={opt.key} value={opt.name}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                    {/* Grid: Category | Location */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField
-                        control={selectionForm.control}
-                        name="category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Category</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                  {/* Second Row: Deadline, Description */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <FormField
+                      control={selectionForm.control}
+                      name="deadline"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
                               <FormControl>
-                                <SelectTrigger data-testid="select-category">
-                                  <SelectValue placeholder="Select category" />
-                                </SelectTrigger>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full pl-3 text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                  data-testid="button-deadline"
+                                >
+                                  {field.value ? (
+                                    format(new Date(field.value), "dd/MM/yyyy")
+                                  ) : (
+                                    <span>Select date</span>
+                                  )}
+                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
                               </FormControl>
-                              <SelectContent>
-                                {selectionCategories?.options?.map((opt) => (
-                                  <SelectItem key={opt.key} value={opt.name}>
-                                    {opt.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value ? new Date(field.value) : undefined}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                      <FormField
-                        control={selectionForm.control}
-                        name="room"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Location</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || ""}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-room">
-                                  <SelectValue placeholder="Select location" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {locationCategories?.options?.map((opt) => (
-                                  <SelectItem key={opt.key} value={opt.name}>
-                                    {opt.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    {/* Description */}
                     <FormField
                       control={selectionForm.control}
                       name="description"
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="md:col-span-2">
                           <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Description</FormLabel>
                           <FormControl>
                             <Textarea 
                               placeholder="Add notes about this selection..."
-                              rows={3}
+                              rows={2}
                               {...field}
                               value={field.value || ""}
                               data-testid="input-selection-description"
@@ -1061,69 +1048,11 @@ export default function SelectionDetail() {
                         </FormItem>
                       )}
                     />
-                  </CardContent>
-                </Card>
+                  </div>
 
-                {/* Pricing Section */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold">Pricing</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={selectionForm.control}
-                      name="allowance"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Allowance</FormLabel>
-                          <FormControl>
-                            <div className="relative max-w-xs">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                              <Input 
-                                type="number"
-                                placeholder="0.00"
-                                step="0.01"
-                                min="0"
-                                className="pl-7"
-                                value={field.value ? (field.value / 100).toFixed(2) : ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
-                                }}
-                                data-testid="input-allowance"
-                              />
-                            </div>
-                          </FormControl>
-                          <FormDescription className="text-xs">
-                            Budget allocated for this selection
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="flex flex-row items-center justify-between rounded-lg border p-3">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-sm font-medium">Pricing affects contract price</FormLabel>
-                        <FormDescription className="text-xs">
-                          Changes to this selection will update the contract value
-                        </FormDescription>
-                      </div>
-                      <Switch
-                        checked={true}
-                        disabled
-                        data-testid="switch-affects-contract"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Status Section */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold">Status</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                  {/* Status Section */}
+                  <div>
+                    <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Status</FormLabel>
                     <FormField
                       control={selectionForm.control}
                       name="status"
@@ -1137,7 +1066,10 @@ export default function SelectionDetail() {
                                 <button
                                   key={status.key}
                                   type="button"
-                                  onClick={() => field.onChange(status.key)}
+                                  onClick={() => {
+                                    field.onChange(status.key);
+                                    setHasUnsavedChanges(true);
+                                  }}
                                   className={cn(
                                     "flex flex-col items-center gap-1 p-3 rounded-lg border transition-all",
                                     isSelected 
@@ -1161,18 +1093,14 @@ export default function SelectionDetail() {
                         </FormItem>
                       )}
                     />
-                  </CardContent>
-                </Card>
+                  </div>
 
-                {/* Permissions Accordion */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold">Permissions</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                  {/* Permissions Accordion */}
+                  <div>
+                    <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Permissions</FormLabel>
                     <Accordion type="multiple" defaultValue={["client"]} className="w-full">
                       {/* Client Permissions */}
-                      <AccordionItem value="client" className="border-b">
+                      <AccordionItem value="client" className="border rounded-lg mb-2 px-3">
                         <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-client">
                           <div className="flex items-center gap-2">
                             <Users className="w-4 h-4 text-[#bba7db]" />
@@ -1194,7 +1122,10 @@ export default function SelectionDetail() {
                                 <FormControl>
                                   <Switch
                                     checked={field.value}
-                                    onCheckedChange={field.onChange}
+                                    onCheckedChange={(val) => {
+                                      field.onChange(val);
+                                      setHasUnsavedChanges(true);
+                                    }}
                                     data-testid="switch-client-can-change"
                                   />
                                 </FormControl>
@@ -1216,7 +1147,10 @@ export default function SelectionDetail() {
                                 <FormControl>
                                   <Switch
                                     checked={field.value}
-                                    onCheckedChange={field.onChange}
+                                    onCheckedChange={(val) => {
+                                      field.onChange(val);
+                                      setHasUnsavedChanges(true);
+                                    }}
                                     data-testid="switch-client-can-see-price"
                                   />
                                 </FormControl>
@@ -1227,7 +1161,7 @@ export default function SelectionDetail() {
                       </AccordionItem>
 
                       {/* Vendors Permissions */}
-                      <AccordionItem value="vendors" className="border-b">
+                      <AccordionItem value="vendors" className="border rounded-lg mb-2 px-3">
                         <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-vendors">
                           <div className="flex items-center gap-2">
                             <Truck className="w-4 h-4 text-[#bba7db]" />
@@ -1257,7 +1191,7 @@ export default function SelectionDetail() {
                       </AccordionItem>
 
                       {/* Installer Permissions */}
-                      <AccordionItem value="installer" className="border-0">
+                      <AccordionItem value="installer" className="border rounded-lg px-3">
                         <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-installer">
                           <div className="flex items-center gap-2">
                             <HardHat className="w-4 h-4 text-[#bba7db]" />
@@ -1286,24 +1220,19 @@ export default function SelectionDetail() {
                         </AccordionContent>
                       </AccordionItem>
                     </Accordion>
-                  </CardContent>
-                </Card>
+                  </div>
 
-                {/* Comments Section */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  {/* Comments Section */}
+                  <div>
+                    <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block flex items-center gap-2">
                       <MessageSquare className="w-4 h-4" />
                       Comments
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
+                    </FormLabel>
+                    <div className="border rounded-lg p-4 space-y-4">
                       {/* Empty state */}
-                      <div className="text-center py-6 text-muted-foreground">
-                        <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <div className="text-center py-4 text-muted-foreground">
+                        <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">No comments yet</p>
-                        <p className="text-xs">Be the first to add a comment</p>
                       </div>
                       
                       {/* Comment input */}
@@ -1318,45 +1247,13 @@ export default function SelectionDetail() {
                         </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </form>
-            </Form>
-            
-            {/* Save Button inside panel */}
-            <div className="sticky bottom-0 left-0 right-0 bg-background border-t px-4 py-3 flex items-center justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => setActiveTab("options")}
-                data-testid="button-cancel"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  handleSaveSelection();
-                  setActiveTab("options");
-                }}
-                disabled={updateSelectionMutation.isPending}
-                data-testid="button-save-selection"
-              >
-                {updateSelectionMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
-            </div>
-            </div>
-          </div>
+                  </div>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
         </div>
-      )}
+      </div>
 
       {/* Add/Edit Option Dialog */}
       <Dialog 
