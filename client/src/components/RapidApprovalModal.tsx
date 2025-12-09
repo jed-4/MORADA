@@ -92,22 +92,20 @@ function TimePicker({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-24 p-0" align="center">
-        <ScrollArea className="h-48" ref={scrollRef}>
-          <div className="p-1">
-            {TIME_SLOTS.map((time) => (
-              <button
-                key={time}
-                data-time={time}
-                onClick={() => { onChange(time); setOpen(false); }}
-                className={`w-full px-2 py-1.5 text-[11px] text-center rounded hover:bg-muted ${
-                  time === value ? "bg-primary text-primary-foreground" : ""
-                }`}
-              >
-                {time}
-              </button>
-            ))}
-          </div>
-        </ScrollArea>
+        <div className="h-48 overflow-y-auto p-1" ref={scrollRef}>
+          {TIME_SLOTS.map((time) => (
+            <button
+              key={time}
+              data-time={time}
+              onClick={() => { onChange(time); setOpen(false); }}
+              className={`w-full px-2 py-1.5 text-[11px] text-center rounded hover:bg-muted ${
+                time === value ? "bg-primary text-primary-foreground" : ""
+              }`}
+            >
+              {time}
+            </button>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   );
