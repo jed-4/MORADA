@@ -4632,3 +4632,146 @@ export const insertFolderTemplateSchema = createInsertSchema(folderTemplates).om
 
 export type InsertFolderTemplate = z.infer<typeof insertFolderTemplateSchema>;
 export type FolderTemplate = typeof folderTemplates.$inferSelect;
+
+// ============================================
+// PRICE LIST FEATURE
+// ============================================
+
+// Price List Categories (configurable grouping for price list items)
+export const priceListCategories = pgTable("price_list_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color"), // Hex color for visual grouping
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_list_categories_company_idx").on(table.companyId),
+  uniqueNamePerCompany: uniqueIndex("price_list_categories_name_unique").on(table.companyId, table.name),
+}));
+
+export const insertPriceListCategorySchema = createInsertSchema(priceListCategories).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPriceListCategory = z.infer<typeof insertPriceListCategorySchema>;
+export type PriceListCategory = typeof priceListCategories.$inferSelect;
+
+// Unit Type enum for price list items
+export const unitTypeEnum = pgEnum("unit_type", [
+  "each",
+  "m2",      // Square meters
+  "lin_m",   // Linear meters
+  "m3",      // Cubic meters
+  "hour",
+  "day",
+  "week",
+  "lot",
+  "kg",
+  "tonne",
+  "litre",
+  "pack",
+  "set",
+  "pair",
+]);
+
+// Price List Items (main catalog of products/materials/services)
+export const priceListItems = pgTable("price_list_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Core details
+  name: text("name").notNull(), // Official product name
+  nickname: text("nickname"), // What the team calls it
+  code: text("code"), // SKU / internal reference code
+  description: text("description"), // Detailed notes, specifications
+  categoryId: varchar("category_id").references(() => priceListCategories.id, { onDelete: "set null" }),
+  unitType: unitTypeEnum("unit_type").notNull().default("each"),
+  
+  // Pricing (stored in cents for accuracy)
+  costPrice: integer("cost_price").notNull().default(0), // What you pay (cents, ex GST)
+  sellPrice: integer("sell_price"), // What you charge (cents, ex GST) - optional, can be calculated
+  markupPercent: numeric("markup_percent", { precision: 10, scale: 2 }), // Markup percentage
+  gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether prices include GST
+  
+  // Supplier info
+  supplierId: varchar("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  supplierCode: text("supplier_code"), // Supplier's product reference number
+  leadTimeDays: integer("lead_time_days"), // Typical delivery timeframe in days
+  
+  // Additional details
+  brand: text("brand"), // Manufacturer brand
+  imageUrl: text("image_url"), // Product photo
+  tags: json("tags").default([]), // Custom tags for filtering (string array)
+  notes: text("notes"), // Internal notes
+  
+  // Status
+  isActive: boolean("is_active").notNull().default(true),
+  
+  // Price tracking
+  lastPriceUpdate: timestamp("last_price_update"), // When price was last updated
+  priceHistory: json("price_history").default([]), // Array of { date, costPrice, sellPrice, source }
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("price_list_items_company_idx").on(table.companyId),
+  categoryIdx: index("price_list_items_category_idx").on(table.categoryId),
+  supplierIdx: index("price_list_items_supplier_idx").on(table.supplierId),
+  codeIdx: index("price_list_items_code_idx").on(table.companyId, table.code),
+}));
+
+export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit({
+  id: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  unitType: z.enum(["each", "m2", "lin_m", "m3", "hour", "day", "week", "lot", "kg", "tonne", "litre", "pack", "set", "pair"]).default("each"),
+  costPrice: z.number().default(0),
+  sellPrice: z.number().optional(),
+  markupPercent: z.string().optional().transform(val => val === "" ? null : val),
+  tags: z.array(z.string()).optional(),
+  priceHistory: z.array(z.object({
+    date: z.string(),
+    costPrice: z.number(),
+    sellPrice: z.number().optional(),
+    source: z.string().optional(), // "manual" | "bill" | "import"
+  })).optional(),
+});
+
+export type InsertPriceListItem = z.infer<typeof insertPriceListItemSchema>;
+export type PriceListItem = typeof priceListItems.$inferSelect;
+
+// Bill Line Item to Price List Item link (for AI review tracking)
+// This tracks which bill line items have been reviewed and linked to price list
+export const billLineItemPriceLinks = pgTable("bill_line_item_price_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  billLineItemId: varchar("bill_line_item_id").notNull().references(() => billLineItems.id, { onDelete: "cascade" }),
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
+  reviewStatus: text("review_status").notNull().default("pending"), // "pending" | "linked" | "created" | "skipped"
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  billLineItemIdx: index("bill_line_item_price_links_bli_idx").on(table.billLineItemId),
+  priceListItemIdx: index("bill_line_item_price_links_pli_idx").on(table.priceListItemId),
+  statusIdx: index("bill_line_item_price_links_status_idx").on(table.reviewStatus),
+}));
+
+export const insertBillLineItemPriceLinkSchema = createInsertSchema(billLineItemPriceLinks).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  reviewStatus: z.enum(["pending", "linked", "created", "skipped"]).default("pending"),
+  reviewedAt: z.coerce.date().optional(),
+});
+
+export type InsertBillLineItemPriceLink = z.infer<typeof insertBillLineItemPriceLinkSchema>;
+export type BillLineItemPriceLink = typeof billLineItemPriceLinks.$inferSelect;
