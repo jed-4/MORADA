@@ -1,7 +1,7 @@
 import { useState, forwardRef, useImperativeHandle } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2 } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -180,66 +180,110 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
 
   const groups = groupedItems();
 
+  const allExpanded = groups.length > 0 && groups.every(g => expandedGroups.has(g.id));
+  
+  const toggleExpandCollapse = () => {
+    if (allExpanded) {
+      collapseAll();
+    } else {
+      expandAll();
+    }
+  };
+
   return (
     <div className="flex flex-col h-full" data-testid="price-list">
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-            <Input
-              placeholder="Search items..."
-              value={internalSearch}
-              onChange={(e) => setInternalSearch(e.target.value)}
-              className="h-6 pl-7 w-48 text-xs"
-              data-testid="input-search-price-list"
-            />
-          </div>
+          {groupBy !== "none" && (
+            <button
+              onClick={toggleExpandCollapse}
+              className="h-6 w-6 flex items-center justify-center border rounded-md hover-elevate active-elevate-2"
+              title={allExpanded ? "Collapse all" : "Expand all"}
+              data-testid="button-toggle-expand"
+            >
+              {allExpanded ? (
+                <ChevronsDownUp className="h-3 w-3" />
+              ) : (
+                <ChevronsUpDown className="h-3 w-3" />
+              )}
+            </button>
+          )}
 
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="h-6 w-32 text-xs" data-testid="select-filter-category">
-              <Tag className="h-3 w-3 mr-1" />
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat.id} value={cat.id}>
-                  {cat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <button
+            onClick={() => setFilterCategory(filterCategory === "all" ? "" : "all")}
+            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
+              filterCategory !== "all" 
+                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                : "hover-elevate"
+            } active-elevate-2`}
+            data-testid="button-filter-category"
+          >
+            <Tag className="h-3 w-3" />
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="h-5 border-0 bg-transparent p-0 text-xs min-w-[70px]" data-testid="select-filter-category">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </button>
 
-          <Select value={filterSupplier} onValueChange={setFilterSupplier}>
-            <SelectTrigger className="h-6 w-32 text-xs" data-testid="select-filter-supplier">
-              <Building className="h-3 w-3 mr-1" />
-              <SelectValue placeholder="Supplier" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Suppliers</SelectItem>
-              {suppliers.map((sup) => (
-                <SelectItem key={sup.id} value={sup.id}>
-                  {sup.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <button
+            onClick={() => setFilterSupplier(filterSupplier === "all" ? "" : "all")}
+            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
+              filterSupplier !== "all" 
+                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                : "hover-elevate"
+            } active-elevate-2`}
+            data-testid="button-filter-supplier"
+          >
+            <Building className="h-3 w-3" />
+            <Select value={filterSupplier} onValueChange={setFilterSupplier}>
+              <SelectTrigger className="h-5 border-0 bg-transparent p-0 text-xs min-w-[70px]" data-testid="select-filter-supplier">
+                <SelectValue placeholder="Supplier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Suppliers</SelectItem>
+                {suppliers.map((sup) => (
+                  <SelectItem key={sup.id} value={sup.id}>
+                    {sup.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </button>
 
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="h-6 w-24 text-xs" data-testid="select-filter-status">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
+          <button
+            onClick={() => setFilterStatus(filterStatus === "all" ? "" : "all")}
+            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
+              filterStatus !== "all" 
+                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                : "hover-elevate"
+            } active-elevate-2`}
+            data-testid="button-filter-status"
+          >
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="h-5 border-0 bg-transparent p-0 text-xs min-w-[60px]" data-testid="select-filter-status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Group by:</span>
+            <span>Group:</span>
             <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupBy)}>
               <SelectTrigger className="h-6 w-24 text-xs border-0 bg-transparent" data-testid="select-group-by">
                 <SelectValue />
@@ -251,29 +295,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
               </SelectContent>
             </Select>
           </div>
-
-          {groupBy !== "none" && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={expandAll}
-                className="h-6 px-2 text-xs"
-                data-testid="button-expand-all"
-              >
-                Expand All
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={collapseAll}
-                className="h-6 px-2 text-xs"
-                data-testid="button-collapse-all"
-              >
-                Collapse All
-              </Button>
-            </div>
-          )}
 
           <Badge variant="secondary" className="h-5 text-[10px]">
             {items.length} items
