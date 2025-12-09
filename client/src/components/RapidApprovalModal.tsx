@@ -380,19 +380,17 @@ export function RapidApprovalModal({
               <TimePicker value={editedStartTime} onChange={setEditedStartTime} label="Start" />
               <span className="text-[11px] text-muted-foreground">-</span>
               <TimePicker value={editedEndTime} onChange={setEditedEndTime} label="End" />
-              <span className="text-[11px] font-mono font-medium min-w-[40px] text-right">
+              <span className="text-[11px] font-medium min-w-[40px] text-right">
                 {calculatedDuration.toFixed(2)}h
               </span>
             </div>
           </div>
 
-          {/* Break Row with start time */}
+          {/* Break Row with start time on right */}
           <div className="flex items-center justify-between px-2 py-1 bg-muted/30 rounded">
+            <span className="text-[11px] text-muted-foreground">Break:</span>
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground">Break:</span>
               <TimePicker value={editedBreakStart} onChange={setEditedBreakStart} label="Start" />
-            </div>
-            <div className="flex items-center gap-1.5">
               <Input
                 type="number"
                 step="0.25"
@@ -411,9 +409,9 @@ export function RapidApprovalModal({
               <Label className="text-[10px] text-muted-foreground">Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full h-7 text-[11px] justify-center px-1.5">
-                    {editedDate ? format(editedDate, "dd MMM") : "Select"}
-                  </Button>
+                  <button className="flex items-center justify-between w-full h-7 px-2 text-[11px] bg-background border border-input rounded-md hover:bg-accent hover:text-accent-foreground">
+                    <span>{editedDate ? format(editedDate, "dd MMM") : "Select"}</span>
+                  </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
