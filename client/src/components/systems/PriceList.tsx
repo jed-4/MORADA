@@ -739,11 +739,11 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
           <div className="px-2 py-2 bg-[#bba7db]/10 border border-[#bba7db]/20 rounded">
             <div className="flex items-center gap-1 mb-2">
               <DollarSign className="h-3 w-3 text-[#bba7db]" />
-              <span className="text-[10px] font-medium text-[#bba7db]">Pricing</span>
+              <span className="text-[10px] font-medium text-[#bba7db]">Pricing (ex GST)</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label className="text-[10px] text-muted-foreground">Cost</Label>
+                <Label className="text-[10px] text-muted-foreground">Cost (ex)</Label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
                   <Input
@@ -756,6 +756,11 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                     data-testid="input-cost-price"
                   />
                 </div>
+                {formData.costPrice && (
+                  <div className="text-[9px] text-muted-foreground mt-0.5 text-right">
+                    inc: ${(parseFloat(formData.costPrice) * 1.1).toFixed(2)}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -775,7 +780,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
               </div>
 
               <div>
-                <Label className="text-[10px] text-muted-foreground">Sell</Label>
+                <Label className="text-[10px] text-muted-foreground">Sell (ex)</Label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
                   <Input
@@ -788,6 +793,11 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                     data-testid="input-sell-price"
                   />
                 </div>
+                {formData.sellPrice && (
+                  <div className="text-[9px] text-muted-foreground mt-0.5 text-right">
+                    inc: ${(parseFloat(formData.sellPrice) * 1.1).toFixed(2)}
+                  </div>
+                )}
               </div>
             </div>
             {calculatedMarkup && (
