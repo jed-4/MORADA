@@ -508,6 +508,7 @@ export interface IStorage {
   
   // Bill Line Items CRUD
   getBillLineItems(billId: string): Promise<BillLineItem[]>;
+  getUnlinkedBillLineItems(companyId: string): Promise<any[]>;
   createBillLineItem(item: InsertBillLineItem): Promise<BillLineItem>;
   updateBillLineItem(id: string, item: Partial<InsertBillLineItem>): Promise<BillLineItem>;
   deleteBillLineItem(id: string): Promise<void>;
@@ -10124,6 +10125,63 @@ export class DbStorage implements IStorage {
         .orderBy(schema.billLineItems.order);
     } catch (error) {
       console.error("Database error in getBillLineItems:", error);
+      throw error;
+    }
+  }
+
+  async getUnlinkedBillLineItems(companyId: string): Promise<any[]> {
+    try {
+      const items = await db.select({
+        id: schema.billLineItems.id,
+        billId: schema.billLineItems.billId,
+        lineType: schema.billLineItems.lineType,
+        description: schema.billLineItems.description,
+        costCodeId: schema.billLineItems.costCodeId,
+        priceListItemId: schema.billLineItems.priceListItemId,
+        quantity: schema.billLineItems.quantity,
+        unitPrice: schema.billLineItems.unitPrice,
+        tax: schema.billLineItems.tax,
+        account: schema.billLineItems.account,
+        total: schema.billLineItems.total,
+        order: schema.billLineItems.order,
+        createdAt: schema.billLineItems.createdAt,
+        bill: {
+          id: schema.bills.id,
+          billNumber: schema.bills.billNumber,
+          supplierId: schema.bills.supplierId,
+          projectId: schema.bills.projectId,
+          billDate: schema.bills.billDate,
+        },
+      })
+        .from(schema.billLineItems)
+        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
+        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
+        .where(
+          and(
+            eq(schema.projects.companyId, companyId),
+            isNull(schema.billLineItems.priceListItemId)
+          )
+        )
+        .orderBy(desc(schema.bills.billDate), schema.billLineItems.order);
+      
+      const supplierIds = [...new Set(items.map(item => item.bill.supplierId))];
+      const suppliersData = supplierIds.length > 0 
+        ? await db.select()
+            .from(schema.suppliers)
+            .where(inArray(schema.suppliers.id, supplierIds))
+        : [];
+      
+      const supplierMap = new Map(suppliersData.map(s => [s.id, s]));
+      
+      return items.map(item => ({
+        ...item,
+        bill: {
+          ...item.bill,
+          supplier: supplierMap.get(item.bill.supplierId),
+        },
+      }));
+    } catch (error) {
+      console.error("Database error in getUnlinkedBillLineItems:", error);
       throw error;
     }
   }

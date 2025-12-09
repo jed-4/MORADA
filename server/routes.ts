@@ -6898,6 +6898,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get unlinked bill line items (no priceListItemId) for AI review
+  app.get("/api/bill-line-items/unlinked", async (req, res) => {
+    try {
+      const companyId = req.query.companyId as string;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company ID is required" });
+      }
+      const items = await storage.getUnlinkedBillLineItems(companyId);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching unlinked bill line items:", error);
+      res.status(500).json({ error: "Failed to fetch unlinked bill line items" });
+    }
+  });
+
+  // Link a bill line item to a price list item
+  app.patch("/api/bill-line-items/:id/link-price-item", async (req, res) => {
+    try {
+      const { priceListItemId } = req.body;
+      const lineItem = await storage.updateBillLineItem(req.params.id, { priceListItemId });
+      res.json(lineItem);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Bill line item not found") {
+        return res.status(404).json({ error: "Bill line item not found" });
+      }
+      res.status(500).json({ error: "Failed to link bill line item" });
+    }
+  });
+
   // Bill Line Item Allowances routes
   app.get("/api/bills/:billId/line-item-allowances", async (req, res) => {
     try {

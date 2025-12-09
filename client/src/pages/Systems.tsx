@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText, Bell, DollarSign } from "lucide-react";
+import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText, Bell, DollarSign, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/system
 import { NoteTemplatesLibrary, type NoteTemplatesLibraryHandle } from "@/components/systems/NoteTemplatesLibrary";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
 import { PriceList, type PriceListHandle } from "@/components/systems/PriceList";
+import AIPriceListReview, { type AIPriceListReviewHandle } from "@/components/systems/AIPriceListReview";
 
 export default function Systems() {
   // Get tab from URL query parameter
@@ -22,7 +23,7 @@ export default function Systems() {
 
   // Update active tab when URL changes
   useEffect(() => {
-    if (tabFromUrl && ["folders", "tasks", "workflows", "notes", "reminders", "pricelist"].includes(tabFromUrl)) {
+    if (tabFromUrl && ["folders", "tasks", "workflows", "notes", "reminders", "pricelist", "aireview"].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
@@ -34,6 +35,7 @@ export default function Systems() {
   const noteTemplatesRef = useRef<NoteTemplatesLibraryHandle>(null);
   const businessRemindersRef = useRef<BusinessRemindersHandle>(null);
   const priceListRef = useRef<PriceListHandle>(null);
+  const aiReviewRef = useRef<AIPriceListReviewHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -124,6 +126,20 @@ export default function Systems() {
               <span>Price List</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab("aireview")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "aireview"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-aireview"
+          >
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3" />
+              <span>AI Review</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -170,6 +186,11 @@ export default function Systems() {
         {activeTab === "pricelist" && (
           <div className="h-full">
             <PriceList ref={priceListRef} searchQuery={searchQuery} />
+          </div>
+        )}
+        {activeTab === "aireview" && (
+          <div className="h-full">
+            <AIPriceListReview ref={aiReviewRef} searchQuery={searchQuery} />
           </div>
         )}
       </div>

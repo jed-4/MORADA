@@ -1414,6 +1414,7 @@ export const billLineItems = pgTable("bill_line_items", {
   lineType: billLineTypeEnum("line_type").notNull().default("custom"),
   description: text("description").notNull(),
   costCodeId: varchar("cost_code_id").references(() => costCodes.id),
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }), // Link to price list
   quantity: integer("quantity").notNull().default(1),
   unitPrice: integer("unit_price").notNull().default(0), // Price in cents
   tax: taxTypeEnum("tax").notNull().default("GST on expenses"),
@@ -1433,6 +1434,7 @@ export const insertBillLineItemSchema = createInsertSchema(billLineItems).omit({
   unitPrice: z.number().default(0),
   total: z.number().default(0),
   order: z.number().default(0),
+  priceListItemId: z.string().nullable().optional(),
 });
 
 export type InsertBillLineItem = z.infer<typeof insertBillLineItemSchema>;
